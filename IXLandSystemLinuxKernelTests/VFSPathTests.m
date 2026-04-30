@@ -1124,6 +1124,18 @@ extern int lstat_impl(const char *path, struct linux_stat *statbuf);
                    @"vfs_faccessat Linux AT_SYMLINK_NOFOLLOW should return ENOTSUP");
 }
 
+- (void)testChrootRebasesAbsolutePathsAndGetcwd {
+    extern int vfs_contract_chroot_rebases_absolute_paths_and_getcwd(void);
+    XCTAssertEqual(vfs_contract_chroot_rebases_absolute_paths_and_getcwd(), 0,
+                   @"chroot should rebase task root and getcwd through IXLand VFS, errno %d", errno);
+}
+
+- (void)testFchdirUpdatesVirtualPwd {
+    extern int vfs_contract_fchdir_updates_virtual_pwd(void);
+    XCTAssertEqual(vfs_contract_fchdir_updates_virtual_pwd(), 0,
+                   @"fchdir should update IXLand task pwd without host cwd, errno %d", errno);
+}
+
 /* ============================================================================
  * SIGNAL-FAMILY SEMANTICS TESTS
  * ============================================================================ */

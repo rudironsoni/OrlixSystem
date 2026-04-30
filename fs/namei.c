@@ -6,6 +6,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -205,6 +206,21 @@ static int directory_translate_task_path(const char *path, char *translated_path
     return 0;
 }
 
+static bool directory_virtual_path_contains(const char *root, const char *path) {
+    size_t root_len;
+
+    if (!root || !path) {
+        return false;
+    }
+
+    if (strcmp(root, "/") == 0) {
+        return path[0] == '/';
+    }
+
+    root_len = strlen(root);
+    return strcmp(root, path) == 0 || (strncmp(path, root, root_len) == 0 && path[root_len] == '/');
+}
+
 int chdir_impl(const char *path) {
     struct task_struct *task;
     char translated_path[MAX_PATH];
@@ -246,12 +262,45 @@ int chdir_impl(const char *path) {
 }
 
 int fchdir_impl(int fd) {
+    fd_entry_t *entry;
+    struct task_struct *task;
+    char fd_path[MAX_PATH];
+    int ret;
+
     if (fd < 0 || fd >= NR_OPEN_DEFAULT || fd <= STDERR_FILENO) {
         errno = EBADF;
         return -1;
     }
 
-    return host_fchdir_impl(fd);
+    task = get_current();
+    if (!task || !task->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    entry = get_fd_entry_impl(fd);
+    if (!entry) {
+        errno = EBADF;
+        return -1;
+    }
+    if (!get_fd_is_dir_impl(entry)) {
+        put_fd_entry_impl(entry);
+        errno = ENOTDIR;
+        return -1;
+    }
+    ret = get_fd_path_impl(entry, fd_path, sizeof(fd_path));
+    put_fd_entry_impl(entry);
+    if (ret != 0) {
+        return -1;
+    }
+
+    ret = fs_set_pwd(task->fs, fd_path);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return 0;
 }
 
 char *getcwd_impl(char *buf, size_t size) {
@@ -503,9 +552,62 @@ ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
 }
 
 int chroot_impl(const char *path) {
-  (void)path;
-  errno = EPERM;
-  return -1;
+    struct task_struct *task;
+    char translated_path[MAX_PATH];
+    char resolved_virtual[MAX_PATH];
+    char current_pwd[MAX_PATH];
+    struct linux_stat st;
+    int ret;
+
+    if (directory_validate_path(path) != 0) {
+        return -1;
+    }
+
+    if (directory_translate_task_path(path, translated_path, sizeof(translated_path), &task) != 0) {
+        return -1;
+    }
+
+    if (!task->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    if (host_stat_impl(translated_path, &st) != 0) {
+        return -1;
+    }
+
+    if (!S_ISDIR(st.st_mode)) {
+        errno = ENOTDIR;
+        return -1;
+    }
+
+    if (host_access_impl(translated_path, X_OK) != 0) {
+        errno = EACCES;
+        return -1;
+    }
+
+    ret = vfs_resolve_virtual_path_task(path, resolved_virtual, sizeof(resolved_virtual), task->fs);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    memcpy(current_pwd, task->fs->pwd_path, sizeof(current_pwd));
+    ret = fs_set_root(task->fs, resolved_virtual);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    if (!directory_virtual_path_contains(resolved_virtual, current_pwd)) {
+        ret = fs_set_pwd(task->fs, resolved_virtual);
+        if (ret != 0) {
+            errno = -ret;
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 __attribute__((visibility("default"))) int chdir(const char *path) {

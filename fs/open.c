@@ -186,7 +186,7 @@ return fd;
         return -1;
     }
 
-    ret = vfs_translate_path(pathname, translated_path, sizeof(translated_path));
+    ret = vfs_translate_path(resolved_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -372,7 +372,7 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
         return -1;
     }
 
-    ret = vfs_translate_path_at(dirfd, pathname, translated_path, sizeof(translated_path));
+    ret = vfs_translate_path(resolved_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
         errno = -ret;
         return -1;

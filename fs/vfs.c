@@ -684,12 +684,29 @@ int vfs_resolve_virtual_path_task(const char *vpath, char *resolved_vpath, size_
 
 int vfs_getcwd_path_task(struct fs_struct *fs, char *vpath, size_t vpath_len) {
     const char *pwd_path;
+    const char *root_path;
+    size_t root_len;
 
     if (!vpath || vpath_len == 0) {
         return -EINVAL;
     }
 
+    root_path = (fs && fs->root_path[0] != '\0') ? fs->root_path : vfs_virtual_root_path;
     pwd_path = (fs && fs->pwd_path[0] != '\0') ? fs->pwd_path : vfs_virtual_root_path;
+
+    if (strcmp(root_path, "/") == 0) {
+        return vfs_copy_string(pwd_path, vpath, vpath_len);
+    }
+
+    root_len = strlen(root_path);
+    if (strcmp(pwd_path, root_path) == 0) {
+        return vfs_copy_string("/", vpath, vpath_len);
+    }
+
+    if (strncmp(pwd_path, root_path, root_len) == 0 && pwd_path[root_len] == '/') {
+        return vfs_copy_string(pwd_path + root_len, vpath, vpath_len);
+    }
+
     return vfs_copy_string(pwd_path, vpath, vpath_len);
 }
 
