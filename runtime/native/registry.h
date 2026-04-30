@@ -11,7 +11,7 @@ extern "C" {
 typedef int (*native_entry_fn)(int argc, char **argv, char **envp);
 
 typedef struct native_cmd {
-    const char *path;
+    char *path;
     native_entry_fn entry;
     struct native_cmd *next;
 } native_cmd_t;

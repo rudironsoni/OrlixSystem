@@ -29,18 +29,7 @@
 #endif
 #include <asm-generic/signal-defs.h>
 
-/* Host bridge API - narrow seam for file I/O */
-#include "internal/ios/fs/file_io_host.h"
-#include "internal/ios/fs/path_host.h"
-
-/* X_OK constant for access - local definition to avoid <unistd.h> */
-#ifndef X_OK
-#define X_OK 1
-#endif
-
 #include "../kernel/task.h"
-
-#include "internal/ios/fs/sync.h"
 
 /* environ is not available on iOS; use _NSGetEnviron() */
 #include <crt_externs.h>
@@ -50,6 +39,9 @@
 #include "../runtime/native/registry.h"
 #include "fdtable.h"
 #include "vfs.h"
+
+extern int open_impl(const char *pathname, int flags, mode_t mode);
+extern ssize_t read_impl(int fd, void *buf, size_t count);
 
 /* Forward declarations for exec variants */
 int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
@@ -151,20 +143,41 @@ static int exec_image_ensure(struct task_struct *task) {
     return 0;
 }
 
+static void exec_record_script_image(struct task_struct *task, const char *path, const char *interpreter_path) {
+    if (!task || !task->exec_image || !path || !interpreter_path) {
+        return;
+    }
+
+    strncpy(task->exec_image->path, path, sizeof(task->exec_image->path) - 1);
+    task->exec_image->path[sizeof(task->exec_image->path) - 1] = '\0';
+    if (vfs_normalize_linux_path(interpreter_path, task->exec_image->interpreter,
+                                 sizeof(task->exec_image->interpreter)) != 0) {
+        task->exec_image->interpreter[0] = '\0';
+    }
+    task->exec_image->type = EXEC_IMAGE_SCRIPT;
+}
+
 static int exec_read_shebang_line(const char *path, char *buffer, size_t buffer_len) {
+    char resolved_path[MAX_PATH];
     if (!path || !buffer || buffer_len < 3) {
         errno = EINVAL;
         return -1;
     }
 
-    int fd = host_open_impl(path, O_RDONLY, 0);
+    int ret = vfs_resolve_virtual_path_task(path, resolved_path, sizeof(resolved_path), NULL);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    int fd = open_impl(resolved_path, O_RDONLY, 0);
     if (fd < 0) {
         return -1;
     }
 
-    int64_t nread = host_read_impl(fd, buffer, buffer_len - 1);
+    ssize_t nread = read_impl(fd, buffer, buffer_len - 1);
     int saved_errno = errno;
-    host_close_impl(fd);
+    close_impl(fd);
     errno = saved_errno;
     if (nread < 0) {
         return -1;
@@ -268,18 +281,30 @@ int exec_build_script_argv_from_line(const char *shebang_line, const char *path,
 }
 
 enum exec_image_type exec_classify(const char *path) {
-    if (native_lookup(path)) {
+    char resolved_path[MAX_PATH];
+    int ret;
+
+    if (!path) {
+        return EXEC_IMAGE_NONE;
+    }
+
+    ret = vfs_resolve_virtual_path_task(path, resolved_path, sizeof(resolved_path), NULL);
+    if (ret != 0) {
+        return EXEC_IMAGE_NONE;
+    }
+
+    if (native_lookup(resolved_path)) {
         return EXEC_IMAGE_NATIVE;
     }
 
-    int fd = host_open_impl(path, O_RDONLY, 0);
+    int fd = open_impl(resolved_path, O_RDONLY, 0);
     if (fd < 0) {
         return EXEC_IMAGE_NONE;
     }
 
     unsigned char magic[4];
-    int64_t n = host_read_impl(fd, magic, 4);
-    host_close_impl(fd);
+    ssize_t n = read_impl(fd, magic, 4);
+    close_impl(fd);
 
     if (n < 2) {
         return EXEC_IMAGE_NONE;
@@ -312,6 +337,7 @@ void exec_reset_signals(struct signal_struct *sighand) {
 }
 
 int execve(const char *pathname, char *const argv[], char *const envp[]) {
+    char resolved_path[MAX_PATH];
     if (!pathname) {
         errno = EFAULT;
         return -1;
@@ -328,19 +354,20 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
         return -1;
     }
 
-    int type;
-    if (native_lookup(pathname)) {
-        type = EXEC_IMAGE_NATIVE;
-    } else {
-        if (host_access_impl(pathname, X_OK) != 0) {
-            return -1;
-        }
+    int ret = vfs_resolve_virtual_path_task(pathname, resolved_path, sizeof(resolved_path), task->fs);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
 
-        type = exec_classify(pathname);
-        if (type == EXEC_IMAGE_NONE) {
-            errno = ENOENT;
-            return -1;
-        }
+    int type = exec_classify(resolved_path);
+    if (type == EXEC_IMAGE_NONE) {
+        errno = ENOENT;
+        return -1;
+    }
+    if (type == EXEC_IMAGE_WASI) {
+        errno = ENOEXEC;
+        return -1;
     }
 
     char **argv_copy = exec_copy_argv(argv);
@@ -362,16 +389,6 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
         return -1;
     }
 
-    if (task_exec_transition_impl(pathname, argv_copy ? argv_copy[0] : NULL) < 0) {
-        exec_free_argv(argv_copy);
-        exec_free_argv(envp_copy);
-        return -1;
-    }
-
-    if (task->signal) {
-        exec_reset_signals(task->signal);
-    }
-
     int argc = 0;
     if (argv_copy) {
         while (argv_copy[argc]) {
@@ -379,26 +396,55 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
         }
     }
 
-    int ret;
-    switch (type) {
-    case EXEC_IMAGE_NATIVE:
-        ret = exec_native(task, pathname, argc, argv_copy, envp_copy);
-        break;
-    case EXEC_IMAGE_WASI:
-        ret = exec_wasi(task, pathname, argc, argv_copy, envp_copy);
-        break;
-    case EXEC_IMAGE_SCRIPT:
-        ret = exec_script(task, pathname, argc, argv_copy, envp_copy);
-        break;
-    default:
-        errno = ENOEXEC;
-        ret = -1;
+    int launch_status;
+    if (type == EXEC_IMAGE_SCRIPT) {
+        char interpreter_path[MAX_PATH];
+        char *script_argv[TASK_MAX_ARGS + 4];
+        int script_argc = 0;
+        native_entry_fn entry;
+
+        if (exec_build_script_argv(resolved_path, argc, argv_copy,
+                                   interpreter_path, sizeof(interpreter_path),
+                                   script_argv, &script_argc) < 0) {
+            exec_free_argv(argv_copy);
+            exec_free_argv(envp_copy);
+            return -1;
+        }
+
+        entry = native_lookup(interpreter_path);
+        if (!entry) {
+            exec_free_argv(argv_copy);
+            exec_free_argv(envp_copy);
+            errno = ENOENT;
+            return -1;
+        }
+
+        if (task_exec_transition_impl(resolved_path, argv_copy ? argv_copy[0] : NULL) < 0) {
+            exec_free_argv(argv_copy);
+            exec_free_argv(envp_copy);
+            return -1;
+        }
+        if (task->signal) {
+            exec_reset_signals(task->signal);
+        }
+        exec_record_script_image(task, resolved_path, interpreter_path);
+        launch_status = entry(script_argc, script_argv, envp_copy);
+    } else {
+        if (task_exec_transition_impl(resolved_path, argv_copy ? argv_copy[0] : NULL) < 0) {
+            exec_free_argv(argv_copy);
+            exec_free_argv(envp_copy);
+            return -1;
+        }
+        if (task->signal) {
+            exec_reset_signals(task->signal);
+        }
+        launch_status = exec_native(task, resolved_path, argc, argv_copy, envp_copy);
     }
 
     exec_free_argv(argv_copy);
     exec_free_argv(envp_copy);
 
-    return ret;
+    return launch_status;
 }
 
 int execv(const char *pathname, char *const argv[]) {
@@ -428,11 +474,14 @@ int execvp(const char *file, char *const argv[]) {
         int len = snprintf(fullpath, sizeof(fullpath), "%s/%s", dir, file);
 
         if (len > 0 && (size_t)len < sizeof(fullpath)) {
-            struct linux_stat st_local;
-            if (host_stat_impl(fullpath, &st_local) == 0 && S_ISREG(st_local.st_mode) && (host_access_impl(fullpath, X_OK) == 0)) {
-                int result = execv(fullpath, argv);
+            int result = execv(fullpath, argv);
+            if (result != -1) {
                 free(path_copy);
                 return result;
+            }
+            if (errno != ENOENT && errno != ENOTDIR) {
+                free(path_copy);
+                return -1;
             }
         }
 
@@ -445,11 +494,22 @@ int execvp(const char *file, char *const argv[]) {
 }
 
 int fexecve(int fd, char *const argv[], char *const envp[]) {
-    (void)fd;
-    (void)argv;
-    (void)envp;
-    errno = ENOSYS;
-    return -1;
+    char path[MAX_PATH];
+    fd_entry_t *entry = get_fd_entry_impl(fd);
+    if (!entry) {
+        errno = EBADF;
+        return -1;
+    }
+
+    int ret = get_fd_path_impl(entry, path, sizeof(path));
+    int saved_errno = errno;
+    put_fd_entry_impl(entry);
+    errno = saved_errno;
+    if (ret != 0) {
+        return -1;
+    }
+
+    return execve(path, argv, envp);
 }
 
 int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
