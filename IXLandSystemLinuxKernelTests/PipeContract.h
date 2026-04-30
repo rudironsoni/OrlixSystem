@@ -26,5 +26,9 @@ int pipe_contract_poll_write_end_writable_when_capacity_available(void);
 int pipe_contract_poll_invalid_fd_returns_nval(void);
 int pipe_contract_proc_self_fd_shows_pipe_descriptor(void);
 int pipe_contract_proc_self_fdinfo_shows_pipe_flags(void);
+int pipe_contract_blocking_read_wakes_when_writer_writes(void);
+int pipe_contract_blocking_read_interrupted_by_signal(void);
+int pipe_contract_blocking_write_wakes_when_reader_drains(void);
+int pipe_contract_write_no_readers_queues_sigpipe(void);
 
 #endif

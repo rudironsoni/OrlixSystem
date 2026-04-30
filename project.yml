@@ -107,6 +107,8 @@ targets:
       group: kernel
     - path: kernel/time.c
       group: kernel
+    - path: kernel/wait_queue.c
+      group: kernel
     - path: internal/ios/kernel/sync.c
       group: internal/ios/kernel
     - path: internal/ios/kernel/clock.c

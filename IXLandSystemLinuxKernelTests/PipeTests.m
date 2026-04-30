@@ -51,5 +51,9 @@
 - (void)testPollInvalidFdReturnsNval { XCTAssertEqual(pipe_contract_poll_invalid_fd_returns_nval(), 0, @"errno %d", errno); }
 - (void)testProcSelfFdShowsPipeDescriptor { XCTAssertEqual(pipe_contract_proc_self_fd_shows_pipe_descriptor(), 0, @"errno %d", errno); }
 - (void)testProcSelfFdinfoShowsPipeFlags { XCTAssertEqual(pipe_contract_proc_self_fdinfo_shows_pipe_flags(), 0, @"errno %d", errno); }
+- (void)testPipeBlockingReadWakesWhenWriterWrites { XCTAssertEqual(pipe_contract_blocking_read_wakes_when_writer_writes(), 0, @"errno %d", errno); }
+- (void)testPipeBlockingReadInterruptedBySignal { XCTAssertEqual(pipe_contract_blocking_read_interrupted_by_signal(), 0, @"errno %d", errno); }
+- (void)testPipeBlockingWriteWakesWhenReaderDrains { XCTAssertEqual(pipe_contract_blocking_write_wakes_when_reader_drains(), 0, @"errno %d", errno); }
+- (void)testPipeWriteNoReadersQueuesSigpipe { XCTAssertEqual(pipe_contract_write_no_readers_queues_sigpipe(), 0, @"errno %d", errno); }
 
 @end

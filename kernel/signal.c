@@ -139,6 +139,7 @@
 
 #include "signal.h"
 #include "task.h"
+#include "wait_queue.h"
 
 struct signal_struct *alloc_signal_struct(void) {
     struct signal_struct *sig = calloc(1, sizeof(struct signal_struct));
@@ -223,10 +224,7 @@ static void apply_signal_to_task(struct task_struct *task, int32_t sig) {
         task_notify_parent_state_change(task);
     }
 
-    /* Wake up this task if waiting */
-    if (task->waiters > 0) {
-        kernel_cond_broadcast(&task->wait_cond);
-    }
+    signal_wake_task(task, false);
 }
 
 int signal_generate_task(struct task_struct *target, int32_t sig) {
@@ -332,6 +330,8 @@ void signal_recompute_pending(struct task_struct *task) {
 }
 
 void signal_wake_task(struct task_struct *task, bool group_wide) {
+    struct wait_queue_head *queue;
+
     (void)group_wide;
 
     if (!task)
@@ -339,10 +339,15 @@ void signal_wake_task(struct task_struct *task, bool group_wide) {
 
     /* Wake the task if it's waiting */
     kernel_mutex_lock(&task->wait_lock);
+    queue = task->current_wait_queue;
     if (task->waiters > 0) {
         kernel_cond_broadcast(&task->wait_cond);
     }
     kernel_mutex_unlock(&task->wait_lock);
+
+    if (queue) {
+        wait_queue_wake_all(queue);
+    }
 }
 
 bool signal_is_blocked(const struct task_struct *task, int32_t sig) {
@@ -370,6 +375,28 @@ bool signal_is_pending(const struct task_struct *task, int32_t sig) {
         return false;
 
     return (task->signal->pending.sig[idx] & (1ULL << bit)) != 0;
+}
+
+bool signal_has_unblocked_pending(const struct task_struct *task) {
+    if (!task || !task->signal) {
+        return false;
+    }
+
+    for (int sig = 1; sig <= KERNEL_SIG_NUM; sig++) {
+        int idx = (sig - 1) / 64;
+        int bit = (sig - 1) % 64;
+
+        if (idx >= KERNEL_SIG_NUM_WORDS) {
+            continue;
+        }
+
+        if ((task->signal->pending.sig[idx] & (1ULL << bit)) &&
+            !(task->signal->blocked.sig[idx] & (1ULL << bit))) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void signal_reset_on_exec(struct task_struct *task) {

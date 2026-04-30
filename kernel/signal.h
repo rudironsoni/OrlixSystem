@@ -120,6 +120,7 @@ int signal_generate_pgrp(int32_t pgid, int32_t sig);
 /* Check if signal is blocked */
 bool signal_is_blocked(const struct task_struct *task, int32_t sig);
 bool signal_is_pending(const struct task_struct *task, int32_t sig);
+bool signal_has_unblocked_pending(const struct task_struct *task);
 
 /* ============================================================================
  * INTERNAL SYSCALL IMPLEMENTATIONS (for host-bridge use)

@@ -1,4 +1,10 @@
 #include <linux/fcntl.h>
+#ifdef SIGPIPE
+#undef SIGPIPE
+#endif
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
 
 #include "pipe.h"
 
@@ -7,7 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "internal/ios/fs/sync.h"
+#include "../kernel/signal.h"
+#include "../kernel/task.h"
+#include "../kernel/wait_queue.h"
 
 #define PIPE_BUFFER_SIZE 65536U
 
@@ -19,7 +27,7 @@ struct pipe_object {
     int writers;
     int refs;
     unsigned long long id;
-    fs_mutex_t lock;
+    struct wait_queue_head wait;
 };
 
 struct pipe_endpoint {
@@ -62,7 +70,7 @@ int pipe_create_endpoint_pair(struct pipe_endpoint **read_end, struct pipe_endpo
     pipe->writers = 1;
     pipe->refs = 2;
     pipe->id = atomic_fetch_add(&next_pipe_id, 1);
-    fs_mutex_init(&pipe->lock);
+    wait_queue_init(&pipe->wait);
 
     reader->pipe = pipe;
     reader->read_end = true;
@@ -83,7 +91,7 @@ void pipe_close_endpoint_impl(struct pipe_endpoint *endpoint) {
     }
 
     pipe = endpoint->pipe;
-    fs_mutex_lock(&pipe->lock);
+    kernel_mutex_lock(&pipe->wait.lock);
     if (endpoint->read_end) {
         if (pipe->readers > 0) {
             pipe->readers--;
@@ -95,11 +103,12 @@ void pipe_close_endpoint_impl(struct pipe_endpoint *endpoint) {
     }
     pipe->refs--;
     should_free_pipe = pipe->refs == 0;
-    fs_mutex_unlock(&pipe->lock);
+    wait_queue_wake_all_locked(&pipe->wait);
+    kernel_mutex_unlock(&pipe->wait.lock);
 
     pipe_free_endpoint(endpoint);
     if (should_free_pipe) {
-        fs_mutex_destroy(&pipe->lock);
+        wait_queue_destroy(&pipe->wait);
         free(pipe);
     }
 }
@@ -133,16 +142,22 @@ ssize_t pipe_read_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
     }
 
     pipe = endpoint->pipe;
-    fs_mutex_lock(&pipe->lock);
-    if (pipe->len == 0) {
+    kernel_mutex_lock(&pipe->wait.lock);
+    while (pipe->len == 0) {
         if (pipe->writers == 0) {
-            fs_mutex_unlock(&pipe->lock);
+            kernel_mutex_unlock(&pipe->wait.lock);
             return 0;
         }
-        fs_mutex_unlock(&pipe->lock);
-        errno = EAGAIN;
-        (void)nonblock;
-        return -1;
+        if (nonblock) {
+            kernel_mutex_unlock(&pipe->wait.lock);
+            errno = EAGAIN;
+            return -1;
+        }
+        if (wait_queue_wait_locked_interruptible(&pipe->wait) != 0) {
+            kernel_mutex_unlock(&pipe->wait.lock);
+            errno = EINTR;
+            return -1;
+        }
     }
 
     to_read = count < pipe->len ? count : pipe->len;
@@ -156,7 +171,8 @@ ssize_t pipe_read_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
     }
     pipe->head = (pipe->head + to_read) % PIPE_BUFFER_SIZE;
     pipe->len -= to_read;
-    fs_mutex_unlock(&pipe->lock);
+    wait_queue_wake_all_locked(&pipe->wait);
+    kernel_mutex_unlock(&pipe->wait.lock);
     return (ssize_t)to_read;
 }
 
@@ -180,19 +196,33 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     }
 
     pipe = endpoint->pipe;
-    fs_mutex_lock(&pipe->lock);
+    kernel_mutex_lock(&pipe->wait.lock);
     if (pipe->readers == 0) {
-        fs_mutex_unlock(&pipe->lock);
+        kernel_mutex_unlock(&pipe->wait.lock);
+        signal_generate_task(get_current(), SIGPIPE);
         errno = EPIPE;
         return -1;
     }
 
     space = pipe_space_locked(pipe);
-    if (space == 0) {
-        fs_mutex_unlock(&pipe->lock);
-        errno = EAGAIN;
-        (void)nonblock;
-        return -1;
+    while (space == 0) {
+        if (pipe->readers == 0) {
+            kernel_mutex_unlock(&pipe->wait.lock);
+            signal_generate_task(get_current(), SIGPIPE);
+            errno = EPIPE;
+            return -1;
+        }
+        if (nonblock) {
+            kernel_mutex_unlock(&pipe->wait.lock);
+            errno = EAGAIN;
+            return -1;
+        }
+        if (wait_queue_wait_locked_interruptible(&pipe->wait) != 0) {
+            kernel_mutex_unlock(&pipe->wait.lock);
+            errno = EINTR;
+            return -1;
+        }
+        space = pipe_space_locked(pipe);
     }
 
     to_write = count < space ? count : space;
@@ -206,7 +236,8 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
         memcpy(pipe->buffer, (const unsigned char *)buf + first, to_write - first);
     }
     pipe->len += to_write;
-    fs_mutex_unlock(&pipe->lock);
+    wait_queue_wake_all_locked(&pipe->wait);
+    kernel_mutex_unlock(&pipe->wait.lock);
     return (ssize_t)to_write;
 }
 
@@ -219,7 +250,7 @@ short pipe_poll_revents_impl(struct pipe_endpoint *endpoint, short events) {
     }
 
     pipe = endpoint->pipe;
-    fs_mutex_lock(&pipe->lock);
+    kernel_mutex_lock(&pipe->wait.lock);
     if (endpoint->read_end) {
         if ((events & (POLLIN | POLLRDNORM)) && pipe->len > 0) {
             revents |= events & (POLLIN | POLLRDNORM);
@@ -234,7 +265,7 @@ short pipe_poll_revents_impl(struct pipe_endpoint *endpoint, short events) {
             revents |= events & (POLLOUT | POLLWRNORM);
         }
     }
-    fs_mutex_unlock(&pipe->lock);
+    kernel_mutex_unlock(&pipe->wait.lock);
     return revents;
 }
 

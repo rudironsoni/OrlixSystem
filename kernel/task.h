@@ -38,6 +38,7 @@ struct signal_struct;
 struct tty_struct;
 struct mm_struct;
 struct exec_image;
+struct wait_queue_head;
 struct nsproxy;
 struct cgroup;
 struct seccomp;
@@ -158,6 +159,7 @@ struct task_struct {
     /* Virtual wait queue / sleep state */
     kernel_cond_t wait_cond;
     kernel_mutex_t wait_lock;
+    struct wait_queue_head *current_wait_queue;
     int waiters;
 
     /* Resource limits - virtual kernel tracked
