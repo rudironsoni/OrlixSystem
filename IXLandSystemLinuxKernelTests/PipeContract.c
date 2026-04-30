@@ -144,6 +144,15 @@ struct pipe_thread_case {
     struct task_struct *task;
 };
 
+struct pipe_poll_thread_case {
+    int fd;
+    kernel_mutex_t lock;
+    kernel_cond_t cond;
+    int started;
+    int done;
+    int result;
+};
+
 static void case_init(struct pipe_thread_case *ctx, int read_fd, int write_fd) {
     ctx->fds[0] = read_fd;
     ctx->fds[1] = write_fd;
@@ -221,12 +230,86 @@ static void *blocking_write_thread(void *arg) {
     char byte = 'w';
     long nwritten;
 
+    if (ctx->task) {
+        set_current(ctx->task);
+    }
+
     case_mark_started(ctx);
     nwritten = write_impl(ctx->fds[1], &byte, 1);
-    if (nwritten == 1) {
+    if (nwritten == 1 && !ctx->task) {
         case_mark_done(ctx, 0);
+    } else if (nwritten == -1 && errno == EINTR) {
+        case_mark_done(ctx, EINTR);
     } else {
         case_mark_done(ctx, errno ? errno : EIO);
+    }
+    return NULL;
+}
+
+static void poll_case_init(struct pipe_poll_thread_case *ctx, int fd) {
+    ctx->fd = fd;
+    ctx->started = 0;
+    ctx->done = 0;
+    ctx->result = 0;
+    kernel_mutex_init(&ctx->lock);
+    kernel_cond_init(&ctx->cond);
+}
+
+static void poll_case_destroy(struct pipe_poll_thread_case *ctx) {
+    kernel_cond_destroy(&ctx->cond);
+    kernel_mutex_destroy(&ctx->lock);
+}
+
+static void poll_case_mark_started(struct pipe_poll_thread_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->started = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void poll_case_mark_done(struct pipe_poll_thread_case *ctx, int result) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->result = result;
+    ctx->done = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void poll_case_wait_started(struct pipe_poll_thread_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->started) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static int poll_case_wait_done(struct pipe_poll_thread_case *ctx) {
+    int result;
+
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->done) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    result = ctx->result;
+    kernel_mutex_unlock(&ctx->lock);
+    return result;
+}
+
+static void *blocking_poll_thread(void *arg) {
+    struct pipe_poll_thread_case *ctx = arg;
+    struct pollfd pfd;
+    int ret;
+
+    pfd.fd = ctx->fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+
+    poll_case_mark_started(ctx);
+    ret = poll_impl(&pfd, 1, -1);
+    if (ret == 1 && (pfd.revents & POLLIN)) {
+        poll_case_mark_done(ctx, 0);
+    } else {
+        poll_case_mark_done(ctx, errno ? errno : EIO);
     }
     return NULL;
 }
@@ -766,6 +849,71 @@ out_close:
     return ret;
 }
 
+int pipe_contract_blocking_write_interrupted_by_signal(void) {
+    int fds[2] = {-1, -1};
+    struct pipe_thread_case ctx;
+    kernel_thread_t thread;
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    char fill[4096];
+    int ret = 0;
+
+    memset(fill, 'f', sizeof(fill));
+    if (pipe2_impl(fds, O_NONBLOCK) != 0) {
+        return errno;
+    }
+    while (write_impl(fds[1], fill, sizeof(fill)) > 0) {
+    }
+    if (errno != EAGAIN) {
+        ret = errno ? errno : EIO;
+        goto out_close;
+    }
+    if (!parent) {
+        ret = ESRCH;
+        goto out_close;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        ret = errno ? errno : ENOMEM;
+        goto out_close;
+    }
+    if (fcntl_impl(fds[1], F_SETFL, 0) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_child;
+    }
+
+    case_init(&ctx, fds[0], fds[1]);
+    ctx.task = child;
+    if (kernel_thread_create(&thread, NULL, blocking_write_thread, &ctx) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    kernel_thread_detach(thread);
+    case_wait_started(&ctx);
+
+    if (signal_generate_task(child, SIGUSR1) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+
+    ret = case_wait_done(&ctx);
+    if (ret == EINTR) {
+        ret = 0;
+    }
+
+out_destroy:
+    case_destroy(&ctx);
+out_child:
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+out_close:
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return ret;
+}
+
 int pipe_contract_write_no_readers_queues_sigpipe(void) {
     int fds[2] = {-1, -1};
     struct task_struct *task = get_current();
@@ -792,6 +940,38 @@ int pipe_contract_write_no_readers_queues_sigpipe(void) {
     clear_pending_signal(task, SIGPIPE);
 
 out:
+    close_if_open(fds[1]);
+    return ret;
+}
+
+int pipe_contract_blocking_poll_read_wakes_when_writer_writes(void) {
+    int fds[2] = {-1, -1};
+    struct pipe_poll_thread_case ctx;
+    kernel_thread_t thread;
+    int ret = 0;
+
+    if (pipe_impl(fds) != 0) {
+        return errno;
+    }
+
+    poll_case_init(&ctx, fds[0]);
+    if (kernel_thread_create(&thread, NULL, blocking_poll_thread, &ctx) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    kernel_thread_detach(thread);
+    poll_case_wait_started(&ctx);
+
+    if (write_impl(fds[1], "p", 1) != 1) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+
+    ret = poll_case_wait_done(&ctx);
+
+out_destroy:
+    poll_case_destroy(&ctx);
+    close_if_open(fds[0]);
     close_if_open(fds[1]);
     return ret;
 }

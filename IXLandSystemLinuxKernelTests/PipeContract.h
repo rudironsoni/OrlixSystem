@@ -29,6 +29,8 @@ int pipe_contract_proc_self_fdinfo_shows_pipe_flags(void);
 int pipe_contract_blocking_read_wakes_when_writer_writes(void);
 int pipe_contract_blocking_read_interrupted_by_signal(void);
 int pipe_contract_blocking_write_wakes_when_reader_drains(void);
+int pipe_contract_blocking_write_interrupted_by_signal(void);
 int pipe_contract_write_no_readers_queues_sigpipe(void);
+int pipe_contract_blocking_poll_read_wakes_when_writer_writes(void);
 
 #endif

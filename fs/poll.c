@@ -66,6 +66,9 @@ int poll_impl(struct pollfd *fds, nfds_t nfds, int timeout) {
 
     int ready_count = 0;
     int host_fds_count = 0;
+    int blocking_pipe_index = -1;
+    struct pipe_endpoint *blocking_pipe_endpoint = NULL;
+    short blocking_pipe_events = 0;
     struct pollfd *host_fds = calloc(nfds, sizeof(struct pollfd));
     int *fd_map = calloc(nfds, sizeof(int));
     if (!host_fds || !fd_map) {
@@ -120,6 +123,10 @@ int poll_impl(struct pollfd *fds, nfds_t nfds, int timeout) {
             fds[i].revents = revents;
             if (revents != 0) {
                 ready_count++;
+            } else if (timeout < 0 && nfds == 1) {
+                blocking_pipe_index = (int)i;
+                blocking_pipe_endpoint = pipe_endpoint;
+                blocking_pipe_events = events;
             }
             continue;
         }
@@ -175,6 +182,19 @@ int poll_impl(struct pollfd *fds, nfds_t nfds, int timeout) {
                     ready_count++;
                 }
             }
+        }
+    }
+
+    if (ready_count == 0 && host_fds_count == 0 && blocking_pipe_index >= 0) {
+        short pipe_revents = pipe_poll_wait_revents_impl(blocking_pipe_endpoint, blocking_pipe_events);
+        if (pipe_revents < 0) {
+            free(host_fds);
+            free(fd_map);
+            return -1;
+        }
+        fds[blocking_pipe_index].revents = pipe_revents;
+        if (pipe_revents != 0) {
+            ready_count++;
         }
     }
 

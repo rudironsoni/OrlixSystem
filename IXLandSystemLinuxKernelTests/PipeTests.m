@@ -54,6 +54,8 @@
 - (void)testPipeBlockingReadWakesWhenWriterWrites { XCTAssertEqual(pipe_contract_blocking_read_wakes_when_writer_writes(), 0, @"errno %d", errno); }
 - (void)testPipeBlockingReadInterruptedBySignal { XCTAssertEqual(pipe_contract_blocking_read_interrupted_by_signal(), 0, @"errno %d", errno); }
 - (void)testPipeBlockingWriteWakesWhenReaderDrains { XCTAssertEqual(pipe_contract_blocking_write_wakes_when_reader_drains(), 0, @"errno %d", errno); }
+- (void)testPipeBlockingWriteInterruptedBySignalReturnsIntr { XCTAssertEqual(pipe_contract_blocking_write_interrupted_by_signal(), 0, @"errno %d", errno); }
 - (void)testPipeWriteNoReadersQueuesSigpipe { XCTAssertEqual(pipe_contract_write_no_readers_queues_sigpipe(), 0, @"errno %d", errno); }
+- (void)testPollPipeReadEndBlockingWakesWhenWriterWrites { XCTAssertEqual(pipe_contract_blocking_poll_read_wakes_when_writer_writes(), 0, @"errno %d", errno); }
 
 @end

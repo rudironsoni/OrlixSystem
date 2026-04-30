@@ -269,6 +269,46 @@ short pipe_poll_revents_impl(struct pipe_endpoint *endpoint, short events) {
     return revents;
 }
 
+short pipe_poll_wait_revents_impl(struct pipe_endpoint *endpoint, short events) {
+    struct pipe_object *pipe;
+    short revents;
+
+    if (!endpoint || !endpoint->pipe) {
+        return POLLNVAL;
+    }
+
+    pipe = endpoint->pipe;
+    kernel_mutex_lock(&pipe->wait.lock);
+    for (;;) {
+        revents = 0;
+        if (endpoint->read_end) {
+            if ((events & (POLLIN | POLLRDNORM)) && pipe->len > 0) {
+                revents |= events & (POLLIN | POLLRDNORM);
+            }
+            if (pipe->writers == 0) {
+                revents |= POLLHUP;
+            }
+        } else {
+            if (pipe->readers == 0) {
+                revents |= POLLERR;
+            } else if ((events & (POLLOUT | POLLWRNORM)) && pipe_space_locked(pipe) > 0) {
+                revents |= events & (POLLOUT | POLLWRNORM);
+            }
+        }
+
+        if (revents != 0) {
+            kernel_mutex_unlock(&pipe->wait.lock);
+            return revents;
+        }
+
+        if (wait_queue_wait_locked_interruptible(&pipe->wait) != 0) {
+            kernel_mutex_unlock(&pipe->wait.lock);
+            errno = EINTR;
+            return -1;
+        }
+    }
+}
+
 int pipe2_impl(int pipefd[2], int flags) {
     struct pipe_endpoint *read_end = NULL;
     struct pipe_endpoint *write_end = NULL;
