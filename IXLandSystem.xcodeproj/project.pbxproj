@@ -33,6 +33,7 @@
 		4A3CD24DAD0E84942B97064B /* libIXLandSystem.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E96E95F0B83F5CC63E21913 /* libIXLandSystem.a */; };
 		4A59A63F162BBE7A75E78E88 /* NativeSyscallTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 149AD324E25B3578773D3650 /* NativeSyscallTests.m */; };
 		4F010A787D2ACDD5E950B529 /* pty.c in Sources */ = {isa = PBXBuildFile; fileRef = 68380C402AE8EF749A28C843 /* pty.c */; };
+		524B1B9E713579CC7A24B6D7 /* SignalSyscallContract.c in Sources */ = {isa = PBXBuildFile; fileRef = A335F840745D56551FE0A477 /* SignalSyscallContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		536C4CD2454AE81090D76B84 /* UTSContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 93FD7C4E0CECC621AF98E323 /* UTSContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		5773870A2156F8B6827EB2D5 /* network.c in Sources */ = {isa = PBXBuildFile; fileRef = CEC04AD14B572B960464124B /* network.c */; };
 		578C4CB3E1760634134B9781 /* signal.c in Sources */ = {isa = PBXBuildFile; fileRef = 9935787E313CB1AD8A576244 /* signal.c */; };
@@ -50,6 +51,7 @@
 		6B765327CCF9FE19CB035CA0 /* KernelInitTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 53E3EED8E60498770B580706 /* KernelInitTests.m */; };
 		6DCCC30A9E2767FEAA8316D2 /* vfs.c in Sources */ = {isa = PBXBuildFile; fileRef = CC8A063128CC02CB6B938762 /* vfs.c */; };
 		6DDB66316E25F6C1B4B9E2DC /* EpollTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 7810125BDEF6428499A45338 /* EpollTests.m */; };
+		70B890304D2A8DBDB1E37441 /* FutexContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E2223F1FD9574F6D12DBCBE9 /* FutexContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		70DFBB25D68D1C86B3F68C17 /* epoll_bridge.c in Sources */ = {isa = PBXBuildFile; fileRef = BA898A59834C42247E34F3A2 /* epoll_bridge.c */; };
 		71702A8784D42476587D0887 /* exec_context.c in Sources */ = {isa = PBXBuildFile; fileRef = A9306CBCC1D6DF896A69232C /* exec_context.c */; };
 		7382EBBD679D92B216EB7155 /* PTYJobControlTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 88CA631FAF0EDC1ABC5785AE /* PTYJobControlTests.m */; };
@@ -60,6 +62,7 @@
 		7FC2CF492A88F5BDE5A5E8B7 /* HostBridgeSmokeTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 4937592D664709CBF7746315 /* HostBridgeSmokeTests.m */; };
 		83F06BCA2B801A0D599FC7B2 /* TaskExecTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 92672608BC0DCE77AA7B30F0 /* TaskExecTests.m */; };
 		85446090E824633B84DE19A8 /* libIXLandSystem.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E96E95F0B83F5CC63E21913 /* libIXLandSystem.a */; };
+		85F42D8D8A97A702E05062F0 /* futex.c in Sources */ = {isa = PBXBuildFile; fileRef = A59E29CD8F09AAF0EF88FE25 /* futex.c */; };
 		87046F5302731769EFA41075 /* backing_paths.m in Sources */ = {isa = PBXBuildFile; fileRef = 5FD8D142EC818870892A041C /* backing_paths.m */; };
 		89EF08DAA55DB8C17CE9F248 /* SignalTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 39D1B661F15441FB32765EC6 /* SignalTests.m */; };
 		8A81463107C3BC70B06B76A2 /* cred.c in Sources */ = {isa = PBXBuildFile; fileRef = 52402BAA17F7390A34354EB6 /* cred.c */; };
@@ -151,6 +154,7 @@
 		0869AF46EE225A3EF40ACA99 /* VFSPathHostBridgeTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VFSPathHostBridgeTests.m; sourceTree = "<group>"; };
 		08ACBEB768F495F5996FAED4 /* PTYSessionTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PTYSessionTests.m; sourceTree = "<group>"; };
 		0B9F6B902F768AA6DE216541 /* KernelInitContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = KernelInitContract.c; sourceTree = "<group>"; };
+		103229A6A603567EF2426C03 /* FutexContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FutexContract.h; sourceTree = "<group>"; };
 		109291A8E0DB081C632EA1F4 /* ReadinessContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ReadinessContract.c; sourceTree = "<group>"; };
 		1196E0E046C9D8486908FEF8 /* task.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = task.c; sourceTree = "<group>"; };
 		12D46C624EE8732CD9DDF049 /* WaitJobControlContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = WaitJobControlContract.c; sourceTree = "<group>"; };
@@ -220,7 +224,10 @@
 		9A8678E28B73B73210D86FAB /* LinuxUAPITestSupport.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = LinuxUAPITestSupport.c; sourceTree = "<group>"; };
 		9CF0B32B0919743DEB9B6208 /* EpollContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = EpollContract.c; sourceTree = "<group>"; };
 		9DB9F3969D27A5F8E14D02C9 /* WaitJobControlContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WaitJobControlContract.h; sourceTree = "<group>"; };
+		9E81C1980944640AFCDE47C1 /* SignalSyscallContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SignalSyscallContract.h; sourceTree = "<group>"; };
 		A16E57667D928B55CFDFB726 /* uts.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = uts.c; sourceTree = "<group>"; };
+		A335F840745D56551FE0A477 /* SignalSyscallContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SignalSyscallContract.c; sourceTree = "<group>"; };
+		A59E29CD8F09AAF0EF88FE25 /* futex.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = futex.c; sourceTree = "<group>"; };
 		A9306CBCC1D6DF896A69232C /* exec_context.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = exec_context.c; sourceTree = "<group>"; };
 		ACF34CF0B01083518EF64D1C /* PTYTestSupport.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PTYTestSupport.c; sourceTree = "<group>"; };
 		B406B94580B141493CBDB020 /* signal_bridge.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = signal_bridge.c; sourceTree = "<group>"; };
@@ -248,6 +255,7 @@
 		DB47AFBCA86B478A6F48BAE6 /* stat.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = stat.c; sourceTree = "<group>"; };
 		DC6020ECDA4585334611FE7D /* backing_io.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = backing_io.h; sourceTree = "<group>"; };
 		E1CD35402A585DF342760586 /* VFSAtContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = VFSAtContract.c; sourceTree = "<group>"; };
+		E2223F1FD9574F6D12DBCBE9 /* FutexContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = FutexContract.c; sourceTree = "<group>"; };
 		E2933EB0E7020B9534704648 /* ProcfsNamespaceContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ProcfsNamespaceContract.c; sourceTree = "<group>"; };
 		E879B79AB28AE5918F99FAE6 /* NamespaceContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = NamespaceContract.c; sourceTree = "<group>"; };
 		F0779DE3F9EA5B8DE837465B /* ExecSyscallTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ExecSyscallTests.m; sourceTree = "<group>"; };
@@ -412,6 +420,8 @@
 				F0779DE3F9EA5B8DE837465B /* ExecSyscallTests.m */,
 				8B16EB2BAE52DD2CC2C1FF77 /* FcntlContract.c */,
 				45D5CBDA9FFBBD3019E7C208 /* FcntlTests.m */,
+				E2223F1FD9574F6D12DBCBE9 /* FutexContract.c */,
+				103229A6A603567EF2426C03 /* FutexContract.h */,
 				459682F08054406508BB6491 /* FutexTests.m */,
 				1A78BCCA6E31095ECC4CD43C /* FutexUAPICompileSmoke.c */,
 				38A6AE564B1CF443D8406232 /* KernelBoot.c */,
@@ -444,6 +454,8 @@
 				4E143FD29F3D04D92D817CAC /* ReadinessContract.h */,
 				3ED2A30FC6E7984CB380A319 /* ReadinessTests.m */,
 				3A7AB548A9E0653A96E8EE61 /* RootfsBootstrapTests.m */,
+				A335F840745D56551FE0A477 /* SignalSyscallContract.c */,
+				9E81C1980944640AFCDE47C1 /* SignalSyscallContract.h */,
 				39D1B661F15441FB32765EC6 /* SignalTests.m */,
 				90A08DB89035D1656587D959 /* TaskExecContract.c */,
 				92672608BC0DCE77AA7B30F0 /* TaskExecTests.m */,
@@ -505,6 +517,7 @@
 				52402BAA17F7390A34354EB6 /* cred.c */,
 				5885A2D3F39790AAC62634D5 /* exit.c */,
 				384371EDE185511D5F125C45 /* fork.c */,
+				A59E29CD8F09AAF0EF88FE25 /* futex.c */,
 				F2D024F0973242458FE50E93 /* init.c */,
 				3B3F41F890EEF93C204A60BE /* mm.c */,
 				4D57509F341C9895C6F7163B /* pid.c */,
@@ -630,6 +643,7 @@
 				9B2810FD1A6C496D805B8873 /* ExecSyscallTests.m in Sources */,
 				14CE14D6D679323F2253A9E3 /* FcntlContract.c in Sources */,
 				14F3242DDCC2EB47EC3949CC /* FcntlTests.m in Sources */,
+				70B890304D2A8DBDB1E37441 /* FutexContract.c in Sources */,
 				59FAAA0B4A3D9EBD3C077FFA /* FutexTests.m in Sources */,
 				9ABA5D0A937A9603B4C52A44 /* FutexUAPICompileSmoke.c in Sources */,
 				DF02A81D41A3C724D2620308 /* KernelBoot.c in Sources */,
@@ -654,6 +668,7 @@
 				9D945D79C38C42CCC6974356 /* ReadinessContract.c in Sources */,
 				0B59B8C18B35C87BE0659D6D /* ReadinessTests.m in Sources */,
 				14DEFC9BDE432750E36BB297 /* RootfsBootstrapTests.m in Sources */,
+				524B1B9E713579CC7A24B6D7 /* SignalSyscallContract.c in Sources */,
 				89EF08DAA55DB8C17CE9F248 /* SignalTests.m in Sources */,
 				1571C17134FD341921B13C74 /* TaskExecContract.c in Sources */,
 				83F06BCA2B801A0D599FC7B2 /* TaskExecTests.m in Sources */,
@@ -685,6 +700,7 @@
 				D9E9A4ADF886F41734FE3DF1 /* fcntl.c in Sources */,
 				BEC5162482C2CB89CBFBAA61 /* fdtable.c in Sources */,
 				9FB855340C8816E1983BB087 /* fork.c in Sources */,
+				85F42D8D8A97A702E05062F0 /* futex.c in Sources */,
 				AEAB38B6EC299D3B7151819C /* init.c in Sources */,
 				D01F8EE6B1FF4C363A19D2AF /* inode.c in Sources */,
 				23F96E17A5FB5F9FF02C47D1 /* ioctl.c in Sources */,

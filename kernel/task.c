@@ -195,36 +195,50 @@ uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr) {
 
 int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64_t size, uint32_t flags) {
     const struct task_vma *found;
-    struct task_vma *vma;
-    uint64_t start_page;
-    uint64_t end_page;
+    uint64_t cursor;
+    uint64_t end;
 
     if (!task || !task->mm || size == 0 || size > UINT64_MAX - addr) {
         errno = EFAULT;
         return -1;
     }
 
-    found = task_find_vma_impl(task, addr);
-    if (!found || addr + size > found->end) {
-        errno = EFAULT;
-        return -1;
+    end = addr + size;
+    cursor = addr;
+    while (cursor < end) {
+        found = task_find_vma_impl(task, cursor);
+        if (!found) {
+            errno = EFAULT;
+            return -1;
+        }
+        cursor = found->end < end ? found->end : end;
     }
 
-    vma = &task->mm->vmas[found - task->mm->vmas];
-    if (!vma->page_flags || vma->page_count == 0) {
-        errno = EFAULT;
-        return -1;
-    }
+    cursor = addr;
+    while (cursor < end) {
+        struct task_vma *vma;
+        uint64_t segment_end;
+        uint64_t start_page;
+        uint64_t end_page;
 
-    start_page = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
-    end_page = ((addr + size - 1) - vma->start) / TASK_VMA_PAGE_SIZE;
-    if (end_page >= vma->page_count) {
-        errno = EFAULT;
-        return -1;
-    }
+        found = task_find_vma_impl(task, cursor);
+        vma = &task->mm->vmas[found - task->mm->vmas];
+        if (!vma->page_flags || vma->page_count == 0) {
+            errno = EFAULT;
+            return -1;
+        }
 
-    for (uint64_t i = start_page; i <= end_page; i++) {
-        vma->page_flags[i] = flags;
+        segment_end = vma->end < end ? vma->end : end;
+        start_page = (cursor - vma->start) / TASK_VMA_PAGE_SIZE;
+        end_page = ((segment_end - 1) - vma->start) / TASK_VMA_PAGE_SIZE;
+        if (end_page >= vma->page_count) {
+            errno = EFAULT;
+            return -1;
+        }
+        for (uint64_t i = start_page; i <= end_page; i++) {
+            vma->page_flags[i] = flags;
+        }
+        cursor = segment_end;
     }
     return 0;
 }

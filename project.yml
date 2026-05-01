@@ -83,6 +83,8 @@ targets:
       group: kernel
     - path: kernel/fork.c
       group: kernel
+    - path: kernel/futex.c
+      group: kernel
     - path: kernel/init.c
       group: kernel
     - path: kernel/mm.c
@@ -205,6 +207,11 @@ targets:
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
+    - path: IXLandSystemLinuxKernelTests/FutexContract.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
+    - IXLandSystemLinuxKernelTests/FutexContract.h
     - path: IXLandSystemLinuxKernelTests/LinuxUAPITestSupport.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
@@ -231,6 +238,11 @@ targets:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
     - IXLandSystemLinuxKernelTests/NativeSyscallContract.h
+    - path: IXLandSystemLinuxKernelTests/SignalSyscallContract.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
+    - IXLandSystemLinuxKernelTests/SignalSyscallContract.h
     - path: IXLandSystemLinuxKernelTests/TaskExecContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)

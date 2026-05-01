@@ -5,6 +5,7 @@
 #include "fs/fdtable.h"
 #include "kernel/init.h"
 #include "IXLandSystemLinuxKernelTests/NativeSyscallContract.h"
+#include "IXLandSystemLinuxKernelTests/SignalSyscallContract.h"
 
 @interface NativeSyscallTests : XCTestCase
 @end
@@ -35,8 +36,16 @@
     XCTAssertEqual(native_syscall_contract_dispatches_vm_identity_time_and_dirs(), 0, @"errno %d", errno);
 }
 
+- (void)testEnforcesVmaFaultPolicy {
+    XCTAssertEqual(native_syscall_contract_enforces_vma_fault_policy(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesProcessStartupSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
+}
+
+- (void)testRtSigactionUsesLinuxUapiLayout {
+    XCTAssertEqual(signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(), 0, @"errno %d", errno);
 }
 
 - (void)testRegistersNativeArtifactDescriptor {

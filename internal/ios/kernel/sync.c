@@ -12,9 +12,9 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -136,14 +136,10 @@ int kernel_cond_timedwait_ms(kernel_cond_t *cond, kernel_mutex_t *mutex, int tim
         return -EINVAL;
     }
 
-    struct timeval now;
-    if (gettimeofday(&now, NULL) != 0) {
-        return errno;
-    }
-
+    uint64_t now_ns = clock_gettime_nsec_np(CLOCK_REALTIME);
     struct timespec deadline;
-    deadline.tv_sec = now.tv_sec + (timeout_ms / 1000);
-    deadline.tv_nsec = ((long)now.tv_usec * 1000L) + ((long)(timeout_ms % 1000) * 1000000L);
+    deadline.tv_sec = (time_t)(now_ns / 1000000000ULL) + (timeout_ms / 1000);
+    deadline.tv_nsec = (long)(now_ns % 1000000000ULL) + ((long)(timeout_ms % 1000) * 1000000L);
     if (deadline.tv_nsec >= 1000000000L) {
         deadline.tv_sec++;
         deadline.tv_nsec -= 1000000000L;

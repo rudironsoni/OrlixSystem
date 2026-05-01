@@ -195,6 +195,157 @@ static int mm_range_overlaps_except(struct mm_struct *mm, uint64_t start, uint64
     return 0;
 }
 
+static int mm_copy_anon_slice(struct task_vma *source, uint64_t start, uint64_t end,
+                              struct task_vma *dest) {
+    uint64_t size;
+    uint64_t page_count;
+    size_t source_offset;
+
+    if (!source || !dest || source->kind != TASK_VMA_ANON || start < source->start ||
+        end > source->end || start >= end) {
+        errno = EINVAL;
+        return -1;
+    }
+    size = end - start;
+    if (size > SIZE_MAX) {
+        errno = ENOMEM;
+        return -1;
+    }
+    page_count = size / TASK_VMA_PAGE_SIZE;
+    if ((size % TASK_VMA_PAGE_SIZE) != 0) {
+        page_count++;
+    }
+    if (page_count == 0 || page_count > SIZE_MAX / sizeof(uint32_t)) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    memset(dest, 0, sizeof(*dest));
+    dest->start = start;
+    dest->end = end;
+    dest->flags = source->flags;
+    dest->kind = source->kind;
+    dest->image_size = (size_t)size;
+    dest->page_count = page_count;
+    dest->image = calloc(1, dest->image_size);
+    if (!dest->image) {
+        errno = ENOMEM;
+        return -1;
+    }
+    dest->page_flags = calloc((size_t)page_count, sizeof(*dest->page_flags));
+    if (!dest->page_flags) {
+        free(dest->image);
+        memset(dest, 0, sizeof(*dest));
+        errno = ENOMEM;
+        return -1;
+    }
+
+    source_offset = (size_t)(start - source->start);
+    memcpy(dest->image, (const unsigned char *)source->image + source_offset, dest->image_size);
+    for (uint64_t i = 0; i < page_count; i++) {
+        dest->page_flags[i] = task_vma_page_flags_impl(source, start + (i * TASK_VMA_PAGE_SIZE));
+    }
+    return 0;
+}
+
+static void mm_free_vma_contents(struct task_vma *vma) {
+    if (!vma) {
+        return;
+    }
+    if (vma->kind == TASK_VMA_ANON) {
+        free(vma->image);
+    }
+    free(vma->page_flags);
+    memset(vma, 0, sizeof(*vma));
+}
+
+static int mm_replace_vma_with_slices(struct mm_struct *mm, uint32_t index,
+                                      const struct task_vma *left,
+                                      const struct task_vma *right) {
+    int has_left = left && left->start < left->end;
+    int has_right = right && right->start < right->end;
+    uint32_t replacement_count = (has_left ? 1U : 0U) + (has_right ? 1U : 0U);
+
+    if (!mm || index >= mm->vma_count) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (mm->vma_count - 1 + replacement_count > TASK_EXEC_MAX_VMAS) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    mm_free_vma_contents(&mm->vmas[index]);
+    if (replacement_count == 0) {
+        for (uint32_t i = index + 1; i < mm->vma_count; i++) {
+            mm->vmas[i - 1] = mm->vmas[i];
+        }
+        mm->vma_count--;
+        memset(&mm->vmas[mm->vma_count], 0, sizeof(mm->vmas[0]));
+        return 0;
+    }
+
+    if (replacement_count == 2) {
+        for (uint32_t i = mm->vma_count; i > index + 1; i--) {
+            mm->vmas[i] = mm->vmas[i - 1];
+        }
+        mm->vma_count++;
+        mm->vmas[index] = *left;
+        mm->vmas[index + 1] = *right;
+        return 0;
+    }
+
+    mm->vmas[index] = has_left ? *left : *right;
+    return 0;
+}
+
+static int mm_unmap_anon_vma_range(struct mm_struct *mm, uint32_t index,
+                                   uint64_t start, uint64_t end) {
+    struct task_vma source;
+    struct task_vma left;
+    struct task_vma right;
+    int has_left;
+    int has_right;
+
+    if (!mm || index >= mm->vma_count || start >= end) {
+        errno = EINVAL;
+        return -1;
+    }
+    source = mm->vmas[index];
+    if (source.kind != TASK_VMA_ANON && !(start <= source.start && end >= source.end)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (source.kind != TASK_VMA_ANON || (start <= source.start && end >= source.end)) {
+        mm_remove_vma_at(mm, index);
+        return 0;
+    }
+
+    memset(&left, 0, sizeof(left));
+    memset(&right, 0, sizeof(right));
+    has_left = start > source.start;
+    has_right = end < source.end;
+    if (has_left && mm_copy_anon_slice(&source, source.start, start, &left) != 0) {
+        return -1;
+    }
+    if (has_right && mm_copy_anon_slice(&source, end, source.end, &right) != 0) {
+        if (has_left) {
+            mm_free_vma_contents(&left);
+        }
+        return -1;
+    }
+    if (mm_replace_vma_with_slices(mm, index, has_left ? &left : NULL, has_right ? &right : NULL) != 0) {
+        if (has_left) {
+            mm_free_vma_contents(&left);
+        }
+        if (has_right) {
+            mm_free_vma_contents(&right);
+        }
+        return -1;
+    }
+    return 0;
+}
+
 void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t offset) {
     struct task_struct *task = get_current();
     uint64_t map_len;
@@ -289,6 +440,7 @@ int munmap_impl(void *addr, size_t len) {
     uint64_t start = (uint64_t)(uintptr_t)addr;
     uint64_t size;
     uint64_t end;
+    int unmapped = 0;
 
     if (!task || !task->mm) {
         errno = EFAULT;
@@ -304,12 +456,28 @@ int munmap_impl(void *addr, size_t len) {
         return -1;
     }
     end = start + size;
-    for (uint32_t i = 0; i < task->mm->vma_count; i++) {
+    for (uint32_t i = 0; i < task->mm->vma_count;) {
         struct task_vma *vma = &task->mm->vmas[i];
-        if (vma->start == start && vma->end == end) {
-            mm_remove_vma_at(task->mm, i);
-            return 0;
+        uint64_t overlap_start;
+        uint64_t overlap_end;
+
+        if (end <= vma->start || start >= vma->end) {
+            i++;
+            continue;
         }
+        overlap_start = start > vma->start ? start : vma->start;
+        overlap_end = end < vma->end ? end : vma->end;
+        if (overlap_start < overlap_end) {
+            if (mm_unmap_anon_vma_range(task->mm, i, overlap_start, overlap_end) != 0) {
+                return -1;
+            }
+            unmapped = 1;
+            continue;
+        }
+        i++;
+    }
+    if (unmapped) {
+        return 0;
     }
     errno = EINVAL;
     return -1;

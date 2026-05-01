@@ -1,6 +1,160 @@
 #include "syscall.h"
 
 #include <asm/unistd.h>
+#define sigaction syscall_sigaction_frame
+#define sigset_t syscall_sigset_frame
+#define stack_t syscall_sigaltstack_frame
+#include <asm/signal.h>
+#undef sigaction
+#undef sigset_t
+#undef stack_t
+#ifdef SIGHUP
+#undef SIGHUP
+#endif
+#ifdef SIGINT
+#undef SIGINT
+#endif
+#ifdef SIGQUIT
+#undef SIGQUIT
+#endif
+#ifdef SIGILL
+#undef SIGILL
+#endif
+#ifdef SIGTRAP
+#undef SIGTRAP
+#endif
+#ifdef SIGABRT
+#undef SIGABRT
+#endif
+#ifdef SIGIOT
+#undef SIGIOT
+#endif
+#ifdef SIGBUS
+#undef SIGBUS
+#endif
+#ifdef SIGFPE
+#undef SIGFPE
+#endif
+#ifdef SIGKILL
+#undef SIGKILL
+#endif
+#ifdef SIGUSR1
+#undef SIGUSR1
+#endif
+#ifdef SIGSEGV
+#undef SIGSEGV
+#endif
+#ifdef SIGUSR2
+#undef SIGUSR2
+#endif
+#ifdef SIGPIPE
+#undef SIGPIPE
+#endif
+#ifdef SIGALRM
+#undef SIGALRM
+#endif
+#ifdef SIGTERM
+#undef SIGTERM
+#endif
+#ifdef SIGCHLD
+#undef SIGCHLD
+#endif
+#ifdef SIGCONT
+#undef SIGCONT
+#endif
+#ifdef SIGSTOP
+#undef SIGSTOP
+#endif
+#ifdef SIGTSTP
+#undef SIGTSTP
+#endif
+#ifdef SIGTTIN
+#undef SIGTTIN
+#endif
+#ifdef SIGTTOU
+#undef SIGTTOU
+#endif
+#ifdef SIGURG
+#undef SIGURG
+#endif
+#ifdef SIGXCPU
+#undef SIGXCPU
+#endif
+#ifdef SIGXFSZ
+#undef SIGXFSZ
+#endif
+#ifdef SIGVTALRM
+#undef SIGVTALRM
+#endif
+#ifdef SIGPROF
+#undef SIGPROF
+#endif
+#ifdef SIGWINCH
+#undef SIGWINCH
+#endif
+#ifdef SIGIO
+#undef SIGIO
+#endif
+#ifdef SIGPOLL
+#undef SIGPOLL
+#endif
+#ifdef SIGPWR
+#undef SIGPWR
+#endif
+#ifdef SIGSYS
+#undef SIGSYS
+#endif
+#ifdef SIGUNUSED
+#undef SIGUNUSED
+#endif
+#ifdef SIG_BLOCK
+#undef SIG_BLOCK
+#endif
+#ifdef SIG_UNBLOCK
+#undef SIG_UNBLOCK
+#endif
+#ifdef SIG_SETMASK
+#undef SIG_SETMASK
+#endif
+#ifdef SIG_DFL
+#undef SIG_DFL
+#endif
+#ifdef SIG_IGN
+#undef SIG_IGN
+#endif
+#ifdef SIG_ERR
+#undef SIG_ERR
+#endif
+#ifdef SA_NOCLDSTOP
+#undef SA_NOCLDSTOP
+#endif
+#ifdef SA_NOCLDWAIT
+#undef SA_NOCLDWAIT
+#endif
+#ifdef SA_SIGINFO
+#undef SA_SIGINFO
+#endif
+#ifdef SA_ONSTACK
+#undef SA_ONSTACK
+#endif
+#ifdef SA_RESTART
+#undef SA_RESTART
+#endif
+#ifdef SA_NODEFER
+#undef SA_NODEFER
+#endif
+#ifdef SA_RESETHAND
+#undef SA_RESETHAND
+#endif
+#ifdef SA_NOMASK
+#undef SA_NOMASK
+#endif
+#ifdef SA_ONESHOT
+#undef SA_ONESHOT
+#endif
+#ifdef SA_RESTORER
+#undef SA_RESTORER
+#endif
 #include <linux/fcntl.h>
 #include <linux/futex.h>
 #include <linux/mman.h>
@@ -17,6 +171,7 @@
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
+#include "../kernel/futex.h"
 #include "../kernel/mm.h"
 #include "../kernel/signal.h"
 #include "../kernel/task.h"
@@ -83,6 +238,28 @@ static long syscall_prlimit64(int32_t pid, int resource, const uint64_t *new_lim
         task->rlimits[resource].max = new_limit[1];
     }
     return 0;
+}
+
+static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *linux_act,
+                                         struct signal_action_slot *act) {
+    memset(act, 0, sizeof(*act));
+    if (!linux_act) {
+        return;
+    }
+    act->handler = (sighandler_t)linux_act->sa_handler;
+    act->flags = (int32_t)linux_act->sa_flags;
+    act->mask.sig[0] = linux_act->sa_mask.sig[0];
+}
+
+static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
+                                       struct syscall_sigaction_frame *linux_act) {
+    memset(linux_act, 0, sizeof(*linux_act));
+    if (!act) {
+        return;
+    }
+    linux_act->sa_handler = (__sighandler_t)act->handler;
+    linux_act->sa_flags = (unsigned long)act->flags;
+    linux_act->sa_mask.sig[0] = act->mask.sig[0];
 }
 
 static long syscall_result(long ret) {
@@ -153,14 +330,21 @@ long syscall_dispatch_impl(long number,
     }
     case __NR_futex: {
         int op = (int)arg1 & FUTEX_CMD_MASK;
+        int timeout_ms = -1;
         if (!arg0) {
             return -EFAULT;
         }
-        if (op == FUTEX_WAKE) {
-            return 0;
+        if (op == FUTEX_WAIT && arg3) {
+            timeout_ms = ppoll_timeout_ms((const struct __kernel_timespec *)(uintptr_t)arg3);
+            if (timeout_ms == -2) {
+                return -(long)errno;
+            }
         }
         if (op == FUTEX_WAIT) {
-            return -EAGAIN;
+            return syscall_result((long)futex_wait_impl((int *)(uintptr_t)arg0, (int)arg2, timeout_ms));
+        }
+        if (op == FUTEX_WAKE) {
+            return syscall_result((long)futex_wake_impl((int *)(uintptr_t)arg0, (int)arg2));
         }
         return -ENOSYS;
     }
@@ -174,7 +358,7 @@ long syscall_dispatch_impl(long number,
             return -EINVAL;
         }
         if (arg1) {
-            memcpy(&act, (const void *)(uintptr_t)arg1, sizeof(act));
+            syscall_sigaction_from_linux((const struct syscall_sigaction_frame *)(uintptr_t)arg1, &act);
             act_ptr = &act;
         }
         if (arg2) {
@@ -184,7 +368,7 @@ long syscall_dispatch_impl(long number,
             return -(long)errno;
         }
         if (arg2) {
-            memcpy((void *)(uintptr_t)arg2, &oldact, sizeof(oldact));
+            syscall_sigaction_to_linux(&oldact, (struct syscall_sigaction_frame *)(uintptr_t)arg2);
         }
         return 0;
     }

@@ -9,9 +9,14 @@
  * Note: futex is Linux-specific; unsupported operations currently reject with ENOSYS
  */
 
-#include <errno.h>
+#include "futex.h"
 
-#include "../internal/ios/kernel/sync.h"
+#include <errno.h>
+#include <limits.h>
+#include <stdint.h>
+#include <time.h>
+
+#include <linux/futex.h>
 
 /* ============================================================================
  * FUTEX - Fast Userspace muTEX
@@ -19,23 +24,39 @@
 
 /* ABI truth comes from vendored Linux UAPI: <linux/futex.h> */
 
-static int futex_impl(int *uaddr, int futex_op, int val, const struct timespec *timeout,
-int *uaddr2, int val3) {
-(void)uaddr;
-(void)futex_op;
-(void)val;
-(void)timeout;
-(void)uaddr2;
-(void)val3;
+static int futex_timeout_ms(const struct timespec *timeout) {
+    int64_t ms;
 
-/* Unsupported on current iOS substrate: Linux-facing rejection stays here */
-errno = ENOSYS;
-return -1;
+    if (!timeout) {
+        return -1;
+    }
+    if (timeout->tv_sec < 0 || timeout->tv_nsec < 0 || timeout->tv_nsec >= 1000000000L) {
+        errno = EINVAL;
+        return -2;
+    }
+    if (timeout->tv_sec > (INT64_MAX / 1000)) {
+        return INT_MAX;
+    }
+    ms = (int64_t)timeout->tv_sec * 1000;
+    ms += (timeout->tv_nsec + 999999L) / 1000000L;
+    if (ms > INT_MAX) {
+        return INT_MAX;
+    }
+    return (int)ms;
 }
 
 __attribute__((visibility("default"))) int futex(int *uaddr, int futex_op, int val,
 const struct timespec *timeout, int *uaddr2, int val3) {
-return futex_impl(uaddr, futex_op, val, timeout, uaddr2, val3);
+int timeout_ms;
+
+(void)uaddr2;
+(void)val3;
+
+timeout_ms = futex_timeout_ms(timeout);
+if (timeout_ms == -2) {
+return -1;
+}
+return futex_op_impl(uaddr, futex_op, val, timeout_ms);
 }
 
 /*

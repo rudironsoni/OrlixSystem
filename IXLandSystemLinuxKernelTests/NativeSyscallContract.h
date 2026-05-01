@@ -7,6 +7,7 @@ extern "C" {
 
 int native_syscall_contract_dispatches_fd_pipe_and_procfs(void);
 int native_syscall_contract_dispatches_vm_identity_time_and_dirs(void);
+int native_syscall_contract_enforces_vma_fault_policy(void);
 int native_syscall_contract_dispatches_process_startup_syscalls(void);
 int native_syscall_contract_registers_native_artifact_descriptor(void);
 int native_syscall_contract_execs_sbin_init_through_syscall_surface(void);

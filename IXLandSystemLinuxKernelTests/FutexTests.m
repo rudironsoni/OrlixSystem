@@ -1,12 +1,9 @@
 #import <XCTest/XCTest.h>
 
 #include <errno.h>
-#include <time.h>
 
-/* Futex operation constants - sourced from Linux UAPI through FutexUAPICompileSmoke.c */
-/* FUTEX_WAIT = 0, FUTEX_WAKE = 1 per linux/futex.h */
-extern int futex(int *uaddr, int futex_op, int val,
-                 const struct timespec *timeout, int *uaddr2, int val3);
+#include "FutexContract.h"
+
 extern int library_init(const void *config);
 extern int library_is_initialized(void);
 
@@ -22,27 +19,20 @@ extern int library_is_initialized(void);
     }
 }
 
-- (void)testFutexWaitReturnsEnosys {
-    int word = 0;
-    struct timespec timeout = {0, 0};
-
-    errno = 0;
-    /* FUTEX_WAIT = 0 per Linux UAPI */
-    int rc = futex(&word, 0, 0, &timeout, NULL, 0);
-
-    XCTAssertEqual(rc, -1, @"futex FUTEX_WAIT should currently reject with -1");
-    XCTAssertEqual(errno, ENOSYS, @"futex FUTEX_WAIT should set errno to ENOSYS");
+- (void)testFutexWaitMismatchReturnsAgain {
+    XCTAssertEqual(futex_contract_wait_mismatch_returns_again(), 0, @"errno %d", errno);
 }
 
-- (void)testFutexWakeReturnsEnosys {
-    int word = 0;
+- (void)testFutexWakeWithoutWaitersReturnsZero {
+    XCTAssertEqual(futex_contract_wake_without_waiters_returns_zero(), 0, @"errno %d", errno);
+}
 
-    errno = 0;
-    /* FUTEX_WAKE = 1 per Linux UAPI */
-    int rc = futex(&word, 1, 1, NULL, NULL, 0);
+- (void)testFutexWaitTimeoutReturnsTimedout {
+    XCTAssertEqual(futex_contract_wait_timeout_returns_timedout(), 0, @"errno %d", errno);
+}
 
-    XCTAssertEqual(rc, -1, @"futex FUTEX_WAKE should currently reject with -1");
-    XCTAssertEqual(errno, ENOSYS, @"futex FUTEX_WAKE should set errno to ENOSYS");
+- (void)testFutexWakeReleasesWaiter {
+    XCTAssertEqual(futex_contract_wake_releases_waiter(), 0, @"errno %d", errno);
 }
 
 @end

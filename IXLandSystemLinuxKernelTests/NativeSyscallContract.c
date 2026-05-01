@@ -44,7 +44,6 @@
 
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
-#include "kernel/signal.h"
 #include "kernel/task.h"
 #include "runtime/native/registry.h"
 #include "runtime/syscall.h"
@@ -347,12 +346,107 @@ out_mmap:
     return result;
 }
 
+int native_syscall_contract_enforces_vma_fault_policy(void) {
+    struct task_struct *task = get_current();
+    void *mapped;
+    void *first;
+    void *second;
+    uint64_t base;
+    char byte = 0;
+    char pages[8192];
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_mmap, 0, 12288, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)ret;
+    base = (uint64_t)(uintptr_t)mapped;
+    memset(pages, 'A', sizeof(pages));
+    if (task_write_virtual_memory_impl(task, base, pages, 8192) != 8192 ||
+        task_write_virtual_memory_impl(task, base + 8192, "Z", 1) != 1) {
+        errno = EPROTO;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)(base + 4096), 4096,
+                                PROT_NONE, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mapped;
+    }
+    if (task_read_virtual_memory_impl(task, base + 4096, &byte, 1) >= 0 || errno != EACCES) {
+        errno = EACCES;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(base + 4096), 4096, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mapped;
+    }
+    if (task_read_virtual_memory_impl(task, base, &byte, 1) != 1 ||
+        task_read_virtual_memory_impl(task, base + 8192, &byte, 1) != 1 ||
+        task_read_virtual_memory_impl(task, base + 4096, &byte, 1) >= 0 || errno != EFAULT) {
+        errno = ENOMSG;
+        goto out_mapped;
+    }
+    if (task_write_virtual_memory_impl(task, base, pages, 4097) != 4096) {
+        errno = ENODATA;
+        goto out_mapped;
+    }
+
+    ret = syscall_dispatch_impl(__NR_mmap, 0, 4096, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        goto out_mapped;
+    }
+    first = (void *)(uintptr_t)ret;
+    ret = syscall_dispatch_impl(__NR_mmap, (long)((uintptr_t)first + 4096), 4096,
+                                PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+                                -1, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)first, 4096, 0, 0, 0, 0);
+        goto out_mapped;
+    }
+    second = (void *)(uintptr_t)ret;
+    if ((uintptr_t)second != (uintptr_t)first + 4096) {
+        errno = ERANGE;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)first, 4096, 0, 0, 0, 0);
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)second, 4096, 0, 0, 0, 0);
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)first, 8192, PROT_READ, 0, 0, 0);
+    if (ret != 0 ||
+        task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)second, "Q", 1) >= 0 || errno != EACCES) {
+        errno = EOWNERDEAD;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)first, 4096, 0, 0, 0, 0);
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)second, 4096, 0, 0, 0, 0);
+        goto out_mapped;
+    }
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)first, 4096, 0, 0, 0, 0);
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)second, 4096, 0, 0, 0, 0);
+    result = 0;
+
+out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(base + 8192), 4096, 0, 0, 0, 0);
+    return result;
+}
+
 int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     struct task_struct *task = get_current();
     uint64_t block_set = 1ULL << (2 - 1);
     uint64_t old_set = 0;
-    struct signal_action_slot action;
-    struct signal_action_slot old_action;
     uint64_t old_limit[2];
     uint64_t new_limit[2];
     int tid_word = 0;
@@ -393,16 +487,6 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     ret = syscall_dispatch_impl(__NR_set_tid_address, (long)(uintptr_t)&tid_word, 0, 0, 0, 0, 0);
     if (ret != task->pid || !task->mm || task->mm->clear_child_tid != (uint64_t)(uintptr_t)&tid_word) {
         errno = ESRCH;
-        return -1;
-    }
-
-    memset(&action, 0, sizeof(action));
-    memset(&old_action, 0, sizeof(old_action));
-    action.handler = (sighandler_t)1;
-    ret = syscall_dispatch_impl(__NR_rt_sigaction, 2, (long)(uintptr_t)&action,
-                                (long)(uintptr_t)&old_action, sizeof(uint64_t), 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : ENOEXEC;
         return -1;
     }
 
