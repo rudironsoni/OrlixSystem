@@ -48,6 +48,7 @@ extern void cred_reset_to_defaults(void);
     for (int fd = 3; fd < 256; fd++) {
         close_impl(fd);
     }
+    cred_reset_to_defaults();
     [super tearDown];
 }
 

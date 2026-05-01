@@ -28,6 +28,8 @@
 #define makedev(major, minor) ((((major) & 0xfff) << 8) | ((minor) & 0xff))
 #endif
 
+#define VFS_SYMLINK_MAX 40
+
 static const char *vfs_virtual_root_path = "/";
 
 static int vfs_ensure_backing_initialized(void);
@@ -1467,6 +1469,215 @@ static int vfs_join_virtual_path(const char *base_path, const char *suffix, char
     return 0;
 }
 
+static int vfs_lstat_resolved_virtual_path(const char *resolved_vpath, struct linux_stat *st) {
+    char mounted_path[MAX_PATH];
+    char translated_path[MAX_PATH];
+    int ret;
+
+    if (!resolved_vpath || !st) {
+        return -EINVAL;
+    }
+
+    if (vfs_path_is_synthetic(resolved_vpath)) {
+        return -ENOENT;
+    }
+
+    ret = vfs_apply_mounts(resolved_vpath, mounted_path, sizeof(mounted_path));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_join_host_root(mounted_path, translated_path, sizeof(translated_path));
+    if (ret != 0) {
+        return ret;
+    }
+
+    return vfs_lstat(translated_path, st);
+}
+
+static int vfs_readlink_resolved_virtual_path(const char *resolved_vpath, char *target,
+                                              size_t target_len) {
+    char mounted_path[MAX_PATH];
+    char translated_path[MAX_PATH];
+    ssize_t len;
+    int ret;
+
+    if (!resolved_vpath || !target || target_len == 0) {
+        return -EINVAL;
+    }
+
+    if (vfs_path_is_synthetic(resolved_vpath)) {
+        return -ENOENT;
+    }
+
+    ret = vfs_apply_mounts(resolved_vpath, mounted_path, sizeof(mounted_path));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_join_host_root(mounted_path, translated_path, sizeof(translated_path));
+    if (ret != 0) {
+        return ret;
+    }
+
+    len = host_readlink_impl(translated_path, target, target_len - 1);
+    if (len < 0) {
+        return -errno;
+    }
+    target[len] = '\0';
+    return 0;
+}
+
+static bool vfs_path_is_route_prefix(const char *vpath) {
+    size_t vpath_len;
+
+    if (!vpath) {
+        return false;
+    }
+
+    if (vfs_path_is_linux_route(vpath)) {
+        return true;
+    }
+
+    vpath_len = strlen(vpath);
+    for (size_t i = 0; i < vfs_route_table_count; i++) {
+        const char *prefix = vfs_route_table[i].linux_prefix;
+        if (strncmp(prefix, vpath, vpath_len) == 0 && prefix[vpath_len] == '/') {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static int vfs_replace_symlink_path(const char *current_path, size_t component_end,
+                                    const char *target, const char *root_path,
+                                    char *resolved_path, size_t resolved_path_len) {
+    char parent[MAX_PATH];
+    char replacement[MAX_PATH];
+    char joined[MAX_PATH];
+    const char *suffix = current_path[component_end] == '/' ? current_path + component_end + 1 : NULL;
+    int ret;
+
+    if (!current_path || !target || !root_path || !resolved_path || resolved_path_len == 0) {
+        return -EINVAL;
+    }
+
+    if (target[0] == '/') {
+        ret = vfs_join_virtual_path(root_path, target, replacement, sizeof(replacement));
+    } else {
+        size_t component_len = component_end;
+        if (component_len >= sizeof(parent)) {
+            return -ENAMETOOLONG;
+        }
+        memcpy(parent, current_path, component_len);
+        parent[component_len] = '\0';
+        ret = vfs_parent_path(parent, parent, sizeof(parent));
+        if (ret != 0) {
+            return ret;
+        }
+        ret = vfs_join_virtual_path(parent, target, replacement, sizeof(replacement));
+    }
+    if (ret != 0) {
+        return ret;
+    }
+
+    if (suffix && suffix[0] != '\0') {
+        ret = vfs_join_virtual_path(replacement, suffix, joined, sizeof(joined));
+        if (ret != 0) {
+            return ret;
+        }
+        return vfs_normalize_linux_path(joined, resolved_path, resolved_path_len);
+    }
+
+    return vfs_normalize_linux_path(replacement, resolved_path, resolved_path_len);
+}
+
+static int vfs_resolve_symlink_path(const char *normalized_path, const char *root_path,
+                                    int follow_final_symlink, char *resolved_vpath,
+                                    size_t resolved_vpath_len) {
+    char work_path[MAX_PATH];
+    unsigned int symlink_count = 0;
+    int ret;
+
+    ret = vfs_copy_string(normalized_path, work_path, sizeof(work_path));
+    if (ret != 0) {
+        return ret;
+    }
+
+    for (;;) {
+        size_t offset = 1;
+        bool restarted = false;
+
+        if (strcmp(work_path, "/") == 0) {
+            return vfs_copy_string(work_path, resolved_vpath, resolved_vpath_len);
+        }
+
+        while (work_path[offset] != '\0') {
+            char component_path[MAX_PATH];
+            char target[MAX_PATH];
+            struct linux_stat st;
+            size_t component_end = offset;
+            bool is_final;
+
+            while (work_path[component_end] != '\0' && work_path[component_end] != '/') {
+                component_end++;
+            }
+            is_final = work_path[component_end] == '\0';
+            if (component_end >= sizeof(component_path)) {
+                return -ENAMETOOLONG;
+            }
+
+            memcpy(component_path, work_path, component_end);
+            component_path[component_end] = '\0';
+
+            if (vfs_path_is_synthetic(component_path)) {
+                return vfs_copy_string(work_path, resolved_vpath, resolved_vpath_len);
+            }
+
+            ret = vfs_lstat_resolved_virtual_path(component_path, &st);
+            if (ret == -ENOENT) {
+                if (!is_final && vfs_path_is_route_prefix(component_path)) {
+                    offset = component_end + 1;
+                    continue;
+                }
+                if (is_final) {
+                    return vfs_copy_string(work_path, resolved_vpath, resolved_vpath_len);
+                }
+                return -ENOENT;
+            }
+            if (ret != 0) {
+                return ret;
+            }
+
+            if (S_ISLNK(st.st_mode) && (!is_final || follow_final_symlink)) {
+                if (++symlink_count > VFS_SYMLINK_MAX) {
+                    return -ELOOP;
+                }
+
+                ret = vfs_readlink_resolved_virtual_path(component_path, target, sizeof(target));
+                if (ret != 0) {
+                    return ret;
+                }
+                ret = vfs_replace_symlink_path(work_path, component_end, target, root_path,
+                                               work_path, sizeof(work_path));
+                if (ret != 0) {
+                    return ret;
+                }
+                restarted = true;
+                break;
+            }
+
+            if (is_final) {
+                return vfs_copy_string(work_path, resolved_vpath, resolved_vpath_len);
+            }
+            offset = component_end + 1;
+        }
+
+        if (!restarted) {
+            return vfs_copy_string(work_path, resolved_vpath, resolved_vpath_len);
+        }
+    }
+}
+
 int vfs_resolve_virtual_path_task(const char *vpath, char *resolved_vpath, size_t resolved_vpath_len,
                                   struct fs_struct *fs) {
     char work_buffer[MAX_PATH];
@@ -1491,6 +1702,27 @@ int vfs_resolve_virtual_path_task(const char *vpath, char *resolved_vpath, size_
     }
 
     return vfs_normalize_linux_path(work_buffer, resolved_vpath, resolved_vpath_len);
+}
+
+int vfs_resolve_virtual_path_task_follow(const char *vpath, char *resolved_vpath,
+                                         size_t resolved_vpath_len, struct fs_struct *fs,
+                                         int follow_final_symlink) {
+    char normalized_path[MAX_PATH];
+    const char *root_path;
+    int ret;
+
+    if (!vpath || !resolved_vpath || resolved_vpath_len == 0) {
+        return -EINVAL;
+    }
+
+    root_path = (fs && fs->root_path[0] != '\0') ? fs->root_path : vfs_virtual_root_path;
+    ret = vfs_resolve_virtual_path_task(vpath, normalized_path, sizeof(normalized_path), fs);
+    if (ret != 0) {
+        return ret;
+    }
+
+    return vfs_resolve_symlink_path(normalized_path, root_path, follow_final_symlink,
+                                    resolved_vpath, resolved_vpath_len);
 }
 
 int vfs_getcwd_path_task(struct fs_struct *fs, char *vpath, size_t vpath_len) {
@@ -1564,6 +1796,33 @@ int vfs_resolve_virtual_path_at(int dirfd, const char *vpath, char *resolved_vpa
     }
 
     return vfs_normalize_linux_path(joined_virtual_path, resolved_vpath, resolved_vpath_len);
+}
+
+int vfs_resolve_virtual_path_at_follow(int dirfd, const char *vpath, char *resolved_vpath,
+                                       size_t resolved_vpath_len, int follow_final_symlink) {
+    struct task_struct *task;
+    struct fs_struct *fs = NULL;
+    char normalized_path[MAX_PATH];
+    const char *root_path;
+    int ret;
+
+    if (!vpath || !resolved_vpath || resolved_vpath_len == 0) {
+        return -EINVAL;
+    }
+
+    task = get_current();
+    if (task) {
+        fs = task->fs;
+    }
+    root_path = (fs && fs->root_path[0] != '\0') ? fs->root_path : vfs_virtual_root_path;
+
+    ret = vfs_resolve_virtual_path_at(dirfd, vpath, normalized_path, sizeof(normalized_path));
+    if (ret != 0) {
+        return ret;
+    }
+
+    return vfs_resolve_symlink_path(normalized_path, root_path, follow_final_symlink,
+                                    resolved_vpath, resolved_vpath_len);
 }
 
 int vfs_translate_path_task(const char *vpath, char *host_path, size_t host_path_len,
@@ -2432,7 +2691,8 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
 
     follow_symlink = !(flags & AT_SYMLINK_NOFOLLOW);
 
-    ret = vfs_resolve_virtual_path_at(dirfd, pathname, resolved_virtual, sizeof(resolved_virtual));
+    ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_virtual,
+                                             sizeof(resolved_virtual), follow_symlink);
     if (ret != 0) {
         return ret;
     }
@@ -2458,6 +2718,20 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
         statbuf->st_size = 0;
         statbuf->st_blksize = 4096;
         statbuf->st_blocks = 0;
+        return 0;
+    }
+
+    if (strcmp(resolved_virtual, "/tmp") == 0 || strcmp(resolved_virtual, "/var/tmp") == 0 ||
+        strcmp(resolved_virtual, "/run") == 0 || strcmp(resolved_virtual, "/var/cache") == 0) {
+        memset(statbuf, 0, sizeof(*statbuf));
+        statbuf->st_mode = S_IFDIR | 0777;
+        statbuf->st_nlink = 2;
+        statbuf->st_uid = 0;
+        statbuf->st_gid = 0;
+        statbuf->st_size = 0;
+        statbuf->st_blksize = 4096;
+        statbuf->st_blocks = 0;
+        vfs_apply_stat_metadata(resolved_virtual, statbuf);
         return 0;
     }
 

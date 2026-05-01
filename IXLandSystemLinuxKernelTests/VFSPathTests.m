@@ -537,6 +537,24 @@ extern void cred_reset_to_defaults(void);
                    @"open without O_NOFOLLOW should follow relative symlink to file, errno %d", errno);
 }
 
+- (void)testOpenFollowsAbsoluteSymlinkAsVirtualPath {
+    extern int vfs_contract_open_follows_absolute_symlink_as_virtual_path(void);
+    XCTAssertEqual(vfs_contract_open_follows_absolute_symlink_as_virtual_path(), 0,
+                   @"open should interpret absolute symlink targets through the virtual root, errno %d", errno);
+}
+
+- (void)testOpenResolvesIntermediateSymlinkDirectory {
+    extern int vfs_contract_open_resolves_intermediate_symlink_directory(void);
+    XCTAssertEqual(vfs_contract_open_resolves_intermediate_symlink_directory(), 0,
+                   @"open should resolve intermediate symlink directories in the virtual path walk, errno %d", errno);
+}
+
+- (void)testOpenSymlinkLoopReturnsEloop {
+    extern int vfs_contract_open_symlink_loop_returns_eloop(void);
+    XCTAssertEqual(vfs_contract_open_symlink_loop_returns_eloop(), 0,
+                   @"open should reject symlink loops with ELOOP, errno %d", errno);
+}
+
 - (void)testVfsFstatatRejectsInvalidFlags {
     struct linux_stat st;
     int ret = vfs_fstatat(AT_FDCWD, "/etc/passwd", &st, INVALID_FLAG_TEST_VALUE);

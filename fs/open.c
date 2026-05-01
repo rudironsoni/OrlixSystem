@@ -97,7 +97,8 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_task(pathname, resolved_path, sizeof(resolved_path), NULL);
+    ret = vfs_resolve_virtual_path_task_follow(pathname, resolved_path, sizeof(resolved_path),
+                                               NULL, (flags & O_NOFOLLOW) == 0);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -261,7 +262,8 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_at(dirfd, pathname, resolved_path, sizeof(resolved_path));
+    ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_path, sizeof(resolved_path),
+                                             (flags & O_NOFOLLOW) == 0);
     if (ret != 0) {
         errno = -ret;
         return -1;
