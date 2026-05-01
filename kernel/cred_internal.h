@@ -43,6 +43,7 @@ struct cred {
     gid_t *groups;          /* Supplementary group IDs */
     size_t group_count;     /* Number of supplementary groups */
     bool no_new_privs;      /* Blocks exec-time privilege gains */
+    uint32_t securebits;
     uint64_t cap_permitted;
     uint64_t cap_effective;
     uint64_t cap_inheritable;

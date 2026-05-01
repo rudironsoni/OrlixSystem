@@ -18,6 +18,7 @@
 #include <linux/limits.h>
 #include <linux/capability.h>
 #include <linux/prctl.h>
+#include <linux/securebits.h>
 #include <linux/stat.h>
 
 #include "cred_internal.h"
@@ -71,6 +72,27 @@ static void cred_drop_privilege_caps(struct cred *cred) {
     cred->cap_ambient = 0;
 }
 
+static bool cred_keepcaps(const struct cred *cred) {
+    return cred && (cred->securebits & SECBIT_KEEP_CAPS) != 0;
+}
+
+static void cred_apply_uid_cap_fixup(struct cred *cred) {
+    if (!cred) {
+        return;
+    }
+    if ((cred->securebits & SECBIT_NO_SETUID_FIXUP) != 0) {
+        return;
+    }
+    if (cred->euid == 0) {
+        cred_reset_caps_for_root(cred);
+    } else if (cred_keepcaps(cred)) {
+        cred->cap_effective = 0;
+        cred->cap_ambient = 0;
+    } else {
+        cred_drop_privilege_caps(cred);
+    }
+}
+
 /* Global virtual credential state for init/standalone tasks */
 static struct cred global_init_cred = {
     .uid = KERNEL_DEFAULT_UID,
@@ -82,6 +104,7 @@ static struct cred global_init_cred = {
     .groups = NULL,
     .group_count = 0,
     .no_new_privs = false,
+    .securebits = SECUREBITS_DEFAULT,
     .cap_permitted = 0,
     .cap_effective = 0,
     .cap_inheritable = 0,
@@ -135,6 +158,7 @@ struct cred *dup_cred(const struct cred *cred) {
             new->group_count = cred->group_count;
         }
         new->no_new_privs = cred->no_new_privs;
+        new->securebits = cred->securebits;
         new->cap_permitted = cred->cap_permitted;
         new->cap_effective = cred->cap_effective;
         new->cap_inheritable = cred->cap_inheritable;
@@ -158,6 +182,7 @@ void cred_init_defaults(struct cred *cred) {
     cred->groups = NULL;
     cred->group_count = 0;
     cred->no_new_privs = false;
+    cred->securebits = SECUREBITS_DEFAULT;
     cred_reset_caps_for_root(cred);
 }
 
@@ -187,6 +212,7 @@ void cred_reset_to_defaults(void) {
     global_init_cred.groups = NULL;
     global_init_cred.group_count = 0;
     global_init_cred.no_new_privs = false;
+    global_init_cred.securebits = SECUREBITS_DEFAULT;
     cred_reset_caps_for_root(&global_init_cred);
     global_init_cred.refs = 1;
     
@@ -261,25 +287,23 @@ static int check_setgid_perm(struct cred *cred, uint32_t gid) {
 }
 
 int cred_setuid(struct cred *cred, uint32_t uid) {
+    bool privileged;
+
     if (!cred) {
         return -EINVAL;
     }
 
+    privileged = cred_has_cap(cred, CAP_SETUID);
     int ret = check_setuid_perm(cred, uid);
     if (ret < 0) {
         return ret;
     }
 
-    if (cred->euid == 0) {
-        /* Root: setuid sets real, effective, and saved */
+    if (privileged) {
         cred->suid = uid;
         cred->uid = uid;
         cred->euid = uid;
-        if (uid != 0) {
-            cred_drop_privilege_caps(cred);
-        } else {
-            cred_reset_caps_for_root(cred);
-        }
+        cred_apply_uid_cap_fixup(cred);
     } else if (uid == cred->uid) {
         /* Setting to real UID: revert effective to real */
         cred->euid = uid;
@@ -296,17 +320,19 @@ int cred_setuid(struct cred *cred, uint32_t uid) {
 }
 
 int cred_setgid(struct cred *cred, uint32_t gid) {
+    bool privileged;
+
     if (!cred) {
         return -EINVAL;
     }
 
+    privileged = cred_has_cap(cred, CAP_SETGID);
     int ret = check_setgid_perm(cred, gid);
     if (ret < 0) {
         return ret;
     }
 
-    if (cred->egid == 0) {
-        /* Root: setgid sets real, effective, and saved */
+    if (privileged) {
         cred->sgid = gid;
         cred->gid = gid;
         cred->egid = gid;
@@ -338,11 +364,7 @@ int cred_seteuid(struct cred *cred, uint32_t euid) {
     }
 
     cred->euid = euid;
-    if (euid != 0) {
-        cred_drop_privilege_caps(cred);
-    } else {
-        cred_reset_caps_for_root(cred);
-    }
+    cred_apply_uid_cap_fixup(cred);
     return 0;
 }
 
@@ -386,11 +408,7 @@ int cred_setreuid(struct cred *cred, uint32_t ruid, uint32_t euid) {
         }
         cred->euid = euid;
     }
-    if (cred->euid != 0) {
-        cred_drop_privilege_caps(cred);
-    } else {
-        cred_reset_caps_for_root(cred);
-    }
+    cred_apply_uid_cap_fixup(cred);
 
     return 0;
 }
@@ -453,11 +471,7 @@ int cred_setresuid(struct cred *cred, uint32_t ruid, uint32_t euid, uint32_t sui
     if (suid != (uint32_t)-1) {
         cred->suid = suid;
     }
-    if (cred->euid != 0) {
-        cred_drop_privilege_caps(cred);
-    } else {
-        cred_reset_caps_for_root(cred);
-    }
+    cred_apply_uid_cap_fixup(cred);
 
     return 0;
 }
@@ -558,6 +572,7 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
     } else if (cred->euid != 0) {
         cred_drop_privilege_caps(cred);
     }
+    cred->securebits &= ~SECBIT_KEEP_CAPS;
 }
 
 bool cred_no_new_privs(const struct cred *cred) {
@@ -684,6 +699,57 @@ int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long
     struct cred *cred = get_current_cred();
 
     switch (option) {
+    case PR_GET_KEEPCAPS:
+        if (arg2 != 0 || arg3 != 0 || arg4 != 0 || arg5 != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        return cred_keepcaps(cred) ? 1 : 0;
+    case PR_SET_KEEPCAPS:
+        if (arg2 > 1 || arg3 != 0 || arg4 != 0 || arg5 != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        if ((cred->securebits & SECBIT_KEEP_CAPS_LOCKED) != 0) {
+            errno = EPERM;
+            return -1;
+        }
+        if (arg2 == 1) {
+            cred->securebits |= SECBIT_KEEP_CAPS;
+        } else {
+            cred->securebits &= ~SECBIT_KEEP_CAPS;
+        }
+        return 0;
+    case PR_GET_SECUREBITS:
+        if (arg2 != 0 || arg3 != 0 || arg4 != 0 || arg5 != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        return (int)cred->securebits;
+    case PR_SET_SECUREBITS: {
+        unsigned long valid = SECURE_ALL_BITS | SECURE_ALL_LOCKS;
+        uint32_t requested = (uint32_t)arg2;
+        uint32_t locked = cred->securebits & SECURE_ALL_LOCKS;
+
+        if ((arg2 & ~valid) != 0 || arg3 != 0 || arg4 != 0 || arg5 != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (!cred_has_cap(cred, CAP_SETPCAP)) {
+            errno = EPERM;
+            return -1;
+        }
+        if ((requested & locked) != locked) {
+            errno = EPERM;
+            return -1;
+        }
+        if (((requested ^ cred->securebits) & (locked >> 1)) != 0) {
+            errno = EPERM;
+            return -1;
+        }
+        cred->securebits = requested;
+        return 0;
+    }
     case PR_SET_NO_NEW_PRIVS:
         if (arg2 != 1 || arg3 != 0 || arg4 != 0 || arg5 != 0) {
             errno = EINVAL;

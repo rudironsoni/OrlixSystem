@@ -1,5 +1,7 @@
+#include <linux/capability.h>
 #include <linux/fcntl.h>
 #include <linux/prctl.h>
+#include <linux/securebits.h>
 #include <linux/stat.h>
 
 #include <errno.h>
@@ -18,9 +20,13 @@ extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int unlink_impl(const char *pathname);
 extern int chmod(const char *pathname, linux_mode_t mode);
 extern int chown(const char *pathname, uid_t owner, gid_t group);
+extern uid_t getuid_impl(void);
+extern uid_t geteuid_impl(void);
 extern int setuid_impl(uid_t uid);
 extern int setgid_impl(gid_t gid);
 extern int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);
+extern int capget(cap_user_header_t header, cap_user_data_t data);
+extern int capset(cap_user_header_t header, const cap_user_data_t data);
 extern void cred_reset_to_defaults(void);
 
 static int close_if_open(int fd) {
@@ -455,6 +461,86 @@ int task_exec_contract_no_new_privs_is_irreversible(void) {
         errno = EPROTO;
         return -1;
     }
+    cred_reset_to_defaults();
+    return 0;
+}
+
+static int task_exec_contract_cap_has_effective(const struct __user_cap_data_struct *data, int cap) {
+    return (data[cap / 32].effective & (1U << (cap % 32))) != 0;
+}
+
+static int task_exec_contract_cap_has_permitted(const struct __user_cap_data_struct *data, int cap) {
+    return (data[cap / 32].permitted & (1U << (cap % 32))) != 0;
+}
+
+int task_exec_contract_keepcaps_preserves_permitted_caps_after_setuid(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+
+    cred_reset_to_defaults();
+    if (prctl_impl(PR_SET_KEEPCAPS, 1, 0, 0, 0) != 0) {
+        return -1;
+    }
+    if (prctl_impl(PR_GET_KEEPCAPS, 0, 0, 0, 0) != 1) {
+        errno = EPROTO;
+        return -1;
+    }
+    if (setuid_impl(1000) != 0) {
+        return -1;
+    }
+    if (capget(&header, data) != 0) {
+        return -1;
+    }
+    if (!task_exec_contract_cap_has_permitted(data, CAP_SETUID)) {
+        errno = EPROTO;
+        return -1;
+    }
+    if (task_exec_contract_cap_has_effective(data, CAP_SETUID)) {
+        errno = EPROTO;
+        return -1;
+    }
+
+    data[CAP_SETUID / 32].effective |= 1U << (CAP_SETUID % 32);
+    if (capset(&header, data) != 0) {
+        return -1;
+    }
+    if (setuid_impl(2000) != 0) {
+        return -1;
+    }
+    if (getuid_impl() != 2000 || geteuid_impl() != 2000) {
+        errno = EPROTO;
+        return -1;
+    }
+
+    cred_reset_to_defaults();
+    return 0;
+}
+
+int task_exec_contract_securebits_keepcaps_lock_is_enforced(void) {
+    unsigned long locked_keepcaps = SECBIT_KEEP_CAPS | SECBIT_KEEP_CAPS_LOCKED;
+
+    cred_reset_to_defaults();
+    if (prctl_impl(PR_SET_SECUREBITS, locked_keepcaps, 0, 0, 0) != 0) {
+        return -1;
+    }
+    if (prctl_impl(PR_GET_SECUREBITS, 0, 0, 0, 0) != (int)locked_keepcaps) {
+        errno = EPROTO;
+        return -1;
+    }
+    errno = 0;
+    if (prctl_impl(PR_SET_KEEPCAPS, 0, 0, 0, 0) != -1 || errno != EPERM) {
+        errno = EPROTO;
+        return -1;
+    }
+    errno = 0;
+    if (prctl_impl(PR_SET_SECUREBITS, SECBIT_KEEP_CAPS_LOCKED, 0, 0, 0) != -1 || errno != EPERM) {
+        errno = EPROTO;
+        return -1;
+    }
+
     cred_reset_to_defaults();
     return 0;
 }

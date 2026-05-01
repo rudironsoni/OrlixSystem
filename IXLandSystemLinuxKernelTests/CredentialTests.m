@@ -203,6 +203,7 @@ extern void cred_reset_to_defaults(void);
     XCTAssertEqual(cred->sgid, 0u, @"Default cred SGID should be 0");
     XCTAssertEqual(cred->group_count, (size_t)0, @"Default cred should have no supplementary groups");
     XCTAssertFalse(cred->no_new_privs, @"Default cred should allow exec privilege transitions");
+    XCTAssertEqual(cred->securebits, 0u, @"Default cred should have no securebits set");
     XCTAssertNotEqual(cred->cap_permitted, 0ULL, @"Default root cred should have virtual permitted capabilities");
     XCTAssertNotEqual(cred->cap_effective, 0ULL, @"Default root cred should have virtual effective capabilities");
     XCTAssertNotEqual(cred->cap_bounding, 0ULL, @"Default root cred should have a virtual bounding set");
