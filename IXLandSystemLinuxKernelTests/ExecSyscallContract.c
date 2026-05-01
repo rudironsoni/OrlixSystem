@@ -1,4 +1,5 @@
 #include <linux/fcntl.h>
+#include <linux/elf.h>
 
 #include <errno.h>
 #include <stdbool.h>
@@ -89,6 +90,36 @@ static int create_exec_file(const char *path, const char *content) {
         }
     }
     return close_impl(fd);
+}
+
+static int create_exec_bytes(const char *path, const void *content, size_t len) {
+    int fd = open_impl(path, O_WRONLY | O_CREAT | O_TRUNC, 0700);
+    if (fd < 0) {
+        return -1;
+    }
+    if (len > 0 && write_impl(fd, content, len) != (long)len) {
+        int saved_errno = errno;
+        close_impl(fd);
+        errno = saved_errno;
+        return -1;
+    }
+    return close_impl(fd);
+}
+
+static void build_minimal_elf64_aarch64(Elf64_Ehdr *ehdr) {
+    memset(ehdr, 0, sizeof(*ehdr));
+    ehdr->e_ident[EI_MAG0] = ELFMAG0;
+    ehdr->e_ident[EI_MAG1] = ELFMAG1;
+    ehdr->e_ident[EI_MAG2] = ELFMAG2;
+    ehdr->e_ident[EI_MAG3] = ELFMAG3;
+    ehdr->e_ident[EI_CLASS] = ELFCLASS64;
+    ehdr->e_ident[EI_DATA] = ELFDATA2LSB;
+    ehdr->e_ident[EI_VERSION] = EV_CURRENT;
+    ehdr->e_type = ET_EXEC;
+    ehdr->e_machine = EM_AARCH64;
+    ehdr->e_version = EV_CURRENT;
+    ehdr->e_entry = 0x400000;
+    ehdr->e_ehsize = sizeof(*ehdr);
 }
 
 static int verify_state_unchanged(struct task_struct *task,
@@ -519,4 +550,139 @@ int exec_syscall_contract_fexecve_rejects_invalid_fd(void) {
         return -1;
     }
     return expect_errno(EBADF);
+}
+
+int exec_syscall_contract_elf64_aarch64_exec_loads_virtual_image(void) {
+    struct task_struct *task = get_current();
+    char *argv[] = {"elf-prog", "arg1", NULL};
+    char *envp[] = {"ELF=1", NULL};
+    unsigned char image[sizeof(Elf64_Ehdr) + 8];
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    int status;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    unlink_impl("/tmp/exec-elf64");
+    memset(image, 0, sizeof(image));
+    build_minimal_elf64_aarch64(ehdr);
+    image[sizeof(Elf64_Ehdr)] = 0xaa;
+    image[sizeof(Elf64_Ehdr) + 1] = 0xbb;
+    if (create_exec_bytes("/tmp/exec-elf64", image, sizeof(image)) != 0) {
+        goto out;
+    }
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    status = execve("/tmp/exec-elf64", argv, envp);
+    if (status != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!atomic_load(&task->execed) ||
+        strcmp(task->exe, "/tmp/exec-elf64") != 0 ||
+        strcmp(task->comm, "elf-prog") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!task->exec_image ||
+        task->exec_image->type != EXEC_IMAGE_ELF ||
+        strcmp(task->exec_image->path, "/tmp/exec-elf64") != 0 ||
+        task->exec_image->u.elf.entry != ehdr->e_entry ||
+        task->exec_image->u.elf.machine != EM_AARCH64) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!task->mm ||
+        !task->mm->exec_image_base ||
+        task->mm->exec_image_size != sizeof(image) ||
+        memcmp(task->mm->exec_image_base, image, sizeof(image)) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf64");
+    return result;
+}
+
+int exec_syscall_contract_elf_wrong_machine_returns_enoexec_without_transition(void) {
+    struct task_struct *task = get_current();
+    Elf64_Ehdr ehdr;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    unlink_impl("/tmp/exec-elf-wrong-machine");
+    build_minimal_elf64_aarch64(&ehdr);
+    ehdr.e_machine = EM_386;
+    if (create_exec_bytes("/tmp/exec-elf-wrong-machine", &ehdr, sizeof(ehdr)) != 0) {
+        goto out;
+    }
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    errno = 0;
+    if (execve("/tmp/exec-elf-wrong-machine", NULL, NULL) != -1 ||
+        expect_errno(ENOEXEC) != 0 ||
+        verify_state_unchanged(task, "/before", "before", false, -1, -1) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-wrong-machine");
+    return result;
+}
+
+int exec_syscall_contract_truncated_elf_returns_enoexec_without_transition(void) {
+    struct task_struct *task = get_current();
+    unsigned char magic[4] = {ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3};
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    unlink_impl("/tmp/exec-elf-truncated");
+    if (create_exec_bytes("/tmp/exec-elf-truncated", magic, sizeof(magic)) != 0) {
+        goto out;
+    }
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    errno = 0;
+    if (execve("/tmp/exec-elf-truncated", NULL, NULL) != -1 ||
+        expect_errno(ENOEXEC) != 0 ||
+        verify_state_unchanged(task, "/before", "before", false, -1, -1) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-truncated");
+    return result;
 }

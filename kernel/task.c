@@ -330,8 +330,10 @@ void free_task(struct task_struct *task) {
         free_signal_struct(task->signal);
     if (task->tty)
         atomic_fetch_sub(&task->tty->refs, 1);
-    if (task->mm)
+    if (task->mm) {
+        free(task->mm->exec_image_base);
         free(task->mm);
+    }
     if (task->exec_image)
         free(task->exec_image);
     if (task->uts_ns)

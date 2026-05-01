@@ -80,7 +80,9 @@ struct mm_struct {
 /* Exec image types - virtual kernel internal */
 enum exec_image_type {
     EXEC_IMAGE_NONE = 0,
+    EXEC_IMAGE_INVALID,
     EXEC_IMAGE_NATIVE,
+    EXEC_IMAGE_ELF,
     EXEC_IMAGE_WASI,
     EXEC_IMAGE_SCRIPT,
 };
@@ -97,6 +99,11 @@ struct exec_image {
         struct {
             native_entry_t entry;
         } native;
+        struct {
+            uint64_t entry;
+            uint16_t type;
+            uint16_t machine;
+        } elf;
         struct {
             void *module;
             void *instance;
