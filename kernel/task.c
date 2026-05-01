@@ -165,58 +165,73 @@ int task_record_exec_strings_impl(char *const argv[], char *const envp[]) {
     return 0;
 }
 
-static long task_read_virtual_region(uint64_t base, size_t region_size, const void *image,
-                                     uint64_t addr, void *buf, size_t count) {
-    uint64_t end;
-    size_t offset;
-    size_t available;
-    size_t to_copy;
-
-    if (!image || region_size == 0 || addr < base) {
-        return 0;
+const struct task_vma *task_find_vma_impl(struct task_struct *task, uint64_t addr) {
+    if (!task || !task->mm) {
+        return NULL;
     }
-    if ((uint64_t)region_size > UINT64_MAX - base) {
-        return 0;
+    for (uint32_t i = 0; i < task->mm->vma_count; i++) {
+        if (addr >= task->mm->vmas[i].start && addr < task->mm->vmas[i].end) {
+            return &task->mm->vmas[i];
+        }
     }
-    end = base + (uint64_t)region_size;
-    if (addr >= end) {
-        return 0;
-    }
-
-    offset = (size_t)(addr - base);
-    available = region_size - offset;
-    to_copy = count < available ? count : available;
-    memcpy(buf, (const unsigned char *)image + offset, to_copy);
-    return (long)to_copy;
+    return NULL;
 }
 
-static long task_write_virtual_region(uint64_t base, size_t region_size, void *image,
-                                      uint32_t flags, bool require_writable,
-                                      uint64_t addr, const void *buf, size_t count) {
+static long task_read_vma(const struct task_vma *vma, uint64_t addr, void *buf, size_t count) {
     uint64_t end;
     size_t offset;
     size_t available;
     size_t to_copy;
 
-    if (!image || region_size == 0 || addr < base) {
+    if (!vma || !vma->image || vma->image_size == 0 || addr < vma->start) {
         return 0;
     }
-    if ((uint64_t)region_size > UINT64_MAX - base) {
-        return 0;
+    if ((uint64_t)vma->image_size > UINT64_MAX - vma->start) {
+        errno = EFAULT;
+        return -1;
     }
-    end = base + (uint64_t)region_size;
+    end = vma->start + (uint64_t)vma->image_size;
     if (addr >= end) {
         return 0;
     }
-    if (require_writable && (flags & PF_W) == 0) {
+    if ((vma->flags & PF_R) == 0) {
         errno = EACCES;
         return -1;
     }
 
-    offset = (size_t)(addr - base);
-    available = region_size - offset;
+    offset = (size_t)(addr - vma->start);
+    available = vma->image_size - offset;
     to_copy = count < available ? count : available;
-    memcpy((unsigned char *)image + offset, buf, to_copy);
+    memcpy(buf, (const unsigned char *)vma->image + offset, to_copy);
+    return (long)to_copy;
+}
+
+static long task_write_vma(const struct task_vma *vma, uint64_t addr, const void *buf, size_t count) {
+    uint64_t end;
+    size_t offset;
+    size_t available;
+    size_t to_copy;
+
+    if (!vma || !vma->image || vma->image_size == 0 || addr < vma->start) {
+        return 0;
+    }
+    if ((uint64_t)vma->image_size > UINT64_MAX - vma->start) {
+        errno = EFAULT;
+        return -1;
+    }
+    end = vma->start + (uint64_t)vma->image_size;
+    if (addr >= end) {
+        return 0;
+    }
+    if ((vma->flags & PF_W) == 0) {
+        errno = EACCES;
+        return -1;
+    }
+
+    offset = (size_t)(addr - vma->start);
+    available = vma->image_size - offset;
+    to_copy = count < available ? count : available;
+    memcpy((unsigned char *)vma->image + offset, buf, to_copy);
     return (long)to_copy;
 }
 
@@ -237,31 +252,11 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
     }
 
     mm = task->mm;
-    for (uint32_t i = 0; i < mm->exec_segment_count; i++) {
-        copied = task_read_virtual_region(mm->exec_segments[i].vaddr,
-                                          mm->exec_segments[i].image_size,
-                                          mm->exec_segments[i].image,
-                                          addr, buf, count);
-        if (copied > 0) {
+    for (uint32_t i = 0; i < mm->vma_count; i++) {
+        copied = task_read_vma(&mm->vmas[i], addr, buf, count);
+        if (copied != 0) {
             return copied;
         }
-    }
-    for (uint32_t i = 0; i < mm->interp_segment_count; i++) {
-        copied = task_read_virtual_region(mm->interp_segments[i].vaddr,
-                                          mm->interp_segments[i].image_size,
-                                          mm->interp_segments[i].image,
-                                          addr, buf, count);
-        if (copied > 0) {
-            return copied;
-        }
-    }
-
-    copied = task_read_virtual_region(mm->initial_stack_base,
-                                      mm->initial_stack_image_size,
-                                      mm->initial_stack_image,
-                                      addr, buf, count);
-    if (copied > 0) {
-        return copied;
     }
 
     errno = EFAULT;
@@ -285,41 +280,23 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
     }
 
     mm = task->mm;
-    for (uint32_t i = 0; i < mm->exec_segment_count; i++) {
-        copied = task_write_virtual_region(mm->exec_segments[i].vaddr,
-                                           mm->exec_segments[i].image_size,
-                                           mm->exec_segments[i].image,
-                                           mm->exec_segments[i].flags,
-                                           true,
-                                           addr, buf, count);
+    for (uint32_t i = 0; i < mm->vma_count; i++) {
+        copied = task_write_vma(&mm->vmas[i], addr, buf, count);
         if (copied != 0) {
             return copied;
         }
-    }
-    for (uint32_t i = 0; i < mm->interp_segment_count; i++) {
-        copied = task_write_virtual_region(mm->interp_segments[i].vaddr,
-                                           mm->interp_segments[i].image_size,
-                                           mm->interp_segments[i].image,
-                                           mm->interp_segments[i].flags,
-                                           true,
-                                           addr, buf, count);
-        if (copied != 0) {
-            return copied;
-        }
-    }
-
-    copied = task_write_virtual_region(mm->initial_stack_base,
-                                       mm->initial_stack_image_size,
-                                       mm->initial_stack_image,
-                                       PF_W,
-                                       false,
-                                       addr, buf, count);
-    if (copied != 0) {
-        return copied;
     }
 
     errno = EFAULT;
     return -1;
+}
+
+const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task) {
+    if (!task || !task->mm) {
+        errno = EFAULT;
+        return NULL;
+    }
+    return &task->mm->handoff;
 }
 
 struct task_struct *alloc_task(void) {

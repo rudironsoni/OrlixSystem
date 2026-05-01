@@ -409,6 +409,24 @@ static int expect_task_vm_write(struct task_struct *task, uint64_t addr, const v
     return expect_task_vm_bytes(task, addr, bytes, len);
 }
 
+static int expect_vma(const struct task_struct *task, uint32_t index, uint64_t start, uint64_t size,
+                      uint32_t flags, enum task_vma_kind kind, const void *image) {
+    if (!task || !task->mm || index >= task->mm->vma_count || size == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (task->mm->vmas[index].start != start ||
+        task->mm->vmas[index].end != start + size ||
+        task->mm->vmas[index].flags != flags ||
+        task->mm->vmas[index].kind != kind ||
+        task->mm->vmas[index].image != image ||
+        task->mm->vmas[index].image_size != size) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
 static int native_exec_status(int argc, char **argv, char **envp) {
     (void)argc;
     (void)argv;
@@ -581,6 +599,91 @@ static void build_exec_elf64_writable_load(unsigned char *image, size_t image_le
     build_exec_elf64_without_interp_with_bss(image, image_len, entry, load_vaddr);
     load = (Elf64_Phdr *)(image + ehdr->e_phoff);
     load->p_flags = PF_R | PF_W;
+}
+
+static void build_exec_elf64_with_dynamic(unsigned char *image, size_t image_len,
+                                          uint64_t entry,
+                                          uint64_t load_vaddr,
+                                          uint64_t dynamic_vaddr) {
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    Elf64_Phdr *load;
+    Elf64_Phdr *dynamic;
+    size_t text_offset = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
+
+    memset(image, 0, image_len);
+    build_minimal_elf64_aarch64(ehdr);
+    ehdr->e_entry = entry;
+    ehdr->e_phoff = sizeof(Elf64_Ehdr);
+    ehdr->e_phentsize = sizeof(Elf64_Phdr);
+    ehdr->e_phnum = 2;
+
+    load = (Elf64_Phdr *)(image + ehdr->e_phoff);
+    load->p_type = PT_LOAD;
+    load->p_flags = PF_R | PF_W;
+    load->p_offset = text_offset;
+    load->p_vaddr = load_vaddr;
+    load->p_filesz = image_len - text_offset;
+    load->p_memsz = load->p_filesz;
+    load->p_align = 0x1000;
+
+    dynamic = load + 1;
+    dynamic->p_type = PT_DYNAMIC;
+    dynamic->p_offset = text_offset + (size_t)(dynamic_vaddr - load_vaddr);
+    dynamic->p_vaddr = dynamic_vaddr;
+    dynamic->p_filesz = 16;
+    dynamic->p_memsz = 16;
+    dynamic->p_align = 8;
+
+    image[text_offset] = 0xda;
+    image[dynamic->p_offset] = 0xd1;
+}
+
+static void build_exec_elf64_with_interp_and_dynamic(unsigned char *image, size_t image_len,
+                                                     const char *interp_path,
+                                                     uint64_t entry,
+                                                     uint64_t load_vaddr,
+                                                     uint64_t dynamic_vaddr) {
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    Elf64_Phdr *interp;
+    Elf64_Phdr *load;
+    Elf64_Phdr *dynamic;
+    size_t interp_len = strlen(interp_path) + 1;
+    size_t interp_offset = sizeof(Elf64_Ehdr) + (3 * sizeof(Elf64_Phdr));
+    size_t text_offset = interp_offset + interp_len;
+
+    memset(image, 0, image_len);
+    build_minimal_elf64_aarch64(ehdr);
+    ehdr->e_entry = entry;
+    ehdr->e_phoff = sizeof(Elf64_Ehdr);
+    ehdr->e_phentsize = sizeof(Elf64_Phdr);
+    ehdr->e_phnum = 3;
+
+    interp = (Elf64_Phdr *)(image + ehdr->e_phoff);
+    interp->p_type = PT_INTERP;
+    interp->p_offset = interp_offset;
+    interp->p_filesz = interp_len;
+    interp->p_memsz = interp_len;
+    memcpy(image + interp_offset, interp_path, interp_len);
+
+    load = interp + 1;
+    load->p_type = PT_LOAD;
+    load->p_flags = PF_R | PF_W;
+    load->p_offset = text_offset;
+    load->p_vaddr = load_vaddr;
+    load->p_filesz = image_len - text_offset;
+    load->p_memsz = load->p_filesz;
+    load->p_align = 0x1000;
+
+    dynamic = load + 1;
+    dynamic->p_type = PT_DYNAMIC;
+    dynamic->p_offset = text_offset + (size_t)(dynamic_vaddr - load_vaddr);
+    dynamic->p_vaddr = dynamic_vaddr;
+    dynamic->p_filesz = 16;
+    dynamic->p_memsz = 16;
+    dynamic->p_align = 8;
+
+    image[text_offset] = 0xad;
+    image[dynamic->p_offset] = 0xd1;
 }
 
 static int verify_state_unchanged(struct task_struct *task,
@@ -1582,6 +1685,7 @@ int exec_syscall_contract_elf_virtual_memory_fault_policy(void) {
     unlink_impl("/tmp/exec-elf-vm-faults");
     build_exec_elf64_without_interp_with_bss(image, sizeof(image), 0x407000, 0x600000);
     load = (Elf64_Phdr *)(image + ehdr->e_phoff);
+    load->p_flags = PF_X;
     if (create_exec_bytes("/tmp/exec-elf-vm-faults", image, sizeof(image)) != 0) {
         goto out;
     }
@@ -1593,6 +1697,12 @@ int exec_syscall_contract_elf_virtual_memory_fault_policy(void) {
 
     errno = 0;
     if (task_write_virtual_memory_impl(task, load->p_vaddr, patch, sizeof(patch)) != -1 ||
+        expect_errno(EACCES) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (task_read_virtual_memory_impl(task, load->p_vaddr, image, 1) != -1 ||
         expect_errno(EACCES) != 0) {
         goto out;
     }
@@ -1618,6 +1728,160 @@ int exec_syscall_contract_elf_virtual_memory_fault_policy(void) {
 
 out:
     unlink_impl("/tmp/exec-elf-vm-faults");
+    return result;
+}
+
+int exec_syscall_contract_elf_vma_metadata_covers_exec_loader_and_stack(void) {
+    struct task_struct *task = get_current();
+    const char interp_path[] = "/tmp/exec-elf-vma-loader";
+    unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
+    unsigned char loader[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
+    Elf64_Ehdr *loader_ehdr = (Elf64_Ehdr *)loader;
+    Elf64_Phdr *exec_load;
+    Elf64_Phdr *loader_load;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-vma");
+    unlink_impl(interp_path);
+    build_exec_elf64_with_interp(image, sizeof(image), interp_path, 0x408000, 0x400000);
+    build_exec_elf64_without_interp_with_bss(loader, sizeof(loader), 0x708000, 0x700000);
+    exec_load = ((Elf64_Phdr *)(image + ((Elf64_Ehdr *)image)->e_phoff)) + 1;
+    loader_load = (Elf64_Phdr *)(loader + loader_ehdr->e_phoff);
+    if (create_exec_bytes("/tmp/exec-elf-vma", image, sizeof(image)) != 0 ||
+        create_exec_bytes(interp_path, loader, sizeof(loader)) != 0) {
+        goto out;
+    }
+
+    if (execve("/tmp/exec-elf-vma", NULL, NULL) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (task->mm->vma_count != 3 ||
+        expect_vma(task, 0, exec_load->p_vaddr, exec_load->p_memsz, exec_load->p_flags,
+                   TASK_VMA_EXEC, task->mm->exec_segments[0].image) != 0 ||
+        expect_vma(task, 1, loader_load->p_vaddr, loader_load->p_memsz, loader_load->p_flags,
+                   TASK_VMA_INTERP, task->mm->interp_segments[0].image) != 0 ||
+        expect_vma(task, 2, task->mm->initial_stack_base, task->mm->initial_stack_image_size,
+                   PF_R | PF_W, TASK_VMA_STACK, task->mm->initial_stack_image) != 0 ||
+        task_find_vma_impl(task, exec_load->p_vaddr)->kind != TASK_VMA_EXEC ||
+        task_find_vma_impl(task, loader_load->p_vaddr)->kind != TASK_VMA_INTERP ||
+        task_find_vma_impl(task, task->mm->initial_stack_pointer)->kind != TASK_VMA_STACK ||
+        task_find_vma_impl(task, 0x2000) != NULL) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-vma");
+    unlink_impl(interp_path);
+    return result;
+}
+
+int exec_syscall_contract_elf_dynamic_metadata_records_exec_and_loader(void) {
+    struct task_struct *task = get_current();
+    const char interp_path[] = "/tmp/exec-elf-dynamic-loader";
+    unsigned char image[sizeof(Elf64_Ehdr) + (3 * sizeof(Elf64_Phdr)) + 128];
+    unsigned char loader[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
+    uint64_t exec_dynamic_vaddr = 0x400040;
+    uint64_t loader_dynamic_vaddr = 0x700030;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-dynamic-meta");
+    unlink_impl(interp_path);
+    build_exec_elf64_with_interp_and_dynamic(image, sizeof(image), interp_path,
+                                             0x409000, 0x400000, exec_dynamic_vaddr);
+    build_exec_elf64_with_dynamic(loader, sizeof(loader), 0x709000, 0x700000, loader_dynamic_vaddr);
+    if (create_exec_bytes("/tmp/exec-elf-dynamic-meta", image, sizeof(image)) != 0 ||
+        create_exec_bytes(interp_path, loader, sizeof(loader)) != 0) {
+        goto out;
+    }
+
+    if (execve("/tmp/exec-elf-dynamic-meta", NULL, NULL) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (task->mm->exec_dynamic_vaddr != exec_dynamic_vaddr ||
+        task->mm->exec_dynamic_size != 16 ||
+        task->mm->interp_dynamic_vaddr != loader_dynamic_vaddr ||
+        task->mm->interp_dynamic_size != 16) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-dynamic-meta");
+    unlink_impl(interp_path);
+    return result;
+}
+
+int exec_syscall_contract_elf_exec_handoff_exposes_entry_stack_and_memory_access(void) {
+    struct task_struct *task = get_current();
+    const char interp_path[] = "/tmp/exec-elf-handoff-loader";
+    unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
+    unsigned char loader[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
+    Elf64_Ehdr *loader_ehdr = (Elf64_Ehdr *)loader;
+    Elf64_Phdr *loader_load;
+    const struct task_exec_handoff *handoff;
+    unsigned char bytes[2];
+    const unsigned char patch[] = {0x44, 0x55};
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-handoff");
+    unlink_impl(interp_path);
+    build_exec_elf64_with_interp(image, sizeof(image), interp_path, 0x40a000, 0x400000);
+    build_exec_elf64_writable_load(loader, sizeof(loader), 0x70a000, 0x700000);
+    loader_load = (Elf64_Phdr *)(loader + loader_ehdr->e_phoff);
+    if (create_exec_bytes("/tmp/exec-elf-handoff", image, sizeof(image)) != 0 ||
+        create_exec_bytes(interp_path, loader, sizeof(loader)) != 0) {
+        goto out;
+    }
+
+    if (execve("/tmp/exec-elf-handoff", NULL, NULL) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    handoff = task_get_exec_handoff_impl(task);
+    if (!handoff ||
+        handoff->entry_point != loader_ehdr->e_entry ||
+        handoff->initial_stack_pointer != task->mm->initial_stack_pointer ||
+        !handoff->read_memory ||
+        !handoff->write_memory ||
+        handoff->read_memory(task, loader_load->p_vaddr, bytes, sizeof(bytes)) != (long)sizeof(bytes) ||
+        memcmp(bytes, loader + loader_load->p_offset, sizeof(bytes)) != 0 ||
+        handoff->write_memory(task, loader_load->p_vaddr, patch, sizeof(patch)) != (long)sizeof(patch) ||
+        handoff->read_memory(task, loader_load->p_vaddr, bytes, sizeof(bytes)) != (long)sizeof(bytes) ||
+        memcmp(bytes, patch, sizeof(patch)) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-handoff");
+    unlink_impl(interp_path);
     return result;
 }
 
