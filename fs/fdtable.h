@@ -103,7 +103,8 @@ enum synthetic_dir_class {
     SYNTHETIC_DIR_ROOT,
     SYNTHETIC_DIR_PROC_SELF,
     SYNTHETIC_DIR_PROC_SELF_FD,
-    SYNTHETIC_DIR_PROC_SELF_FDINFO
+    SYNTHETIC_DIR_PROC_SELF_FDINFO,
+    SYNTHETIC_DIR_PROC_SELF_NS
 };
 
 typedef enum synthetic_dir_class synthetic_dir_class_t;

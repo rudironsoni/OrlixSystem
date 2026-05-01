@@ -8,6 +8,7 @@
 #define KERNEL_UTS_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +21,7 @@ struct uts_namespace *uts_get_initial_namespace(void);
 struct uts_namespace *uts_get(struct uts_namespace *ns);
 void uts_put(struct uts_namespace *ns);
 struct uts_namespace *uts_dup(struct uts_namespace *ns);
+uint64_t uts_namespace_id(struct uts_namespace *ns);
 int uts_unshare_current(void);
 void uts_reset_initial_namespace(void);
 void uts_reset_current_namespace(void);

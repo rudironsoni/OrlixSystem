@@ -21,6 +21,7 @@
 #include "pty.h"
 #include "../kernel/task.h"
 #include "../kernel/cred_internal.h"
+#include "../kernel/uts.h"
 
 /* makedev for device nodes - Linux UAPI style */
 #ifndef makedev
@@ -52,6 +53,7 @@ struct vfs_mount_entry {
 struct vfs_mount_namespace {
     struct vfs_mount_entry entries[MAX_MOUNTS];
     linux_atomic_int refs;
+    uint64_t ns_id;
     fs_mutex_t lock;
 };
 
@@ -67,6 +69,7 @@ struct vfs_metadata_entry {
 
 static struct vfs_metadata_entry vfs_metadata_table[VFS_METADATA_MAX];
 static fs_mutex_t vfs_metadata_lock = FS_MUTEX_INITIALIZER;
+static linux_atomic_int vfs_next_mount_ns_id = 1;
 
 static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
     struct vfs_mount_namespace *mnt_ns = calloc(1, sizeof(struct vfs_mount_namespace));
@@ -75,6 +78,7 @@ static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
     }
 
     atomic_init(&mnt_ns->refs, 1);
+    mnt_ns->ns_id = (uint64_t)atomic_fetch_add(&vfs_next_mount_ns_id, 1);
     fs_mutex_init(&mnt_ns->lock);
     return mnt_ns;
 }
@@ -950,6 +954,19 @@ int fs_unshare_mount_namespace(struct fs_struct *fs) {
     return 0;
 }
 
+uint64_t fs_mount_namespace_id(struct fs_struct *fs) {
+    uint64_t id;
+
+    if (!fs || !fs->mnt_ns) {
+        return 0;
+    }
+
+    fs_mutex_lock(&fs->lock);
+    id = fs->mnt_ns ? fs->mnt_ns->ns_id : 0;
+    fs_mutex_unlock(&fs->lock);
+    return id;
+}
+
 /* Initialize fs_struct with virtual root path */
 int fs_init_root(struct fs_struct *fs, const char *root_path) {
     if (!fs || !root_path)
@@ -1608,51 +1625,104 @@ int vfs_lstat(const char *pathname, struct linux_stat *statbuf) {
     return host_lstat_impl(pathname, statbuf);
 }
 
+static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_path, size_t self_path_len) {
+    struct task_struct *task;
+    char prefix[32];
+    int ret;
+    size_t prefix_len;
+
+    if (!vpath) {
+        return NULL;
+    }
+    if (strncmp(vpath, "/proc/self", 10) == 0 &&
+        (vpath[10] == '\0' || vpath[10] == '/')) {
+        return vpath + 10;
+    }
+
+    task = get_current();
+    if (!task) {
+        return NULL;
+    }
+
+    ret = snprintf(prefix, sizeof(prefix), "/proc/%d", task->pid);
+    if (ret < 0 || (size_t)ret >= sizeof(prefix)) {
+        return NULL;
+    }
+    prefix_len = (size_t)ret;
+    if (strncmp(vpath, prefix, prefix_len) != 0 ||
+        (vpath[prefix_len] != '\0' && vpath[prefix_len] != '/')) {
+        return NULL;
+    }
+
+    ret = snprintf(self_path, self_path_len, "/proc/self%s", vpath + prefix_len);
+    if (ret < 0 || (size_t)ret >= self_path_len) {
+        return NULL;
+    }
+    return self_path + 10;
+}
+
 proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
+    char mapped[MAX_PATH];
+    const char *suffix;
+
     if (!vpath) {
         return PROC_SELF_NONE;
     }
-    if (strcmp(vpath, "/proc/self") == 0) {
+
+    suffix = vfs_proc_current_task_suffix(vpath, mapped, sizeof(mapped));
+    if (!suffix) {
+        return PROC_SELF_NONE;
+    }
+
+    if (strcmp(suffix, "") == 0) {
         return PROC_SELF_DIR;
     }
-    if (strcmp(vpath, "/proc/self/fd") == 0) {
+    if (strcmp(suffix, "/fd") == 0) {
         return PROC_SELF_FD_DIR;
     }
-    if (strcmp(vpath, "/proc/self/fdinfo") == 0) {
+    if (strcmp(suffix, "/fdinfo") == 0) {
         return PROC_SELF_FDINFO_DIR;
     }
-    if (strncmp(vpath, "/proc/self/fd/", 14) == 0 && vpath[14] != '\0') {
+    if (strncmp(suffix, "/fd/", 4) == 0 && suffix[4] != '\0') {
         return PROC_SELF_FD_LINK;
     }
-    if (strncmp(vpath, "/proc/self/fdinfo/", 18) == 0 && vpath[18] != '\0') {
+    if (strncmp(suffix, "/fdinfo/", 8) == 0 && suffix[8] != '\0') {
         return PROC_SELF_FDINFO_FILE;
     }
-    if (strcmp(vpath, "/proc/self/cwd") == 0) {
+    if (strcmp(suffix, "/cwd") == 0) {
         return PROC_SELF_CWD_LINK;
     }
-    if (strcmp(vpath, "/proc/self/exe") == 0) {
+    if (strcmp(suffix, "/exe") == 0) {
         return PROC_SELF_EXE_LINK;
     }
-    if (strcmp(vpath, "/proc/self/cmdline") == 0) {
+    if (strcmp(suffix, "/cmdline") == 0) {
         return PROC_SELF_CMDLINE_FILE;
     }
-    if (strcmp(vpath, "/proc/self/comm") == 0) {
+    if (strcmp(suffix, "/comm") == 0) {
         return PROC_SELF_COMM_FILE;
     }
-    if (strcmp(vpath, "/proc/self/stat") == 0) {
+    if (strcmp(suffix, "/stat") == 0) {
         return PROC_SELF_STAT_FILE;
     }
-    if (strcmp(vpath, "/proc/self/statm") == 0) {
+    if (strcmp(suffix, "/statm") == 0) {
         return PROC_SELF_STATM_FILE;
     }
-    if (strcmp(vpath, "/proc/self/status") == 0) {
+    if (strcmp(suffix, "/status") == 0) {
         return PROC_SELF_STATUS_FILE;
     }
-    if (strcmp(vpath, "/proc/self/mountinfo") == 0) {
+    if (strcmp(suffix, "/mountinfo") == 0) {
         return PROC_SELF_MOUNTINFO_FILE;
     }
-    if (strcmp(vpath, "/proc/self/mounts") == 0) {
+    if (strcmp(suffix, "/mounts") == 0) {
         return PROC_SELF_MOUNTS_FILE;
+    }
+    if (strcmp(suffix, "/ns") == 0) {
+        return PROC_SELF_NS_DIR;
+    }
+    if ((strcmp(suffix, "/ns/mnt") == 0) ||
+        (strcmp(suffix, "/ns/uts") == 0) ||
+        (strcmp(suffix, "/ns/pid") == 0)) {
+        return PROC_SELF_NS_LINK;
     }
     return PROC_SELF_NONE;
 }
@@ -1735,6 +1805,61 @@ int vfs_proc_self_exe_target(char *target, size_t target_len) {
     }
 
     memcpy(target, task->exe, exe_len + 1);
+    return 0;
+}
+
+static const char *vfs_proc_self_ns_name(const char *vpath) {
+    const char *suffix;
+    char mapped[MAX_PATH];
+
+    suffix = vfs_proc_current_task_suffix(vpath, mapped, sizeof(mapped));
+    if (!suffix || strncmp(suffix, "/ns/", 4) != 0) {
+        return NULL;
+    }
+    return suffix + 4;
+}
+
+int vfs_proc_self_ns_link_target(const char *vpath, char *target, size_t target_len) {
+    struct task_struct *task;
+    const char *name;
+    uint64_t id;
+    int ret;
+
+    if (!vpath || !target || target_len == 0) {
+        return -EINVAL;
+    }
+
+    task = get_current();
+    if (!task) {
+        return -ESRCH;
+    }
+
+    name = vfs_proc_self_ns_name(vpath);
+    if (!name) {
+        return -EINVAL;
+    }
+
+    if (strcmp(name, "mnt") == 0) {
+        id = fs_mount_namespace_id(task->fs);
+    } else if (strcmp(name, "uts") == 0) {
+        id = uts_namespace_id(task->uts_ns);
+    } else if (strcmp(name, "pid") == 0) {
+        id = (uint64_t)(task->pid_ns_level + 1);
+    } else {
+        return -ENOENT;
+    }
+
+    if (id == 0) {
+        return -ESRCH;
+    }
+
+    ret = snprintf(target, target_len, "%s:[%llu]", name, (unsigned long long)id);
+    if (ret < 0) {
+        return -EINVAL;
+    }
+    if ((size_t)ret >= target_len) {
+        return -ENAMETOOLONG;
+    }
     return 0;
 }
 
@@ -2091,14 +2216,22 @@ int vfs_proc_self_status_content(char *buf, size_t buf_len) {
         "PPid:\t%d\n"
         "TracerPid:\t0\n"
         "Uid:\t%u\t%u\t%u\t%u\n"
-        "Gid:\t%u\t%u\t%u\t%u\n",
+        "Gid:\t%u\t%u\t%u\t%u\n"
+        "NStgid:\t%d\n"
+        "NSpid:\t%d\n"
+        "NSpgid:\t%d\n"
+        "NSsid:\t%d\n",
         task->comm,
         state_char,
         task->tgid,
         task->pid,
         task->ppid,
         cred->uid, cred->euid, cred->suid, cred->suid,
-        cred->gid, cred->egid, cred->sgid, cred->sgid
+        cred->gid, cred->egid, cred->sgid, cred->sgid,
+        task->ns_pid,
+        task->ns_pid,
+        task->pgid,
+        task->sid
     );
 
     if (ret < 0) {
@@ -2212,7 +2345,8 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
 
     {
         proc_self_path_class_t proc_class = vfs_classify_proc_self_path(resolved_virtual);
-        if (proc_class == PROC_SELF_DIR || proc_class == PROC_SELF_FD_DIR || proc_class == PROC_SELF_FDINFO_DIR) {
+        if (proc_class == PROC_SELF_DIR || proc_class == PROC_SELF_FD_DIR || proc_class == PROC_SELF_FDINFO_DIR ||
+            proc_class == PROC_SELF_NS_DIR) {
             memset(statbuf, 0, sizeof(*statbuf));
             statbuf->st_mode = S_IFDIR | 0555;
             statbuf->st_nlink = 2;
@@ -2255,6 +2389,21 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
         } else if (proc_class == PROC_SELF_EXE_LINK) {
             char link_target[MAX_PATH];
             ret = vfs_proc_self_exe_target(link_target, sizeof(link_target));
+            if (ret != 0) {
+                return ret;
+            }
+            memset(statbuf, 0, sizeof(*statbuf));
+            statbuf->st_mode = S_IFLNK | 0777;
+            statbuf->st_nlink = 1;
+            statbuf->st_uid = 0;
+            statbuf->st_gid = 0;
+            statbuf->st_size = strlen(link_target);
+            statbuf->st_blksize = 4096;
+            statbuf->st_blocks = 0;
+            return 0;
+        } else if (proc_class == PROC_SELF_NS_LINK) {
+            char link_target[MAX_PATH];
+            ret = vfs_proc_self_ns_link_target(resolved_virtual, link_target, sizeof(link_target));
             if (ret != 0) {
                 return ret;
             }

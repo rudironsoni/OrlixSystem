@@ -1,0 +1,19 @@
+#ifndef IXLANDSYSTEMLINUXKERNELTESTS_PROCFSNAMESPACECONTRACT_H
+#define IXLANDSYSTEMLINUXKERNELTESTS_PROCFSNAMESPACECONTRACT_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int procfs_namespace_contract_ns_directory_opens(void);
+int procfs_namespace_contract_ns_links_are_linux_shaped(void);
+int procfs_namespace_contract_unshare_newuts_changes_uts_link(void);
+int procfs_namespace_contract_unshare_newns_changes_mnt_link(void);
+int procfs_namespace_contract_proc_pid_status_aliases_current_task(void);
+int procfs_namespace_contract_pid_namespace_status_reports_nspid(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* IXLANDSYSTEMLINUXKERNELTESTS_PROCFSNAMESPACECONTRACT_H */

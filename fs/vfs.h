@@ -229,6 +229,7 @@ int fs_init_pwd(struct fs_struct *fs, const char *pwd_path);
 int fs_set_pwd(struct fs_struct *fs, const char *new_pwd);
 int fs_set_root(struct fs_struct *fs, const char *new_root);
 int fs_unshare_mount_namespace(struct fs_struct *fs);
+uint64_t fs_mount_namespace_id(struct fs_struct *fs);
 
 /* VFS initialization */
 int vfs_init(void);
@@ -291,7 +292,9 @@ enum proc_self_path_class {
     PROC_SELF_FDINFO_FILE,
     PROC_SELF_STATUS_FILE,
     PROC_SELF_MOUNTINFO_FILE,
-    PROC_SELF_MOUNTS_FILE
+    PROC_SELF_MOUNTS_FILE,
+    PROC_SELF_NS_DIR,
+    PROC_SELF_NS_LINK
 };
 
 typedef enum proc_self_path_class proc_self_path_class_t;
@@ -300,6 +303,7 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath);
 int vfs_proc_self_fd_link_target(const char *vpath, char *target, size_t target_len);
 int vfs_proc_self_cwd_target(char *target, size_t target_len);
 int vfs_proc_self_exe_target(char *target, size_t target_len);
+int vfs_proc_self_ns_link_target(const char *vpath, char *target, size_t target_len);
 int vfs_proc_self_cmdline_content(char *buf, size_t buf_len);
 int vfs_proc_self_comm_content(char *buf, size_t buf_len);
 int vfs_proc_self_stat_content(char *buf, size_t buf_len);

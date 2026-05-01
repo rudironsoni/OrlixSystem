@@ -598,6 +598,19 @@ ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
             }
             memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
+        } else if (proc_class == PROC_SELF_NS_LINK) {
+            char link_target[MAX_PATH];
+            ret = vfs_proc_self_ns_link_target(resolved_virtual, link_target, sizeof(link_target));
+            if (ret != 0) {
+                errno = -ret;
+                return -1;
+            }
+            size_t target_len = strlen(link_target);
+            if (target_len > bufsiz) {
+                target_len = bufsiz;
+            }
+            memcpy(buf, link_target, target_len);
+            return (ssize_t)target_len;
         }
     }
 

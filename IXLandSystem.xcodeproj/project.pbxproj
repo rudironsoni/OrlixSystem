@@ -36,6 +36,7 @@
 		586F3641CE2CB13F63E94338 /* readdir.c in Sources */ = {isa = PBXBuildFile; fileRef = FE42C3F5F46C53309E18B1A6 /* readdir.c */; };
 		58BB480674D62F4FEF77C217 /* random.c in Sources */ = {isa = PBXBuildFile; fileRef = 8BE7B6DDA1A833FE4A6C9194 /* random.c */; };
 		59FAAA0B4A3D9EBD3C077FFA /* FutexTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 459682F08054406508BB6491 /* FutexTests.m */; };
+		5A3080BEDDB16FA12AE7FF1C /* ProcfsNamespaceContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E2933EB0E7020B9534704648 /* ProcfsNamespaceContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		5B16289DBA72694756559233 /* registry.c in Sources */ = {isa = PBXBuildFile; fileRef = F4E2215C61CCAEFB06DDB4FC /* registry.c */; };
 		5C2D26EAA916B6D9060B278B /* exec.c in Sources */ = {isa = PBXBuildFile; fileRef = F2D8077FB1F274E58E85378C /* exec.c */; };
 		5D1AA08946E9CB8B3AFAE1C6 /* clock.c in Sources */ = {isa = PBXBuildFile; fileRef = FFC9C26D7F3E35F6398D0B73 /* clock.c */; };
@@ -97,6 +98,7 @@
 		E3163A55ED3811BB3D6BA247 /* ExecSyscallContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 008ECDF9EF2E0DDA77DFE526 /* ExecSyscallContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		E48B8CCAE1CBE2334B10B819 /* read_write.c in Sources */ = {isa = PBXBuildFile; fileRef = D979F989EC0D2FF286D59733 /* read_write.c */; };
 		E6EBC6D734546A272FB292D1 /* pid.c in Sources */ = {isa = PBXBuildFile; fileRef = 4D57509F341C9895C6F7163B /* pid.c */; };
+		EAD31A9F0FBB70834677A1B4 /* ProcfsNamespaceTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 609076A6FA0ED286E55F6E97 /* ProcfsNamespaceTests.m */; };
 		EDF4855E5B361A767449505F /* path_host.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = C3EB2A52FF9C382BD464F1DD /* path_host.h */; };
 		EF0C8EAAC745BFABEF5C11CD /* NamespaceTests.m in Sources */ = {isa = PBXBuildFile; fileRef = FA4DF50460C3F73B826F998F /* NamespaceTests.m */; };
 		F76416F9EEADCF919B8C0FA1 /* NamespaceContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E879B79AB28AE5918F99FAE6 /* NamespaceContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
@@ -165,6 +167,7 @@
 		459682F08054406508BB6491 /* FutexTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FutexTests.m; sourceTree = "<group>"; };
 		45D5CBDA9FFBBD3019E7C208 /* FcntlTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FcntlTests.m; sourceTree = "<group>"; };
 		4937592D664709CBF7746315 /* HostBridgeSmokeTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HostBridgeSmokeTests.m; sourceTree = "<group>"; };
+		4CD46E4D30B930D65D067E34 /* ProcfsNamespaceContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ProcfsNamespaceContract.h; sourceTree = "<group>"; };
 		4D57509F341C9895C6F7163B /* pid.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pid.c; sourceTree = "<group>"; };
 		4E143FD29F3D04D92D817CAC /* ReadinessContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ReadinessContract.h; sourceTree = "<group>"; };
 		4E3BBA7476909DE92B9A8F8D /* open.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = open.c; sourceTree = "<group>"; };
@@ -178,6 +181,7 @@
 		5D494D6F83176E636A70E6FF /* sync.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sync.c; sourceTree = "<group>"; };
 		5E96E95F0B83F5CC63E21913 /* libIXLandSystem.a */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = archive.ar; path = libIXLandSystem.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		5FD8D142EC818870892A041C /* backing_paths.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = backing_paths.m; sourceTree = "<group>"; };
+		609076A6FA0ED286E55F6E97 /* ProcfsNamespaceTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ProcfsNamespaceTests.m; sourceTree = "<group>"; };
 		666A5EE8B497170CF5C3223A /* ixland_observability.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ixland_observability.c; sourceTree = "<group>"; };
 		68380C402AE8EF749A28C843 /* pty.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pty.c; sourceTree = "<group>"; };
 		6847262E1CEE914C07BE866D /* UTSTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = UTSTests.m; sourceTree = "<group>"; };
@@ -229,6 +233,7 @@
 		DB47AFBCA86B478A6F48BAE6 /* stat.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = stat.c; sourceTree = "<group>"; };
 		DC6020ECDA4585334611FE7D /* backing_io.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = backing_io.h; sourceTree = "<group>"; };
 		E1CD35402A585DF342760586 /* VFSAtContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = VFSAtContract.c; sourceTree = "<group>"; };
+		E2933EB0E7020B9534704648 /* ProcfsNamespaceContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ProcfsNamespaceContract.c; sourceTree = "<group>"; };
 		E879B79AB28AE5918F99FAE6 /* NamespaceContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = NamespaceContract.c; sourceTree = "<group>"; };
 		F0779DE3F9EA5B8DE837465B /* ExecSyscallTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ExecSyscallTests.m; sourceTree = "<group>"; };
 		F2D024F0973242458FE50E93 /* init.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = init.c; sourceTree = "<group>"; };
@@ -399,6 +404,9 @@
 				F976F3BC26F1CA62FF260F51 /* PipeContract.c */,
 				26FDE0ABC08187DD4F536DDB /* PipeContract.h */,
 				CA618FEAE8F896CFDE663429 /* PipeTests.m */,
+				E2933EB0E7020B9534704648 /* ProcfsNamespaceContract.c */,
+				4CD46E4D30B930D65D067E34 /* ProcfsNamespaceContract.h */,
+				609076A6FA0ED286E55F6E97 /* ProcfsNamespaceTests.m */,
 				D04652572AEE290A130DF174 /* PTYJobControlContract.c */,
 				0425E98DF40D1AA450ACD57D /* PTYJobControlContract.h */,
 				88CA631FAF0EDC1ABC5785AE /* PTYJobControlTests.m */,
@@ -601,6 +609,8 @@
 				62A929A945C25B5FD11C7F36 /* PTYSessionTests.m in Sources */,
 				D4D93D90325D5C2CC0416C1F /* PipeContract.c in Sources */,
 				1086E084384918CFDB1A2E8C /* PipeTests.m in Sources */,
+				5A3080BEDDB16FA12AE7FF1C /* ProcfsNamespaceContract.c in Sources */,
+				EAD31A9F0FBB70834677A1B4 /* ProcfsNamespaceTests.m in Sources */,
 				9D945D79C38C42CCC6974356 /* ReadinessContract.c in Sources */,
 				0B59B8C18B35C87BE0659D6D /* ReadinessTests.m in Sources */,
 				14DEFC9BDE432750E36BB297 /* RootfsBootstrapTests.m in Sources */,

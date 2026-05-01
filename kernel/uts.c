@@ -14,6 +14,7 @@
 
 struct uts_namespace {
     atomic_int refs;
+    uint64_t ns_id;
     bool static_storage;
     kernel_mutex_t lock;
     char sysname[__NEW_UTS_LEN + 1];
@@ -27,6 +28,7 @@ struct uts_namespace {
 static struct uts_namespace initial_uts_ns;
 static atomic_bool initial_uts_ns_ready = false;
 static kernel_mutex_t initial_uts_ns_lock = KERNEL_MUTEX_INITIALIZER;
+static atomic_int next_uts_ns_id = 1;
 
 static void uts_copy_literal(char dst[__NEW_UTS_LEN + 1], const char *src) {
     size_t len = strlen(src);
@@ -50,6 +52,7 @@ static void uts_init_initial_namespace(void) {
     kernel_mutex_lock(&initial_uts_ns_lock);
     if (!atomic_load(&initial_uts_ns_ready)) {
         atomic_init(&initial_uts_ns.refs, 1);
+        initial_uts_ns.ns_id = (uint64_t)atomic_fetch_add(&next_uts_ns_id, 1);
         initial_uts_ns.static_storage = true;
         kernel_mutex_init(&initial_uts_ns.lock);
         kernel_mutex_lock(&initial_uts_ns.lock);
@@ -105,6 +108,7 @@ struct uts_namespace *uts_dup(struct uts_namespace *ns) {
     }
 
     atomic_init(&copy->refs, 1);
+    copy->ns_id = (uint64_t)atomic_fetch_add(&next_uts_ns_id, 1);
     copy->static_storage = false;
     kernel_mutex_init(&copy->lock);
 
@@ -118,6 +122,14 @@ struct uts_namespace *uts_dup(struct uts_namespace *ns) {
     kernel_mutex_unlock(&ns->lock);
 
     return copy;
+}
+
+uint64_t uts_namespace_id(struct uts_namespace *ns) {
+    if (!ns) {
+        uts_init_initial_namespace();
+        ns = &initial_uts_ns;
+    }
+    return ns->ns_id;
 }
 
 void uts_reset_initial_namespace(void) {
