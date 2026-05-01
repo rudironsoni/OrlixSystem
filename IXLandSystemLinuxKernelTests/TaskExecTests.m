@@ -20,6 +20,9 @@ extern int task_exec_contract_no_new_privs_blocks_setgid_exec_gain(void);
 extern int task_exec_contract_no_new_privs_is_irreversible(void);
 extern int task_exec_contract_keepcaps_preserves_permitted_caps_after_setuid(void);
 extern int task_exec_contract_securebits_keepcaps_lock_is_enforced(void);
+extern int task_exec_contract_ambient_capability_survives_plain_exec(void);
+extern int task_exec_contract_ambient_raise_requires_inheritable_cap(void);
+extern int task_exec_contract_securebits_block_ambient_raise(void);
 
 @interface TaskExecTests : XCTestCase
 @end
@@ -100,6 +103,18 @@ extern int task_exec_contract_securebits_keepcaps_lock_is_enforced(void);
 
 - (void)testSecurebitsKeepcapsLockIsEnforced {
     XCTAssertEqual(task_exec_contract_securebits_keepcaps_lock_is_enforced(), 0, @"errno %d", errno);
+}
+
+- (void)testAmbientCapabilitySurvivesPlainExec {
+    XCTAssertEqual(task_exec_contract_ambient_capability_survives_plain_exec(), 0, @"errno %d", errno);
+}
+
+- (void)testAmbientRaiseRequiresInheritableCap {
+    XCTAssertEqual(task_exec_contract_ambient_raise_requires_inheritable_cap(), 0, @"errno %d", errno);
+}
+
+- (void)testSecurebitsBlockAmbientRaise {
+    XCTAssertEqual(task_exec_contract_securebits_block_ambient_raise(), 0, @"errno %d", errno);
 }
 
 @end

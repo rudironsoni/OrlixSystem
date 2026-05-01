@@ -552,9 +552,13 @@ int cred_setgroups(struct cred *cred, size_t size, const gid_t *list) {
 }
 
 void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid, uint32_t mode) {
+    bool privileged_exec;
+
     if (!cred) {
         return;
     }
+
+    privileged_exec = !cred->no_new_privs && ((mode & (S_ISUID | S_ISGID)) != 0);
 
     if (!cred->no_new_privs && (mode & S_ISUID) != 0) {
         cred->euid = file_uid;
@@ -570,7 +574,12 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
         cred->cap_permitted = cred->cap_bounding;
         cred->cap_effective = cred->cap_permitted;
     } else if (cred->euid != 0) {
-        cred_drop_privilege_caps(cred);
+        if (privileged_exec) {
+            cred_drop_privilege_caps(cred);
+        } else {
+            cred->cap_permitted |= cred->cap_ambient;
+            cred->cap_effective |= cred->cap_ambient;
+        }
     }
     cred->securebits &= ~SECBIT_KEEP_CAPS;
 }
@@ -699,6 +708,54 @@ int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long
     struct cred *cred = get_current_cred();
 
     switch (option) {
+    case PR_CAP_AMBIENT: {
+        uint64_t bit = cred_cap_bit((int)arg3);
+
+        if (arg5 != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        switch (arg2) {
+        case PR_CAP_AMBIENT_IS_SET:
+            if (arg4 != 0 || bit == 0) {
+                errno = EINVAL;
+                return -1;
+            }
+            return (cred->cap_ambient & bit) != 0 ? 1 : 0;
+        case PR_CAP_AMBIENT_RAISE:
+            if (arg4 != 0 || bit == 0) {
+                errno = EINVAL;
+                return -1;
+            }
+            if ((cred->securebits & SECBIT_NO_CAP_AMBIENT_RAISE) != 0) {
+                errno = EPERM;
+                return -1;
+            }
+            if ((cred->cap_permitted & bit) == 0 || (cred->cap_inheritable & bit) == 0) {
+                errno = EPERM;
+                return -1;
+            }
+            cred->cap_ambient |= bit;
+            return 0;
+        case PR_CAP_AMBIENT_LOWER:
+            if (arg4 != 0 || bit == 0) {
+                errno = EINVAL;
+                return -1;
+            }
+            cred->cap_ambient &= ~bit;
+            return 0;
+        case PR_CAP_AMBIENT_CLEAR_ALL:
+            if (arg3 != 0 || arg4 != 0) {
+                errno = EINVAL;
+                return -1;
+            }
+            cred->cap_ambient = 0;
+            return 0;
+        default:
+            errno = EINVAL;
+            return -1;
+        }
+    }
     case PR_GET_KEEPCAPS:
         if (arg2 != 0 || arg3 != 0 || arg4 != 0 || arg5 != 0) {
             errno = EINVAL;

@@ -544,3 +544,120 @@ int task_exec_contract_securebits_keepcaps_lock_is_enforced(void) {
     cred_reset_to_defaults();
     return 0;
 }
+
+int task_exec_contract_ambient_capability_survives_plain_exec(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-ambient-file");
+
+    fd = open_impl("/tmp/task-exec-ambient-file", O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    if (prctl_impl(PR_SET_KEEPCAPS, 1, 0, 0, 0) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    if (capget(&header, data) != 0) {
+        goto out;
+    }
+    data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
+    if (capset(&header, data) != 0) {
+        goto out;
+    }
+    if (prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != 0) {
+        goto out;
+    }
+    if (prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SETUID, 0, 0) != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (capget(&header, data) != 0) {
+        goto out;
+    }
+    data[CAP_SETUID / 32].effective &= ~(1U << (CAP_SETUID % 32));
+    if (capset(&header, data) != 0) {
+        goto out;
+    }
+    if (task_exec_transition_impl("/tmp/task-exec-ambient-file", "ambient-file") != 0) {
+        goto out;
+    }
+    if (capget(&header, data) != 0) {
+        goto out;
+    }
+    if (!task_exec_contract_cap_has_effective(data, CAP_SETUID)) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-ambient-file");
+    return ret;
+}
+
+int task_exec_contract_ambient_raise_requires_inheritable_cap(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+
+    cred_reset_to_defaults();
+    if (capget(&header, data) != 0) {
+        return -1;
+    }
+    data[CAP_SETUID / 32].inheritable &= ~(1U << (CAP_SETUID % 32));
+    if (capset(&header, data) != 0) {
+        return -1;
+    }
+    errno = 0;
+    if (prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != -1 || errno != EPERM) {
+        errno = EPROTO;
+        return -1;
+    }
+    cred_reset_to_defaults();
+    return 0;
+}
+
+int task_exec_contract_securebits_block_ambient_raise(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+
+    cred_reset_to_defaults();
+    if (capget(&header, data) != 0) {
+        return -1;
+    }
+    data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
+    if (capset(&header, data) != 0) {
+        return -1;
+    }
+    if (prctl_impl(PR_SET_SECUREBITS, SECBIT_NO_CAP_AMBIENT_RAISE, 0, 0, 0) != 0) {
+        return -1;
+    }
+    errno = 0;
+    if (prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != -1 || errno != EPERM) {
+        errno = EPROTO;
+        return -1;
+    }
+    cred_reset_to_defaults();
+    return 0;
+}
