@@ -1260,6 +1260,18 @@ extern void cred_reset_to_defaults(void);
                    @"fchown should update virtual owner metadata, errno %d", errno);
 }
 
+- (void)testSupplementaryGroupCanReadGroupFile {
+    extern int vfs_contract_supplementary_group_can_read_group_file(void);
+    XCTAssertEqual(vfs_contract_supplementary_group_can_read_group_file(), 0,
+                   @"supplementary group membership should grant group read permission, errno %d", errno);
+}
+
+- (void)testMissingSupplementaryGroupCannotReadGroupFile {
+    extern int vfs_contract_missing_supplementary_group_cannot_read_group_file(void);
+    XCTAssertEqual(vfs_contract_missing_supplementary_group_cannot_read_group_file(), 0,
+                   @"missing supplementary group membership should not grant group read permission, errno %d", errno);
+}
+
 /* ============================================================================
  * SIGNAL-FAMILY SEMANTICS TESTS
  * ============================================================================ */

@@ -34,6 +34,7 @@ extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int setuid_impl(uid_t uid);
+extern int setgroups_impl(int size, const gid_t *list);
 extern void cred_reset_to_defaults(void);
 extern int chmod(const char *pathname, linux_mode_t mode);
 extern int fchmod(int fd, linux_mode_t mode);
@@ -980,5 +981,77 @@ out:
     close_impl(fd);
     cred_reset_to_defaults();
     unlink_impl("/tmp/vfs-cred-fchown-file");
+    return ret;
+}
+
+int vfs_contract_supplementary_group_can_read_group_file(void) {
+    gid_t groups[1] = {3000};
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-supgroup-read-file");
+    if (vfs_contract_write_file("/tmp/vfs-cred-supgroup-read-file", "group") != 0) {
+        goto out;
+    }
+    if (chown("/tmp/vfs-cred-supgroup-read-file", 2000, 3000) != 0) {
+        goto out;
+    }
+    if (chmod("/tmp/vfs-cred-supgroup-read-file", 0640) != 0) {
+        goto out;
+    }
+    if (setgroups_impl(1, groups) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-cred-supgroup-read-file", "group") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-supgroup-read-file");
+    return ret;
+}
+
+int vfs_contract_missing_supplementary_group_cannot_read_group_file(void) {
+    gid_t groups[1] = {3001};
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-no-supgroup-read-file");
+    if (vfs_contract_write_file("/tmp/vfs-cred-no-supgroup-read-file", "group") != 0) {
+        goto out;
+    }
+    if (chown("/tmp/vfs-cred-no-supgroup-read-file", 2000, 3000) != 0) {
+        goto out;
+    }
+    if (chmod("/tmp/vfs-cred-no-supgroup-read-file", 0640) != 0) {
+        goto out;
+    }
+    if (setgroups_impl(1, groups) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    fd = open_impl("/tmp/vfs-cred-no-supgroup-read-file", O_RDONLY, 0);
+    if (fd != -1 || errno != EACCES) {
+        close_impl(fd);
+        errno = EACCES;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-no-supgroup-read-file");
     return ret;
 }

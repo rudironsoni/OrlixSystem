@@ -22,6 +22,8 @@ extern gid_t getgid_impl(void);
 extern gid_t getegid_impl(void);
 extern int setuid_impl(uid_t uid);
 extern int setgid_impl(gid_t gid);
+extern int getgroups_impl(int size, gid_t list[]);
+extern int setgroups_impl(int size, const gid_t *list);
 extern void cred_reset_to_defaults(void);
 
 @interface CredentialTests : XCTestCase
@@ -149,6 +151,36 @@ extern void cred_reset_to_defaults(void);
     XCTAssertEqual(getgid_impl(), 24, @"GID should persist");
 }
 
+- (void)testSetgroupsImplVirtualRootSetsSupplementaryGroups {
+    gid_t groups[2] = {3000, 3001};
+    gid_t observed[2] = {0, 0};
+
+    XCTAssertEqual(setgroups_impl(2, groups), 0, @"virtual root should set supplementary groups");
+    XCTAssertEqual(getgroups_impl(0, NULL), 2, @"getgroups size query should return group count");
+    XCTAssertEqual(getgroups_impl(2, observed), 2, @"getgroups should copy supplementary groups");
+    XCTAssertEqual(observed[0], 3000u, @"first supplementary group should match");
+    XCTAssertEqual(observed[1], 3001u, @"second supplementary group should match");
+}
+
+- (void)testGetgroupsImplRejectsSmallBuffer {
+    gid_t groups[2] = {3000, 3001};
+    gid_t observed[1] = {0};
+
+    XCTAssertEqual(setgroups_impl(2, groups), 0, @"virtual root should set supplementary groups");
+    errno = 0;
+    XCTAssertEqual(getgroups_impl(1, observed), -1, @"getgroups should reject undersized buffers");
+    XCTAssertEqual(errno, EINVAL, @"getgroups undersized buffer should set EINVAL");
+}
+
+- (void)testSetgroupsImplNonRootFails {
+    gid_t groups[1] = {3000};
+
+    XCTAssertEqual(setuid_impl(1000), 0, @"root should first become non-root");
+    errno = 0;
+    XCTAssertEqual(setgroups_impl(1, groups), -1, @"non-root should not set supplementary groups");
+    XCTAssertEqual(errno, EPERM, @"non-root setgroups should set EPERM");
+}
+
 /* ============================================================================
  * VIRTUAL CREDENTIAL ALLOCATION TESTS
  * ============================================================================ */
@@ -169,6 +201,7 @@ extern void cred_reset_to_defaults(void);
     XCTAssertEqual(cred->egid, 0u, @"Default cred EGID should be 0 (virtual root)");
     XCTAssertEqual(cred->suid, 0u, @"Default cred SUID should be 0");
     XCTAssertEqual(cred->sgid, 0u, @"Default cred SGID should be 0");
+    XCTAssertEqual(cred->group_count, (size_t)0, @"Default cred should have no supplementary groups");
 
     free_cred(cred);
 }

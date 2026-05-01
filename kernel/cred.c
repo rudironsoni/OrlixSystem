@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <linux/limits.h>
+
 #include "cred_internal.h"
 
 /* ============================================================================
@@ -39,6 +41,8 @@ static struct cred global_init_cred = {
     .egid = KERNEL_DEFAULT_EGID,
     .suid = KERNEL_DEFAULT_SUID,
     .sgid = KERNEL_DEFAULT_SGID,
+    .groups = NULL,
+    .group_count = 0,
     .refs = 1
 };
 
@@ -60,6 +64,7 @@ struct cred *alloc_cred(void) {
 
 void free_cred(struct cred *cred) {
     if (cred) {
+        free(cred->groups);
         free(cred);
     }
 }
@@ -76,6 +81,15 @@ struct cred *dup_cred(const struct cred *cred) {
         new->egid = cred->egid;
         new->suid = cred->suid;
         new->sgid = cred->sgid;
+        if (cred->group_count > 0) {
+            new->groups = calloc(cred->group_count, sizeof(gid_t));
+            if (!new->groups) {
+                free_cred(new);
+                return NULL;
+            }
+            memcpy(new->groups, cred->groups, cred->group_count * sizeof(gid_t));
+            new->group_count = cred->group_count;
+        }
         new->refs = 1;
     }
     return new;
@@ -91,6 +105,8 @@ void cred_init_defaults(struct cred *cred) {
     cred->egid = KERNEL_DEFAULT_EGID;
     cred->suid = KERNEL_DEFAULT_SUID;
     cred->sgid = KERNEL_DEFAULT_SGID;
+    cred->groups = NULL;
+    cred->group_count = 0;
 }
 
 int cred_init(void) {
@@ -114,6 +130,9 @@ void cred_reset_to_defaults(void) {
     global_init_cred.egid = KERNEL_DEFAULT_EGID;
     global_init_cred.suid = KERNEL_DEFAULT_SUID;
     global_init_cred.sgid = KERNEL_DEFAULT_SGID;
+    free(global_init_cred.groups);
+    global_init_cred.groups = NULL;
+    global_init_cred.group_count = 0;
     global_init_cred.refs = 1;
     
     /* Reset current_cred pointer to point to global_init_cred */
@@ -398,6 +417,51 @@ int cred_setresgid(struct cred *cred, uint32_t rgid, uint32_t egid, uint32_t sgi
     return 0;
 }
 
+bool cred_has_group(const struct cred *cred, gid_t gid) {
+    if (!cred) {
+        return false;
+    }
+    if (cred->egid == gid) {
+        return true;
+    }
+    for (size_t i = 0; i < cred->group_count; i++) {
+        if (cred->groups[i] == gid) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int cred_setgroups(struct cred *cred, size_t size, const gid_t *list) {
+    gid_t *new_groups = NULL;
+
+    if (!cred) {
+        return -EINVAL;
+    }
+    if (cred->euid != 0) {
+        return -EPERM;
+    }
+    if (size > NGROUPS_MAX) {
+        return -EINVAL;
+    }
+    if (size > 0 && !list) {
+        return -EFAULT;
+    }
+
+    if (size > 0) {
+        new_groups = calloc(size, sizeof(gid_t));
+        if (!new_groups) {
+            return -ENOMEM;
+        }
+        memcpy(new_groups, list, size * sizeof(gid_t));
+    }
+
+    free(cred->groups);
+    cred->groups = new_groups;
+    cred->group_count = size;
+    return 0;
+}
+
 /* ============================================================================
  * LINUX-FACING PUBLIC SYSCALL ENTRIES
  * ============================================================================
@@ -451,6 +515,52 @@ int setgid_impl(gid_t gid) {
     return 0;
 }
 
+int getgroups_impl(int size, gid_t list[]) {
+    struct cred *cred = get_current_cred();
+
+    if (!cred) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (size < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (size == 0) {
+        return (int)cred->group_count;
+    }
+    if (!list) {
+        errno = EFAULT;
+        return -1;
+    }
+    if ((size_t)size < cred->group_count) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (size_t i = 0; i < cred->group_count; i++) {
+        list[i] = cred->groups[i];
+    }
+    return (int)cred->group_count;
+}
+
+int setgroups_impl(int size, const gid_t *list) {
+    struct cred *cred = get_current_cred();
+    int ret;
+
+    if (size < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ret = cred_setgroups(cred, (size_t)size, list);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
 /* ============================================================================
  * PUBLIC CANONICAL WRAPPERS
  * ============================================================================
@@ -479,4 +589,12 @@ __attribute__((visibility("default"))) int setuid(uid_t uid) {
 
 __attribute__((visibility("default"))) int setgid(gid_t gid) {
     return setgid_impl(gid);
+}
+
+__attribute__((visibility("default"))) int getgroups(int size, gid_t list[]) {
+    return getgroups_impl(size, list);
+}
+
+__attribute__((visibility("default"))) int setgroups(int size, const gid_t *list) {
+    return setgroups_impl(size, list);
 }

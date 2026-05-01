@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 /* Use Linux-compatible UID/GID types */
 typedef uint32_t uid_t;
@@ -39,6 +40,8 @@ struct cred {
     uint32_t egid;          /* Effective group ID */
     uint32_t suid;          /* Saved user ID */
     uint32_t sgid;          /* Saved group ID */
+    gid_t *groups;          /* Supplementary group IDs */
+    size_t group_count;     /* Number of supplementary groups */
 
     /* Reference counting for credential sharing */
     int refs;
@@ -115,6 +118,12 @@ int cred_setresuid(struct cred *cred, uint32_t ruid, uint32_t euid, uint32_t sui
 /* Virtual setresgid implementation */
 int cred_setresgid(struct cred *cred, uint32_t rgid, uint32_t egid, uint32_t sgid);
 
+/* Virtual supplementary group membership check */
+bool cred_has_group(const struct cred *cred, gid_t gid);
+
+/* Virtual setgroups implementation */
+int cred_setgroups(struct cred *cred, size_t size, const gid_t *list);
+
 /* ============================================================================
  * INTERNAL IMPLEMENTATION ENTRY POINTS
  * ============================================================================
@@ -139,6 +148,12 @@ int setuid_impl(uid_t uid);
 
 /* Set GID - virtual implementation */
 int setgid_impl(gid_t gid);
+
+/* Get supplementary groups - virtual implementation */
+int getgroups_impl(int size, gid_t list[]);
+
+/* Set supplementary groups - virtual implementation */
+int setgroups_impl(int size, const gid_t *list);
 
 #ifdef __cplusplus
 }

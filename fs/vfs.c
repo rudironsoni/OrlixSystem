@@ -336,7 +336,7 @@ static bool vfs_cred_has_mode_permission(const struct cred *cred, const struct l
 
     if (cred->euid == st->st_uid) {
         perm = (st->st_mode >> 6) & 07U;
-    } else if (cred->egid == st->st_gid) {
+    } else if (cred_has_group(cred, st->st_gid)) {
         perm = (st->st_mode >> 3) & 07U;
     } else {
         perm = st->st_mode & 07U;
