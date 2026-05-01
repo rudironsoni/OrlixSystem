@@ -11,6 +11,7 @@
 #include <errno.h>
 
 #include "fs/vfs.h"
+#include "kernel/cred_internal.h"
 #include "kernel/task.h"
 
 /* Access mode constants - defined locally to avoid Darwin <unistd.h> */
@@ -31,6 +32,9 @@ extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
+extern int fstat_impl(int fd, struct linux_stat *statbuf);
+extern int setuid_impl(uid_t uid);
+extern void cred_reset_to_defaults(void);
 
 static int vfs_contract_ignore_exists(int result) {
     if (result == 0 || errno == EEXIST) {
@@ -670,4 +674,136 @@ int vfs_contract_proc_self_mount_views_do_not_expose_host_paths(void) {
     }
 
     return 0;
+}
+
+int vfs_contract_nonroot_cannot_read_root_private_file(void) {
+    int fd;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-root-private");
+    if (vfs_contract_write_file("/tmp/vfs-cred-root-private", "secret") != 0) {
+        goto out;
+    }
+
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    errno = 0;
+    fd = open_impl("/tmp/vfs-cred-root-private", O_RDONLY, 0);
+    if (fd != -1 || errno != EACCES) {
+        close_impl(fd);
+        errno = EACCES;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-root-private");
+    return ret;
+}
+
+int vfs_contract_nonroot_can_read_other_readable_file(void) {
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-root-readable");
+    fd = open_impl("/tmp/vfs-cred-root-readable", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        goto out;
+    }
+    if (write_impl(fd, "public", 6) != 6) {
+        goto out;
+    }
+    close_impl(fd);
+    fd = -1;
+
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-cred-root-readable", "public") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_impl(fd);
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-root-readable");
+    return ret;
+}
+
+int vfs_contract_nonroot_created_file_records_virtual_owner(void) {
+    struct linux_stat st;
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-user-file");
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    fd = open_impl("/tmp/vfs-cred-user-file", O_RDWR | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        goto out;
+    }
+    if (fstat_impl(fd, &st) != 0) {
+        goto out;
+    }
+    if (st.st_uid != 1000 || (st.st_mode & 0777) != 0600) {
+        errno = EIO;
+        goto out;
+    }
+    if (write_impl(fd, "owned", 5) != 5) {
+        goto out;
+    }
+    close_impl(fd);
+    fd = -1;
+    if (vfs_contract_read_file_exact("/tmp/vfs-cred-user-file", "owned") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_impl(fd);
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-user-file");
+    return ret;
+}
+
+int vfs_contract_nonroot_cannot_unlink_inside_root_private_dir(void) {
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-private-dir/file");
+    rmdir_impl("/tmp/vfs-cred-private-dir");
+    if (mkdir_impl("/tmp/vfs-cred-private-dir", 0700) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-cred-private-dir/file", "owned") != 0) {
+        goto out;
+    }
+
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    errno = 0;
+    if (unlink_impl("/tmp/vfs-cred-private-dir/file") != -1 || errno != EACCES) {
+        errno = EACCES;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-private-dir/file");
+    rmdir_impl("/tmp/vfs-cred-private-dir");
+    return ret;
 }

@@ -147,6 +147,7 @@ static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const
     char translated_old[MAX_PATH];
     char translated_new[MAX_PATH];
     unsigned int host_flags = 0;
+    int ret;
 
     if (rename_resolve_virtual_path_at(olddirfd, oldpath, resolved_old, sizeof(resolved_old)) != 0) {
         return -1;
@@ -178,7 +179,22 @@ static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const
         host_flags |= RENAME_EXCL;
     }
 
-    return rename_apply_host_operation(resolved_old, resolved_new, translated_old, translated_new, host_flags);
+    ret = vfs_check_parent_mutation_permission(resolved_old);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = vfs_check_parent_mutation_permission(resolved_new);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    ret = rename_apply_host_operation(resolved_old, resolved_new, translated_old, translated_new, host_flags);
+    if (ret == 0) {
+        vfs_rename_path_metadata(resolved_old, resolved_new);
+    }
+    return ret;
 }
 
 static int directory_translate_task_path(const char *path, char *translated_path,
@@ -342,8 +358,21 @@ char *getcwd_impl(char *buf, size_t size) {
 
 int mkdir_impl(const char *pathname, mode_t mode) {
     char translated_path[MAX_PATH];
+    char resolved_path[MAX_PATH];
+    int ret;
 
     if (directory_validate_path(pathname) != 0) {
+        return -1;
+    }
+
+    ret = vfs_resolve_virtual_path_task(pathname, resolved_path, sizeof(resolved_path), NULL);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = vfs_check_parent_mutation_permission(resolved_path);
+    if (ret != 0) {
+        errno = -ret;
         return -1;
     }
 
@@ -351,13 +380,30 @@ int mkdir_impl(const char *pathname, mode_t mode) {
         return -1;
     }
 
-    return host_mkdir_impl(translated_path, mode);
+    ret = host_mkdir_impl(translated_path, mode);
+    if (ret == 0) {
+        vfs_record_created_path(resolved_path, S_IFDIR | mode);
+    }
+    return ret;
 }
 
 int rmdir_impl(const char *pathname) {
     char translated_path[MAX_PATH];
+    char resolved_path[MAX_PATH];
+    int ret;
 
     if (directory_validate_path(pathname) != 0) {
+        return -1;
+    }
+
+    ret = vfs_resolve_virtual_path_task(pathname, resolved_path, sizeof(resolved_path), NULL);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = vfs_check_parent_mutation_permission(resolved_path);
+    if (ret != 0) {
+        errno = -ret;
         return -1;
     }
 
@@ -375,13 +421,30 @@ int rmdir_impl(const char *pathname) {
         return -1;
     }
 
-    return host_rmdir_impl(translated_path);
+    ret = host_rmdir_impl(translated_path);
+    if (ret == 0) {
+        vfs_forget_path_metadata(resolved_path);
+    }
+    return ret;
 }
 
 int unlink_impl(const char *pathname) {
     char translated_path[MAX_PATH];
+    char resolved_path[MAX_PATH];
+    int ret;
 
     if (directory_validate_path(pathname) != 0) {
+        return -1;
+    }
+
+    ret = vfs_resolve_virtual_path_task(pathname, resolved_path, sizeof(resolved_path), NULL);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = vfs_check_parent_mutation_permission(resolved_path);
+    if (ret != 0) {
+        errno = -ret;
         return -1;
     }
 
@@ -395,7 +458,11 @@ int unlink_impl(const char *pathname) {
         return -1;
     }
 
-    return host_unlink_impl(translated_path);
+    ret = host_unlink_impl(translated_path);
+    if (ret == 0) {
+        vfs_forget_path_metadata(resolved_path);
+    }
+    return ret;
 }
 
 int link_impl(const char *oldpath, const char *newpath) {

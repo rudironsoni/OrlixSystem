@@ -52,6 +52,19 @@ struct vfs_mount_namespace {
     fs_mutex_t lock;
 };
 
+#define VFS_METADATA_MAX 256
+
+struct vfs_metadata_entry {
+    bool active;
+    char path[MAX_PATH];
+    linux_uid_t uid;
+    linux_gid_t gid;
+    linux_mode_t mode;
+};
+
+static struct vfs_metadata_entry vfs_metadata_table[VFS_METADATA_MAX];
+static fs_mutex_t vfs_metadata_lock = FS_MUTEX_INITIALIZER;
+
 static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
     struct vfs_mount_namespace *mnt_ns = calloc(1, sizeof(struct vfs_mount_namespace));
     if (!mnt_ns) {
@@ -152,6 +165,260 @@ static int vfs_copy_string(const char *src, char *dst, size_t dst_len) {
     }
 
     memcpy(dst, src, len + 1);
+    return 0;
+}
+
+static int vfs_metadata_find_locked(const char *resolved_vpath) {
+    if (!resolved_vpath) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < VFS_METADATA_MAX; i++) {
+        if (vfs_metadata_table[i].active && strcmp(vfs_metadata_table[i].path, resolved_vpath) == 0) {
+            return (int)i;
+        }
+    }
+
+    return -1;
+}
+
+static linux_mode_t vfs_default_mode_for_virtual_path(const char *resolved_vpath, linux_mode_t current_mode) {
+    if (!resolved_vpath) {
+        return current_mode;
+    }
+
+    if (strcmp(resolved_vpath, "/tmp") == 0 || strcmp(resolved_vpath, "/var/tmp") == 0 ||
+        strcmp(resolved_vpath, "/run") == 0) {
+        return (current_mode & ~07777U) | 0777U;
+    }
+
+    return current_mode;
+}
+
+void vfs_apply_stat_metadata(const char *resolved_vpath, struct linux_stat *statbuf) {
+    int idx;
+
+    if (!statbuf) {
+        return;
+    }
+
+    statbuf->st_uid = 0;
+    statbuf->st_gid = 0;
+    statbuf->st_mode = vfs_default_mode_for_virtual_path(resolved_vpath, statbuf->st_mode);
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    idx = vfs_metadata_find_locked(resolved_vpath);
+    if (idx >= 0) {
+        linux_mode_t file_type = statbuf->st_mode & ~07777U;
+        statbuf->st_uid = vfs_metadata_table[idx].uid;
+        statbuf->st_gid = vfs_metadata_table[idx].gid;
+        statbuf->st_mode = file_type | (vfs_metadata_table[idx].mode & 07777U);
+    }
+    fs_mutex_unlock(&vfs_metadata_lock);
+}
+
+void vfs_record_created_path(const char *resolved_vpath, linux_mode_t mode) {
+    struct cred *cred = get_current_cred();
+    int idx;
+    int free_slot = -1;
+
+    if (!resolved_vpath || !cred) {
+        return;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    idx = vfs_metadata_find_locked(resolved_vpath);
+    if (idx < 0) {
+        for (size_t i = 0; i < VFS_METADATA_MAX; i++) {
+            if (!vfs_metadata_table[i].active) {
+                free_slot = (int)i;
+                break;
+            }
+        }
+        idx = free_slot;
+    }
+
+    if (idx >= 0) {
+        vfs_metadata_table[idx].active = true;
+        vfs_copy_string(resolved_vpath, vfs_metadata_table[idx].path, sizeof(vfs_metadata_table[idx].path));
+        vfs_metadata_table[idx].uid = cred->euid;
+        vfs_metadata_table[idx].gid = cred->egid;
+        vfs_metadata_table[idx].mode = mode & 07777U;
+    }
+    fs_mutex_unlock(&vfs_metadata_lock);
+}
+
+void vfs_forget_path_metadata(const char *resolved_vpath) {
+    int idx;
+
+    if (!resolved_vpath) {
+        return;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    idx = vfs_metadata_find_locked(resolved_vpath);
+    if (idx >= 0) {
+        memset(&vfs_metadata_table[idx], 0, sizeof(vfs_metadata_table[idx]));
+    }
+    fs_mutex_unlock(&vfs_metadata_lock);
+}
+
+void vfs_rename_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath) {
+    int old_idx;
+    int new_idx;
+
+    if (!old_resolved_vpath || !new_resolved_vpath) {
+        return;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    old_idx = vfs_metadata_find_locked(old_resolved_vpath);
+    if (old_idx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return;
+    }
+
+    new_idx = vfs_metadata_find_locked(new_resolved_vpath);
+    if (new_idx >= 0 && new_idx != old_idx) {
+        memset(&vfs_metadata_table[new_idx], 0, sizeof(vfs_metadata_table[new_idx]));
+    }
+    vfs_copy_string(new_resolved_vpath, vfs_metadata_table[old_idx].path,
+                    sizeof(vfs_metadata_table[old_idx].path));
+    fs_mutex_unlock(&vfs_metadata_lock);
+}
+
+static bool vfs_cred_has_mode_permission(const struct cred *cred, const struct linux_stat *st,
+                                         linux_mode_t mask) {
+    linux_mode_t perm;
+
+    if (!cred || !st) {
+        return false;
+    }
+
+    if (cred->euid == 0) {
+        if ((mask & 0111U) != 0 && (st->st_mode & 0111U) == 0) {
+            return false;
+        }
+        return true;
+    }
+
+    if (cred->euid == st->st_uid) {
+        perm = (st->st_mode >> 6) & 07U;
+    } else if (cred->egid == st->st_gid) {
+        perm = (st->st_mode >> 3) & 07U;
+    } else {
+        perm = st->st_mode & 07U;
+    }
+
+    return (perm & mask) == mask;
+}
+
+static int vfs_stat_virtual_backed_path(const char *resolved_vpath, const char *translated_path,
+                                        struct linux_stat *st) {
+    if (!resolved_vpath || !translated_path || !st) {
+        return -EINVAL;
+    }
+
+    if (host_stat_impl(translated_path, st) != 0) {
+        return -errno;
+    }
+    vfs_apply_stat_metadata(resolved_vpath, st);
+    return 0;
+}
+
+static int vfs_parent_path(const char *resolved_vpath, char *parent, size_t parent_len) {
+    const char *slash;
+    size_t len;
+
+    if (!resolved_vpath || !parent || parent_len == 0 || resolved_vpath[0] != '/') {
+        return -EINVAL;
+    }
+
+    slash = strrchr(resolved_vpath, '/');
+    if (!slash) {
+        return -EINVAL;
+    }
+    if (slash == resolved_vpath) {
+        return vfs_copy_string("/", parent, parent_len);
+    }
+
+    len = (size_t)(slash - resolved_vpath);
+    if (len >= parent_len) {
+        return -ENAMETOOLONG;
+    }
+    memcpy(parent, resolved_vpath, len);
+    parent[len] = '\0';
+    return 0;
+}
+
+int vfs_check_parent_mutation_permission(const char *resolved_vpath) {
+    char parent[MAX_PATH];
+    char translated_parent[MAX_PATH];
+    struct linux_stat st;
+    struct cred *cred = get_current_cred();
+    int ret;
+
+    ret = vfs_parent_path(resolved_vpath, parent, sizeof(parent));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_translate_path(parent, translated_parent, sizeof(translated_parent));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_stat_virtual_backed_path(parent, translated_parent, &st);
+    if (ret != 0) {
+        return ret;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        return -ENOTDIR;
+    }
+    if (!vfs_cred_has_mode_permission(cred, &st, 03U)) {
+        return -EACCES;
+    }
+
+    return 0;
+}
+
+int vfs_check_open_permission(const char *resolved_vpath, const char *translated_path, int flags) {
+    struct linux_stat st;
+    struct cred *cred = get_current_cred();
+    int access_mode = flags & O_ACCMODE;
+    bool wants_read = access_mode == O_RDONLY || access_mode == O_RDWR;
+    bool wants_write = access_mode == O_WRONLY || access_mode == O_RDWR;
+    bool exists;
+    int ret;
+
+    if (!resolved_vpath || !translated_path) {
+        return -EINVAL;
+    }
+
+    ret = vfs_stat_virtual_backed_path(resolved_vpath, translated_path, &st);
+    exists = ret == 0;
+    if (!exists && ret != -ENOENT) {
+        return ret;
+    }
+
+    if (!exists) {
+        if (!wants_write) {
+            return -ENOENT;
+        }
+        return vfs_check_parent_mutation_permission(resolved_vpath);
+    }
+
+    if (S_ISDIR(st.st_mode) && wants_write) {
+        return -EISDIR;
+    }
+    if (wants_read && !vfs_cred_has_mode_permission(cred, &st, 04U)) {
+        return -EACCES;
+    }
+    if (wants_write && !vfs_cred_has_mode_permission(cred, &st, 02U)) {
+        return -EACCES;
+    }
+    if ((flags & O_TRUNC) != 0 && !vfs_cred_has_mode_permission(cred, &st, 02U)) {
+        return -EACCES;
+    }
+
     return 0;
 }
 
@@ -706,6 +973,9 @@ void vfs_deinit(void) {
     /* Reset VFS initialization state for cold boot/reboot */
     vfs_backing_initialized = 0;
     vfs_etc_bootstrapped = 0;
+    fs_mutex_lock(&vfs_metadata_lock);
+    memset(vfs_metadata_table, 0, sizeof(vfs_metadata_table));
+    fs_mutex_unlock(&vfs_metadata_lock);
 }
 
 int vfs_mount(const char *source, const char *target, const char *fstype, unsigned long flags,
@@ -1934,10 +2204,15 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
     }
 
     if (follow_symlink) {
-        return vfs_stat_path(translated_path, statbuf);
+        ret = vfs_stat_path(translated_path, statbuf);
     } else {
-        return vfs_lstat(translated_path, statbuf);
+        ret = vfs_lstat(translated_path, statbuf);
     }
+    if (ret != 0) {
+        return ret;
+    }
+    vfs_apply_stat_metadata(resolved_virtual, statbuf);
+    return 0;
 }
 
 int vfs_faccessat(int dirfd, const char *pathname, int mode, int flags) {
@@ -1987,5 +2262,25 @@ int vfs_faccessat(int dirfd, const char *pathname, int mode, int flags) {
         return -ENOTSUP;
     }
 
-    return vfs_access(translated_path, mode);
+    {
+        struct linux_stat st;
+        struct cred *cred = get_current_cred();
+
+        ret = vfs_stat_virtual_backed_path(resolved_virtual, translated_path, &st);
+        if (ret != 0) {
+            return ret;
+        }
+
+        if ((mode & 4) != 0 && !vfs_cred_has_mode_permission(cred, &st, 04U)) {
+            return -EACCES;
+        }
+        if ((mode & 2) != 0 && !vfs_cred_has_mode_permission(cred, &st, 02U)) {
+            return -EACCES;
+        }
+        if ((mode & 1) != 0 && !vfs_cred_has_mode_permission(cred, &st, 01U)) {
+            return -EACCES;
+        }
+    }
+
+    return 0;
 }

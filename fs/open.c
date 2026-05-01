@@ -1,6 +1,7 @@
 #include <linux/fcntl.h>
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -209,6 +210,15 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
         return -1;
     }
 
+    struct linux_stat st;
+    bool record_created = vfs_fstatat(AT_FDCWD, resolved_path, &st, 0) == -ENOENT;
+
+    ret = vfs_check_open_permission(resolved_path, translated_path, flags);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
     int fd = alloc_fd_impl();
     if (fd < 0) {
         return -1;
@@ -223,6 +233,9 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
     }
 
     init_fd_entry_impl(fd, real_fd, flags, mode, resolved_path);
+    if (record_created) {
+        vfs_record_created_path(resolved_path, mode);
+    }
     return fd;
 }
 
@@ -346,6 +359,15 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
         return -1;
     }
 
+    struct linux_stat st;
+    bool record_created = vfs_fstatat(AT_FDCWD, resolved_path, &st, 0) == -ENOENT;
+
+    ret = vfs_check_open_permission(resolved_path, translated_path, flags);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
     int fd = alloc_fd_impl();
     if (fd < 0) {
         return -1;
@@ -360,6 +382,9 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
     }
 
     init_fd_entry_impl(fd, real_fd, flags, mode, resolved_path);
+    if (record_created) {
+        vfs_record_created_path(resolved_path, mode);
+    }
     return fd;
 }
 

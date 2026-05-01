@@ -80,6 +80,9 @@ int fstat_impl(int fd, struct linux_stat *statbuf) {
     real_fd = get_real_fd_impl(entry);
     if (real_fd >= 0) {
         ret = host_fstat_impl(real_fd, statbuf);
+        if (ret == 0 && get_fd_path_impl(entry, path, sizeof(path)) == 0) {
+            vfs_apply_stat_metadata(path, statbuf);
+        }
         put_fd_entry_impl(entry);
         if (ret != 0) {
             errno = -ret;

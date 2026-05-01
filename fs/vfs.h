@@ -307,6 +307,12 @@ int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len);
 int vfs_proc_self_status_content(char *buf, size_t buf_len);
 int vfs_proc_self_mountinfo_content(char *buf, size_t buf_len);
 int vfs_proc_self_mounts_content(char *buf, size_t buf_len);
+int vfs_check_open_permission(const char *resolved_vpath, const char *translated_path, int flags);
+int vfs_check_parent_mutation_permission(const char *resolved_vpath);
+void vfs_record_created_path(const char *resolved_vpath, linux_mode_t mode);
+void vfs_forget_path_metadata(const char *resolved_vpath);
+void vfs_rename_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath);
+void vfs_apply_stat_metadata(const char *resolved_vpath, struct linux_stat *statbuf);
 
 const char *vfs_backing_root_for_class(enum vfs_backing_class cls);
 

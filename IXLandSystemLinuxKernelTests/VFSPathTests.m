@@ -32,6 +32,7 @@
 #include "kernel/task.h"
 #include "kernel/signal.h"
 #include "kernel/init.h"
+#include "kernel/cred_internal.h"
 #include "runtime/native/registry.h"
 
 /* Linux UAPI test support - semantic helpers only */
@@ -57,6 +58,7 @@ extern int vfs_discover_temp_root(char *path, size_t size);
 extern int stat_impl(const char *path, struct linux_stat *statbuf);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int lstat_impl(const char *path, struct linux_stat *statbuf);
+extern void cred_reset_to_defaults(void);
 
 @interface VFSPathTests : XCTestCase
 @end
@@ -69,6 +71,7 @@ extern int lstat_impl(const char *path, struct linux_stat *statbuf);
     int ret = start_kernel();
     XCTAssertEqual(ret, 0, @"start_kernel must succeed before LinuxKernel VFS tests");
     XCTAssertTrue(kernel_is_booted(), @"kernel must be booted before LinuxKernel VFS tests");
+    cred_reset_to_defaults();
     /* Clean up any lingering file descriptors using owner close_impl */
     for (int fd = 3; fd < 256; fd++) {
         close_impl(fd);
@@ -79,6 +82,7 @@ extern int lstat_impl(const char *path, struct linux_stat *statbuf);
     for (int fd = 3; fd < 256; fd++) {
         close_impl(fd);
     }
+    cred_reset_to_defaults();
     [super tearDown];
 }
 
@@ -1194,6 +1198,30 @@ extern int lstat_impl(const char *path, struct linux_stat *statbuf);
     extern int vfs_contract_proc_self_mount_views_do_not_expose_host_paths(void);
     XCTAssertEqual(vfs_contract_proc_self_mount_views_do_not_expose_host_paths(), 0,
                    @"proc mount views should not expose host backing paths, errno %d", errno);
+}
+
+- (void)testNonrootCannotReadRootPrivateFile {
+    extern int vfs_contract_nonroot_cannot_read_root_private_file(void);
+    XCTAssertEqual(vfs_contract_nonroot_cannot_read_root_private_file(), 0,
+                   @"non-root virtual credentials should not read root-private files, errno %d", errno);
+}
+
+- (void)testNonrootCanReadOtherReadableFile {
+    extern int vfs_contract_nonroot_can_read_other_readable_file(void);
+    XCTAssertEqual(vfs_contract_nonroot_can_read_other_readable_file(), 0,
+                   @"other-readable files should remain readable by non-root credentials, errno %d", errno);
+}
+
+- (void)testNonrootCreatedFileRecordsVirtualOwner {
+    extern int vfs_contract_nonroot_created_file_records_virtual_owner(void);
+    XCTAssertEqual(vfs_contract_nonroot_created_file_records_virtual_owner(), 0,
+                   @"created files should record the current virtual euid as owner, errno %d", errno);
+}
+
+- (void)testNonrootCannotUnlinkInsideRootPrivateDir {
+    extern int vfs_contract_nonroot_cannot_unlink_inside_root_private_dir(void);
+    XCTAssertEqual(vfs_contract_nonroot_cannot_unlink_inside_root_private_dir(), 0,
+                   @"non-root virtual credentials should not unlink inside root-private directories, errno %d", errno);
 }
 
 /* ============================================================================
