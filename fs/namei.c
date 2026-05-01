@@ -155,6 +155,34 @@ static int rename_apply_host_exchange(const char *old_virtual_path, const char *
     return 0;
 }
 
+static int rename_require_host_entry(const char *host_path) {
+    struct linux_stat st;
+    int ret;
+
+    ret = host_lstat_impl(host_path, &st);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+static int rename_require_absent_host_entry(const char *host_path) {
+    struct linux_stat st;
+    int ret;
+
+    ret = host_lstat_impl(host_path, &st);
+    if (ret == 0) {
+        errno = EEXIST;
+        return -1;
+    }
+    if (ret != -ENOENT) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
 static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
                           unsigned int flags) {
     char resolved_old[MAX_PATH];
@@ -197,6 +225,19 @@ static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const
 
     if ((flags & AT_RENAME_NOREPLACE) != 0) {
         host_flags |= RENAME_EXCL;
+    }
+
+    if (rename_require_host_entry(translated_old) != 0) {
+        return -1;
+    }
+    if ((flags & AT_RENAME_EXCHANGE) != 0) {
+        if (rename_require_host_entry(translated_new) != 0) {
+            return -1;
+        }
+    } else if ((flags & AT_RENAME_NOREPLACE) != 0) {
+        if (rename_require_absent_host_entry(translated_new) != 0) {
+            return -1;
+        }
     }
 
     ret = vfs_check_parent_mutation_permission(resolved_old);

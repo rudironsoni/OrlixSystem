@@ -1308,6 +1308,18 @@ extern void cred_reset_to_defaults(void);
                    @"renameat2 exchange should swap virtual metadata with files, errno %d", errno);
 }
 
+- (void)testRenameat2NoreplaceExistingTargetReturnsExist {
+    extern int vfs_contract_renameat2_noreplace_existing_target_returns_exist(void);
+    XCTAssertEqual(vfs_contract_renameat2_noreplace_existing_target_returns_exist(), 0,
+                   @"renameat2 noreplace should fail with EEXIST and leave files unchanged, errno %d", errno);
+}
+
+- (void)testRenameatOverwriteMovesVirtualMetadata {
+    extern int vfs_contract_renameat_overwrite_moves_virtual_metadata(void);
+    XCTAssertEqual(vfs_contract_renameat_overwrite_moves_virtual_metadata(), 0,
+                   @"rename overwrite should move source virtual metadata to target, errno %d", errno);
+}
+
 - (void)testRootChownUpdatesVirtualOwner {
     extern int vfs_contract_root_chown_updates_virtual_owner(void);
     XCTAssertEqual(vfs_contract_root_chown_updates_virtual_owner(), 0,
