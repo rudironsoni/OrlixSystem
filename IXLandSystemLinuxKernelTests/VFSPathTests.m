@@ -1188,6 +1188,24 @@ extern void cred_reset_to_defaults(void);
                    @"/proc/self/mounts should expose virtual bind mounts, errno %d", errno);
 }
 
+- (void)testBindMountRemountReadonlyRejectsWrites {
+    extern int vfs_contract_bind_mount_remount_readonly_rejects_writes(void);
+    XCTAssertEqual(vfs_contract_bind_mount_remount_readonly_rejects_writes(), 0,
+                   @"read-only virtual bind mounts should reject writes with EROFS, errno %d", errno);
+}
+
+- (void)testBindMountRemountReadwritePermitsWrites {
+    extern int vfs_contract_bind_mount_remount_readwrite_permits_writes(void);
+    XCTAssertEqual(vfs_contract_bind_mount_remount_readwrite_permits_writes(), 0,
+                   @"read-write remount should permit writes through the virtual bind mount, errno %d", errno);
+}
+
+- (void)testProcSelfMountinfoReportsReadonlyRemount {
+    extern int vfs_contract_proc_self_mountinfo_reports_readonly_remount(void);
+    XCTAssertEqual(vfs_contract_proc_self_mountinfo_reports_readonly_remount(), 0,
+                   @"/proc/self/mountinfo should report read-only remounted bind mounts, errno %d", errno);
+}
+
 - (void)testProcSelfMountinfoUsesCurrentMountNamespace {
     extern int vfs_contract_proc_self_mountinfo_uses_current_mount_namespace(void);
     XCTAssertEqual(vfs_contract_proc_self_mountinfo_uses_current_mount_namespace(), 0,

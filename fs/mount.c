@@ -35,13 +35,13 @@ extern int vfs_umount(const char *target);
 static int mount_impl(const char *source, const char *target,
                       const char *filesystemtype, unsigned long mountflags,
                       const void *data) {
-    if (!source || !target) {
+    if ((!source && (mountflags & MS_REMOUNT) == 0) || !target) {
         errno = EFAULT;
         return -1;
     }
 
     /* Validate inputs */
-    if (source[0] == '\0' || target[0] == '\0') {
+    if (((mountflags & MS_REMOUNT) == 0 && source[0] == '\0') || target[0] == '\0') {
         errno = ENOENT;
         return -1;
     }

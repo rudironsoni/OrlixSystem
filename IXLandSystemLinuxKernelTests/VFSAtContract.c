@@ -176,8 +176,10 @@ static void vfs_contract_cleanup_mount_paths(void) {
 static void vfs_contract_cleanup_mount_namespace_paths(void) {
     umount("/tmp/vfs-mntns-target");
     unlink_impl("/tmp/vfs-mntns-parent-source/file");
+    unlink_impl("/tmp/vfs-mntns-parent-source/newfile");
     unlink_impl("/tmp/vfs-mntns-child-source/file");
     unlink_impl("/tmp/vfs-mntns-target/file");
+    unlink_impl("/tmp/vfs-mntns-target/newfile");
     rmdir_impl("/tmp/vfs-mntns-parent-source");
     rmdir_impl("/tmp/vfs-mntns-child-source");
     rmdir_impl("/tmp/vfs-mntns-target");
@@ -561,7 +563,11 @@ int vfs_contract_proc_self_mountinfo_lists_bind_mount(void) {
     ret = 0;
 
 out:
-    vfs_contract_cleanup_mount_namespace_paths();
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
     return ret;
 }
 
@@ -585,6 +591,116 @@ int vfs_contract_proc_self_mounts_lists_bind_mount(void) {
         goto out;
     }
     if (!vfs_contract_content_contains(content, "/tmp/vfs-mntns-parent-source /tmp/vfs-mntns-target none rw,bind 0 0\n")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_bind_mount_remount_readonly_rejects_writes(void) {
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-target/file", "target") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    if (mount(NULL, "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY, NULL) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (vfs_contract_write_file("/tmp/vfs-mntns-target/file", "blocked") == 0 || errno != EROFS) {
+        errno = EROFS;
+        goto out;
+    }
+
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/file", "parent") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    vfs_contract_cleanup_mount_namespace_paths();
+    return ret;
+}
+
+int vfs_contract_bind_mount_remount_readwrite_permits_writes(void) {
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-target/file", "target") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0 ||
+        mount(NULL, "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY, NULL) != 0 ||
+        mount(NULL, "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REMOUNT, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-target/newfile", "updated") != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/newfile", "updated") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_proc_self_mountinfo_reports_readonly_remount(void) {
+    char content[4096];
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-target/file", "target") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0 ||
+        mount(NULL, "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_proc_file("/proc/self/mountinfo", content, sizeof(content)) != 0) {
+        goto out;
+    }
+    if (!vfs_contract_content_contains(content, "/tmp/vfs-mntns-parent-source") ||
+        !vfs_contract_content_contains(content, "/tmp/vfs-mntns-target") ||
+        !vfs_contract_content_contains(content, " ro - none ") ||
+        !vfs_contract_content_contains(content, " ro,bind\n")) {
         errno = ENODATA;
         goto out;
     }

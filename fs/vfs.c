@@ -35,6 +35,7 @@ static int vfs_join_virtual_path(const char *base_path, const char *suffix, char
                                  size_t joined_path_len);
 static int vfs_stat_virtual_backed_path(const char *resolved_vpath, const char *translated_path,
                                         struct linux_stat *st);
+static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath);
 
 /* Backing storage class roots - discovered at runtime from host container */
 static char vfs_persistent_root[MAX_PATH] = {0};
@@ -47,6 +48,7 @@ struct vfs_mount_entry {
     bool active;
     char source[MAX_PATH];
     char target[MAX_PATH];
+    char fstype[32];
     unsigned long flags;
 };
 
@@ -463,6 +465,10 @@ int vfs_check_parent_mutation_permission(const char *resolved_vpath) {
     struct cred *cred = get_current_cred();
     int ret;
 
+    if (vfs_path_is_on_readonly_mount(resolved_vpath)) {
+        return -EROFS;
+    }
+
     ret = vfs_parent_path(resolved_vpath, parent, sizeof(parent));
     if (ret != 0) {
         return ret;
@@ -496,6 +502,10 @@ int vfs_check_open_permission(const char *resolved_vpath, const char *translated
 
     if (!resolved_vpath || !translated_path) {
         return -EINVAL;
+    }
+
+    if ((wants_write || (flags & O_TRUNC) != 0) && vfs_path_is_on_readonly_mount(resolved_vpath)) {
+        return -EROFS;
     }
 
     ret = vfs_stat_virtual_backed_path(resolved_vpath, translated_path, &st);
@@ -689,6 +699,50 @@ static int vfs_apply_mounts(const char *normalized_virtual_path, char *mounted_p
     fs_mutex_unlock(&mnt_ns->lock);
 
     return ret;
+}
+
+static const struct vfs_mount_entry *vfs_find_mount_for_path_locked(const char *normalized_virtual_path,
+                                                                    struct vfs_mount_namespace *mnt_ns) {
+    const struct vfs_mount_entry *best = NULL;
+    size_t best_len = 0;
+
+    if (!normalized_virtual_path || !mnt_ns) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        const struct vfs_mount_entry *entry = &mnt_ns->entries[i];
+        size_t target_len;
+
+        if (!entry->active || !vfs_path_matches_prefix(normalized_virtual_path, entry->target)) {
+            continue;
+        }
+
+        target_len = strlen(entry->target);
+        if (!best || target_len > best_len) {
+            best = entry;
+            best_len = target_len;
+        }
+    }
+
+    return best;
+}
+
+static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath) {
+    struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
+    const struct vfs_mount_entry *entry;
+    bool readonly = false;
+
+    if (!resolved_vpath || !mnt_ns) {
+        return false;
+    }
+
+    fs_mutex_lock(&mnt_ns->lock);
+    entry = vfs_find_mount_for_path_locked(resolved_vpath, mnt_ns);
+    readonly = entry && ((entry->flags & MS_RDONLY) != 0);
+    fs_mutex_unlock(&mnt_ns->lock);
+
+    return readonly;
 }
 
 int vfs_describe_route_for_path(const char *vpath, enum vfs_route_identity *route_id,
@@ -1125,20 +1179,24 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     struct linux_stat target_stat;
     int ret;
     int slot = -1;
-    unsigned long supported_flags = MS_BIND;
+    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY;
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
+    bool remount = (flags & MS_REMOUNT) != 0;
 
-    if (!source || !target) {
+    if ((!source && !remount) || !target) {
         return -EFAULT;
     }
-    if (source[0] == '\0' || target[0] == '\0') {
+    if ((!remount && source[0] == '\0') || target[0] == '\0') {
         return -ENOENT;
     }
     if ((flags & ~supported_flags) != 0) {
         return -EINVAL;
     }
-    if ((flags & MS_BIND) == 0) {
+    if (!remount && (flags & MS_BIND) == 0) {
         return -ENOSYS;
+    }
+    if (remount && (flags & MS_BIND) == 0) {
+        return -EINVAL;
     }
     if (!mnt_ns) {
         return -ESRCH;
@@ -1147,16 +1205,30 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         return -EINVAL;
     }
 
-    ret = vfs_resolve_virtual_path_at(AT_FDCWD, source, resolved_source, sizeof(resolved_source));
-    if (ret != 0) {
-        return ret;
-    }
     ret = vfs_resolve_virtual_path_at(AT_FDCWD, target, resolved_target, sizeof(resolved_target));
     if (ret != 0) {
         return ret;
     }
     if (strcmp(resolved_target, "/") == 0) {
         return -EINVAL;
+    }
+
+    if (remount) {
+        fs_mutex_lock(&mnt_ns->lock);
+        for (size_t i = 0; i < MAX_MOUNTS; i++) {
+            if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
+                mnt_ns->entries[i].flags = (mnt_ns->entries[i].flags & ~MS_RDONLY) | (flags & MS_RDONLY) | MS_BIND;
+                fs_mutex_unlock(&mnt_ns->lock);
+                return 0;
+            }
+        }
+        fs_mutex_unlock(&mnt_ns->lock);
+        return -EINVAL;
+    }
+
+    ret = vfs_resolve_virtual_path_at(AT_FDCWD, source, resolved_source, sizeof(resolved_source));
+    if (ret != 0) {
+        return ret;
     }
 
     ret = vfs_translate_path(resolved_source, host_source, sizeof(host_source));
@@ -1197,6 +1269,16 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     mnt_ns->entries[slot].active = true;
     memcpy(mnt_ns->entries[slot].source, resolved_source, sizeof(mnt_ns->entries[slot].source));
     memcpy(mnt_ns->entries[slot].target, resolved_target, sizeof(mnt_ns->entries[slot].target));
+    if (fstype && fstype[0] != '\0') {
+        ret = vfs_copy_string(fstype, mnt_ns->entries[slot].fstype, sizeof(mnt_ns->entries[slot].fstype));
+        if (ret != 0) {
+            memset(&mnt_ns->entries[slot], 0, sizeof(mnt_ns->entries[slot]));
+            fs_mutex_unlock(&mnt_ns->lock);
+            return ret;
+        }
+    } else {
+        memcpy(mnt_ns->entries[slot].fstype, "none", sizeof("none"));
+    }
     mnt_ns->entries[slot].flags = flags;
     fs_mutex_unlock(&mnt_ns->lock);
 
@@ -2131,8 +2213,11 @@ int vfs_proc_self_mountinfo_content(char *buf, size_t buf_len) {
             continue;
         }
 
-        if (vfs_proc_append(buf, buf_len, &pos, "%d 1 0:%d %s %s rw - none %s rw,bind\n",
-                            mount_id, mount_id, entry->source, entry->target, entry->source) != 0) {
+        const char *mode = (entry->flags & MS_RDONLY) ? "ro" : "rw";
+        const char *fstype = entry->fstype[0] ? entry->fstype : "none";
+        if (vfs_proc_append(buf, buf_len, &pos, "%d 1 0:%d %s %s %s - %s %s %s,bind\n",
+                            mount_id, mount_id, entry->source, entry->target, mode,
+                            fstype, entry->source, mode) != 0) {
             break;
         }
         mount_id++;
@@ -2167,8 +2252,10 @@ int vfs_proc_self_mounts_content(char *buf, size_t buf_len) {
             continue;
         }
 
-        if (vfs_proc_append(buf, buf_len, &pos, "%s %s none rw,bind 0 0\n",
-                            entry->source, entry->target) != 0) {
+        const char *mode = (entry->flags & MS_RDONLY) ? "ro" : "rw";
+        const char *fstype = entry->fstype[0] ? entry->fstype : "none";
+        if (vfs_proc_append(buf, buf_len, &pos, "%s %s %s %s,bind 0 0\n",
+                            entry->source, entry->target, fstype, mode) != 0) {
             break;
         }
     }
