@@ -35,4 +35,12 @@ extern int library_is_initialized(void);
     XCTAssertEqual(futex_contract_wake_releases_waiter(), 0, @"errno %d", errno);
 }
 
+- (void)testFutexSetsAndGetsRobustList {
+    XCTAssertEqual(futex_contract_sets_and_gets_robust_list(), 0, @"errno %d", errno);
+}
+
+- (void)testFutexRejectsMissingRobustListOutputs {
+    XCTAssertEqual(futex_contract_rejects_missing_robust_list_outputs(), 0, @"errno %d", errno);
+}
+
 @end

@@ -1,10 +1,12 @@
 #include "futex.h"
 
+#include "task.h"
 #include "wait_queue.h"
 
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <linux/futex.h>
@@ -174,4 +176,54 @@ int futex_op_impl(int *uaddr, int futex_op, int val, int timeout_ms) {
     }
     errno = ENOSYS;
     return -1;
+}
+
+int set_robust_list_impl(void *head, unsigned long len) {
+    struct task_struct *task = get_current();
+
+    if (!task && task_init() == 0) {
+        task = get_current();
+    }
+    if (!task || !task->mm) {
+        if (!task) {
+            errno = ESRCH;
+            return -1;
+        }
+        task->mm = calloc(1, sizeof(*task->mm));
+        if (!task->mm) {
+            errno = ENOMEM;
+            return -1;
+        }
+    }
+    if (!head || len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    task->mm->robust_list_head = (uint64_t)(uintptr_t)head;
+    task->mm->robust_list_len = (uint64_t)len;
+    return 0;
+}
+
+int get_robust_list_impl(int pid, void **head, unsigned long *len) {
+    struct task_struct *task;
+
+    if (!head || !len) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (pid == 0) {
+        task = get_current();
+        if (!task && task_init() == 0) {
+            task = get_current();
+        }
+    } else {
+        task = task_lookup(pid);
+    }
+    if (!task || !task->mm) {
+        errno = ESRCH;
+        return -1;
+    }
+    *head = (void *)(uintptr_t)task->mm->robust_list_head;
+    *len = (unsigned long)task->mm->robust_list_len;
+    return 0;
 }

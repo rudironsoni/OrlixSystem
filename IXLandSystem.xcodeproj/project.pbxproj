@@ -108,6 +108,7 @@
 		E3163A55ED3811BB3D6BA247 /* ExecSyscallContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 008ECDF9EF2E0DDA77DFE526 /* ExecSyscallContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		E4315DD46B25D84855893D5C /* elf_reloc.c in Sources */ = {isa = PBXBuildFile; fileRef = BB13E6189986C573D19FA8F7 /* elf_reloc.c */; };
 		E48B8CCAE1CBE2334B10B819 /* read_write.c in Sources */ = {isa = PBXBuildFile; fileRef = D979F989EC0D2FF286D59733 /* read_write.c */; };
+		E63DDEAC76F748954776BB1D /* open_flags.c in Sources */ = {isa = PBXBuildFile; fileRef = 24774284A6A0B1B645EDD3FD /* open_flags.c */; };
 		E6EBC6D734546A272FB292D1 /* pid.c in Sources */ = {isa = PBXBuildFile; fileRef = 4D57509F341C9895C6F7163B /* pid.c */; };
 		EAD31A9F0FBB70834677A1B4 /* ProcfsNamespaceTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 609076A6FA0ED286E55F6E97 /* ProcfsNamespaceTests.m */; };
 		EDF4855E5B361A767449505F /* path_host.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = C3EB2A52FF9C382BD464F1DD /* path_host.h */; };
@@ -164,6 +165,7 @@
 		2117B106A13B76478FE5B3A1 /* super.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = super.c; sourceTree = "<group>"; };
 		21CC2E1844CDBA597704C111 /* CredentialTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CredentialTests.m; sourceTree = "<group>"; };
 		22ED4B4B7E8FD0A20DF3C3C5 /* resource.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = resource.c; sourceTree = "<group>"; };
+		24774284A6A0B1B645EDD3FD /* open_flags.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = open_flags.c; sourceTree = "<group>"; };
 		26FDE0ABC08187DD4F536DDB /* PipeContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PipeContract.h; sourceTree = "<group>"; };
 		270F37A8D2223DAAD1C7A498 /* wait.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = wait.c; sourceTree = "<group>"; };
 		2B33B8D1CDFE2966D44963A8 /* syscall.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = syscall.c; sourceTree = "<group>"; };
@@ -335,6 +337,7 @@
 				5FD8D142EC818870892A041C /* backing_paths.m */,
 				BA898A59834C42247E34F3A2 /* epoll_bridge.c */,
 				B814A84B3136F79F9CA46B29 /* errno_host.c */,
+				24774284A6A0B1B645EDD3FD /* open_flags.c */,
 				9400E47E570892E792DD720A /* path_host.c */,
 				C3EB2A52FF9C382BD464F1DD /* path_host.h */,
 				CC4338AECA611FDBA915367D /* sync.c */,
@@ -710,6 +713,7 @@
 				10B126B95667913F860EF403 /* namei.c in Sources */,
 				5773870A2156F8B6827EB2D5 /* network.c in Sources */,
 				CABBE0F9F7AB329F34E5E2AF /* open.c in Sources */,
+				E63DDEAC76F748954776BB1D /* open_flags.c in Sources */,
 				17569519F7B7B56C5572BED6 /* path.c in Sources */,
 				D029EB47C0BAF7A69D4E6C12 /* path_host.c in Sources */,
 				E6EBC6D734546A272FB292D1 /* pid.c in Sources */,

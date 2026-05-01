@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,6 +23,12 @@
 #define MM_BRK_BASE  0x0000000800000000ULL
 
 static uint64_t mm_next_anon_base = MM_USER_BASE;
+
+extern long long pread_impl(int fd, void *buf, size_t count, long long offset);
+extern long long pwrite_impl(int fd, const void *buf, size_t count, long long offset);
+extern long long lseek_impl(int fd, long long offset, int whence);
+extern long long read_impl(int fd, void *buf, size_t count);
+extern long long write_impl(int fd, const void *buf, size_t count);
 
 static uint64_t mm_align_up(uint64_t value, uint64_t align) {
     if (value > UINT64_MAX - (align - 1)) {
@@ -45,19 +52,23 @@ static uint32_t mm_prot_to_pf(int prot) {
     return flags;
 }
 
-static int mm_validate_mmap_flags(int flags) {
-    int allowed = MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_FIXED_NOREPLACE;
+static int mm_validate_mmap_flags(int flags, int fd) {
+    int allowed = MAP_PRIVATE | MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED | MAP_FIXED_NOREPLACE;
 
     if ((flags & ~allowed) != 0) {
         errno = EINVAL;
         return -1;
     }
-    if ((flags & MAP_PRIVATE) == 0) {
+    if (((flags & MAP_PRIVATE) != 0) == ((flags & MAP_SHARED) != 0)) {
         errno = EINVAL;
         return -1;
     }
-    if ((flags & MAP_ANONYMOUS) == 0) {
-        errno = ENOSYS;
+    if ((flags & MAP_ANONYMOUS) != 0 && fd != -1) {
+        errno = EINVAL;
+        return -1;
+    }
+    if ((flags & MAP_ANONYMOUS) == 0 && fd < 0) {
+        errno = EBADF;
         return -1;
     }
     return 0;
@@ -73,6 +84,56 @@ static int mm_validate_prot(int prot) {
         return -1;
     }
     return 0;
+}
+
+static long long mm_fd_pread(int fd, void *buf, size_t count, long long offset) {
+    long long bytes = pread_impl(fd, buf, count, offset);
+
+    if (bytes >= 0 || errno != ENOTSUP) {
+        return bytes;
+    }
+
+    long long original = lseek_impl(fd, 0, SEEK_CUR);
+    if (original < 0) {
+        return -1;
+    }
+    if (lseek_impl(fd, offset, SEEK_SET) < 0) {
+        return -1;
+    }
+    bytes = read_impl(fd, buf, count);
+    int saved_errno = errno;
+    if (lseek_impl(fd, original, SEEK_SET) < 0 && bytes >= 0) {
+        return -1;
+    }
+    if (bytes < 0) {
+        errno = saved_errno;
+    }
+    return bytes;
+}
+
+static long long mm_fd_pwrite(int fd, const void *buf, size_t count, long long offset) {
+    long long bytes = pwrite_impl(fd, buf, count, offset);
+
+    if (bytes >= 0 || errno != ENOTSUP) {
+        return bytes;
+    }
+
+    long long original = lseek_impl(fd, 0, SEEK_CUR);
+    if (original < 0) {
+        return -1;
+    }
+    if (lseek_impl(fd, offset, SEEK_SET) < 0) {
+        return -1;
+    }
+    bytes = write_impl(fd, buf, count);
+    int saved_errno = errno;
+    if (lseek_impl(fd, original, SEEK_SET) < 0 && bytes >= 0) {
+        return -1;
+    }
+    if (bytes < 0) {
+        errno = saved_errno;
+    }
+    return bytes;
 }
 
 static int mm_range_overlaps(struct mm_struct *mm, uint64_t start, uint64_t end) {
@@ -132,6 +193,7 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
     vma->kind = kind;
     vma->image = image;
     vma->image_size = (size_t)size;
+    vma->backing_fd = -1;
     vma->page_count = page_count;
     vma->page_flags = calloc((size_t)page_count, sizeof(*vma->page_flags));
     if (!vma->page_flags) {
@@ -153,7 +215,7 @@ static void mm_remove_vma_at(struct mm_struct *mm, uint32_t index) {
         return;
     }
     vma = &mm->vmas[index];
-    if (vma->kind == TASK_VMA_ANON) {
+    if (vma->kind == TASK_VMA_ANON || vma->kind == TASK_VMA_FILE) {
         free(vma->image);
     }
     free(vma->page_flags);
@@ -195,13 +257,13 @@ static int mm_range_overlaps_except(struct mm_struct *mm, uint64_t start, uint64
     return 0;
 }
 
-static int mm_copy_anon_slice(struct task_vma *source, uint64_t start, uint64_t end,
-                              struct task_vma *dest) {
+static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t end,
+                             struct task_vma *dest) {
     uint64_t size;
     uint64_t page_count;
     size_t source_offset;
 
-    if (!source || !dest || source->kind != TASK_VMA_ANON || start < source->start ||
+    if (!source || !dest || start < source->start ||
         end > source->end || start >= end) {
         errno = EINVAL;
         return -1;
@@ -225,6 +287,9 @@ static int mm_copy_anon_slice(struct task_vma *source, uint64_t start, uint64_t 
     dest->end = end;
     dest->flags = source->flags;
     dest->kind = source->kind;
+    dest->backing_fd = source->backing_fd;
+    dest->backing_offset = source->backing_offset + (start - source->start);
+    dest->shared = source->shared;
     dest->image_size = (size_t)size;
     dest->page_count = page_count;
     dest->image = calloc(1, dest->image_size);
@@ -252,7 +317,7 @@ static void mm_free_vma_contents(struct task_vma *vma) {
     if (!vma) {
         return;
     }
-    if (vma->kind == TASK_VMA_ANON) {
+    if (vma->kind == TASK_VMA_ANON || vma->kind == TASK_VMA_FILE) {
         free(vma->image);
     }
     free(vma->page_flags);
@@ -299,8 +364,8 @@ static int mm_replace_vma_with_slices(struct mm_struct *mm, uint32_t index,
     return 0;
 }
 
-static int mm_unmap_anon_vma_range(struct mm_struct *mm, uint32_t index,
-                                   uint64_t start, uint64_t end) {
+static int mm_unmap_vma_range(struct mm_struct *mm, uint32_t index,
+                              uint64_t start, uint64_t end) {
     struct task_vma source;
     struct task_vma left;
     struct task_vma right;
@@ -312,11 +377,7 @@ static int mm_unmap_anon_vma_range(struct mm_struct *mm, uint32_t index,
         return -1;
     }
     source = mm->vmas[index];
-    if (source.kind != TASK_VMA_ANON && !(start <= source.start && end >= source.end)) {
-        errno = EINVAL;
-        return -1;
-    }
-    if (source.kind != TASK_VMA_ANON || (start <= source.start && end >= source.end)) {
+    if (start <= source.start && end >= source.end) {
         mm_remove_vma_at(mm, index);
         return 0;
     }
@@ -325,10 +386,10 @@ static int mm_unmap_anon_vma_range(struct mm_struct *mm, uint32_t index,
     memset(&right, 0, sizeof(right));
     has_left = start > source.start;
     has_right = end < source.end;
-    if (has_left && mm_copy_anon_slice(&source, source.start, start, &left) != 0) {
+    if (has_left && mm_copy_vma_slice(&source, source.start, start, &left) != 0) {
         return -1;
     }
-    if (has_right && mm_copy_anon_slice(&source, end, source.end, &right) != 0) {
+    if (has_right && mm_copy_vma_slice(&source, end, source.end, &right) != 0) {
         if (has_left) {
             mm_free_vma_contents(&left);
         }
@@ -350,7 +411,9 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
     struct task_struct *task = get_current();
     uint64_t map_len;
     uint64_t map_addr;
+    enum task_vma_kind kind;
     void *image;
+    long long bytes;
 
     if (!task) {
         errno = ESRCH;
@@ -369,11 +432,11 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
         }
         return (void *)-1;
     }
-    if (mm_validate_mmap_flags(flags) != 0) {
+    if (mm_validate_mmap_flags(flags, fd) != 0) {
         return (void *)-1;
     }
-    if (fd != -1 || offset != 0) {
-        errno = ENOSYS;
+    if ((flags & MAP_ANONYMOUS) == 0 && ((uint64_t)offset % TASK_VMA_PAGE_SIZE) != 0) {
+        errno = EINVAL;
         return (void *)-1;
     }
 
@@ -403,11 +466,29 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
         errno = ENOMEM;
         return (void *)-1;
     }
-    if (mm_add_vma(task->mm, map_addr, map_len, mm_prot_to_pf(prot), TASK_VMA_ANON, image) != 0) {
+    kind = (flags & MAP_ANONYMOUS) != 0 ? TASK_VMA_ANON : TASK_VMA_FILE;
+    if (kind == TASK_VMA_FILE) {
+        bytes = mm_fd_pread(fd, image, (size_t)map_len, (long long)offset);
+        if (bytes < 0) {
+            int saved_errno = errno;
+            free(image);
+            errno = saved_errno;
+            return (void *)-1;
+        }
+    }
+    if (mm_add_vma(task->mm, map_addr, map_len, mm_prot_to_pf(prot), kind, image) != 0) {
         int saved_errno = errno;
         free(image);
         errno = saved_errno;
         return (void *)-1;
+    }
+    if (kind == TASK_VMA_FILE) {
+        struct task_vma *vma = task_find_vma_mutable_impl(task, map_addr);
+        if (vma) {
+            vma->backing_fd = fd;
+            vma->backing_offset = (uint64_t)offset;
+            vma->shared = (flags & MAP_SHARED) != 0;
+        }
     }
     return (void *)(uintptr_t)map_addr;
 }
@@ -468,7 +549,7 @@ int munmap_impl(void *addr, size_t len) {
         overlap_start = start > vma->start ? start : vma->start;
         overlap_end = end < vma->end ? end : vma->end;
         if (overlap_start < overlap_end) {
-            if (mm_unmap_anon_vma_range(task->mm, i, overlap_start, overlap_end) != 0) {
+            if (mm_unmap_vma_range(task->mm, i, overlap_start, overlap_end) != 0) {
                 return -1;
             }
             unmapped = 1;
@@ -481,6 +562,72 @@ int munmap_impl(void *addr, size_t len) {
     }
     errno = EINVAL;
     return -1;
+}
+
+int msync_impl(void *addr, size_t len, int flags) {
+    struct task_struct *task = get_current();
+    uint64_t start = (uint64_t)(uintptr_t)addr;
+    uint64_t size;
+    uint64_t end;
+    int synced = 0;
+
+    if ((flags & ~(MS_ASYNC | MS_SYNC | MS_INVALIDATE)) != 0 ||
+        ((flags & MS_ASYNC) != 0 && (flags & MS_SYNC) != 0)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!task || !task->mm) {
+        errno = ENOMEM;
+        return -1;
+    }
+    if (len == 0) {
+        return 0;
+    }
+    if ((start % TASK_VMA_PAGE_SIZE) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    size = mm_align_up((uint64_t)len, TASK_VMA_PAGE_SIZE);
+    if (size == 0 || size > UINT64_MAX - start) {
+        errno = ENOMEM;
+        return -1;
+    }
+    end = start + size;
+    for (uint32_t i = 0; i < task->mm->vma_count; i++) {
+        struct task_vma *vma = &task->mm->vmas[i];
+        uint64_t overlap_start;
+        uint64_t overlap_end;
+        size_t image_offset;
+        size_t to_write;
+        long long written;
+
+        if (end <= vma->start || start >= vma->end) {
+            continue;
+        }
+        overlap_start = start > vma->start ? start : vma->start;
+        overlap_end = end < vma->end ? end : vma->end;
+        if (vma->kind != TASK_VMA_FILE || !vma->shared) {
+            synced = 1;
+            continue;
+        }
+        image_offset = (size_t)(overlap_start - vma->start);
+        to_write = (size_t)(overlap_end - overlap_start);
+        written = mm_fd_pwrite(vma->backing_fd, (const unsigned char *)vma->image + image_offset,
+                               to_write, (long long)(vma->backing_offset + image_offset));
+        if (written < 0) {
+            return -1;
+        }
+        if ((size_t)written != to_write) {
+            errno = EIO;
+            return -1;
+        }
+        synced = 1;
+    }
+    if (!synced) {
+        errno = ENOMEM;
+        return -1;
+    }
+    return 0;
 }
 
 void *brk_impl(void *addr) {

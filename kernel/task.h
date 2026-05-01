@@ -57,6 +57,7 @@ enum task_vma_kind {
     TASK_VMA_INTERP = 2,
     TASK_VMA_STACK = 3,
     TASK_VMA_ANON = 4,
+    TASK_VMA_FILE = 5,
 };
 
 struct task_vma {
@@ -68,6 +69,9 @@ struct task_vma {
     size_t image_size;
     uint64_t page_count;
     uint32_t *page_flags;
+    int backing_fd;
+    uint64_t backing_offset;
+    int shared;
 };
 
 struct task_dynamic_info {
@@ -179,6 +183,11 @@ struct mm_struct {
     uint64_t brk_start;
     uint64_t brk_current;
     uint64_t clear_child_tid;
+    uint64_t robust_list_head;
+    uint64_t robust_list_len;
+    uint64_t signal_frame_sp;
+    uint64_t signal_frame_signo;
+    uint64_t signal_frame_return_pc;
 };
 
 /* Exec image types - virtual kernel internal */
@@ -330,6 +339,7 @@ void task_notify_parent_state_change(struct task_struct *task);
 long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void *buf, size_t count);
 long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, const void *buf, size_t count);
 const struct task_vma *task_find_vma_impl(struct task_struct *task, uint64_t addr);
+struct task_vma *task_find_vma_mutable_impl(struct task_struct *task, uint64_t addr);
 uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
 int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64_t size, uint32_t flags);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task);

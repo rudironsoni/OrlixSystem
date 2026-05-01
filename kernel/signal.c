@@ -158,6 +158,9 @@ struct signal_struct *alloc_signal_struct(void) {
 
     memset(&sig->blocked, 0, sizeof(struct signal_mask_bits));
     memset(&sig->pending, 0, sizeof(struct signal_mask_bits));
+    sig->altstack.ss_sp = NULL;
+    sig->altstack.ss_size = 0;
+    sig->altstack.ss_flags = 2;
 
     return sig;
 }
@@ -667,4 +670,55 @@ int do_killpg(int32_t pgrp, int32_t sig) {
         return -1;
     }
     return result;
+}
+
+int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altstack *old_stack) {
+    struct task_struct *task = get_current();
+
+    if (!task || !task->signal) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (old_stack) {
+        *old_stack = task->signal->altstack;
+    }
+    if (new_stack) {
+        if ((new_stack->ss_flags & ~(2 | (int32_t)(1U << 31))) != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        if ((new_stack->ss_flags & 2) == 0 && new_stack->ss_size < 5120) {
+            errno = ENOMEM;
+            return -1;
+        }
+        task->signal->altstack = *new_stack;
+    }
+    return 0;
+}
+
+int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t return_pc,
+                              uint64_t current_sp, uint64_t *frame_sp_out) {
+    uint64_t frame_sp;
+
+    if (!task || !task->signal || !task->mm || sig < 1 || sig > KERNEL_SIG_NUM || !frame_sp_out) {
+        errno = EINVAL;
+        return -1;
+    }
+    frame_sp = current_sp;
+    if ((task->signal->altstack.ss_flags & 2) == 0 && task->signal->altstack.ss_sp &&
+        task->signal->altstack.ss_size >= 5120) {
+        frame_sp = (uint64_t)(uintptr_t)task->signal->altstack.ss_sp + task->signal->altstack.ss_size;
+        frame_sp &= ~15ULL;
+        task->signal->altstack.ss_flags |= 1;
+    }
+    if (frame_sp < 256) {
+        errno = EFAULT;
+        return -1;
+    }
+    frame_sp -= 256;
+    task->mm->signal_frame_sp = frame_sp;
+    task->mm->signal_frame_signo = (uint64_t)sig;
+    task->mm->signal_frame_return_pc = return_pc;
+    *frame_sp_out = frame_sp;
+    return 0;
 }

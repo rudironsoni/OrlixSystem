@@ -10,6 +10,18 @@
 #include "errno_host.h"
 #include "fs/stat_types.h"
 
+extern int host_translate_open_flags_impl(int flags,
+                                          int host_rdonly,
+                                          int host_wronly,
+                                          int host_rdwr,
+                                          int host_creat,
+                                          int host_excl,
+                                          int host_trunc,
+                                          int host_append,
+                                          int host_nonblock,
+                                          int host_directory,
+                                          int host_nofollow);
+
 /* Private host mediation via direct syscalls
  *
  * This file provides non-interposing access to host Darwin syscalls.
@@ -26,7 +38,10 @@
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 int host_open_impl(const char *path, int flags, mode_t mode) {
-    int ret = syscall(SYS_open_nocancel, path, flags, mode);
+    int host_flags = host_translate_open_flags_impl(flags, O_RDONLY, O_WRONLY, O_RDWR,
+                                                    O_CREAT, O_EXCL, O_TRUNC, O_APPEND,
+                                                    O_NONBLOCK, O_DIRECTORY, O_NOFOLLOW);
+    int ret = syscall(SYS_open_nocancel, path, host_flags, mode);
     if (ret < 0) {
         int host_errno = errno;
         errno = host_errno;
@@ -129,6 +144,25 @@ ssize_t host_pread_impl(int fd, void *buf, size_t count, off_t offset) {
     ssize_t ret = syscall(SYS_pread_nocancel, fd, buf, count, offset);
     if (ret < 0) {
         int host_errno = errno;
+        if (host_errno == ENOTSUP) {
+            off_t original = syscall(SYS_lseek, fd, 0, SEEK_CUR);
+            if (original < 0) {
+                return -1;
+            }
+            if (syscall(SYS_lseek, fd, offset, SEEK_SET) < 0) {
+                return -1;
+            }
+            ret = syscall(SYS_read_nocancel, fd, buf, count);
+            int saved_errno = errno;
+            if (syscall(SYS_lseek, fd, original, SEEK_SET) < 0 && ret >= 0) {
+                return -1;
+            }
+            if (ret < 0) {
+                errno = saved_errno;
+                return -1;
+            }
+            return ret;
+        }
         errno = host_errno;
         return -1;
     }
@@ -139,6 +173,25 @@ ssize_t host_pwrite_impl(int fd, const void *buf, size_t count, off_t offset) {
     ssize_t ret = syscall(SYS_pwrite_nocancel, fd, buf, count, offset);
     if (ret < 0) {
         int host_errno = errno;
+        if (host_errno == ENOTSUP) {
+            off_t original = syscall(SYS_lseek, fd, 0, SEEK_CUR);
+            if (original < 0) {
+                return -1;
+            }
+            if (syscall(SYS_lseek, fd, offset, SEEK_SET) < 0) {
+                return -1;
+            }
+            ret = syscall(SYS_write_nocancel, fd, buf, count);
+            int saved_errno = errno;
+            if (syscall(SYS_lseek, fd, original, SEEK_SET) < 0 && ret >= 0) {
+                return -1;
+            }
+            if (ret < 0) {
+                errno = saved_errno;
+                return -1;
+            }
+            return ret;
+        }
         errno = host_errno;
         return -1;
     }

@@ -177,6 +177,18 @@ const struct task_vma *task_find_vma_impl(struct task_struct *task, uint64_t add
     return NULL;
 }
 
+struct task_vma *task_find_vma_mutable_impl(struct task_struct *task, uint64_t addr) {
+    if (!task || !task->mm) {
+        return NULL;
+    }
+    for (uint32_t i = 0; i < task->mm->vma_count; i++) {
+        if (addr >= task->mm->vmas[i].start && addr < task->mm->vmas[i].end) {
+            return &task->mm->vmas[i];
+        }
+    }
+    return NULL;
+}
+
 uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr) {
     uint64_t page_index;
 
@@ -248,7 +260,7 @@ void task_clear_vmas_impl(struct mm_struct *mm) {
         return;
     }
     for (uint32_t i = 0; i < mm->vma_count; i++) {
-        if (mm->vmas[i].kind == TASK_VMA_ANON) {
+        if (mm->vmas[i].kind == TASK_VMA_ANON || mm->vmas[i].kind == TASK_VMA_FILE) {
             free(mm->vmas[i].image);
             mm->vmas[i].image = NULL;
         }
@@ -743,6 +755,9 @@ static atomic_bool task_initialized = false;
 int task_init(void) {
     /* Fast path: already initialized */
     if (atomic_load(&task_initialized) && init_task) {
+        if (!current_task) {
+            current_task = init_task;
+        }
         return 0;
     }
 

@@ -41,6 +41,8 @@ targets:
       group: internal/ios/fs
     - path: internal/ios/fs/errno_host.c
       group: internal/ios/fs
+    - path: internal/ios/fs/open_flags.c
+      group: internal/ios/fs
     - path: internal/ios/fs/path_host.c
       group: internal/ios/fs
     - path: internal/ios/fs/path_host.h

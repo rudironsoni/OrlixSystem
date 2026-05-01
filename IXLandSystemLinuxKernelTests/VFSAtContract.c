@@ -34,6 +34,11 @@ extern int mount(const char *source, const char *target, const char *filesystemt
 extern int umount(const char *target);
 extern int mkdir_impl(const char *pathname, linux_mode_t mode);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
+
+int vfs_path_contract_open_tmp_fd_symlink_file(void) {
+    return open_impl("/tmp/test_fd_symlink", O_CREAT | O_RDWR, 0644);
+}
+extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int openat_impl(int dirfd, const char *pathname, int flags, linux_mode_t mode);
 extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);

@@ -179,6 +179,8 @@
 extern int openat_impl(int dirfd, const char *pathname, int flags, linux_mode_t mode);
 extern ssize_t read_impl(int fd, void *buf, size_t count);
 extern ssize_t write_impl(int fd, const void *buf, size_t count);
+extern ssize_t pread_impl(int fd, void *buf, size_t count, long long offset);
+extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, long long offset);
 extern int fcntl_impl(int fd, int cmd, ...);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int fstatat_impl(int dirfd, const char *pathname, struct linux_stat *statbuf, int flags);
@@ -262,6 +264,28 @@ static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
     linux_act->sa_mask.sig[0] = act->mask.sig[0];
 }
 
+static void syscall_sigaltstack_from_linux(const syscall_sigaltstack_frame *linux_stack,
+                                           struct signal_altstack *stack) {
+    memset(stack, 0, sizeof(*stack));
+    if (!linux_stack) {
+        return;
+    }
+    stack->ss_sp = linux_stack->ss_sp;
+    stack->ss_size = linux_stack->ss_size;
+    stack->ss_flags = linux_stack->ss_flags;
+}
+
+static void syscall_sigaltstack_to_linux(const struct signal_altstack *stack,
+                                         syscall_sigaltstack_frame *linux_stack) {
+    memset(linux_stack, 0, sizeof(*linux_stack));
+    if (!stack) {
+        return;
+    }
+    linux_stack->ss_sp = stack->ss_sp;
+    linux_stack->ss_size = stack->ss_size;
+    linux_stack->ss_flags = stack->ss_flags;
+}
+
 static long syscall_result(long ret) {
     if (ret < 0) {
         int saved_errno = errno;
@@ -309,6 +333,12 @@ long syscall_dispatch_impl(long number,
         return syscall_result((long)read_impl((int)arg0, (void *)(uintptr_t)arg1, (size_t)arg2));
     case __NR_write:
         return syscall_result((long)write_impl((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2));
+    case __NR_pread64:
+        return syscall_result((long)pread_impl((int)arg0, (void *)(uintptr_t)arg1, (size_t)arg2,
+                                               (long long)arg3));
+    case __NR_pwrite64:
+        return syscall_result((long)pwrite_impl((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2,
+                                                (long long)arg3));
     case __NR_openat:
         return syscall_result((long)openat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                 (int)arg2, (linux_mode_t)arg3));
@@ -348,6 +378,11 @@ long syscall_dispatch_impl(long number,
         }
         return -ENOSYS;
     }
+    case __NR_set_robust_list:
+        return syscall_result((long)set_robust_list_impl((void *)(uintptr_t)arg0, (unsigned long)arg1));
+    case __NR_get_robust_list:
+        return syscall_result((long)get_robust_list_impl((int)arg0, (void **)(uintptr_t)arg1,
+                                                         (unsigned long *)(uintptr_t)arg2));
     case __NR_rt_sigaction: {
         struct signal_action_slot act;
         struct signal_action_slot oldact;
@@ -372,6 +407,39 @@ long syscall_dispatch_impl(long number,
         }
         return 0;
     }
+    case __NR_sigaltstack: {
+        struct signal_altstack new_stack;
+        struct signal_altstack old_stack;
+        const struct signal_altstack *new_stack_ptr = NULL;
+        struct signal_altstack *old_stack_ptr = NULL;
+
+        if (arg0) {
+            syscall_sigaltstack_from_linux((const syscall_sigaltstack_frame *)(uintptr_t)arg0, &new_stack);
+            new_stack_ptr = &new_stack;
+        }
+        if (arg1) {
+            old_stack_ptr = &old_stack;
+        }
+        if (do_sigaltstack(new_stack_ptr, old_stack_ptr) != 0) {
+            return -(long)errno;
+        }
+        if (arg1) {
+            syscall_sigaltstack_to_linux(&old_stack, (syscall_sigaltstack_frame *)(uintptr_t)arg1);
+        }
+        return 0;
+    }
+    case __NR_rt_sigreturn: {
+        struct task_struct *task = get_current();
+        if (!task || !task->mm) {
+            return -ESRCH;
+        }
+        if (task->signal) {
+            task->signal->altstack.ss_flags &= ~1;
+        }
+        return (long)task->mm->signal_frame_return_pc;
+    }
+    case __NR_restart_syscall:
+        return -EINTR;
     case __NR_rt_sigprocmask: {
         struct signal_mask_bits set;
         struct signal_mask_bits oldset;
@@ -437,6 +505,8 @@ long syscall_dispatch_impl(long number,
         return syscall_result((long)mprotect_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
     case __NR_munmap:
         return syscall_result((long)munmap_impl((void *)(uintptr_t)arg0, (size_t)arg1));
+    case __NR_msync:
+        return syscall_result((long)msync_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
     case __NR_prlimit64:
         return syscall_prlimit64((int32_t)arg0, (int)arg1,
                                  (const uint64_t *)(uintptr_t)arg2,

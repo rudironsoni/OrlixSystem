@@ -19,6 +19,7 @@
 
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
@@ -67,6 +68,13 @@ struct signal_action_slot {
     int32_t flags;
 };
 
+/* Signal stack state - private internal */
+struct signal_altstack {
+    void *ss_sp;
+    size_t ss_size;
+    int32_t ss_flags;
+};
+
 /* Signal handler table - per-task signal configuration
  * This is the private internal state, NOT the public ABI struct sigaction */
 struct signal_struct {
@@ -75,14 +83,8 @@ struct signal_struct {
     struct signal_mask_bits blocked;
     struct signal_mask_bits pending;
     struct signal_queue queue;
+    struct signal_altstack altstack;
     kernel_mutex_t lock;
-};
-
-/* Signal stack state - private internal */
-struct signal_altstack {
-    void *ss_sp;
-    size_t ss_size;
-    int32_t ss_flags;
 };
 
 /* Signal pending state for a task */
@@ -138,6 +140,9 @@ int do_pause(void);
 int do_sigsuspend(const struct signal_mask_bits *mask);
 int do_kill(int32_t pid, int32_t sig);
 int do_killpg(int32_t pgrp, int32_t sig);
+int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altstack *old_stack);
+int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t return_pc,
+                              uint64_t current_sp, uint64_t *frame_sp_out);
 
 #ifdef __cplusplus
 }

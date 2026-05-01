@@ -40,12 +40,20 @@
     XCTAssertEqual(native_syscall_contract_enforces_vma_fault_policy(), 0, @"errno %d", errno);
 }
 
+- (void)testMapsSharedFileAndSyncs {
+    XCTAssertEqual(native_syscall_contract_maps_shared_file_and_syncs(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesProcessStartupSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
 }
 
 - (void)testRtSigactionUsesLinuxUapiLayout {
     XCTAssertEqual(signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(), 0, @"errno %d", errno);
+}
+
+- (void)testSigaltstackAndFramePolicy {
+    XCTAssertEqual(signal_syscall_contract_sigaltstack_and_frame_policy(), 0, @"errno %d", errno);
 }
 
 - (void)testRegistersNativeArtifactDescriptor {

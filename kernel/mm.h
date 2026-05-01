@@ -16,6 +16,7 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
 int mprotect_impl(void *addr, size_t len, int prot);
 int munmap_impl(void *addr, size_t len);
 void *brk_impl(void *addr);
+int msync_impl(void *addr, size_t len, int flags);
 
 #ifdef __cplusplus
 }

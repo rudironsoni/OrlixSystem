@@ -443,6 +443,71 @@ out_mapped:
     return result;
 }
 
+int native_syscall_contract_maps_shared_file_and_syncs(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-shared-map";
+    const char initial[] = "file-backed-page";
+    const char patched[] = "MAP";
+    char verify[sizeof(initial)];
+    void *mapped;
+    int fd = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)initial, sizeof(initial), 0, 0, 0);
+    if (ret != (long)sizeof(initial)) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096, PROT_READ | PROT_WRITE,
+                                                      MAP_SHARED, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    memset(verify, 0, sizeof(verify));
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, verify, sizeof(initial)) !=
+            (long)sizeof(initial) ||
+        memcmp(verify, initial, sizeof(initial)) != 0) {
+        errno = ENODATA;
+        goto out_mapped;
+    }
+    if (task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, patched, sizeof(patched) - 1) !=
+        (long)sizeof(patched) - 1) {
+        errno = EPROTO;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_msync, (long)(uintptr_t)mapped, 4096, MS_SYNC, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mapped;
+    }
+    memset(verify, 0, sizeof(verify));
+    ret = syscall_dispatch_impl(__NR_pread64, fd, (long)(uintptr_t)verify, sizeof(patched) - 1,
+                                0, 0, 0);
+    if (ret != (long)sizeof(patched) - 1 || memcmp(verify, patched, sizeof(patched) - 1) != 0) {
+        errno = EIO;
+        goto out_mapped;
+    }
+    result = 0;
+
+out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+out:
+    close_if_open(fd);
+    return result;
+}
+
 int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     struct task_struct *task = get_current();
     uint64_t block_set = 1ULL << (2 - 1);

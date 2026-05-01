@@ -59,6 +59,7 @@ extern int stat_impl(const char *path, struct linux_stat *statbuf);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int lstat_impl(const char *path, struct linux_stat *statbuf);
 extern void cred_reset_to_defaults(void);
+extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
 @interface VFSPathTests : XCTestCase
 @end
@@ -1607,7 +1608,7 @@ extern void cred_reset_to_defaults(void);
 
 - (void)testProcSelfFdSymlinksReflectActualFdState {
     // Create a temporary file to get a real fd
-    int test_fd = open("/tmp/test_fd_symlink", O_CREAT | O_RDWR, 0644);
+    int test_fd = vfs_path_contract_open_tmp_fd_symlink_file();
     XCTAssertTrue(test_fd >= 0, @"open should succeed for test file");
     if (test_fd < 0) return;
 

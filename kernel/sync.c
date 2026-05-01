@@ -59,6 +59,14 @@ return -1;
 return futex_op_impl(uaddr, futex_op, val, timeout_ms);
 }
 
+__attribute__((visibility("default"))) int set_robust_list(void *head, unsigned long len) {
+return set_robust_list_impl(head, len);
+}
+
+__attribute__((visibility("default"))) int get_robust_list(int pid, void **head, unsigned long *len) {
+return get_robust_list_impl(pid, head, len);
+}
+
 /*
  * NOTE: the generic variadic entrypoint was removed due to host header conflicts.
  * Use specific wrappers (futex, set_robust_list, etc.) instead.
