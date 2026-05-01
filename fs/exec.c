@@ -52,6 +52,7 @@ int exec_wasi(struct task_struct *task, const char *path, int argc, char **argv,
 int exec_script(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
 int exec_build_script_argv_from_line(const char *shebang_line, const char *path, int argc, char **argv,
                                       char *interpreter_path, size_t interpreter_path_len,
+                                      char *optional_arg, size_t optional_arg_len,
                                       char **script_argv, int *script_argc);
 
 struct exec_elf_load_plan {
@@ -374,8 +375,10 @@ static int exec_read_shebang_line(const char *path, char *buffer, size_t buffer_
 
 int exec_build_script_argv(const char *path, int argc, char **argv,
                            char *interpreter_path, size_t interpreter_path_len,
+                           char *optional_arg, size_t optional_arg_len,
                            char **script_argv, int *script_argc) {
-    if (!path || !interpreter_path || interpreter_path_len == 0 || !script_argv || !script_argc) {
+    if (!path || !interpreter_path || interpreter_path_len == 0 ||
+        !optional_arg || optional_arg_len == 0 || !script_argv || !script_argc) {
         errno = EINVAL;
         return -1;
     }
@@ -387,16 +390,21 @@ int exec_build_script_argv(const char *path, int argc, char **argv,
 
     return exec_build_script_argv_from_line(shebang, path, argc, argv,
                                              interpreter_path, interpreter_path_len,
+                                             optional_arg, optional_arg_len,
                                              script_argv, script_argc);
 }
 
 int exec_build_script_argv_from_line(const char *shebang_line, const char *path, int argc, char **argv,
                                       char *interpreter_path, size_t interpreter_path_len,
+                                      char *optional_arg, size_t optional_arg_len,
                                       char **script_argv, int *script_argc) {
-    if (!shebang_line || !path || !interpreter_path || interpreter_path_len == 0 || !script_argv || !script_argc) {
+    if (!shebang_line || !path || !interpreter_path || interpreter_path_len == 0 ||
+        !optional_arg || optional_arg_len == 0 || !script_argv || !script_argc) {
         errno = EINVAL;
         return -1;
     }
+
+    optional_arg[0] = '\0';
 
     if (shebang_line[0] != '#' || shebang_line[1] != '!') {
         errno = ENOEXEC;
@@ -417,38 +425,48 @@ int exec_build_script_argv_from_line(const char *shebang_line, const char *path,
         return -1;
     }
 
-    char *tokens[TASK_MAX_ARGS];
-    int token_count = 0;
-    while (*cursor && token_count < TASK_MAX_ARGS - 1) {
-        while (*cursor && isspace((unsigned char)*cursor)) {
-            *cursor = '\0';
-            cursor++;
-        }
-        if (*cursor == '\0') {
-            break;
-        }
-        tokens[token_count++] = cursor;
-        while (*cursor && !isspace((unsigned char)*cursor)) {
-            cursor++;
-        }
+    char *interpreter = cursor;
+    while (*cursor && !isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    if (*cursor) {
+        *cursor = '\0';
+        cursor++;
     }
 
-    if (token_count == 0) {
+    while (*cursor && isspace((unsigned char)*cursor)) {
+        cursor++;
+    }
+    char *optional = cursor;
+    char *end = optional + strlen(optional);
+    while (end > optional && isspace((unsigned char)end[-1])) {
+        end--;
+    }
+    *end = '\0';
+
+    if (interpreter[0] == '\0') {
         errno = ENOEXEC;
         return -1;
     }
 
-    if (strlen(tokens[0]) >= interpreter_path_len) {
+    if (strlen(interpreter) >= interpreter_path_len) {
         errno = ENAMETOOLONG;
         return -1;
     }
 
-    strcpy(interpreter_path, tokens[0]);
+    strcpy(interpreter_path, interpreter);
+    if (optional[0] != '\0') {
+        if (strlen(optional) >= optional_arg_len) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        strcpy(optional_arg, optional);
+    }
 
     int outc = 0;
     script_argv[outc++] = interpreter_path;
-    for (int i = 1; i < token_count && outc < TASK_MAX_ARGS - 1; i++) {
-        script_argv[outc++] = tokens[i];
+    if (optional_arg[0] != '\0' && outc < TASK_MAX_ARGS - 1) {
+        script_argv[outc++] = optional_arg;
     }
     script_argv[outc++] = (char *)path;
     for (int i = 1; i < argc && outc < TASK_MAX_ARGS - 1; i++) {
@@ -597,12 +615,14 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
     int launch_status;
     if (type == EXEC_IMAGE_SCRIPT) {
         char interpreter_path[MAX_PATH];
+        char optional_arg[MAX_PATH];
         char *script_argv[TASK_MAX_ARGS + 4];
         int script_argc = 0;
         native_entry_fn entry;
 
         if (exec_build_script_argv(resolved_path, argc, argv_copy,
                                    interpreter_path, sizeof(interpreter_path),
+                                   optional_arg, sizeof(optional_arg),
                                    script_argv, &script_argc) < 0) {
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
@@ -617,6 +637,11 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
             return -1;
         }
 
+        if (task_record_exec_strings_impl(script_argv, envp_copy) < 0) {
+            exec_free_argv(argv_copy);
+            exec_free_argv(envp_copy);
+            return -1;
+        }
         if (task_exec_transition_impl(resolved_path, argv_copy ? argv_copy[0] : NULL) < 0) {
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
@@ -628,6 +653,11 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
         exec_record_script_image(task, resolved_path, interpreter_path);
         launch_status = entry(script_argc, script_argv, envp_copy);
     } else if (type == EXEC_IMAGE_ELF) {
+        if (task_record_exec_strings_impl(argv_copy, envp_copy) < 0) {
+            exec_free_argv(argv_copy);
+            exec_free_argv(envp_copy);
+            return -1;
+        }
         if (task_exec_transition_impl(resolved_path, argv_copy ? argv_copy[0] : NULL) < 0) {
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
@@ -638,6 +668,11 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
         }
         launch_status = exec_elf(task, resolved_path, argc, argv_copy, envp_copy);
     } else {
+        if (task_record_exec_strings_impl(argv_copy, envp_copy) < 0) {
+            exec_free_argv(argv_copy);
+            exec_free_argv(envp_copy);
+            return -1;
+        }
         if (task_exec_transition_impl(resolved_path, argv_copy ? argv_copy[0] : NULL) < 0) {
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
@@ -810,11 +845,13 @@ int exec_script(struct task_struct *task, const char *path, int argc, char **arg
     }
 
     char interpreter_path[MAX_PATH];
+    char optional_arg[MAX_PATH];
     char *script_argv[TASK_MAX_ARGS + 4];
     int script_argc = 0;
 
     if (exec_build_script_argv(path, argc, argv,
                                interpreter_path, sizeof(interpreter_path),
+                               optional_arg, sizeof(optional_arg),
                                script_argv, &script_argc) < 0) {
         return -1;
     }

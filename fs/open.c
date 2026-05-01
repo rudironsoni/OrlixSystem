@@ -17,6 +17,8 @@ static synthetic_proc_file_t proc_self_file_for_class(proc_self_path_class_t pro
     switch (proc_class) {
     case PROC_SELF_CMDLINE_FILE:
         return SYNTHETIC_PROC_FILE_CMDLINE;
+    case PROC_SELF_ENVIRON_FILE:
+        return SYNTHETIC_PROC_FILE_ENVIRON;
     case PROC_SELF_COMM_FILE:
         return SYNTHETIC_PROC_FILE_COMM;
     case PROC_SELF_STAT_FILE:

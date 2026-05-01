@@ -64,6 +64,34 @@ static int buffer_contains(const char *buf, size_t len, const char *needle) {
     return 0;
 }
 
+static int expect_nul_vector(const char *buf, ssize_t len, const char *const expected[]) {
+    size_t pos = 0;
+
+    if (!buf || len < 0 || !expected) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (int i = 0; expected[i]; i++) {
+        size_t item_len = strlen(expected[i]);
+        if (pos + item_len + 1 > (size_t)len) {
+            errno = EPROTO;
+            return -1;
+        }
+        if (memcmp(buf + pos, expected[i], item_len) != 0 || buf[pos + item_len] != '\0') {
+            errno = EPROTO;
+            return -1;
+        }
+        pos += item_len + 1;
+    }
+
+    if (pos != (size_t)len) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
 static int dir_contains_name(int fd, const char *needle) {
     char buf[4096];
     ssize_t nread;
@@ -526,6 +554,11 @@ int kernel_init_contract_exec_preferred_init_launches_pid1(void) {
     struct task_struct *task;
     char *argv[] = {"synthetic-init", "--boot", NULL};
     char *envp[] = {"INIT=preferred", NULL};
+    const char *const expected_cmdline[] = {"synthetic-init", "--boot", NULL};
+    const char *const expected_environ[] = {"INIT=preferred", NULL};
+    char buf[256];
+    ssize_t nread;
+    int fd = -1;
     int result = -1;
 
     if (reset_boot_state() != 0) {
@@ -550,12 +583,35 @@ int kernel_init_contract_exec_preferred_init_launches_pid1(void) {
         errno = EPROTO;
         goto out;
     }
+    fd = open_impl("/proc/self/cmdline", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = read_impl(fd, buf, sizeof(buf));
+    close_impl(fd);
+    fd = -1;
+    if (nread < 0 || expect_nul_vector(buf, nread, expected_cmdline) != 0) {
+        goto out;
+    }
+    fd = open_impl("/proc/self/environ", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = read_impl(fd, buf, sizeof(buf));
+    close_impl(fd);
+    fd = -1;
+    if (nread < 0 || expect_nul_vector(buf, nread, expected_environ) != 0) {
+        goto out;
+    }
 
     result = 0;
 
 out:
     {
         int saved_errno = errno;
+        if (fd >= 0) {
+            close_impl(fd);
+        }
         reset_boot_state();
         errno = saved_errno;
     }
@@ -657,6 +713,8 @@ out:
 }
 
 int kernel_init_contract_exec_init_updates_proc_self_exe_cmdline_comm(void) {
+    const char *const expected_cmdline[] = {"/sbin/init", NULL};
+    const char *const expected_environ[] = {"HOME=/", "PATH=/sbin:/bin:/usr/sbin:/usr/bin", NULL};
     char buf[512];
     ssize_t nread;
     int fd;
@@ -687,8 +745,17 @@ int kernel_init_contract_exec_init_updates_proc_self_exe_cmdline_comm(void) {
     }
     nread = read_impl(fd, buf, sizeof(buf));
     close_impl(fd);
-    if (nread <= 0 || !buffer_contains(buf, (size_t)nread, "/sbin/init")) {
-        errno = EPROTO;
+    if (nread < 0 || expect_nul_vector(buf, nread, expected_cmdline) != 0) {
+        goto out;
+    }
+
+    fd = open_impl("/proc/self/environ", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = read_impl(fd, buf, sizeof(buf));
+    close_impl(fd);
+    if (nread < 0 || expect_nul_vector(buf, nread, expected_environ) != 0) {
         goto out;
     }
 
@@ -772,6 +839,10 @@ out:
 }
 
 int kernel_init_contract_exec_script_init_uses_interpreter(void) {
+    const char *const expected_cmdline[] = {"/usr/bin/init-interp", "/tmp/init-script", NULL};
+    char buf[256];
+    ssize_t nread;
+    int fd = -1;
     int result = -1;
 
     if (reset_boot_state() != 0) {
@@ -798,12 +869,25 @@ int kernel_init_contract_exec_script_init_uses_interpreter(void) {
         errno = EPROTO;
         goto out;
     }
+    fd = open_impl("/proc/self/cmdline", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = read_impl(fd, buf, sizeof(buf));
+    close_impl(fd);
+    fd = -1;
+    if (nread < 0 || expect_nul_vector(buf, nread, expected_cmdline) != 0) {
+        goto out;
+    }
 
     result = 0;
 
 out:
     {
         int saved_errno = errno;
+        if (fd >= 0) {
+            close_impl(fd);
+        }
         unlink_impl("/tmp/init-script");
         reset_boot_state();
         errno = saved_errno;

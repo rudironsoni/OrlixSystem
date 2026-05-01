@@ -291,6 +291,7 @@ enum proc_self_path_class {
     PROC_SELF_CWD_LINK,
     PROC_SELF_EXE_LINK,
     PROC_SELF_CMDLINE_FILE,
+    PROC_SELF_ENVIRON_FILE,
     PROC_SELF_COMM_FILE,
     PROC_SELF_STAT_FILE,
     PROC_SELF_STATM_FILE,
@@ -310,6 +311,7 @@ int vfs_proc_self_cwd_target(char *target, size_t target_len);
 int vfs_proc_self_exe_target(char *target, size_t target_len);
 int vfs_proc_self_ns_link_target(const char *vpath, char *target, size_t target_len);
 int vfs_proc_self_cmdline_content(char *buf, size_t buf_len);
+int vfs_proc_self_environ_content(char *buf, size_t buf_len);
 int vfs_proc_self_comm_content(char *buf, size_t buf_len);
 int vfs_proc_self_stat_content(char *buf, size_t buf_len);
 int vfs_proc_self_statm_content(char *buf, size_t buf_len);

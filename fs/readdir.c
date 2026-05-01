@@ -116,6 +116,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
             {"cwd", DT_LNK},
             {"exe", DT_LNK},
             {"cmdline", DT_REG},
+            {"environ", DT_REG},
             {"comm", DT_REG},
             {"stat", DT_REG},
             {"statm", DT_REG},

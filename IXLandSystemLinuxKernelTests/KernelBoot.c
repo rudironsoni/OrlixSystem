@@ -16,6 +16,10 @@
 #include "kernel/task.h"
 #include "kernel/init.h"
 
+extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
+extern int close_impl(int fd);
+extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
+
 /* Test 1: System is booted */
 int kernel_boot_test_system_booted(void) {
     if (!kernel_is_booted()) {
@@ -116,6 +120,81 @@ int kernel_boot_test_task_init(void) {
     }
     if (init->fs->pwd_path[0] == '\0') {
         return -5;
+    }
+    return 0;
+}
+
+int kernel_boot_test_init_identity_is_pid_namespace_root(void) {
+    struct task_struct *init = init_task;
+
+    if (!init) {
+        return -1;
+    }
+    if (init->pid != 1 || init->tgid != 1 || init->ppid != 0) {
+        return -2;
+    }
+    if (init->pgid != 1 || init->sid != 1) {
+        return -3;
+    }
+    if (init->ns_pid != 1 || init->pid_ns_level != 0) {
+        return -4;
+    }
+    if (strcmp(init->comm, "init") != 0) {
+        return -5;
+    }
+    if (init->exe[0] != '\0') {
+        return -6;
+    }
+    return 0;
+}
+
+int kernel_boot_test_proc_self_tree_is_available(void) {
+    int fd;
+
+    fd = open_impl("/proc/self", O_RDONLY | O_DIRECTORY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    close_impl(fd);
+
+    fd = open_impl("/proc/self/fd", O_RDONLY | O_DIRECTORY, 0);
+    if (fd < 0) {
+        return -2;
+    }
+    close_impl(fd);
+
+    fd = open_impl("/proc/self/fdinfo", O_RDONLY | O_DIRECTORY, 0);
+    if (fd < 0) {
+        return -3;
+    }
+    close_impl(fd);
+
+    fd = open_impl("/proc/self/ns", O_RDONLY | O_DIRECTORY, 0);
+    if (fd < 0) {
+        return -4;
+    }
+    close_impl(fd);
+    return 0;
+}
+
+int kernel_boot_test_stdio_fd_links_are_virtual_dev_null(void) {
+    static const char *const paths[] = {
+        "/proc/self/fd/0",
+        "/proc/self/fd/1",
+        "/proc/self/fd/2",
+    };
+    char buf[64];
+    long len;
+
+    for (int fd = 0; fd < 3; fd++) {
+        len = readlink_impl(paths[fd], buf, sizeof(buf) - 1);
+        if (len < 0) {
+            return -2;
+        }
+        buf[len] = '\0';
+        if (strcmp(buf, "/dev/null") != 0) {
+            return -3;
+        }
     }
     return 0;
 }

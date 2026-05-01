@@ -2099,6 +2099,9 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
     if (strcmp(suffix, "/cmdline") == 0) {
         return PROC_SELF_CMDLINE_FILE;
     }
+    if (strcmp(suffix, "/environ") == 0) {
+        return PROC_SELF_ENVIRON_FILE;
+    }
     if (strcmp(suffix, "/comm") == 0) {
         return PROC_SELF_COMM_FILE;
     }
@@ -2318,6 +2321,44 @@ int vfs_proc_self_cmdline_content(char *buf, size_t buf_len) {
         }
         if (copy_len > 0) {
             memcpy(buf + pos, fallback, copy_len);
+            pos += copy_len;
+        }
+        if (pos < buf_len) {
+            buf[pos++] = '\0';
+        }
+    }
+
+    return (int)pos;
+}
+
+int vfs_proc_self_environ_content(char *buf, size_t buf_len) {
+    struct task_struct *task;
+    size_t pos = 0;
+
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+
+    task = get_current();
+    if (!task) {
+        return -ESRCH;
+    }
+
+    for (int i = 0; i < task->envc && pos < buf_len; i++) {
+        size_t env_len;
+        size_t copy_len;
+
+        if (!task->envp[i]) {
+            break;
+        }
+
+        env_len = strlen(task->envp[i]);
+        copy_len = env_len;
+        if (pos + copy_len >= buf_len) {
+            copy_len = buf_len - pos - 1;
+        }
+        if (copy_len > 0) {
+            memcpy(buf + pos, task->envp[i], copy_len);
             pos += copy_len;
         }
         if (pos < buf_len) {
@@ -2837,7 +2878,8 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
             statbuf->st_blksize = 4096;
             statbuf->st_blocks = 0;
             return 0;
-        } else if (proc_class == PROC_SELF_CMDLINE_FILE || proc_class == PROC_SELF_COMM_FILE ||
+        } else if (proc_class == PROC_SELF_CMDLINE_FILE || proc_class == PROC_SELF_ENVIRON_FILE ||
+                   proc_class == PROC_SELF_COMM_FILE ||
                    proc_class == PROC_SELF_STAT_FILE || proc_class == PROC_SELF_STATM_FILE ||
                    proc_class == PROC_SELF_STATUS_FILE || proc_class == PROC_SELF_MOUNTINFO_FILE ||
                    proc_class == PROC_SELF_MOUNTS_FILE) {

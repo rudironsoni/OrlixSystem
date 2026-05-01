@@ -160,6 +160,8 @@ struct task_struct {
     char exe[MAX_PATH];
     int argc;
     char *argv[TASK_MAX_ARGS];
+    int envc;
+    char *envp[TASK_MAX_ARGS];
 
     /* Resource ownership - pointers to virtual subsystem state */
     struct files_struct *files;
@@ -248,6 +250,7 @@ int32_t vfork_impl(void);
 int32_t clone_impl(uint64_t flags);
 int unshare_impl(uint64_t flags);
 int task_exec_transition_impl(const char *path, const char *argv0);
+int task_record_exec_strings_impl(char *const argv[], char *const envp[]);
 
 /* Virtual exit/wait - internal helpers */
 void exit_impl(int status);

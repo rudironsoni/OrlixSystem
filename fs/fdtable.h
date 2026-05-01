@@ -145,6 +145,7 @@ struct epoll_instance *get_fd_epoll_instance_impl(void *entry);
 enum synthetic_proc_file {
     SYNTHETIC_PROC_FILE_NONE = 0,
     SYNTHETIC_PROC_FILE_CMDLINE,
+    SYNTHETIC_PROC_FILE_ENVIRON,
     SYNTHETIC_PROC_FILE_COMM,
     SYNTHETIC_PROC_FILE_STAT,
     SYNTHETIC_PROC_FILE_STATM,

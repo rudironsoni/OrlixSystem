@@ -14,7 +14,11 @@ extern int kernel_boot_test_vfs_backing_roots(void);
 extern int kernel_boot_test_vfs_routing(void);
 extern int kernel_boot_test_synthetic_roots(void);
 extern int kernel_boot_test_task_init(void);
+extern int kernel_boot_test_init_identity_is_pid_namespace_root(void);
+extern int kernel_boot_test_proc_self_tree_is_available(void);
+extern int kernel_boot_test_stdio_fd_links_are_virtual_dev_null(void);
 extern int kernel_boot_test_fd_table(void);
+extern int kernel_boot_test_idempotent(void);
 extern int kernel_boot_test_cold_boot(void);
 extern int kernel_boot_test_reboot(void);
 
@@ -114,6 +118,31 @@ extern int kernel_boot_test_reboot(void);
         XCTAssertEqual(start_kernel(), 0, @"Boot should succeed");
     }
     XCTAssertEqual(kernel_boot_test_fd_table(), 0);
+}
+
+- (void)testInitIdentityIsPidNamespaceRoot {
+    if (!kernel_is_booted()) {
+        XCTAssertEqual(start_kernel(), 0, @"Boot should succeed");
+    }
+    XCTAssertEqual(kernel_boot_test_init_identity_is_pid_namespace_root(), 0);
+}
+
+- (void)testProcSelfTreeIsAvailable {
+    if (!kernel_is_booted()) {
+        XCTAssertEqual(start_kernel(), 0, @"Boot should succeed");
+    }
+    XCTAssertEqual(kernel_boot_test_proc_self_tree_is_available(), 0);
+}
+
+- (void)testStdioFdLinksAreVirtualDevNull {
+    if (!kernel_is_booted()) {
+        XCTAssertEqual(start_kernel(), 0, @"Boot should succeed");
+    }
+    XCTAssertEqual(kernel_boot_test_stdio_fd_links_are_virtual_dev_null(), 0);
+}
+
+- (void)testBootIdempotent {
+    XCTAssertEqual(kernel_boot_test_idempotent(), 0);
 }
 
 @end

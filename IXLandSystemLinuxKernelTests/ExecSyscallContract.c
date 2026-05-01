@@ -16,6 +16,7 @@ extern int execve(const char *pathname, char *const argv[], char *const envp[]);
 extern int fexecve(int fd, char *const argv[], char *const envp[]);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern long write_impl(int fd, const void *buf, size_t count);
+extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int unlink_impl(const char *pathname);
 extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
@@ -29,6 +30,56 @@ static int close_if_open(int fd) {
 
 static int expect_errno(int expected) {
     if (errno != expected) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
+static int read_proc_file(const char *path, char *buf, size_t buf_len, ssize_t *out_len) {
+    int fd;
+    ssize_t nread;
+
+    if (!path || !buf || buf_len == 0 || !out_len) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    nread = read_impl(fd, buf, buf_len);
+    close_impl(fd);
+    if (nread < 0) {
+        return -1;
+    }
+    *out_len = nread;
+    return 0;
+}
+
+static int expect_nul_vector(const char *buf, ssize_t len, const char *const expected[]) {
+    size_t pos = 0;
+
+    if (!buf || len < 0 || !expected) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    for (int i = 0; expected[i]; i++) {
+        size_t item_len = strlen(expected[i]);
+        if (pos + item_len + 1 > (size_t)len) {
+            errno = EPROTO;
+            return -1;
+        }
+        if (memcmp(buf + pos, expected[i], item_len) != 0 || buf[pos + item_len] != '\0') {
+            errno = EPROTO;
+            return -1;
+        }
+        pos += item_len + 1;
+    }
+
+    if (pos != (size_t)len) {
         errno = EPROTO;
         return -1;
     }
@@ -364,6 +415,88 @@ out:
     return result;
 }
 
+int exec_syscall_contract_native_exec_records_proc_cmdline_and_environ(void) {
+    char *argv[] = {"custom-shell", "arg1", "arg two", NULL};
+    char *envp[] = {"A=B", "C=D", NULL};
+    const char *const expected_cmdline[] = {"custom-shell", "arg1", "arg two", NULL};
+    const char *const expected_environ[] = {"A=B", "C=D", NULL};
+    char buf[512];
+    ssize_t nread = 0;
+    int status;
+    int result = -1;
+
+    native_registry_clear();
+    if (native_register("/usr/bin/proc-env", native_exec_status) != 0) {
+        return -1;
+    }
+
+    status = execve("/usr/bin/proc-env", argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (read_proc_file("/proc/self/cmdline", buf, sizeof(buf), &nread) != 0) {
+        goto out;
+    }
+    if (expect_nul_vector(buf, nread, expected_cmdline) != 0) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    if (read_proc_file("/proc/self/environ", buf, sizeof(buf), &nread) != 0) {
+        goto out;
+    }
+    if (expect_nul_vector(buf, nread, expected_environ) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    return result;
+}
+
+int exec_syscall_contract_oversized_argv_returns_e2big_without_transition(void) {
+    struct task_struct *task = get_current();
+    char *too_many[TASK_MAX_ARGS + 1];
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    if (native_register("/usr/bin/too-many-args", native_exec_status) != 0) {
+        return -1;
+    }
+    for (int i = 0; i < TASK_MAX_ARGS; i++) {
+        too_many[i] = "x";
+    }
+    too_many[TASK_MAX_ARGS] = NULL;
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    errno = 0;
+    if (execve("/usr/bin/too-many-args", too_many, NULL) != -1 ||
+        expect_errno(E2BIG) != 0 ||
+        verify_state_unchanged(task, "/before", "before", false, -1, -1) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    return result;
+}
+
 int exec_syscall_contract_script_uses_virtual_path_and_native_interpreter(void) {
     struct task_struct *task = get_current();
     char *argv[] = {"script-name", "arg1", NULL};
@@ -419,6 +552,56 @@ int exec_syscall_contract_script_uses_virtual_path_and_native_interpreter(void) 
 out:
     native_registry_clear();
     unlink_impl("/tmp/exec-script-launch");
+    return result;
+}
+
+int exec_syscall_contract_script_exec_records_interpreter_proc_cmdline(void) {
+    char *argv[] = {"script-name", "arg1", NULL};
+    char *envp[] = {"KEY=VALUE", NULL};
+    const char *const expected_cmdline[] = {"/usr/bin/interp", "-x", "/tmp/exec-script-proc", "arg1", NULL};
+    const char *const expected_environ[] = {"KEY=VALUE", NULL};
+    char buf[512];
+    ssize_t nread = 0;
+    int status;
+    int result = -1;
+
+    native_registry_clear();
+    unlink_impl("/tmp/exec-script-proc");
+
+    if (create_exec_file("/tmp/exec-script-proc", "#!/usr/bin/interp -x\n") != 0) {
+        goto out;
+    }
+    if (native_register("/usr/bin/interp", native_capture_exec) != 0) {
+        goto out;
+    }
+
+    status = execve("/tmp/exec-script-proc", argv, envp);
+    if (status != 37) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (read_proc_file("/proc/self/cmdline", buf, sizeof(buf), &nread) != 0) {
+        goto out;
+    }
+    if (expect_nul_vector(buf, nread, expected_cmdline) != 0) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    if (read_proc_file("/proc/self/environ", buf, sizeof(buf), &nread) != 0) {
+        goto out;
+    }
+    if (expect_nul_vector(buf, nread, expected_environ) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl("/tmp/exec-script-proc");
     return result;
 }
 
@@ -589,8 +772,12 @@ int exec_syscall_contract_elf64_aarch64_exec_loads_virtual_image(void) {
     struct task_struct *task = get_current();
     char *argv[] = {"elf-prog", "arg1", NULL};
     char *envp[] = {"ELF=1", NULL};
+    const char *const expected_cmdline[] = {"elf-prog", "arg1", NULL};
+    const char *const expected_environ[] = {"ELF=1", NULL};
     unsigned char image[sizeof(Elf64_Ehdr) + 8];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    char buf[256];
+    ssize_t nread = 0;
     int status;
     int result = -1;
 
@@ -638,6 +825,14 @@ int exec_syscall_contract_elf64_aarch64_exec_loads_virtual_image(void) {
         task->mm->exec_image_size != sizeof(image) ||
         memcmp(task->mm->exec_image_base, image, sizeof(image)) != 0) {
         errno = EPROTO;
+        goto out;
+    }
+    if (read_proc_file("/proc/self/cmdline", buf, sizeof(buf), &nread) != 0 ||
+        expect_nul_vector(buf, nread, expected_cmdline) != 0) {
+        goto out;
+    }
+    if (read_proc_file("/proc/self/environ", buf, sizeof(buf), &nread) != 0 ||
+        expect_nul_vector(buf, nread, expected_environ) != 0) {
         goto out;
     }
 
@@ -696,6 +891,140 @@ int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
 
 out:
     unlink_impl("/tmp/exec-elf-loadable");
+    return result;
+}
+
+int exec_syscall_contract_elf_dyn_image_is_accepted(void) {
+    struct task_struct *task = get_current();
+    unsigned char image[sizeof(Elf64_Ehdr) + 8];
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-dyn");
+    memset(image, 0, sizeof(image));
+    build_minimal_elf64_aarch64(ehdr);
+    ehdr->e_type = ET_DYN;
+    if (create_exec_bytes("/tmp/exec-elf-dyn", image, sizeof(image)) != 0) {
+        goto out;
+    }
+
+    if (execve("/tmp/exec-elf-dyn", NULL, NULL) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!task->exec_image ||
+        task->exec_image->type != EXEC_IMAGE_ELF ||
+        task->exec_image->u.elf.type != ET_DYN ||
+        strcmp(task->exec_image->path, "/tmp/exec-elf-dyn") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-dyn");
+    return result;
+}
+
+int exec_syscall_contract_elf_interp_without_nul_returns_enoexec_without_transition(void) {
+    struct task_struct *task = get_current();
+    unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 8];
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    Elf64_Phdr *interp;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-bad-interp");
+    memset(image, 0, sizeof(image));
+    build_minimal_elf64_aarch64(ehdr);
+    ehdr->e_phoff = sizeof(Elf64_Ehdr);
+    ehdr->e_phentsize = sizeof(Elf64_Phdr);
+    ehdr->e_phnum = 1;
+    interp = (Elf64_Phdr *)(image + ehdr->e_phoff);
+    interp->p_type = PT_INTERP;
+    interp->p_offset = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
+    interp->p_filesz = 4;
+    interp->p_memsz = 4;
+    memcpy(image + interp->p_offset, "/bad", 4);
+    if (create_exec_bytes("/tmp/exec-elf-bad-interp", image, sizeof(image)) != 0) {
+        goto out;
+    }
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    errno = 0;
+    if (execve("/tmp/exec-elf-bad-interp", NULL, NULL) != -1 ||
+        expect_errno(ENOEXEC) != 0 ||
+        verify_state_unchanged(task, "/before", "before", false, -1, -1) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-bad-interp");
+    return result;
+}
+
+int exec_syscall_contract_elf_too_many_load_segments_returns_enoexec_without_transition(void) {
+    struct task_struct *task = get_current();
+    unsigned char image[sizeof(Elf64_Ehdr) + ((TASK_EXEC_MAX_LOAD_SEGMENTS + 1) * sizeof(Elf64_Phdr)) + 8];
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-too-many-loads");
+    memset(image, 0, sizeof(image));
+    build_minimal_elf64_aarch64(ehdr);
+    ehdr->e_phoff = sizeof(Elf64_Ehdr);
+    ehdr->e_phentsize = sizeof(Elf64_Phdr);
+    ehdr->e_phnum = TASK_EXEC_MAX_LOAD_SEGMENTS + 1;
+    for (int i = 0; i < TASK_EXEC_MAX_LOAD_SEGMENTS + 1; i++) {
+        Elf64_Phdr *load = ((Elf64_Phdr *)(image + ehdr->e_phoff)) + i;
+        load->p_type = PT_LOAD;
+        load->p_offset = sizeof(image) - 8;
+        load->p_filesz = 1;
+        load->p_memsz = 1;
+        load->p_vaddr = 0x400000 + ((uint64_t)i * 0x1000);
+        load->p_flags = PF_R;
+    }
+    if (create_exec_bytes("/tmp/exec-elf-too-many-loads", image, sizeof(image)) != 0) {
+        goto out;
+    }
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    errno = 0;
+    if (execve("/tmp/exec-elf-too-many-loads", NULL, NULL) != -1 ||
+        expect_errno(ENOEXEC) != 0 ||
+        verify_state_unchanged(task, "/before", "before", false, -1, -1) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-too-many-loads");
     return result;
 }
 

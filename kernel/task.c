@@ -76,6 +76,94 @@ void set_current(struct task_struct *task) {
     current_task = task;
 }
 
+static void task_clear_exec_strings(struct task_struct *task) {
+    if (!task) {
+        return;
+    }
+
+    for (int i = 0; i < TASK_MAX_ARGS; i++) {
+        free(task->argv[i]);
+        task->argv[i] = NULL;
+        free(task->envp[i]);
+        task->envp[i] = NULL;
+    }
+    task->argc = 0;
+    task->envc = 0;
+}
+
+static void task_free_exec_string_vector(char **strings, int count) {
+    if (!strings) {
+        return;
+    }
+    for (int i = 0; i < count; i++) {
+        free(strings[i]);
+    }
+}
+
+static int task_copy_exec_string_vector(char *const input[], char **output, int *out_count) {
+    int count = 0;
+
+    if (!output || !out_count) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    *out_count = 0;
+    if (!input) {
+        return 0;
+    }
+
+    while (input[count]) {
+        if (count >= TASK_MAX_ARGS - 1) {
+            errno = E2BIG;
+            return -1;
+        }
+        output[count] = strdup(input[count]);
+        if (!output[count]) {
+            task_free_exec_string_vector(output, count);
+            errno = ENOMEM;
+            return -1;
+        }
+        count++;
+    }
+
+    output[count] = NULL;
+    *out_count = count;
+    return 0;
+}
+
+int task_record_exec_strings_impl(char *const argv[], char *const envp[]) {
+    struct task_struct *task = get_current();
+    char *new_argv[TASK_MAX_ARGS] = {0};
+    char *new_envp[TASK_MAX_ARGS] = {0};
+    int new_argc = 0;
+    int new_envc = 0;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    if (task_copy_exec_string_vector(argv, new_argv, &new_argc) != 0) {
+        return -1;
+    }
+    if (task_copy_exec_string_vector(envp, new_envp, &new_envc) != 0) {
+        task_free_exec_string_vector(new_argv, new_argc);
+        return -1;
+    }
+
+    task_clear_exec_strings(task);
+    for (int i = 0; i < new_argc; i++) {
+        task->argv[i] = new_argv[i];
+    }
+    for (int i = 0; i < new_envc; i++) {
+        task->envp[i] = new_envp[i];
+    }
+    task->argc = new_argc;
+    task->envc = new_envc;
+    return 0;
+}
+
 struct task_struct *alloc_task(void) {
     struct task_struct *task = calloc(1, sizeof(struct task_struct));
     if (!task)
@@ -338,6 +426,7 @@ void free_task(struct task_struct *task) {
         free(task->exec_image);
     if (task->uts_ns)
         uts_put(task->uts_ns);
+    task_clear_exec_strings(task);
 
     kernel_cond_destroy(&task->wait_cond);
     kernel_mutex_destroy(&task->wait_lock);
