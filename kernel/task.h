@@ -40,6 +40,7 @@ struct mm_struct;
 struct exec_image;
 struct wait_queue_head;
 struct nsproxy;
+struct uts_namespace;
 struct cgroup;
 struct seccomp;
 struct cred;
@@ -146,6 +147,7 @@ struct task_struct {
     struct tty_struct *tty;
     struct mm_struct *mm;
     struct exec_image *exec_image;
+    struct uts_namespace *uts_ns;
 
     /* Virtual process hierarchy relationships */
     struct task_struct *parent;

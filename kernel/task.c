@@ -5,6 +5,7 @@
 #include "task.h"
 #include "signal.h"
 #include "cred_internal.h"
+#include "uts.h"
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
@@ -100,6 +101,7 @@ struct task_struct *alloc_task(void) {
     kernel_mutex_init(&task->lock);
     kernel_cond_init(&task->wait_cond);
     kernel_mutex_init(&task->wait_lock);
+    task->uts_ns = uts_get_initial_namespace();
 
     /* Store start time as nanoseconds - use simple counter for now
      * Real implementation would use kernel_clock_gettime from time subsystem */
@@ -131,6 +133,10 @@ struct task_struct *task_create_child_impl(struct task_struct *parent) {
     child->ppid = parent->pid;
     child->pgid = parent->pgid;
     child->sid = parent->sid;
+    if (parent->uts_ns) {
+        uts_put(child->uts_ns);
+        child->uts_ns = uts_get(parent->uts_ns);
+    }
 
     if (parent->fs) {
         child->fs = dup_fs_struct(parent->fs);
@@ -311,6 +317,8 @@ void free_task(struct task_struct *task) {
         free(task->mm);
     if (task->exec_image)
         free(task->exec_image);
+    if (task->uts_ns)
+        uts_put(task->uts_ns);
 
     kernel_cond_destroy(&task->wait_cond);
     kernel_mutex_destroy(&task->wait_lock);

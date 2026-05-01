@@ -8,6 +8,7 @@
 #include "../fs/vfs.h"
 #include "signal.h"
 #include "task.h"
+#include "uts.h"
 
 /* Thread stack minimum fallback for portability */
 #define KERNEL_THREAD_STACK_MIN (64 * 1024)
@@ -108,6 +109,10 @@ pid_t fork_impl(void) {
     child->ppid = parent->pid;
     child->pgid = parent->pgid;
     child->sid = parent->sid;
+    if (parent->uts_ns) {
+        uts_put(child->uts_ns);
+        child->uts_ns = uts_get(parent->uts_ns);
+    }
 
     /* Copy parent's filesystem context */
     if (parent->fs) {
@@ -309,6 +314,10 @@ int vfork_impl(void) {
     child->pgid = parent->pgid;
     child->sid = parent->sid;
     child->vfork_parent = parent; /* Mark as vfork child */
+    if (parent->uts_ns) {
+        uts_put(child->uts_ns);
+        child->uts_ns = uts_get(parent->uts_ns);
+    }
 
     /* Copy parent's filesystem context */
     if (parent->fs) {

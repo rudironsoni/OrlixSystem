@@ -105,6 +105,8 @@ targets:
       group: kernel
     - path: kernel/time.c
       group: kernel
+    - path: kernel/uts.c
+      group: kernel
     - path: kernel/wait_queue.c
       group: kernel
     - path: internal/ios/kernel/sync.c
@@ -143,6 +145,7 @@ targets:
     - IXLandSystemLinuxKernelTests/ExecFdTests.m
     - IXLandSystemLinuxKernelTests/ExecSyscallTests.m
     - IXLandSystemLinuxKernelTests/TaskExecTests.m
+    - IXLandSystemLinuxKernelTests/UTSTests.m
     - path: IXLandSystemLinuxKernelTests/LinuxUAPICompileSmoke.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
@@ -215,6 +218,11 @@ targets:
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
+    - path: IXLandSystemLinuxKernelTests/UTSContract.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
+    - IXLandSystemLinuxKernelTests/UTSContract.h
     dependencies:
     - target: IXLandSystem
     settings:
