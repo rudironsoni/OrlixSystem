@@ -729,6 +729,13 @@ bool vfs_path_is_synthetic_root(const char *vpath) {
     return strcmp(vpath, "/proc") == 0 || strcmp(vpath, "/sys") == 0 || strcmp(vpath, "/dev") == 0;
 }
 
+static bool vfs_path_is_synthetic_dev_dir(const char *vpath) {
+    if (!vpath) {
+        return false;
+    }
+    return strcmp(vpath, "/dev/pts") == 0;
+}
+
 synthetic_dev_node_t vfs_path_is_synthetic_dev_node(const char *vpath) {
     if (!vpath) {
         return SYNTHETIC_DEV_NONE;
@@ -738,6 +745,9 @@ synthetic_dev_node_t vfs_path_is_synthetic_dev_node(const char *vpath) {
     }
     if (strcmp(vpath, "/dev/zero") == 0) {
         return SYNTHETIC_DEV_ZERO;
+    }
+    if (strcmp(vpath, "/dev/random") == 0) {
+        return SYNTHETIC_DEV_RANDOM;
     }
     if (strcmp(vpath, "/dev/urandom") == 0) {
         return SYNTHETIC_DEV_URANDOM;
@@ -2253,6 +2263,12 @@ int vfs_access(const char *pathname, int mode) {
     if (vfs_path_is_synthetic_dev_node(pathname) != SYNTHETIC_DEV_NONE) {
         return 0;
     }
+    if (strcmp(pathname, "/dev/tty") == 0 || vfs_path_is_synthetic_dev_dir(pathname)) {
+        return 0;
+    }
+    if (pty_is_virtual_slave_path_impl(pathname)) {
+        return 0;
+    }
     if (vfs_classify_proc_self_path(pathname) != PROC_SELF_NONE) {
         return 0;
     }
@@ -2296,6 +2312,18 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
         return 0;
     }
 
+    if (vfs_path_is_synthetic_dev_dir(resolved_virtual)) {
+        memset(statbuf, 0, sizeof(*statbuf));
+        statbuf->st_mode = S_IFDIR | 0555;
+        statbuf->st_nlink = 2;
+        statbuf->st_uid = 0;
+        statbuf->st_gid = 0;
+        statbuf->st_size = 0;
+        statbuf->st_blksize = 4096;
+        statbuf->st_blocks = 0;
+        return 0;
+    }
+
     {
         synthetic_dev_node_t dev_node = vfs_path_is_synthetic_dev_node(resolved_virtual);
         if (dev_node != SYNTHETIC_DEV_NONE) {
@@ -2306,6 +2334,7 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
             statbuf->st_gid = 0;
             statbuf->st_rdev = (dev_node == SYNTHETIC_DEV_NULL) ? makedev(1, 3) :
                                (dev_node == SYNTHETIC_DEV_ZERO) ? makedev(1, 5) :
+                               (dev_node == SYNTHETIC_DEV_RANDOM) ? makedev(1, 8) :
                                (dev_node == SYNTHETIC_DEV_URANDOM) ? makedev(1, 9) :
                                makedev(5, 2);
             statbuf->st_blksize = 4096;
@@ -2314,30 +2343,28 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
         }
     }
 
-    if (pty_is_virtual_slave_path_impl(resolved_virtual)) {
-        memset(statbuf, 0, sizeof(*statbuf));
-        statbuf->st_mode = S_IFCHR | 0666;
-        statbuf->st_nlink = 1;
-        statbuf->st_uid = 0;
-        statbuf->st_gid = 0;
-        statbuf->st_rdev = makedev(136, 0);
-        statbuf->st_blksize = 4096;
-        statbuf->st_blocks = 0;
-        return 0;
+    {
+        unsigned int pty_index = 0;
+        if (pty_lookup_slave_path_impl(resolved_virtual, &pty_index) == 0) {
+            memset(statbuf, 0, sizeof(*statbuf));
+            statbuf->st_mode = S_IFCHR | 0666;
+            statbuf->st_nlink = 1;
+            statbuf->st_uid = 0;
+            statbuf->st_gid = 0;
+            statbuf->st_rdev = makedev(136, pty_index);
+            statbuf->st_blksize = 4096;
+            statbuf->st_blocks = 0;
+            return 0;
+        }
     }
 
     if (strcmp(resolved_virtual, "/dev/tty") == 0) {
-        unsigned int pty_index;
-        if (pty_open_controlling_slave_impl(&pty_index) != 0) {
-            return -ENOENT;
-        }
-        pty_close_end_impl(pty_index, false);
         memset(statbuf, 0, sizeof(*statbuf));
         statbuf->st_mode = S_IFCHR | 0666;
         statbuf->st_nlink = 1;
         statbuf->st_uid = 0;
         statbuf->st_gid = 0;
-        statbuf->st_rdev = makedev(136, 0);
+        statbuf->st_rdev = makedev(5, 0);
         statbuf->st_blksize = 4096;
         statbuf->st_blocks = 0;
         return 0;
@@ -2500,6 +2527,14 @@ int vfs_faccessat(int dirfd, const char *pathname, int mode, int flags) {
     }
 
     if (vfs_path_is_synthetic_dev_node(resolved_virtual) != SYNTHETIC_DEV_NONE) {
+        return 0;
+    }
+
+    if (strcmp(resolved_virtual, "/dev/tty") == 0 || vfs_path_is_synthetic_dev_dir(resolved_virtual)) {
+        return 0;
+    }
+
+    if (pty_is_virtual_slave_path_impl(resolved_virtual)) {
         return 0;
     }
 

@@ -41,6 +41,8 @@ int pty_allocate_pair_impl(unsigned int *pty_index);
 int pty_open_slave_by_path_impl(const char *path, unsigned int *pty_index);
 int pty_open_controlling_slave_impl(unsigned int *pty_index);
 bool pty_is_virtual_slave_path_impl(const char *path);
+int pty_lookup_slave_path_impl(const char *path, unsigned int *pty_index);
+size_t pty_list_slave_indices_impl(unsigned int *indices, size_t capacity);
 
 int pty_close_end_impl(unsigned int pty_index, bool is_master);
 

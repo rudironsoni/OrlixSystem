@@ -513,9 +513,60 @@ int pty_format_slave_path_impl(unsigned int pty_index, char *buf, size_t buf_len
     return 0;
 }
 
+static int pty_parse_slave_path(const char *path, unsigned int *pty_index) {
+    if (!path || !pty_index) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    static const char *prefix = "/dev/pts/";
+    size_t prefklen = strlen(prefix);
+    if (strncmp(path, prefix, prefklen) != 0) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    const char *num = path + prefklen;
+    if (*num == '\0') {
+        errno = ENOENT;
+        return -1;
+    }
+
+    char *endptr = NULL;
+    unsigned long value = strtoul(num, &endptr, 10);
+    if (!endptr || *endptr != '\0' || value >= PTY_MAX) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    *pty_index = (unsigned int)value;
+    return 0;
+}
+
+int pty_lookup_slave_path_impl(const char *path, unsigned int *pty_index) {
+    unsigned int idx;
+    if (pty_parse_slave_path(path, &idx) != 0) {
+        return -1;
+    }
+
+    fs_mutex_lock(&pty_lock);
+    pty_pair_t *pair = &pty_table[idx];
+    if (!pair->allocated || pair->slave_locked) {
+        fs_mutex_unlock(&pty_lock);
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (pty_index) {
+        *pty_index = idx;
+    }
+    fs_mutex_unlock(&pty_lock);
+    return 0;
+}
+
 bool pty_is_virtual_slave_path_impl(const char *path) {
     unsigned int idx;
-    return pty_open_slave_by_path_impl(path, &idx) == 0;
+    return pty_lookup_slave_path_impl(path, &idx) == 0;
 }
 
 int pty_open_controlling_slave_impl(unsigned int *pty_index) {
@@ -560,32 +611,15 @@ int pty_open_controlling_slave_impl(unsigned int *pty_index) {
 }
 
 int pty_open_slave_by_path_impl(const char *path, unsigned int *pty_index) {
-    if (!path || !pty_index) {
+    unsigned int idx;
+    if (!pty_index) {
         errno = EINVAL;
         return -1;
     }
-
-    static const char *prefix = "/dev/pts/";
-    size_t prefklen = strlen(prefix);
-    if (strncmp(path, prefix, prefklen) != 0) {
-        errno = ENOENT;
+    if (pty_parse_slave_path(path, &idx) != 0) {
         return -1;
     }
 
-    const char *num = path + prefklen;
-    if (*num == '\0') {
-        errno = ENOENT;
-        return -1;
-    }
-
-    char *endptr = NULL;
-    unsigned long value = strtoul(num, &endptr, 10);
-    if (!endptr || *endptr != '\0' || value >= PTY_MAX) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    unsigned int idx = (unsigned int)value;
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[idx];
     if (!pair->allocated) {
@@ -602,6 +636,25 @@ int pty_open_slave_by_path_impl(const char *path, unsigned int *pty_index) {
     *pty_index = idx;
     fs_mutex_unlock(&pty_lock);
     return 0;
+}
+
+size_t pty_list_slave_indices_impl(unsigned int *indices, size_t capacity) {
+    size_t count = 0;
+
+    fs_mutex_lock(&pty_lock);
+    for (unsigned int idx = 0; idx < PTY_MAX; idx++) {
+        pty_pair_t *pair = &pty_table[idx];
+        if (!pair->allocated || pair->slave_locked) {
+            continue;
+        }
+        if (indices && count < capacity) {
+            indices[count] = idx;
+        }
+        count++;
+    }
+    fs_mutex_unlock(&pty_lock);
+
+    return count;
 }
 
 int pty_close_end_impl(unsigned int pty_index, bool is_master) {

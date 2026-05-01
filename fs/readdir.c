@@ -12,6 +12,7 @@
 #include "fdtable.h"
 #include "internal/ios/fs/file_io_host.h"
 #include "path.h"
+#include "pty.h"
 #include "vfs.h"
 
 struct linux_dirent64 {
@@ -154,6 +155,62 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
         while (idx < num_entries) {
             rc = append_linux_dirent64(dirp, count, &written, 1, (int64_t)(idx + 3),
                                        entries[idx].dtype, entries[idx].name);
+            if (rc == 0) {
+                break;
+            }
+            idx++;
+            cursor++;
+        }
+    }
+
+    if (dir_class == SYNTHETIC_DIR_DEV) {
+        static const struct {
+            const char *name;
+            unsigned char dtype;
+        } entries[] = {
+            {"null", DT_CHR},
+            {"zero", DT_CHR},
+            {"random", DT_CHR},
+            {"urandom", DT_CHR},
+            {"tty", DT_CHR},
+            {"ptmx", DT_CHR},
+            {"pts", DT_DIR},
+        };
+        size_t num_entries = sizeof(entries) / sizeof(entries[0]);
+        size_t idx = (size_t)(cursor - 2);
+
+        while (idx < num_entries) {
+            rc = append_linux_dirent64(dirp, count, &written, 1, (int64_t)(idx + 3),
+                                       entries[idx].dtype, entries[idx].name);
+            if (rc == 0) {
+                break;
+            }
+            idx++;
+            cursor++;
+        }
+    }
+
+    if (dir_class == SYNTHETIC_DIR_DEV_PTS) {
+        unsigned int pty_indices[256];
+        size_t num_entries = pty_list_slave_indices_impl(pty_indices, sizeof(pty_indices) / sizeof(pty_indices[0]));
+        size_t idx = (size_t)(cursor - 2);
+
+        while (idx < num_entries && idx < sizeof(pty_indices) / sizeof(pty_indices[0])) {
+            char name[16];
+            unsigned int value = pty_indices[idx];
+            size_t len = 0;
+            char digits[16];
+            do {
+                digits[len++] = (char)('0' + (value % 10));
+                value /= 10;
+            } while (value != 0 && len < sizeof(digits));
+
+            for (size_t i = 0; i < len; i++) {
+                name[i] = digits[len - 1 - i];
+            }
+            name[len] = '\0';
+
+            rc = append_linux_dirent64(dirp, count, &written, 1, (int64_t)(idx + 3), DT_CHR, name);
             if (rc == 0) {
                 break;
             }

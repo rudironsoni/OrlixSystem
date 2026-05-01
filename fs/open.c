@@ -104,14 +104,24 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
     }
 
     /* Always create synthetic fds for /proc, /sys, /dev */
-    if ((strcmp(resolved_path, "/proc") == 0 || 
-         strcmp(resolved_path, "/sys") == 0 ||
-         strcmp(resolved_path, "/dev") == 0) && ((flags & O_DIRECTORY) != 0 || (flags & O_PATH) == 0)) {
+    if ((strcmp(resolved_path, "/proc") == 0 || strcmp(resolved_path, "/sys") == 0) &&
+        ((flags & O_DIRECTORY) != 0 || (flags & O_PATH) == 0)) {
         int fd = alloc_fd_impl();
         if (fd < 0) {
             return -1;
         }
         init_synthetic_fd_entry_impl(fd, flags, mode, resolved_path);
+        return fd;
+    }
+
+    if ((strcmp(resolved_path, "/dev") == 0 || strcmp(resolved_path, "/dev/pts") == 0) &&
+        ((flags & O_DIRECTORY) != 0 || (flags & O_PATH) == 0)) {
+        int fd = alloc_fd_impl();
+        if (fd < 0) {
+            return -1;
+        }
+        synthetic_dir_class_t dir_class = strcmp(resolved_path, "/dev") == 0 ? SYNTHETIC_DIR_DEV : SYNTHETIC_DIR_DEV_PTS;
+        init_synthetic_subdir_fd_entry_impl(fd, flags, mode, resolved_path, dir_class);
         return fd;
     }
 
@@ -257,12 +267,24 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
         return -1;
     }
 
-    if (vfs_path_is_synthetic_root(resolved_path) && ((flags & O_DIRECTORY) != 0 || (flags & O_PATH) == 0)) {
+    if ((strcmp(resolved_path, "/proc") == 0 || strcmp(resolved_path, "/sys") == 0) &&
+        ((flags & O_DIRECTORY) != 0 || (flags & O_PATH) == 0)) {
         int fd = alloc_fd_impl();
         if (fd < 0) {
             return -1;
         }
         init_synthetic_fd_entry_impl(fd, flags, mode, resolved_path);
+        return fd;
+    }
+
+    if ((strcmp(resolved_path, "/dev") == 0 || strcmp(resolved_path, "/dev/pts") == 0) &&
+        ((flags & O_DIRECTORY) != 0 || (flags & O_PATH) == 0)) {
+        int fd = alloc_fd_impl();
+        if (fd < 0) {
+            return -1;
+        }
+        synthetic_dir_class_t dir_class = strcmp(resolved_path, "/dev") == 0 ? SYNTHETIC_DIR_DEV : SYNTHETIC_DIR_DEV_PTS;
+        init_synthetic_subdir_fd_entry_impl(fd, flags, mode, resolved_path, dir_class);
         return fd;
     }
 

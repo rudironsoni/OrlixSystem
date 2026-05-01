@@ -1591,16 +1591,15 @@ extern void cred_reset_to_defaults(void);
     struct linux_stat st;
     errno = 0;
     int ret = stat_impl("/dev/tty", &st);
-    XCTAssertEqual(ret, -1, @"stat(/dev/tty) should fail without a controlling tty");
-    XCTAssertEqual(errno, ENOENT, @"stat(/dev/tty) should currently set ENOENT without a controlling tty");
+    XCTAssertEqual(ret, 0, @"stat(/dev/tty) should report the devfs character node");
+    XCTAssertTrue(stat_mode_is_char_device(st.st_mode), @"/dev/tty should be a character device");
 }
 
 - (void)testDevTtyAccessFails {
     errno = 0;
     int ret = access("/dev/tty", F_OK);
 
-    XCTAssertEqual(ret, -1, @"access(/dev/tty) should fail without a controlling tty");
-    XCTAssertEqual(errno, ENOENT, @"access(/dev/tty) should currently set ENOENT without a controlling tty");
+    XCTAssertEqual(ret, 0, @"access(/dev/tty) should report the devfs node even without a controlling tty");
 }
 
 /* ============================================================================

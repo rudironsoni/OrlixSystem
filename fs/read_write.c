@@ -71,7 +71,8 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         } else if (dev_node == SYNTHETIC_DEV_ZERO) {
             memset(buf, 0, count);
             return (ssize_t)count;
-        } else if (dev_node == SYNTHETIC_DEV_URANDOM) {
+        } else if (dev_node == SYNTHETIC_DEV_RANDOM ||
+                   dev_node == SYNTHETIC_DEV_URANDOM) {
             arc4random_buf(buf, count);
             return (ssize_t)count;
         }
@@ -203,6 +204,7 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
 
         if (dev_node == SYNTHETIC_DEV_NULL ||
             dev_node == SYNTHETIC_DEV_ZERO ||
+            dev_node == SYNTHETIC_DEV_RANDOM ||
             dev_node == SYNTHETIC_DEV_URANDOM) {
             return (ssize_t)count;
         }

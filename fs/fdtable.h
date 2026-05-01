@@ -101,6 +101,8 @@ void init_host_dirfd_entry_impl(int fd, int real_fd, linux_mode_t mode, const ch
 enum synthetic_dir_class {
     SYNTHETIC_DIR_GENERIC = 0,
     SYNTHETIC_DIR_ROOT,
+    SYNTHETIC_DIR_DEV,
+    SYNTHETIC_DIR_DEV_PTS,
     SYNTHETIC_DIR_PROC_SELF,
     SYNTHETIC_DIR_PROC_SELF_FD,
     SYNTHETIC_DIR_PROC_SELF_FDINFO,
@@ -118,6 +120,7 @@ enum synthetic_dev_node {
     SYNTHETIC_DEV_NONE = 0,
     SYNTHETIC_DEV_NULL,
     SYNTHETIC_DEV_ZERO,
+    SYNTHETIC_DEV_RANDOM,
     SYNTHETIC_DEV_URANDOM,
     SYNTHETIC_DEV_PTMX
 };
