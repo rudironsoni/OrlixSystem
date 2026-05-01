@@ -8,6 +8,7 @@
 #include <linux/fcntl.h>
 #include <linux/capability.h>
 #include <linux/mount.h>
+#include <linux/stat.h>
 
 #include <errno.h>
 
@@ -21,6 +22,7 @@
 #endif
 
 extern int chroot(const char *path);
+extern int chdir(const char *path);
 extern int fchdir(int fd);
 extern char *getcwd(char *buf, size_t size);
 extern int mount(const char *source, const char *target, const char *filesystemtype,
@@ -451,6 +453,209 @@ fail:
         errno = saved_errno;
     }
     return -1;
+}
+
+int vfs_contract_chdir_resolves_symlink_directory(void) {
+    struct task_struct *task = get_current();
+    char old_pwd[MAX_PATH];
+    char cwd[MAX_PATH];
+    int ret = -1;
+
+    if (!task || !task->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    __builtin_memcpy(old_pwd, task->fs->pwd_path, sizeof(old_pwd));
+    unlink_impl("/tmp/vfs-chdir-symlink/link");
+    rmdir_impl("/tmp/vfs-chdir-symlink/real");
+    rmdir_impl("/tmp/vfs-chdir-symlink");
+    if (mkdir_impl("/tmp/vfs-chdir-symlink", 0700) != 0) {
+        goto out;
+    }
+    if (mkdir_impl("/tmp/vfs-chdir-symlink/real", 0700) != 0) {
+        goto out;
+    }
+    if (symlinkat("real", AT_FDCWD, "/tmp/vfs-chdir-symlink/link") != 0) {
+        goto out;
+    }
+    if (chdir("/tmp/vfs-chdir-symlink/link") != 0) {
+        goto out;
+    }
+    if (!getcwd(cwd, sizeof(cwd)) || __builtin_strcmp(cwd, "/tmp/vfs-chdir-symlink/real") != 0) {
+        errno = EIO;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    if (task && task->fs) {
+        fs_set_pwd(task->fs, old_pwd);
+    }
+    unlink_impl("/tmp/vfs-chdir-symlink/link");
+    rmdir_impl("/tmp/vfs-chdir-symlink/real");
+    rmdir_impl("/tmp/vfs-chdir-symlink");
+    return ret;
+}
+
+int vfs_contract_mkdirat_resolves_intermediate_symlink_directory(void) {
+    int ret = -1;
+
+    unlink_impl("/tmp/vfs-mkdirat-symlink/link/created");
+    unlink_impl("/tmp/vfs-mkdirat-symlink/link");
+    rmdir_impl("/tmp/vfs-mkdirat-symlink/real/created");
+    rmdir_impl("/tmp/vfs-mkdirat-symlink/real");
+    rmdir_impl("/tmp/vfs-mkdirat-symlink");
+    if (mkdir_impl("/tmp/vfs-mkdirat-symlink", 0700) != 0) {
+        goto out;
+    }
+    if (mkdir_impl("/tmp/vfs-mkdirat-symlink/real", 0700) != 0) {
+        goto out;
+    }
+    if (symlinkat("real", AT_FDCWD, "/tmp/vfs-mkdirat-symlink/link") != 0) {
+        goto out;
+    }
+    if (mkdirat(AT_FDCWD, "/tmp/vfs-mkdirat-symlink/link/created", 0700) != 0) {
+        goto out;
+    }
+    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-mkdirat-symlink/real/created", &(struct linux_stat){0}, 0) != 0) {
+        goto out;
+    }
+    ret = 0;
+
+out:
+    unlink_impl("/tmp/vfs-mkdirat-symlink/link");
+    rmdir_impl("/tmp/vfs-mkdirat-symlink/real/created");
+    rmdir_impl("/tmp/vfs-mkdirat-symlink/real");
+    rmdir_impl("/tmp/vfs-mkdirat-symlink");
+    return ret;
+}
+
+int vfs_contract_unlinkat_resolves_intermediate_symlink_directory(void) {
+    int ret = -1;
+
+    unlink_impl("/tmp/vfs-unlinkat-symlink/link/file");
+    unlink_impl("/tmp/vfs-unlinkat-symlink/link");
+    unlink_impl("/tmp/vfs-unlinkat-symlink/real/file");
+    rmdir_impl("/tmp/vfs-unlinkat-symlink/real");
+    rmdir_impl("/tmp/vfs-unlinkat-symlink");
+    if (mkdir_impl("/tmp/vfs-unlinkat-symlink", 0700) != 0) {
+        goto out;
+    }
+    if (mkdir_impl("/tmp/vfs-unlinkat-symlink/real", 0700) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-unlinkat-symlink/real/file", "unlink") != 0) {
+        goto out;
+    }
+    if (symlinkat("real", AT_FDCWD, "/tmp/vfs-unlinkat-symlink/link") != 0) {
+        goto out;
+    }
+    if (unlinkat(AT_FDCWD, "/tmp/vfs-unlinkat-symlink/link/file", 0) != 0) {
+        goto out;
+    }
+    errno = 0;
+    if (open_impl("/tmp/vfs-unlinkat-symlink/real/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = EIO;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    unlink_impl("/tmp/vfs-unlinkat-symlink/link");
+    unlink_impl("/tmp/vfs-unlinkat-symlink/real/file");
+    rmdir_impl("/tmp/vfs-unlinkat-symlink/real");
+    rmdir_impl("/tmp/vfs-unlinkat-symlink");
+    return ret;
+}
+
+int vfs_contract_renameat_resolves_intermediate_symlink_directories(void) {
+    int ret = -1;
+
+    unlink_impl("/tmp/vfs-renameat-symlink/src-link/file");
+    unlink_impl("/tmp/vfs-renameat-symlink/dst-link/file");
+    unlink_impl("/tmp/vfs-renameat-symlink/src-link");
+    unlink_impl("/tmp/vfs-renameat-symlink/dst-link");
+    unlink_impl("/tmp/vfs-renameat-symlink/src-real/file");
+    unlink_impl("/tmp/vfs-renameat-symlink/dst-real/file");
+    rmdir_impl("/tmp/vfs-renameat-symlink/src-real");
+    rmdir_impl("/tmp/vfs-renameat-symlink/dst-real");
+    rmdir_impl("/tmp/vfs-renameat-symlink");
+    if (mkdir_impl("/tmp/vfs-renameat-symlink", 0700) != 0 ||
+        mkdir_impl("/tmp/vfs-renameat-symlink/src-real", 0700) != 0 ||
+        mkdir_impl("/tmp/vfs-renameat-symlink/dst-real", 0700) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-renameat-symlink/src-real/file", "renamed") != 0) {
+        goto out;
+    }
+    if (symlinkat("src-real", AT_FDCWD, "/tmp/vfs-renameat-symlink/src-link") != 0 ||
+        symlinkat("dst-real", AT_FDCWD, "/tmp/vfs-renameat-symlink/dst-link") != 0) {
+        goto out;
+    }
+    if (renameat2(AT_FDCWD, "/tmp/vfs-renameat-symlink/src-link/file",
+                  AT_FDCWD, "/tmp/vfs-renameat-symlink/dst-link/file", 0) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-renameat-symlink/dst-real/file", "renamed") != 0) {
+        goto out;
+    }
+    ret = 0;
+
+out:
+    unlink_impl("/tmp/vfs-renameat-symlink/src-link");
+    unlink_impl("/tmp/vfs-renameat-symlink/dst-link");
+    unlink_impl("/tmp/vfs-renameat-symlink/src-real/file");
+    unlink_impl("/tmp/vfs-renameat-symlink/dst-real/file");
+    rmdir_impl("/tmp/vfs-renameat-symlink/src-real");
+    rmdir_impl("/tmp/vfs-renameat-symlink/dst-real");
+    rmdir_impl("/tmp/vfs-renameat-symlink");
+    return ret;
+}
+
+int vfs_contract_linkat_respects_symlink_follow_flag(void) {
+    struct linux_stat st;
+    int ret = -1;
+
+    unlink_impl("/tmp/vfs-linkat-follow/hard-target");
+    unlink_impl("/tmp/vfs-linkat-follow/hard-link");
+    unlink_impl("/tmp/vfs-linkat-follow/link");
+    unlink_impl("/tmp/vfs-linkat-follow/target");
+    rmdir_impl("/tmp/vfs-linkat-follow");
+    if (mkdir_impl("/tmp/vfs-linkat-follow", 0700) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-linkat-follow/target", "target") != 0) {
+        goto out;
+    }
+    if (symlinkat("target", AT_FDCWD, "/tmp/vfs-linkat-follow/link") != 0) {
+        goto out;
+    }
+    if (linkat(AT_FDCWD, "/tmp/vfs-linkat-follow/link", AT_FDCWD,
+               "/tmp/vfs-linkat-follow/hard-link", 0) != 0) {
+        goto out;
+    }
+    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-linkat-follow/hard-link", &st, AT_SYMLINK_NOFOLLOW) != 0 ||
+        (st.st_mode & S_IFMT) != S_IFLNK) {
+        errno = EIO;
+        goto out;
+    }
+    if (linkat(AT_FDCWD, "/tmp/vfs-linkat-follow/link", AT_FDCWD,
+               "/tmp/vfs-linkat-follow/hard-target", AT_SYMLINK_FOLLOW) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-linkat-follow/hard-target", "target") != 0) {
+        goto out;
+    }
+    ret = 0;
+
+out:
+    unlink_impl("/tmp/vfs-linkat-follow/hard-target");
+    unlink_impl("/tmp/vfs-linkat-follow/hard-link");
+    unlink_impl("/tmp/vfs-linkat-follow/link");
+    unlink_impl("/tmp/vfs-linkat-follow/target");
+    rmdir_impl("/tmp/vfs-linkat-follow");
+    return ret;
 }
 
 int vfs_contract_chroot_rebases_absolute_paths_and_getcwd(void) {

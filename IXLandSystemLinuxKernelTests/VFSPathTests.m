@@ -555,6 +555,36 @@ extern void cred_reset_to_defaults(void);
                    @"open should reject symlink loops with ELOOP, errno %d", errno);
 }
 
+- (void)testChdirResolvesSymlinkDirectory {
+    extern int vfs_contract_chdir_resolves_symlink_directory(void);
+    XCTAssertEqual(vfs_contract_chdir_resolves_symlink_directory(), 0,
+                   @"chdir should resolve symlink directory targets in the virtual path walk, errno %d", errno);
+}
+
+- (void)testMkdiratResolvesIntermediateSymlinkDirectory {
+    extern int vfs_contract_mkdirat_resolves_intermediate_symlink_directory(void);
+    XCTAssertEqual(vfs_contract_mkdirat_resolves_intermediate_symlink_directory(), 0,
+                   @"mkdirat should resolve intermediate symlink directories, errno %d", errno);
+}
+
+- (void)testUnlinkatResolvesIntermediateSymlinkDirectory {
+    extern int vfs_contract_unlinkat_resolves_intermediate_symlink_directory(void);
+    XCTAssertEqual(vfs_contract_unlinkat_resolves_intermediate_symlink_directory(), 0,
+                   @"unlinkat should resolve intermediate symlink directories, errno %d", errno);
+}
+
+- (void)testRenameatResolvesIntermediateSymlinkDirectories {
+    extern int vfs_contract_renameat_resolves_intermediate_symlink_directories(void);
+    XCTAssertEqual(vfs_contract_renameat_resolves_intermediate_symlink_directories(), 0,
+                   @"renameat2 should resolve intermediate symlink directories, errno %d", errno);
+}
+
+- (void)testLinkatRespectsSymlinkFollowFlag {
+    extern int vfs_contract_linkat_respects_symlink_follow_flag(void);
+    XCTAssertEqual(vfs_contract_linkat_respects_symlink_follow_flag(), 0,
+                   @"linkat should honor AT_SYMLINK_FOLLOW for final symlink targets, errno %d", errno);
+}
+
 - (void)testVfsFstatatRejectsInvalidFlags {
     struct linux_stat st;
     int ret = vfs_fstatat(AT_FDCWD, "/etc/passwd", &st, INVALID_FLAG_TEST_VALUE);

@@ -136,6 +136,12 @@ int host_link_impl(const char *oldpath, const char *newpath)
     return (int)syscall(SYS_link, oldpath, newpath);
 }
 
+int host_linkat_impl(const char *oldpath, const char *newpath, int follow_symlink)
+{
+    return (int)syscall(SYS_linkat, AT_FDCWD, oldpath, AT_FDCWD, newpath,
+                        follow_symlink ? AT_SYMLINK_FOLLOW : 0);
+}
+
 int host_symlink_impl(const char *target, const char *linkpath)
 {
     return (int)syscall(SYS_symlink, target, linkpath);

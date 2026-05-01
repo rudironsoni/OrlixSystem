@@ -51,6 +51,7 @@ struct task_struct *get_current(void);
 
 static int rename_translate_path_at(int dirfd, const char *path, char *translated_path,
                                     size_t translated_path_len) {
+    char resolved_path[MAX_PATH];
     int ret;
 
     if (path == NULL) {
@@ -63,7 +64,13 @@ static int rename_translate_path_at(int dirfd, const char *path, char *translate
         return -1;
     }
 
-    ret = vfs_translate_path_at(dirfd, path, translated_path, translated_path_len);
+    ret = vfs_resolve_virtual_path_at_follow(dirfd, path, resolved_path, sizeof(resolved_path), false);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    ret = vfs_translate_path(resolved_path, translated_path, translated_path_len);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -86,7 +93,7 @@ static int rename_resolve_virtual_path_at(int dirfd, const char *path, char *res
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_at(dirfd, path, resolved_path, resolved_path_len);
+    ret = vfs_resolve_virtual_path_at_follow(dirfd, path, resolved_path, resolved_path_len, false);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -317,6 +324,7 @@ static int directory_translate_task_path(const char *path, char *translated_path
                                          size_t translated_path_len,
                                          struct task_struct **task_out) {
     struct task_struct *task;
+    char resolved_path[MAX_PATH];
     int ret;
 
     task = get_current();
@@ -325,7 +333,14 @@ static int directory_translate_task_path(const char *path, char *translated_path
         return -1;
     }
 
-    ret = vfs_translate_path_task(path, translated_path, translated_path_len, task->fs);
+    ret = vfs_resolve_virtual_path_task_follow(path, resolved_path, sizeof(resolved_path),
+                                               task->fs, true);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    ret = vfs_translate_path(resolved_path, translated_path, translated_path_len);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -382,7 +397,8 @@ int chdir_impl(const char *path) {
     }
 
     if (task->fs) {
-        int ret = vfs_resolve_virtual_path_task(path, resolved_virtual, sizeof(resolved_virtual), task->fs);
+        int ret = vfs_resolve_virtual_path_task_follow(path, resolved_virtual,
+                                                       sizeof(resolved_virtual), task->fs, true);
         if (ret != 0) {
             errno = -ret;
             return -1;
@@ -481,7 +497,7 @@ static int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_at(dirfd, pathname, resolved_path, sizeof(resolved_path));
+    ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_path, sizeof(resolved_path), false);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -492,7 +508,7 @@ static int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
         return -1;
     }
 
-    ret = vfs_translate_path_at(dirfd, pathname, translated_path, sizeof(translated_path));
+    ret = vfs_translate_path(resolved_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -525,7 +541,7 @@ static int unlinkat_impl(int dirfd, const char *pathname, int flags) {
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_at(dirfd, pathname, resolved_path, sizeof(resolved_path));
+    ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_path, sizeof(resolved_path), false);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -536,7 +552,7 @@ static int unlinkat_impl(int dirfd, const char *pathname, int flags) {
         return -1;
     }
 
-    ret = vfs_translate_path_at(dirfd, pathname, translated_path, sizeof(translated_path));
+    ret = vfs_translate_path(resolved_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -572,6 +588,7 @@ int unlink_impl(const char *pathname) {
 }
 
 static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags) {
+    char resolved_old[MAX_PATH];
     char resolved_new[MAX_PATH];
     char translated_old[MAX_PATH];
     char translated_new[MAX_PATH];
@@ -593,7 +610,14 @@ static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const ch
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_at(newdirfd, newpath, resolved_new, sizeof(resolved_new));
+    ret = vfs_resolve_virtual_path_at_follow(olddirfd, oldpath, resolved_old,
+                                             sizeof(resolved_old), (flags & AT_SYMLINK_FOLLOW) != 0);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    ret = vfs_resolve_virtual_path_at_follow(newdirfd, newpath, resolved_new, sizeof(resolved_new), false);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -604,18 +628,23 @@ static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const ch
         return -1;
     }
 
-    ret = vfs_translate_path_at(olddirfd, oldpath, translated_old, sizeof(translated_old));
+    ret = vfs_translate_path(resolved_old, translated_old, sizeof(translated_old));
     if (ret != 0) {
         errno = -ret;
         return -1;
     }
-    ret = vfs_translate_path_at(newdirfd, newpath, translated_new, sizeof(translated_new));
+    ret = vfs_translate_path(resolved_new, translated_new, sizeof(translated_new));
     if (ret != 0) {
         errno = -ret;
         return -1;
     }
 
-    if (host_stat_impl(translated_old, &st) != 0) {
+    if ((flags & AT_SYMLINK_FOLLOW) != 0) {
+        ret = host_stat_impl(translated_old, &st);
+    } else {
+        ret = host_lstat_impl(translated_old, &st);
+    }
+    if (ret != 0) {
         return -1;
     }
 
@@ -632,7 +661,7 @@ static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const ch
         return -1;
     }
 
-    return host_link_impl(translated_old, translated_new);
+    return host_linkat_impl(translated_old, translated_new, (flags & AT_SYMLINK_FOLLOW) != 0);
 }
 
 int link_impl(const char *oldpath, const char *newpath) {
@@ -655,7 +684,8 @@ static int symlinkat_impl(const char *target, int newdirfd, const char *linkpath
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_at(newdirfd, linkpath, resolved_link, sizeof(resolved_link));
+    ret = vfs_resolve_virtual_path_at_follow(newdirfd, linkpath, resolved_link,
+                                             sizeof(resolved_link), false);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -665,7 +695,7 @@ static int symlinkat_impl(const char *target, int newdirfd, const char *linkpath
         errno = -ret;
         return -1;
     }
-    ret = vfs_translate_path_at(newdirfd, linkpath, translated_link, sizeof(translated_link));
+    ret = vfs_translate_path(resolved_link, translated_link, sizeof(translated_link));
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -710,7 +740,8 @@ static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_at(dirfd, pathname, resolved_virtual, sizeof(resolved_virtual));
+    ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_virtual,
+                                             sizeof(resolved_virtual), false);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -773,7 +804,7 @@ static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_
         }
     }
 
-    ret = vfs_translate_path_at(dirfd, pathname, translated_path, sizeof(translated_path));
+    ret = vfs_translate_path(resolved_virtual, translated_path, sizeof(translated_path));
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -836,7 +867,8 @@ int chroot_impl(const char *path) {
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_task(path, resolved_virtual, sizeof(resolved_virtual), task->fs);
+    ret = vfs_resolve_virtual_path_task_follow(path, resolved_virtual, sizeof(resolved_virtual),
+                                               task->fs, true);
     if (ret != 0) {
         errno = -ret;
         return -1;

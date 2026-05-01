@@ -36,6 +36,7 @@ int host_rmdir_impl(const char *pathname);
 /* File operations */
 int host_unlink_impl(const char *pathname);
 int host_link_impl(const char *oldpath, const char *newpath);
+int host_linkat_impl(const char *oldpath, const char *newpath, int follow_symlink);
 int host_symlink_impl(const char *target, const char *linkpath);
 ssize_t host_readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 
