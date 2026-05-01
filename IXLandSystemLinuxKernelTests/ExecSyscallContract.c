@@ -323,6 +323,34 @@ static int expect_materialized_auxv_strings(const struct task_struct *task) {
     return 0;
 }
 
+static int expect_segment_image(const void *segment_image,
+                                size_t segment_image_size,
+                                const unsigned char *elf_image,
+                                const Elf64_Phdr *phdr) {
+    const unsigned char *segment_bytes = segment_image;
+
+    if (!segment_image && phdr->p_memsz > 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    if (segment_image_size != phdr->p_memsz) {
+        errno = EPROTO;
+        return -1;
+    }
+    if (phdr->p_filesz > 0 &&
+        memcmp(segment_bytes, elf_image + phdr->p_offset, phdr->p_filesz) != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    for (uint64_t i = phdr->p_filesz; i < phdr->p_memsz; i++) {
+        if (segment_bytes[i] != 0) {
+            errno = EPROTO;
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int native_exec_status(int argc, char **argv, char **envp) {
     (void)argc;
     (void)argv;
@@ -469,6 +497,21 @@ static void build_exec_elf64_without_interp(unsigned char *image, size_t image_l
     load->p_memsz = load->p_filesz;
     load->p_align = 0x1000;
     image[text_offset] = 0xdd;
+}
+
+static void build_exec_elf64_without_interp_with_bss(unsigned char *image, size_t image_len,
+                                                     uint64_t entry,
+                                                     uint64_t load_vaddr) {
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    Elf64_Phdr *load;
+    size_t text_offset = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
+
+    build_exec_elf64_without_interp(image, image_len, entry, load_vaddr);
+    load = (Elf64_Phdr *)(image + ehdr->e_phoff);
+    load->p_filesz = image_len - text_offset - 16;
+    load->p_memsz = load->p_filesz + 16;
+    image[text_offset] = 0xee;
+    image[text_offset + 1] = 0xff;
 }
 
 static int verify_state_unchanged(struct task_struct *task,
@@ -1123,7 +1166,7 @@ int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
 
     native_registry_clear();
     unlink_impl("/tmp/exec-elf-loadable");
-    build_exec_elf64_without_interp(image, sizeof(image), 0x400000, 0x400000);
+    build_exec_elf64_without_interp_with_bss(image, sizeof(image), 0x400000, 0x400000);
     load = (Elf64_Phdr *)(image + ehdr->e_phoff);
     if (create_exec_bytes("/tmp/exec-elf-loadable", image, sizeof(image)) != 0) {
         goto out;
@@ -1141,7 +1184,10 @@ int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
         task->mm->exec_segments[0].filesz != load->p_filesz ||
         task->mm->exec_segments[0].memsz != load->p_memsz ||
         task->mm->exec_segments[0].offset != load->p_offset ||
-        task->mm->exec_segments[0].flags != load->p_flags) {
+        task->mm->exec_segments[0].flags != load->p_flags ||
+        expect_segment_image(task->mm->exec_segments[0].image,
+                             task->mm->exec_segments[0].image_size,
+                             image, load) != 0) {
         errno = EPROTO;
         goto out;
     }
@@ -1185,7 +1231,7 @@ int exec_syscall_contract_elf_interp_loads_virtual_loader_image(void) {
     unlink_impl("/tmp/exec-elf-dynamic");
     unlink_impl(interp_path);
     build_exec_elf64_with_interp(image, sizeof(image), interp_path, 0x401000, 0x400000);
-    build_exec_elf64_without_interp(loader, sizeof(loader), 0x701000, 0x700000);
+    build_exec_elf64_without_interp_with_bss(loader, sizeof(loader), 0x701000, 0x700000);
     loader_load = (Elf64_Phdr *)(loader + loader_ehdr->e_phoff);
     if (create_exec_bytes("/tmp/exec-elf-dynamic", image, sizeof(image)) != 0 ||
         create_exec_bytes(interp_path, loader, sizeof(loader)) != 0) {
@@ -1211,7 +1257,10 @@ int exec_syscall_contract_elf_interp_loads_virtual_loader_image(void) {
         task->mm->interp_segments[0].filesz != loader_load->p_filesz ||
         task->mm->interp_segments[0].memsz != loader_load->p_memsz ||
         task->mm->interp_segments[0].offset != loader_load->p_offset ||
-        task->mm->interp_segments[0].flags != loader_load->p_flags) {
+        task->mm->interp_segments[0].flags != loader_load->p_flags ||
+        expect_segment_image(task->mm->interp_segments[0].image,
+                             task->mm->interp_segments[0].image_size,
+                             loader, loader_load) != 0) {
         errno = EPROTO;
         goto out;
     }

@@ -196,6 +196,62 @@ static uint64_t exec_phdr_vaddr(const struct exec_elf_load_plan *plan) {
     return plan->ehdr.e_phoff;
 }
 
+static void exec_clear_segment_images(struct mm_struct *mm) {
+    if (!mm) {
+        return;
+    }
+    for (uint32_t i = 0; i < mm->exec_segment_count; i++) {
+        free(mm->exec_segments[i].image);
+        mm->exec_segments[i].image = NULL;
+        mm->exec_segments[i].image_size = 0;
+    }
+    for (uint32_t i = 0; i < mm->interp_segment_count; i++) {
+        free(mm->interp_segments[i].image);
+        mm->interp_segments[i].image = NULL;
+        mm->interp_segments[i].image_size = 0;
+    }
+}
+
+static int exec_materialize_segment_image(const unsigned char *image,
+                                          size_t image_size,
+                                          const struct exec_elf_load_plan *plan,
+                                          uint32_t index,
+                                          void **out_image,
+                                          size_t *out_size) {
+    void *segment_image;
+    uint64_t offset;
+    uint64_t filesz;
+    uint64_t memsz;
+
+    if (!image || !plan || !out_image || !out_size || index >= plan->segment_count) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    *out_image = NULL;
+    *out_size = 0;
+    offset = plan->segments[index].offset;
+    filesz = plan->segments[index].filesz;
+    memsz = plan->segments[index].memsz;
+    if (memsz > SIZE_MAX || filesz > memsz || offset > image_size || filesz > image_size - offset) {
+        errno = ENOEXEC;
+        return -1;
+    }
+
+    segment_image = calloc(1, (size_t)memsz);
+    if (!segment_image && memsz > 0) {
+        errno = ENOMEM;
+        return -1;
+    }
+    if (filesz > 0) {
+        memcpy(segment_image, image + offset, (size_t)filesz);
+    }
+
+    *out_image = segment_image;
+    *out_size = (size_t)memsz;
+    return 0;
+}
+
 static int exec_build_initial_elf_stack(struct task_struct *task,
                                         const struct exec_elf_load_plan *plan,
                                         const struct exec_elf_load_plan *interp_plan) {
@@ -1161,6 +1217,7 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
         }
     }
 
+    exec_clear_segment_images(task->mm);
     free(task->mm->exec_image_base);
     free(task->mm->interp_image_base);
     task->mm->exec_image_base = image;
@@ -1174,6 +1231,12 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
         task->mm->exec_segments[i].filesz = plan.segments[i].filesz;
         task->mm->exec_segments[i].offset = plan.segments[i].offset;
         task->mm->exec_segments[i].flags = plan.segments[i].flags;
+        if (exec_materialize_segment_image(task->mm->exec_image_base, task->mm->exec_image_size,
+                                           &plan, i,
+                                           &task->mm->exec_segments[i].image,
+                                           &task->mm->exec_segments[i].image_size) != 0) {
+            return -1;
+        }
     }
 
     task->mm->interp_image_base = interp_image;
@@ -1192,6 +1255,12 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
             task->mm->interp_segments[i].filesz = interp_plan.segments[i].filesz;
             task->mm->interp_segments[i].offset = interp_plan.segments[i].offset;
             task->mm->interp_segments[i].flags = interp_plan.segments[i].flags;
+            if (exec_materialize_segment_image(task->mm->interp_image_base, task->mm->interp_image_size,
+                                               &interp_plan, i,
+                                               &task->mm->interp_segments[i].image,
+                                               &task->mm->interp_segments[i].image_size) != 0) {
+                return -1;
+            }
         }
         strncpy(task->mm->interp_path, resolved_interp, sizeof(task->mm->interp_path) - 1);
         task->mm->interp_path[sizeof(task->mm->interp_path) - 1] = '\0';

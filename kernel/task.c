@@ -419,6 +419,12 @@ void free_task(struct task_struct *task) {
     if (task->tty)
         atomic_fetch_sub(&task->tty->refs, 1);
     if (task->mm) {
+        for (uint32_t i = 0; i < task->mm->exec_segment_count; i++) {
+            free(task->mm->exec_segments[i].image);
+        }
+        for (uint32_t i = 0; i < task->mm->interp_segment_count; i++) {
+            free(task->mm->interp_segments[i].image);
+        }
         free(task->mm->exec_image_base);
         free(task->mm->interp_image_base);
         free(task->mm->initial_stack_image);

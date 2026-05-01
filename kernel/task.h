@@ -84,6 +84,8 @@ struct mm_struct {
         uint64_t filesz;
         uint64_t offset;
         uint32_t flags;
+        void *image;
+        size_t image_size;
     } exec_segments[TASK_EXEC_MAX_LOAD_SEGMENTS];
     void *interp_image_base;
     size_t interp_image_size;
@@ -96,6 +98,8 @@ struct mm_struct {
         uint64_t filesz;
         uint64_t offset;
         uint32_t flags;
+        void *image;
+        size_t image_size;
     } interp_segments[TASK_EXEC_MAX_LOAD_SEGMENTS];
     uint64_t entry_point;
     uint64_t initial_stack_base;
