@@ -2,6 +2,7 @@
 
 #include <asm/unistd.h>
 #include <linux/fcntl.h>
+#include <linux/futex.h>
 #include <linux/mman.h>
 #include <linux/time_types.h>
 
@@ -10,7 +11,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/poll.h>
-#include <sys/select.h>
 #include <time.h>
 
 #include "../fs/fdtable.h"
@@ -18,6 +18,7 @@
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
 #include "../kernel/mm.h"
+#include "../kernel/signal.h"
 #include "../kernel/task.h"
 
 extern int openat_impl(int dirfd, const char *pathname, int flags, linux_mode_t mode);
@@ -32,6 +33,57 @@ extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
 extern int clock_gettime_impl(clockid_t clk_id, struct timespec *tp);
+
+static int syscall_copy_sigset_to_mask(const uint64_t *sigset, size_t sigsetsize,
+                                       struct signal_mask_bits *mask) {
+    if (!mask || sigsetsize != sizeof(uint64_t)) {
+        errno = EINVAL;
+        return -1;
+    }
+    memset(mask, 0, sizeof(*mask));
+    if (sigset) {
+        mask->sig[0] = *sigset;
+    }
+    return 0;
+}
+
+static int syscall_copy_mask_to_sigset(const struct signal_mask_bits *mask, uint64_t *sigset,
+                                       size_t sigsetsize) {
+    if (!mask || !sigset || sigsetsize != sizeof(uint64_t)) {
+        errno = EINVAL;
+        return -1;
+    }
+    *sigset = mask->sig[0];
+    return 0;
+}
+
+static long syscall_prlimit64(int32_t pid, int resource, const uint64_t *new_limit,
+                              uint64_t *old_limit) {
+    struct task_struct *task;
+
+    if (pid != 0 && pid != getpid_impl()) {
+        return -ESRCH;
+    }
+    if (resource < 0 || resource >= 16) {
+        return -EINVAL;
+    }
+    task = get_current();
+    if (!task) {
+        return -ESRCH;
+    }
+    if (old_limit) {
+        old_limit[0] = task->rlimits[resource].cur;
+        old_limit[1] = task->rlimits[resource].max;
+    }
+    if (new_limit) {
+        if (new_limit[0] > new_limit[1]) {
+            return -EINVAL;
+        }
+        task->rlimits[resource].cur = new_limit[0];
+        task->rlimits[resource].max = new_limit[1];
+    }
+    return 0;
+}
 
 static long syscall_result(long ret) {
     if (ret < 0) {
@@ -89,6 +141,79 @@ long syscall_dispatch_impl(long number,
         return syscall_result((long)pipe2_impl((int *)(uintptr_t)arg0, (int)arg1));
     case __NR_fcntl:
         return syscall_result((long)fcntl_impl((int)arg0, (int)arg1, (int)arg2));
+    case __NR_brk:
+        return syscall_result((long)(uintptr_t)brk_impl((void *)(uintptr_t)arg0));
+    case __NR_set_tid_address: {
+        struct task_struct *task = get_current();
+        if (!task || !task->mm) {
+            return -ESRCH;
+        }
+        task->mm->clear_child_tid = (uint64_t)(uintptr_t)arg0;
+        return (long)task->pid;
+    }
+    case __NR_futex: {
+        int op = (int)arg1 & FUTEX_CMD_MASK;
+        if (!arg0) {
+            return -EFAULT;
+        }
+        if (op == FUTEX_WAKE) {
+            return 0;
+        }
+        if (op == FUTEX_WAIT) {
+            return -EAGAIN;
+        }
+        return -ENOSYS;
+    }
+    case __NR_rt_sigaction: {
+        struct signal_action_slot act;
+        struct signal_action_slot oldact;
+        const struct signal_action_slot *act_ptr = NULL;
+        struct signal_action_slot *oldact_ptr = NULL;
+
+        if (arg3 != sizeof(uint64_t)) {
+            return -EINVAL;
+        }
+        if (arg1) {
+            memcpy(&act, (const void *)(uintptr_t)arg1, sizeof(act));
+            act_ptr = &act;
+        }
+        if (arg2) {
+            oldact_ptr = &oldact;
+        }
+        if (do_sigaction((int32_t)arg0, act_ptr, oldact_ptr) != 0) {
+            return -(long)errno;
+        }
+        if (arg2) {
+            memcpy((void *)(uintptr_t)arg2, &oldact, sizeof(oldact));
+        }
+        return 0;
+    }
+    case __NR_rt_sigprocmask: {
+        struct signal_mask_bits set;
+        struct signal_mask_bits oldset;
+        const struct signal_mask_bits *set_ptr = NULL;
+        struct signal_mask_bits *oldset_ptr = NULL;
+
+        if (arg3 != sizeof(uint64_t)) {
+            return -EINVAL;
+        }
+        if (arg1) {
+            if (syscall_copy_sigset_to_mask((const uint64_t *)(uintptr_t)arg1, (size_t)arg3, &set) != 0) {
+                return -(long)errno;
+            }
+            set_ptr = &set;
+        }
+        if (arg2) {
+            oldset_ptr = &oldset;
+        }
+        if (do_sigprocmask((int)arg0, set_ptr, oldset_ptr) != 0) {
+            return -(long)errno;
+        }
+        if (arg2 && syscall_copy_mask_to_sigset(&oldset, (uint64_t *)(uintptr_t)arg2, (size_t)arg3) != 0) {
+            return -(long)errno;
+        }
+        return 0;
+    }
     case __NR_ioctl:
         return syscall_result((long)ioctl_impl((int)arg0, (unsigned long)arg1, (void *)(uintptr_t)arg2));
     case __NR_getdents64:
@@ -128,6 +253,10 @@ long syscall_dispatch_impl(long number,
         return syscall_result((long)mprotect_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
     case __NR_munmap:
         return syscall_result((long)munmap_impl((void *)(uintptr_t)arg0, (size_t)arg1));
+    case __NR_prlimit64:
+        return syscall_prlimit64((int32_t)arg0, (int)arg1,
+                                 (const uint64_t *)(uintptr_t)arg2,
+                                 (uint64_t *)(uintptr_t)arg3);
     case __NR_clock_gettime: {
         struct timespec host_ts;
         struct __kernel_timespec *linux_ts = (struct __kernel_timespec *)(uintptr_t)arg1;

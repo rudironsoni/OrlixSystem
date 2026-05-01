@@ -35,6 +35,10 @@
     XCTAssertEqual(native_syscall_contract_dispatches_vm_identity_time_and_dirs(), 0, @"errno %d", errno);
 }
 
+- (void)testDispatchesProcessStartupSyscalls {
+    XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
+}
+
 - (void)testRegistersNativeArtifactDescriptor {
     XCTAssertEqual(native_syscall_contract_registers_native_artifact_descriptor(), 0, @"errno %d", errno);
 }

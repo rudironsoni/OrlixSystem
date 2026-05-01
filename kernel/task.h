@@ -176,6 +176,9 @@ struct mm_struct {
     uint32_t vma_count;
     struct task_exec_handoff handoff;
     struct address_space *vma_addr_space;
+    uint64_t brk_start;
+    uint64_t brk_current;
+    uint64_t clear_child_tid;
 };
 
 /* Exec image types - virtual kernel internal */

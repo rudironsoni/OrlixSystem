@@ -3,6 +3,7 @@
 #include <asm/unistd.h>
 #include <asm/ioctls.h>
 #include <linux/fcntl.h>
+#include <linux/futex.h>
 #include <linux/mman.h>
 #include <linux/stat.h>
 #include <linux/time_types.h>
@@ -14,8 +15,36 @@
 #include <string.h>
 #include <sys/poll.h>
 
+#ifdef SIG_BLOCK
+#undef SIG_BLOCK
+#endif
+#ifdef SIG_UNBLOCK
+#undef SIG_UNBLOCK
+#endif
+#ifdef SIG_SETMASK
+#undef SIG_SETMASK
+#endif
+#ifdef SIG_DFL
+#undef SIG_DFL
+#endif
+#ifdef SIG_IGN
+#undef SIG_IGN
+#endif
+#ifdef SIG_ERR
+#undef SIG_ERR
+#endif
+#ifdef RLIMIT_NOFILE
+#undef RLIMIT_NOFILE
+#endif
+#ifdef RLIM_NLIMITS
+#undef RLIM_NLIMITS
+#endif
+#include <asm-generic/resource.h>
+#include <asm-generic/signal-defs.h>
+
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
+#include "kernel/signal.h"
 #include "kernel/task.h"
 #include "runtime/native/registry.h"
 #include "runtime/syscall.h"
@@ -316,6 +345,109 @@ out_mmap:
         result = -1;
     }
     return result;
+}
+
+int native_syscall_contract_dispatches_process_startup_syscalls(void) {
+    struct task_struct *task = get_current();
+    uint64_t block_set = 1ULL << (2 - 1);
+    uint64_t old_set = 0;
+    struct signal_action_slot action;
+    struct signal_action_slot old_action;
+    uint64_t old_limit[2];
+    uint64_t new_limit[2];
+    int tid_word = 0;
+    long current_brk;
+    long grown_brk;
+    long second_brk;
+    long shrunk_brk;
+    long ret;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    current_brk = syscall_dispatch_impl(__NR_brk, 0, 0, 0, 0, 0, 0);
+    if (current_brk <= 0) {
+        errno = ENODATA;
+        return -1;
+    }
+    grown_brk = syscall_dispatch_impl(__NR_brk, current_brk + 4096, 0, 0, 0, 0, 0);
+    if (grown_brk != current_brk + 4096) {
+        errno = ENOMSG;
+        return -1;
+    }
+    second_brk = syscall_dispatch_impl(__NR_brk, current_brk + 8192, 0, 0, 0, 0, 0);
+    if (second_brk != current_brk + 8192 ||
+        task_write_virtual_memory_impl(task, (uint64_t)(current_brk + 4096), "H", 1) != 1) {
+        errno = ENOLINK;
+        return -1;
+    }
+    shrunk_brk = syscall_dispatch_impl(__NR_brk, grown_brk, 0, 0, 0, 0, 0);
+    if (shrunk_brk != grown_brk ||
+        task_write_virtual_memory_impl(task, (uint64_t)grown_brk, "X", 1) >= 0 || errno != EFAULT) {
+        errno = EIO;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_set_tid_address, (long)(uintptr_t)&tid_word, 0, 0, 0, 0, 0);
+    if (ret != task->pid || !task->mm || task->mm->clear_child_tid != (uint64_t)(uintptr_t)&tid_word) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    memset(&action, 0, sizeof(action));
+    memset(&old_action, 0, sizeof(old_action));
+    action.handler = (sighandler_t)1;
+    ret = syscall_dispatch_impl(__NR_rt_sigaction, 2, (long)(uintptr_t)&action,
+                                (long)(uintptr_t)&old_action, sizeof(uint64_t), 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : ENOEXEC;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK, (long)(uintptr_t)&block_set,
+                                (long)(uintptr_t)&old_set, sizeof(block_set), 0, 0);
+    if (ret != 0 || (old_set & block_set) != 0) {
+        errno = ret < 0 ? (int)-ret : ENOTRECOVERABLE;
+        return -1;
+    }
+    old_set = 0;
+    ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
+                                (long)(uintptr_t)&old_set, sizeof(block_set), 0, 0);
+    if (ret != 0 || (old_set & block_set) == 0) {
+        errno = ret < 0 ? (int)-ret : EOWNERDEAD;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&tid_word, FUTEX_WAKE_PRIVATE, 1, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EBUSY;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&tid_word, FUTEX_WAIT_PRIVATE, 1, 0, 0, 0);
+    if (ret != -EAGAIN) {
+        errno = ERANGE;
+        return -1;
+    }
+
+    memset(&old_limit, 0, sizeof(old_limit));
+    ret = syscall_dispatch_impl(__NR_prlimit64, 0, RLIMIT_NOFILE, 0,
+                                (long)(uintptr_t)&old_limit, 0, 0);
+    if (ret != 0 || old_limit[0] == 0 || old_limit[1] == 0) {
+        errno = ret < 0 ? (int)-ret : ENOSPC;
+        return -1;
+    }
+    new_limit[0] = old_limit[0];
+    new_limit[1] = old_limit[1];
+    ret = syscall_dispatch_impl(__NR_prlimit64, 0, RLIMIT_NOFILE, (long)(uintptr_t)&new_limit,
+                                0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : E2BIG;
+        return -1;
+    }
+
+    return 0;
 }
 
 int native_syscall_contract_registers_native_artifact_descriptor(void) {

@@ -429,6 +429,16 @@ struct task_struct *alloc_task(void) {
     task->ns_pid = task->pid;
     task->pid_ns_level = 0;
     task->vfork_parent = NULL;
+    for (int i = 0; i < 16; i++) {
+        task->rlimits[i].cur = UINT64_MAX;
+        task->rlimits[i].max = UINT64_MAX;
+    }
+    task->rlimits[3].cur = 8ULL * 1024ULL * 1024ULL;
+    task->rlimits[3].max = 64ULL * 1024ULL * 1024ULL;
+    task->rlimits[6].cur = TASK_MAX_TASKS;
+    task->rlimits[6].max = TASK_MAX_TASKS;
+    task->rlimits[7].cur = NR_OPEN_DEFAULT;
+    task->rlimits[7].max = NR_OPEN_DEFAULT;
 
     atomic_init(&task->state, TASK_RUNNING);
     atomic_init(&task->refs, 1);

@@ -15,6 +15,7 @@ extern "C" {
 void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t offset);
 int mprotect_impl(void *addr, size_t len, int prot);
 int munmap_impl(void *addr, size_t len);
+void *brk_impl(void *addr);
 
 #ifdef __cplusplus
 }
