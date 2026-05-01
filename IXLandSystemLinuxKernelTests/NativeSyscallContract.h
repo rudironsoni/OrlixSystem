@@ -1,0 +1,16 @@
+#ifndef NATIVE_SYSCALL_CONTRACT_H
+#define NATIVE_SYSCALL_CONTRACT_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int native_syscall_contract_dispatches_fd_pipe_and_procfs(void);
+int native_syscall_contract_returns_raw_negative_errno(void);
+int native_syscall_contract_registered_program_uses_syscall_surface(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

@@ -20,8 +20,10 @@
 		14F3242DDCC2EB47EC3949CC /* FcntlTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 45D5CBDA9FFBBD3019E7C208 /* FcntlTests.m */; };
 		1571C17134FD341921B13C74 /* TaskExecContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 90A08DB89035D1656587D959 /* TaskExecContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		17569519F7B7B56C5572BED6 /* path.c in Sources */ = {isa = PBXBuildFile; fileRef = 51D066274EE2D55E90787D9C /* path.c */; };
+		19D0AB3586C4FFF3682EE601 /* syscall.c in Sources */ = {isa = PBXBuildFile; fileRef = 2B33B8D1CDFE2966D44963A8 /* syscall.c */; };
 		1C5DDE6C6F1D26B8A42FC58D /* PTYSessionContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 6E696362C7EAA577A88F4094 /* PTYSessionContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		2077D735BE58886F9AC9D02F /* wait_queue.c in Sources */ = {isa = PBXBuildFile; fileRef = 5CC6F8213130B4F047FBC195 /* wait_queue.c */; };
+		23CAFD7E106AACF3B7AA17F4 /* NativeSyscallContract.c in Sources */ = {isa = PBXBuildFile; fileRef = F74A8BBE86DA74ECDE3970D0 /* NativeSyscallContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		23F96E17A5FB5F9FF02C47D1 /* ioctl.c in Sources */ = {isa = PBXBuildFile; fileRef = 43308FAA8FF808B4BF22777C /* ioctl.c */; };
 		29E1C2D21F213D5B2A063AFF /* ixland_observability.c in Sources */ = {isa = PBXBuildFile; fileRef = 666A5EE8B497170CF5C3223A /* ixland_observability.c */; };
 		2A87FD94AED672D2C4945B04 /* VFSAtContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E1CD35402A585DF342760586 /* VFSAtContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
@@ -29,6 +31,7 @@
 		3655BF1DA2D2D3DA3FAF986A /* time.c in Sources */ = {isa = PBXBuildFile; fileRef = F5240B1F3DC3BDF0ED535D3B /* time.c */; };
 		3DEC101077E32C26F85507A0 /* TaskGroupTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 767A8483185FE320714CA54E /* TaskGroupTests.m */; };
 		4A3CD24DAD0E84942B97064B /* libIXLandSystem.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E96E95F0B83F5CC63E21913 /* libIXLandSystem.a */; };
+		4A59A63F162BBE7A75E78E88 /* NativeSyscallTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 149AD324E25B3578773D3650 /* NativeSyscallTests.m */; };
 		4F010A787D2ACDD5E950B529 /* pty.c in Sources */ = {isa = PBXBuildFile; fileRef = 68380C402AE8EF749A28C843 /* pty.c */; };
 		536C4CD2454AE81090D76B84 /* UTSContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 93FD7C4E0CECC621AF98E323 /* UTSContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		5773870A2156F8B6827EB2D5 /* network.c in Sources */ = {isa = PBXBuildFile; fileRef = CEC04AD14B572B960464124B /* network.c */; };
@@ -151,6 +154,7 @@
 		109291A8E0DB081C632EA1F4 /* ReadinessContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ReadinessContract.c; sourceTree = "<group>"; };
 		1196E0E046C9D8486908FEF8 /* task.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = task.c; sourceTree = "<group>"; };
 		12D46C624EE8732CD9DDF049 /* WaitJobControlContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = WaitJobControlContract.c; sourceTree = "<group>"; };
+		149AD324E25B3578773D3650 /* NativeSyscallTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = NativeSyscallTests.m; sourceTree = "<group>"; };
 		177E646BFF798AE08CBEE284 /* fcntl.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fcntl.c; sourceTree = "<group>"; };
 		1A78BCCA6E31095ECC4CD43C /* FutexUAPICompileSmoke.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = FutexUAPICompileSmoke.c; sourceTree = "<group>"; };
 		2117B106A13B76478FE5B3A1 /* super.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = super.c; sourceTree = "<group>"; };
@@ -158,8 +162,10 @@
 		22ED4B4B7E8FD0A20DF3C3C5 /* resource.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = resource.c; sourceTree = "<group>"; };
 		26FDE0ABC08187DD4F536DDB /* PipeContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PipeContract.h; sourceTree = "<group>"; };
 		270F37A8D2223DAAD1C7A498 /* wait.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = wait.c; sourceTree = "<group>"; };
+		2B33B8D1CDFE2966D44963A8 /* syscall.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = syscall.c; sourceTree = "<group>"; };
 		2C1E780A747EEBBBE69D1254 /* ExecFdContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ExecFdContract.c; sourceTree = "<group>"; };
 		32C8785EC40C73B387D6237A /* fdtable.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fdtable.c; sourceTree = "<group>"; };
+		354EBEFACAC2464AC01B1263 /* NativeSyscallContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NativeSyscallContract.h; sourceTree = "<group>"; };
 		384371EDE185511D5F125C45 /* fork.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fork.c; sourceTree = "<group>"; };
 		38A6AE564B1CF443D8406232 /* KernelBoot.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = KernelBoot.c; sourceTree = "<group>"; };
 		3985C757CC26622864437342 /* PTYSessionIoctlShim.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PTYSessionIoctlShim.c; sourceTree = "<group>"; };
@@ -250,6 +256,7 @@
 		F2D8077FB1F274E58E85378C /* exec.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = exec.c; sourceTree = "<group>"; };
 		F4E2215C61CCAEFB06DDB4FC /* registry.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = registry.c; sourceTree = "<group>"; };
 		F5240B1F3DC3BDF0ED535D3B /* time.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = time.c; sourceTree = "<group>"; };
+		F74A8BBE86DA74ECDE3970D0 /* NativeSyscallContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = NativeSyscallContract.c; sourceTree = "<group>"; };
 		F78BA3D6A3CC08D9DF7FDC05 /* DevfsContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = DevfsContract.c; sourceTree = "<group>"; };
 		F8FCAFD0FE57B38F3FF35253 /* IXLandSystemLinuxKernelTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = IXLandSystemLinuxKernelTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F976F3BC26F1CA62FF260F51 /* PipeContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PipeContract.c; sourceTree = "<group>"; };
@@ -364,6 +371,7 @@
 		4B14438707DE5241F1ED4125 /* runtime */ = {
 			isa = PBXGroup;
 			children = (
+				2B33B8D1CDFE2966D44963A8 /* syscall.c */,
 				A465A80A23F6D73AFFB42461 /* aarch64 */,
 				24A0610FFD0A4375F30129DC /* native */,
 			);
@@ -416,6 +424,9 @@
 				E879B79AB28AE5918F99FAE6 /* NamespaceContract.c */,
 				70C8EA01E300933A73D5D81B /* NamespaceContract.h */,
 				FA4DF50460C3F73B826F998F /* NamespaceTests.m */,
+				F74A8BBE86DA74ECDE3970D0 /* NativeSyscallContract.c */,
+				354EBEFACAC2464AC01B1263 /* NativeSyscallContract.h */,
+				149AD324E25B3578773D3650 /* NativeSyscallTests.m */,
 				F976F3BC26F1CA62FF260F51 /* PipeContract.c */,
 				26FDE0ABC08187DD4F536DDB /* PipeContract.h */,
 				CA618FEAE8F896CFDE663429 /* PipeTests.m */,
@@ -629,6 +640,8 @@
 				13FB5E5B82FE3B5C5391A96B /* LinuxUAPITestSupport.c in Sources */,
 				F76416F9EEADCF919B8C0FA1 /* NamespaceContract.c in Sources */,
 				EF0C8EAAC745BFABEF5C11CD /* NamespaceTests.m in Sources */,
+				23CAFD7E106AACF3B7AA17F4 /* NativeSyscallContract.c in Sources */,
+				4A59A63F162BBE7A75E78E88 /* NativeSyscallTests.m in Sources */,
 				ABDAD895A3CF69CFD8687735 /* PTYJobControlContract.c in Sources */,
 				7382EBBD679D92B216EB7155 /* PTYJobControlTests.m in Sources */,
 				1C5DDE6C6F1D26B8A42FC58D /* PTYSessionContract.c in Sources */,
@@ -700,6 +713,7 @@
 				9067CDC146694F8EC2C351A7 /* sync.c in Sources */,
 				76236EBE1D125F243FE8D067 /* sync.c in Sources */,
 				6B365831A4B17F03AE598CFF /* sys.c in Sources */,
+				19D0AB3586C4FFF3682EE601 /* syscall.c in Sources */,
 				92F197F28B8A006699CF4DF4 /* task.c in Sources */,
 				3655BF1DA2D2D3DA3FAF986A /* time.c in Sources */,
 				AB72743BF549341D7BCE59EA /* uts.c in Sources */,

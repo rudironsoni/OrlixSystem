@@ -125,6 +125,8 @@ targets:
       group: runtime/aarch64
     - path: runtime/aarch64/elf_reloc.c
       group: runtime/aarch64
+    - path: runtime/syscall.c
+      group: runtime
     - path: runtime/native/registry.c
       group: runtime/native
   IXLandSystemLinuxKernelTests:
@@ -150,6 +152,7 @@ targets:
     - IXLandSystemLinuxKernelTests/FcntlTests.m
     - IXLandSystemLinuxKernelTests/ExecFdTests.m
     - IXLandSystemLinuxKernelTests/ExecSyscallTests.m
+    - IXLandSystemLinuxKernelTests/NativeSyscallTests.m
     - IXLandSystemLinuxKernelTests/TaskExecTests.m
     - IXLandSystemLinuxKernelTests/UTSTests.m
     - IXLandSystemLinuxKernelTests/NamespaceTests.m
@@ -223,6 +226,11 @@ targets:
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
+    - path: IXLandSystemLinuxKernelTests/NativeSyscallContract.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
+    - IXLandSystemLinuxKernelTests/NativeSyscallContract.h
     - path: IXLandSystemLinuxKernelTests/TaskExecContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
