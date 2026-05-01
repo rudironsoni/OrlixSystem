@@ -1284,6 +1284,18 @@ extern void cred_reset_to_defaults(void);
                    @"unlinkat should enforce virtual parent permissions after credential changes, errno %d", errno);
 }
 
+- (void)testLinkatUsesVirtualDirfds {
+    extern int vfs_contract_linkat_uses_virtual_dirfds(void);
+    XCTAssertEqual(vfs_contract_linkat_uses_virtual_dirfds(), 0,
+                   @"linkat should resolve source and target through virtual dirfds, errno %d", errno);
+}
+
+- (void)testSymlinkatAndReadlinkatUseVirtualDirfds {
+    extern int vfs_contract_symlinkat_and_readlinkat_use_virtual_dirfds(void);
+    XCTAssertEqual(vfs_contract_symlinkat_and_readlinkat_use_virtual_dirfds(), 0,
+                   @"symlinkat/readlinkat should resolve through virtual dirfds, errno %d", errno);
+}
+
 - (void)testRootChownUpdatesVirtualOwner {
     extern int vfs_contract_root_chown_updates_virtual_owner(void);
     XCTAssertEqual(vfs_contract_root_chown_updates_virtual_owner(), 0,

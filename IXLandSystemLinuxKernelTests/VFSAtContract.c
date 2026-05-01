@@ -38,6 +38,9 @@ extern int setuid_impl(uid_t uid);
 extern int setgroups_impl(int size, const gid_t *list);
 extern int mkdirat(int dirfd, const char *pathname, linux_mode_t mode);
 extern int unlinkat(int dirfd, const char *pathname, int flags);
+extern int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);
+extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
+extern long readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 extern void cred_reset_to_defaults(void);
 extern int chmod(const char *pathname, linux_mode_t mode);
 extern int fchmod(int fd, linux_mode_t mode);
@@ -1186,6 +1189,79 @@ out:
     cred_reset_to_defaults();
     unlink_impl("/tmp/vfs-cred-at-private-dir/file");
     rmdir_impl("/tmp/vfs-cred-at-private-dir");
+    return ret;
+}
+
+int vfs_contract_linkat_uses_virtual_dirfds(void) {
+    int dirfd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-at-link-dir/source");
+    unlink_impl("/tmp/vfs-at-link-dir/hardlink");
+    rmdir_impl("/tmp/vfs-at-link-dir");
+    if (mkdir_impl("/tmp/vfs-at-link-dir", 0700) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-at-link-dir/source", "linked") != 0) {
+        goto out;
+    }
+    dirfd = open_impl("/tmp/vfs-at-link-dir", O_RDONLY | O_DIRECTORY, 0);
+    if (dirfd < 0) {
+        goto out;
+    }
+    if (linkat(dirfd, "source", dirfd, "hardlink", 0) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-at-link-dir/hardlink", "linked") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_impl(dirfd);
+    unlink_impl("/tmp/vfs-at-link-dir/hardlink");
+    unlink_impl("/tmp/vfs-at-link-dir/source");
+    rmdir_impl("/tmp/vfs-at-link-dir");
+    return ret;
+}
+
+int vfs_contract_symlinkat_and_readlinkat_use_virtual_dirfds(void) {
+    char target[64];
+    int dirfd = -1;
+    long len;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-at-symlink-dir/link");
+    rmdir_impl("/tmp/vfs-at-symlink-dir");
+    if (mkdir_impl("/tmp/vfs-at-symlink-dir", 0700) != 0) {
+        goto out;
+    }
+    dirfd = open_impl("/tmp/vfs-at-symlink-dir", O_RDONLY | O_DIRECTORY, 0);
+    if (dirfd < 0) {
+        goto out;
+    }
+    if (symlinkat("/target/path", dirfd, "link") != 0) {
+        goto out;
+    }
+    len = readlinkat(dirfd, "link", target, sizeof(target) - 1);
+    if (len != 12) {
+        goto out;
+    }
+    target[len] = '\0';
+    if (__builtin_strcmp(target, "/target/path") != 0) {
+        errno = EIO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_impl(dirfd);
+    unlink_impl("/tmp/vfs-at-symlink-dir/link");
+    rmdir_impl("/tmp/vfs-at-symlink-dir");
     return ret;
 }
 

@@ -428,7 +428,7 @@ static int unlinkat_impl(int dirfd, const char *pathname, int flags) {
         return -1;
     }
 
-    if (host_stat_impl(translated_path, &st) != 0) {
+    if (host_lstat_impl(translated_path, &st) != 0) {
         return -1;
     }
 
@@ -457,9 +457,12 @@ int unlink_impl(const char *pathname) {
     return unlinkat_impl(AT_FDCWD, pathname, 0);
 }
 
-int link_impl(const char *oldpath, const char *newpath) {
+static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags) {
+    char resolved_new[MAX_PATH];
     char translated_old[MAX_PATH];
     char translated_new[MAX_PATH];
+    struct linux_stat st;
+    int ret;
 
     if (oldpath == NULL || newpath == NULL) {
         errno = EFAULT;
@@ -471,15 +474,33 @@ int link_impl(const char *oldpath, const char *newpath) {
         return -1;
     }
 
-    if (directory_translate_task_path(oldpath, translated_old, sizeof(translated_old), NULL) != 0) {
+    if (flags & ~AT_SYMLINK_FOLLOW) {
+        errno = EINVAL;
         return -1;
     }
 
-    if (directory_translate_task_path(newpath, translated_new, sizeof(translated_new), NULL) != 0) {
+    ret = vfs_resolve_virtual_path_at(newdirfd, newpath, resolved_new, sizeof(resolved_new));
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = vfs_check_parent_mutation_permission(resolved_new);
+    if (ret != 0) {
+        errno = -ret;
         return -1;
     }
 
-    struct linux_stat st;
+    ret = vfs_translate_path_at(olddirfd, oldpath, translated_old, sizeof(translated_old));
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = vfs_translate_path_at(newdirfd, newpath, translated_new, sizeof(translated_new));
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
     if (host_stat_impl(translated_old, &st) != 0) {
         return -1;
     }
@@ -489,16 +510,26 @@ int link_impl(const char *oldpath, const char *newpath) {
         return -1;
     }
 
-    if (host_stat_impl(translated_new, &st) == 0) {
+    if (host_lstat_impl(translated_new, &st) == 0) {
         errno = EEXIST;
+        return -1;
+    }
+    if (errno != ENOENT) {
         return -1;
     }
 
     return host_link_impl(translated_old, translated_new);
 }
 
-int symlink_impl(const char *target, const char *linkpath) {
+int link_impl(const char *oldpath, const char *newpath) {
+    return linkat_impl(AT_FDCWD, oldpath, AT_FDCWD, newpath, 0);
+}
+
+static int symlinkat_impl(const char *target, int newdirfd, const char *linkpath) {
+    char resolved_link[MAX_PATH];
     char translated_link[MAX_PATH];
+    struct linux_stat st;
+    int ret;
 
     if (target == NULL || linkpath == NULL) {
         errno = EFAULT;
@@ -510,20 +541,42 @@ int symlink_impl(const char *target, const char *linkpath) {
         return -1;
     }
 
-    if (directory_translate_task_path(linkpath, translated_link, sizeof(translated_link), NULL) != 0) {
+    ret = vfs_resolve_virtual_path_at(newdirfd, linkpath, resolved_link, sizeof(resolved_link));
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = vfs_check_parent_mutation_permission(resolved_link);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = vfs_translate_path_at(newdirfd, linkpath, translated_link, sizeof(translated_link));
+    if (ret != 0) {
+        errno = -ret;
         return -1;
     }
 
-    struct linux_stat target_stat;
-    if (host_stat_impl(translated_link, &target_stat) == 0) {
+    if (host_lstat_impl(translated_link, &st) == 0) {
         errno = EEXIST;
         return -1;
     }
+    if (errno != ENOENT) {
+        return -1;
+    }
 
-    return host_symlink_impl(target, translated_link);
+    ret = host_symlink_impl(target, translated_link);
+    if (ret == 0) {
+        vfs_record_created_path(resolved_link, S_IFLNK | 0777);
+    }
+    return ret;
 }
 
-ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
+int symlink_impl(const char *target, const char *linkpath) {
+    return symlinkat_impl(target, AT_FDCWD, linkpath);
+}
+
+static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsiz) {
     char translated_path[MAX_PATH];
     char resolved_virtual[MAX_PATH];
     int ret;
@@ -543,7 +596,7 @@ ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
         return -1;
     }
 
-    ret = vfs_resolve_virtual_path_task(pathname, resolved_virtual, sizeof(resolved_virtual), NULL);
+    ret = vfs_resolve_virtual_path_at(dirfd, pathname, resolved_virtual, sizeof(resolved_virtual));
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -606,7 +659,9 @@ ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
         }
     }
 
-    if (directory_translate_task_path(pathname, translated_path, sizeof(translated_path), NULL) != 0) {
+    ret = vfs_translate_path_at(dirfd, pathname, translated_path, sizeof(translated_path));
+    if (ret != 0) {
+        errno = -ret;
         return -1;
     }
 
@@ -621,6 +676,10 @@ ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
     }
 
     return host_readlink_impl(translated_path, buf, bufsiz);
+}
+
+ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
+    return readlinkat_impl(AT_FDCWD, pathname, buf, bufsiz);
 }
 
 int chroot_impl(const char *path) {
@@ -724,37 +783,7 @@ __attribute__((visibility("default"))) int link(const char *oldpath, const char 
 }
 
 __attribute__((visibility("default"))) int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags) {
-  char translated_old[MAX_PATH];
-  char translated_new[MAX_PATH];
-  int ret;
-
-  if (oldpath == NULL || newpath == NULL) {
-    errno = EFAULT;
-    return -1;
-  }
-
-  if (flags & ~AT_SYMLINK_FOLLOW) {
-    errno = EINVAL;
-    return -1;
-  }
-
-  if (flags & AT_SYMLINK_FOLLOW) {
-    /* Following symlinks is the default behavior; no special handling needed */
-  }
-
-  ret = vfs_translate_path_at(olddirfd, oldpath, translated_old, sizeof(translated_old));
-  if (ret != 0) {
-    errno = -ret;
-    return -1;
-  }
-
-  ret = vfs_translate_path_at(newdirfd, newpath, translated_new, sizeof(translated_new));
-  if (ret != 0) {
-    errno = -ret;
-    return -1;
-  }
-
-  return link(translated_old, translated_new);
+  return linkat_impl(olddirfd, oldpath, newdirfd, newpath, flags);
 }
 
 __attribute__((visibility("default"))) int symlink(const char *target, const char *linkpath) {
@@ -762,21 +791,7 @@ __attribute__((visibility("default"))) int symlink(const char *target, const cha
 }
 
 __attribute__((visibility("default"))) int symlinkat(const char *target, int newdirfd, const char *linkpath) {
-    char translated_link[MAX_PATH];
-    int ret;
-
-    if (target == NULL || linkpath == NULL) {
-        errno = EFAULT;
-        return -1;
-    }
-
-    ret = vfs_translate_path_at(newdirfd, linkpath, translated_link, sizeof(translated_link));
-    if (ret != 0) {
-        errno = -ret;
-        return -1;
-    }
-
-    return symlink(target, translated_link);
+    return symlinkat_impl(target, newdirfd, linkpath);
 }
 
 __attribute__((visibility("default"))) ssize_t readlink(const char *pathname, char *buf, size_t bufsiz) {
@@ -784,21 +799,7 @@ __attribute__((visibility("default"))) ssize_t readlink(const char *pathname, ch
 }
 
 __attribute__((visibility("default"))) ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz) {
-    char translated_path[MAX_PATH];
-    int ret;
-
-    if (pathname == NULL || buf == NULL) {
-        errno = EFAULT;
-        return -1;
-    }
-
-    ret = vfs_translate_path_at(dirfd, pathname, translated_path, sizeof(translated_path));
-    if (ret != 0) {
-        errno = -ret;
-        return -1;
-    }
-
-    return readlink(translated_path, buf, bufsiz);
+    return readlinkat_impl(dirfd, pathname, buf, bufsiz);
 }
 
 __attribute__((visibility("default"))) int rename(const char *oldpath, const char *newpath) {
