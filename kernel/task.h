@@ -69,6 +69,7 @@ struct task_vma {
     size_t image_size;
     uint64_t page_count;
     uint32_t *page_flags;
+    uint8_t *dirty_pages;
     int backing_fd;
     uint64_t backing_offset;
     int shared;

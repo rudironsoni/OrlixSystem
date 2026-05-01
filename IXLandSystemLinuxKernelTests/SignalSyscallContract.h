@@ -7,6 +7,7 @@ extern "C" {
 
 int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void);
 int signal_syscall_contract_sigaltstack_and_frame_policy(void);
+int signal_syscall_contract_frame_writes_virtual_record(void);
 
 #ifdef __cplusplus
 }

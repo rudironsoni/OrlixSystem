@@ -43,4 +43,8 @@ extern int library_is_initialized(void);
     XCTAssertEqual(futex_contract_rejects_missing_robust_list_outputs(), 0, @"errno %d", errno);
 }
 
+- (void)testFutexExitClearsChildTidAndMarksRobustFutex {
+    XCTAssertEqual(futex_contract_exit_clears_child_tid_and_marks_robust_futex(), 0, @"errno %d", errno);
+}
+
 @end

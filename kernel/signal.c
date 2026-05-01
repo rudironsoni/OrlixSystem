@@ -699,6 +699,7 @@ int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altsta
 int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t return_pc,
                               uint64_t current_sp, uint64_t *frame_sp_out) {
     uint64_t frame_sp;
+    uint64_t frame_record[2];
 
     if (!task || !task->signal || !task->mm || sig < 1 || sig > KERNEL_SIG_NUM || !frame_sp_out) {
         errno = EINVAL;
@@ -716,6 +717,12 @@ int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t re
         return -1;
     }
     frame_sp -= 256;
+    frame_record[0] = (uint64_t)sig;
+    frame_record[1] = return_pc;
+    if (task_write_virtual_memory_impl(task, frame_sp, frame_record, sizeof(frame_record)) !=
+        (long)sizeof(frame_record)) {
+        return -1;
+    }
     task->mm->signal_frame_sp = frame_sp;
     task->mm->signal_frame_signo = (uint64_t)sig;
     task->mm->signal_frame_return_pc = return_pc;

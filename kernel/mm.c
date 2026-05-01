@@ -201,6 +201,13 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
         errno = ENOMEM;
         return -1;
     }
+    vma->dirty_pages = calloc((size_t)page_count, sizeof(*vma->dirty_pages));
+    if (!vma->dirty_pages) {
+        free(vma->page_flags);
+        memset(vma, 0, sizeof(*vma));
+        errno = ENOMEM;
+        return -1;
+    }
     for (uint64_t i = 0; i < page_count; i++) {
         vma->page_flags[i] = pf_flags;
     }
@@ -219,6 +226,7 @@ static void mm_remove_vma_at(struct mm_struct *mm, uint32_t index) {
         free(vma->image);
     }
     free(vma->page_flags);
+    free(vma->dirty_pages);
     for (uint32_t i = index + 1; i < mm->vma_count; i++) {
         mm->vmas[i - 1] = mm->vmas[i];
     }
@@ -304,11 +312,23 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
         errno = ENOMEM;
         return -1;
     }
+    dest->dirty_pages = calloc((size_t)page_count, sizeof(*dest->dirty_pages));
+    if (!dest->dirty_pages) {
+        free(dest->page_flags);
+        free(dest->image);
+        memset(dest, 0, sizeof(*dest));
+        errno = ENOMEM;
+        return -1;
+    }
 
     source_offset = (size_t)(start - source->start);
     memcpy(dest->image, (const unsigned char *)source->image + source_offset, dest->image_size);
     for (uint64_t i = 0; i < page_count; i++) {
+        uint64_t source_page = ((start - source->start) / TASK_VMA_PAGE_SIZE) + i;
         dest->page_flags[i] = task_vma_page_flags_impl(source, start + (i * TASK_VMA_PAGE_SIZE));
+        if (source->dirty_pages && source_page < source->page_count) {
+            dest->dirty_pages[i] = source->dirty_pages[source_page];
+        }
     }
     return 0;
 }
@@ -321,6 +341,7 @@ static void mm_free_vma_contents(struct task_vma *vma) {
         free(vma->image);
     }
     free(vma->page_flags);
+    free(vma->dirty_pages);
     memset(vma, 0, sizeof(*vma));
 }
 
@@ -597,9 +618,8 @@ int msync_impl(void *addr, size_t len, int flags) {
         struct task_vma *vma = &task->mm->vmas[i];
         uint64_t overlap_start;
         uint64_t overlap_end;
-        size_t image_offset;
-        size_t to_write;
-        long long written;
+        uint64_t start_page;
+        uint64_t end_page;
 
         if (end <= vma->start || start >= vma->end) {
             continue;
@@ -610,16 +630,34 @@ int msync_impl(void *addr, size_t len, int flags) {
             synced = 1;
             continue;
         }
-        image_offset = (size_t)(overlap_start - vma->start);
-        to_write = (size_t)(overlap_end - overlap_start);
-        written = mm_fd_pwrite(vma->backing_fd, (const unsigned char *)vma->image + image_offset,
-                               to_write, (long long)(vma->backing_offset + image_offset));
-        if (written < 0) {
-            return -1;
-        }
-        if ((size_t)written != to_write) {
-            errno = EIO;
-            return -1;
+        start_page = (overlap_start - vma->start) / TASK_VMA_PAGE_SIZE;
+        end_page = ((overlap_end - 1) - vma->start) / TASK_VMA_PAGE_SIZE;
+        for (uint64_t page = start_page; page <= end_page && page < vma->page_count; page++) {
+            uint64_t page_start = vma->start + (page * TASK_VMA_PAGE_SIZE);
+            uint64_t page_end = page_start + TASK_VMA_PAGE_SIZE;
+            uint64_t write_start = overlap_start > page_start ? overlap_start : page_start;
+            uint64_t write_end = overlap_end < page_end ? overlap_end : page_end;
+            size_t image_offset;
+            size_t to_write;
+            long long written;
+
+            if (vma->dirty_pages && vma->dirty_pages[page] == 0) {
+                continue;
+            }
+            image_offset = (size_t)(write_start - vma->start);
+            to_write = (size_t)(write_end - write_start);
+            written = mm_fd_pwrite(vma->backing_fd, (const unsigned char *)vma->image + image_offset,
+                                   to_write, (long long)(vma->backing_offset + image_offset));
+            if (written < 0) {
+                return -1;
+            }
+            if ((size_t)written != to_write) {
+                errno = EIO;
+                return -1;
+            }
+            if (vma->dirty_pages) {
+                vma->dirty_pages[page] = 0;
+            }
         }
         synced = 1;
     }

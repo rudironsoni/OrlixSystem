@@ -266,6 +266,8 @@ void task_clear_vmas_impl(struct mm_struct *mm) {
         }
         free(mm->vmas[i].page_flags);
         mm->vmas[i].page_flags = NULL;
+        free(mm->vmas[i].dirty_pages);
+        mm->vmas[i].dirty_pages = NULL;
         mm->vmas[i].page_count = 0;
     }
     memset(mm->vmas, 0, sizeof(mm->vmas));
@@ -306,7 +308,7 @@ static long task_read_vma(const struct task_vma *vma, uint64_t addr, void *buf, 
     return (long)to_copy;
 }
 
-static long task_write_vma(const struct task_vma *vma, uint64_t addr, const void *buf, size_t count) {
+static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf, size_t count) {
     size_t offset;
     size_t available;
     uint64_t page_remaining;
@@ -337,6 +339,12 @@ static long task_write_vma(const struct task_vma *vma, uint64_t addr, const void
         to_copy = (size_t)page_remaining;
     }
     memcpy((unsigned char *)vma->image + offset, buf, to_copy);
+    if (vma->dirty_pages) {
+        uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
+        if (page_index < vma->page_count) {
+            vma->dirty_pages[page_index] = 1;
+        }
+    }
     return (long)to_copy;
 }
 

@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <stdlib.h>
 
+#include "futex.h"
 #include "signal.h"
 #include "task.h"
 
@@ -15,6 +16,7 @@ void exit_impl(int status) {
 
     kernel_mutex_lock(&task->lock);
 
+    futex_task_exit_impl(task);
     task_mark_exited(task, status);
 
     /* Reparent children to init (orphan adoption) */

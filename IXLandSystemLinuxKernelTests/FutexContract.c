@@ -8,12 +8,15 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 
 #include "runtime/syscall.h"
+#include "kernel/task.h"
 
 extern int futex(int *uaddr, int futex_op, int val,
                  const struct timespec *timeout, int *uaddr2, int val3);
+extern void exit_impl(int status);
 
 struct futex_wait_thread {
     int *word;
@@ -132,5 +135,65 @@ int futex_contract_rejects_missing_robust_list_outputs(void) {
         errno = EPROTO;
         return -1;
     }
+    return 0;
+}
+
+struct robust_test_node {
+    struct robust_list list;
+    int futex_word;
+};
+
+int futex_contract_exit_clears_child_tid_and_marks_robust_futex(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    struct task_struct *restore;
+    struct robust_list_head head;
+    struct robust_test_node node;
+    int clear_child_tid = 7;
+    long ret;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = alloc_task();
+    if (!child) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    memset(&head, 0, sizeof(head));
+    memset(&node, 0, sizeof(node));
+    head.list.next = &node.list;
+    head.futex_offset = (long)((char *)&node.futex_word - (char *)&node);
+    node.list.next = &head.list;
+    node.futex_word = child->pid | FUTEX_WAITERS;
+
+    restore = get_current();
+    set_current(child);
+    ret = syscall_dispatch_impl(__NR_set_robust_list, (long)(uintptr_t)&head, sizeof(head), 0, 0, 0, 0);
+    if (ret != 0) {
+        set_current(restore);
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_set_tid_address, (long)(uintptr_t)&clear_child_tid, 0, 0, 0, 0, 0);
+    if (ret != child->pid) {
+        set_current(restore);
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+
+    exit_impl(0);
+    set_current(restore);
+
+    if (clear_child_tid != 0 ||
+        (node.futex_word & FUTEX_OWNER_DIED) == 0 ||
+        (node.futex_word & FUTEX_TID_MASK) != 0) {
+        errno = EPROTO;
+        free_task(child);
+        return -1;
+    }
+    free_task(child);
     return 0;
 }

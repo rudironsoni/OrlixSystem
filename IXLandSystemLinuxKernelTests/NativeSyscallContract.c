@@ -508,6 +508,89 @@ out:
     return result;
 }
 
+int native_syscall_contract_msync_preserves_clean_shared_pages(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-shared-map-clean-pages";
+    char first_page[4096];
+    char second_page[4096];
+    char verify[16];
+    const char host_patch[] = "HOST";
+    const char vm_patch[] = "DIRTY";
+    void *mapped;
+    int fd = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(first_page, 'A', sizeof(first_page));
+    memset(second_page, 'B', sizeof(second_page));
+
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    if (syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)first_page, sizeof(first_page), 0, 0, 0) !=
+            (long)sizeof(first_page) ||
+        syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)second_page, sizeof(second_page), 0, 0, 0) !=
+            (long)sizeof(second_page)) {
+        errno = EIO;
+        goto out;
+    }
+
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(first_page) + sizeof(second_page),
+                                                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pwrite64, fd, (long)(uintptr_t)host_patch, sizeof(host_patch) - 1,
+                                0, 0, 0);
+    if (ret != (long)sizeof(host_patch) - 1) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out_mapped;
+    }
+    if (task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped + sizeof(first_page),
+                                       vm_patch, sizeof(vm_patch) - 1) != (long)sizeof(vm_patch) - 1) {
+        errno = EPROTO;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_msync, (long)(uintptr_t)mapped,
+                                sizeof(first_page) + sizeof(second_page), MS_SYNC, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mapped;
+    }
+
+    memset(verify, 0, sizeof(verify));
+    ret = syscall_dispatch_impl(__NR_pread64, fd, (long)(uintptr_t)verify, sizeof(host_patch) - 1,
+                                0, 0, 0);
+    if (ret != (long)sizeof(host_patch) - 1 || memcmp(verify, host_patch, sizeof(host_patch) - 1) != 0) {
+        errno = EBUSY;
+        goto out_mapped;
+    }
+    memset(verify, 0, sizeof(verify));
+    ret = syscall_dispatch_impl(__NR_pread64, fd, (long)(uintptr_t)verify, sizeof(vm_patch) - 1,
+                                sizeof(first_page), 0, 0);
+    if (ret != (long)sizeof(vm_patch) - 1 || memcmp(verify, vm_patch, sizeof(vm_patch) - 1) != 0) {
+        errno = ENODATA;
+        goto out_mapped;
+    }
+    result = 0;
+
+out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped,
+                          sizeof(first_page) + sizeof(second_page), 0, 0, 0, 0);
+out:
+    close_if_open(fd);
+    return result;
+}
+
 int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     struct task_struct *task = get_current();
     uint64_t block_set = 1ULL << (2 - 1);

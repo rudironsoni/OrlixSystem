@@ -227,3 +227,54 @@ int get_robust_list_impl(int pid, void **head, unsigned long *len) {
     *len = (unsigned long)task->mm->robust_list_len;
     return 0;
 }
+
+static void futex_mark_owner_died(int *uaddr, int32_t pid) {
+    int value;
+
+    if (!uaddr || pid <= 0) {
+        return;
+    }
+    value = atomic_load((_Atomic int *)uaddr);
+    if ((value & FUTEX_TID_MASK) != pid) {
+        return;
+    }
+    atomic_store((_Atomic int *)uaddr, (value & ~FUTEX_TID_MASK) | FUTEX_OWNER_DIED);
+    futex_wake_impl(uaddr, 1);
+}
+
+static void futex_walk_robust_list(struct task_struct *task) {
+    struct robust_list_head *head;
+    struct robust_list *entry;
+
+    if (!task || !task->mm || task->mm->robust_list_head == 0) {
+        return;
+    }
+    head = (struct robust_list_head *)(uintptr_t)task->mm->robust_list_head;
+    entry = head->list.next;
+    for (int i = 0; entry && entry != &head->list && i < 2048; i++) {
+        struct robust_list *next = entry->next;
+        int *uaddr = (int *)((char *)entry + head->futex_offset);
+        futex_mark_owner_died(uaddr, task->pid);
+        entry = next;
+    }
+    if (head->list_op_pending) {
+        int *pending = (int *)((char *)head->list_op_pending + head->futex_offset);
+        futex_mark_owner_died(pending, task->pid);
+    }
+}
+
+void futex_task_exit_impl(struct task_struct *task) {
+    int *clear_child_tid;
+
+    if (!task || !task->mm) {
+        return;
+    }
+    futex_walk_robust_list(task);
+    if (task->mm->clear_child_tid == 0) {
+        return;
+    }
+    clear_child_tid = (int *)(uintptr_t)task->mm->clear_child_tid;
+    atomic_store((_Atomic int *)clear_child_tid, 0);
+    futex_wake_impl(clear_child_tid, 1);
+    task->mm->clear_child_tid = 0;
+}

@@ -44,6 +44,10 @@
     XCTAssertEqual(native_syscall_contract_maps_shared_file_and_syncs(), 0, @"errno %d", errno);
 }
 
+- (void)testMsyncPreservesCleanSharedPages {
+    XCTAssertEqual(native_syscall_contract_msync_preserves_clean_shared_pages(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesProcessStartupSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
 }
@@ -54,6 +58,10 @@
 
 - (void)testSigaltstackAndFramePolicy {
     XCTAssertEqual(signal_syscall_contract_sigaltstack_and_frame_policy(), 0, @"errno %d", errno);
+}
+
+- (void)testSignalFrameWritesVirtualRecord {
+    XCTAssertEqual(signal_syscall_contract_frame_writes_virtual_record(), 0, @"errno %d", errno);
 }
 
 - (void)testRegistersNativeArtifactDescriptor {

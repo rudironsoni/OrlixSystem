@@ -102,3 +102,39 @@ int signal_syscall_contract_sigaltstack_and_frame_policy(void) {
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
     return 0;
 }
+
+int signal_syscall_contract_frame_writes_virtual_record(void) {
+    struct task_struct *task = get_current();
+    stack_t stack;
+    uint64_t frame_sp = 0;
+    uint64_t frame_words[2] = {0, 0};
+    void *mapped;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+
+    memset(&stack, 0, sizeof(stack));
+    stack.ss_sp = mapped;
+    stack.ss_size = 16384;
+    if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
+        signal_prepare_frame_impl(task, SIGTERM, 0x5678, 0x80000000, &frame_sp) != 0 ||
+        task_read_virtual_memory_impl(task, frame_sp, frame_words, sizeof(frame_words)) !=
+            (long)sizeof(frame_words) ||
+        frame_words[0] != SIGTERM ||
+        frame_words[1] != 0x5678) {
+        errno = EPROTO;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
+
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+    return 0;
+}
