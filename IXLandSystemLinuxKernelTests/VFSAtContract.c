@@ -108,6 +108,16 @@ static void vfs_contract_cleanup_mount_paths(void) {
     rmdir_impl("/tmp/vfs-bind-target");
 }
 
+static void vfs_contract_cleanup_mount_namespace_paths(void) {
+    umount("/tmp/vfs-mntns-target");
+    unlink_impl("/tmp/vfs-mntns-parent-source/file");
+    unlink_impl("/tmp/vfs-mntns-child-source/file");
+    unlink_impl("/tmp/vfs-mntns-target/file");
+    rmdir_impl("/tmp/vfs-mntns-parent-source");
+    rmdir_impl("/tmp/vfs-mntns-child-source");
+    rmdir_impl("/tmp/vfs-mntns-target");
+}
+
 /* Contract: vfs_fstatat supports AT_FDCWD */
 int vfs_contract_fstatat_at_fdcwd(void) {
     struct linux_stat st;
@@ -350,4 +360,109 @@ int vfs_contract_bind_mount_rejects_non_bind_mount(void) {
 
     vfs_contract_cleanup_mount_paths();
     return 0;
+}
+
+int vfs_contract_mount_namespace_shared_across_task_dup(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    int ret = -1;
+
+    if (!parent || !parent->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-target/file", "target") != 0) {
+        goto out;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+
+    set_current(child);
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/file", "parent") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    set_current(parent);
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    vfs_contract_cleanup_mount_namespace_paths();
+    return ret;
+}
+
+int vfs_contract_mount_namespace_unshare_isolates_child_mounts(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    int ret = -1;
+
+    if (!parent || !parent->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-child-source/file", "child") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-target/file", "target") != 0) {
+        goto out;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+    if (fs_unshare_mount_namespace(child->fs) != 0) {
+        goto out;
+    }
+
+    set_current(child);
+    if (mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/file", "child") != 0) {
+        goto out;
+    }
+
+    set_current(parent);
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/file", "target") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (child) {
+        set_current(child);
+        umount("/tmp/vfs-mntns-target");
+        set_current(parent);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    } else {
+        set_current(parent);
+    }
+    vfs_contract_cleanup_mount_namespace_paths();
+    return ret;
 }

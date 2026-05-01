@@ -100,6 +100,7 @@ struct file;
 struct super_block;
 struct file_system_type;
 struct mount;
+struct vfs_mount_namespace;
 struct poll_table_struct;
 struct iattr;
 struct page;
@@ -215,6 +216,7 @@ struct fs_struct {
     /* Task-aware path resolution state */
     char root_path[MAX_PATH];      /* Virtual root path (absolute, normalized) */
     char pwd_path[MAX_PATH];       /* Virtual pwd path (absolute, normalized) */
+    struct vfs_mount_namespace *mnt_ns;
 };
 
 /* VFS context API */
@@ -225,6 +227,7 @@ int fs_init_root(struct fs_struct *fs, const char *root_path);
 int fs_init_pwd(struct fs_struct *fs, const char *pwd_path);
 int fs_set_pwd(struct fs_struct *fs, const char *new_pwd);
 int fs_set_root(struct fs_struct *fs, const char *new_root);
+int fs_unshare_mount_namespace(struct fs_struct *fs);
 
 /* VFS initialization */
 int vfs_init(void);

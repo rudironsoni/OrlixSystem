@@ -1160,6 +1160,18 @@ extern int lstat_impl(const char *path, struct linux_stat *statbuf);
                    @"non-bind mount should remain unsupported without host mount semantics, errno %d", errno);
 }
 
+- (void)testMountNamespaceSharedAcrossTaskDup {
+    extern int vfs_contract_mount_namespace_shared_across_task_dup(void);
+    XCTAssertEqual(vfs_contract_mount_namespace_shared_across_task_dup(), 0,
+                   @"duplicated task fs state should share the virtual mount namespace, errno %d", errno);
+}
+
+- (void)testMountNamespaceUnshareIsolatesChildMounts {
+    extern int vfs_contract_mount_namespace_unshare_isolates_child_mounts(void);
+    XCTAssertEqual(vfs_contract_mount_namespace_unshare_isolates_child_mounts(), 0,
+                   @"unshared task mount namespace should isolate child bind mounts, errno %d", errno);
+}
+
 /* ============================================================================
  * SIGNAL-FAMILY SEMANTICS TESTS
  * ============================================================================ */

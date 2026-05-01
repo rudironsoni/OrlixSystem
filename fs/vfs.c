@@ -45,8 +45,71 @@ struct vfs_mount_entry {
     unsigned long flags;
 };
 
-static struct vfs_mount_entry vfs_mount_table[MAX_MOUNTS];
-static fs_mutex_t vfs_mount_table_lock = FS_MUTEX_INITIALIZER;
+struct vfs_mount_namespace {
+    struct vfs_mount_entry entries[MAX_MOUNTS];
+    linux_atomic_int refs;
+    fs_mutex_t lock;
+};
+
+static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
+    struct vfs_mount_namespace *mnt_ns = calloc(1, sizeof(struct vfs_mount_namespace));
+    if (!mnt_ns) {
+        return NULL;
+    }
+
+    atomic_init(&mnt_ns->refs, 1);
+    fs_mutex_init(&mnt_ns->lock);
+    return mnt_ns;
+}
+
+static struct vfs_mount_namespace *vfs_get_mount_namespace(struct vfs_mount_namespace *mnt_ns) {
+    if (mnt_ns) {
+        atomic_fetch_add(&mnt_ns->refs, 1);
+    }
+    return mnt_ns;
+}
+
+static void vfs_put_mount_namespace(struct vfs_mount_namespace *mnt_ns) {
+    if (!mnt_ns) {
+        return;
+    }
+
+    if (atomic_fetch_sub(&mnt_ns->refs, 1) > 1) {
+        return;
+    }
+
+    fs_mutex_destroy(&mnt_ns->lock);
+    free(mnt_ns);
+}
+
+static struct vfs_mount_namespace *vfs_dup_mount_namespace(struct vfs_mount_namespace *old) {
+    struct vfs_mount_namespace *new_ns;
+
+    if (!old) {
+        return vfs_alloc_mount_namespace();
+    }
+
+    new_ns = vfs_alloc_mount_namespace();
+    if (!new_ns) {
+        return NULL;
+    }
+
+    fs_mutex_lock(&old->lock);
+    memcpy(new_ns->entries, old->entries, sizeof(new_ns->entries));
+    fs_mutex_unlock(&old->lock);
+
+    return new_ns;
+}
+
+static struct vfs_mount_namespace *vfs_task_mount_namespace(void) {
+    struct task_struct *task = get_current();
+
+    if (!task || !task->fs) {
+        return NULL;
+    }
+
+    return task->fs->mnt_ns;
+}
 
 struct vfs_route_entry {
     enum vfs_route_identity route_id;
@@ -203,6 +266,7 @@ static const char *vfs_relative_suffkfor_route(const struct vfs_route_entry *rou
 }
 
 static int vfs_rewrite_mount_path_locked(const char *normalized_virtual_path, char *mounted_path,
+                                         struct vfs_mount_namespace *mnt_ns,
                                          size_t mounted_path_len) {
     const struct vfs_mount_entry *best = NULL;
     size_t best_len = 0;
@@ -212,7 +276,7 @@ static int vfs_rewrite_mount_path_locked(const char *normalized_virtual_path, ch
     }
 
     for (size_t i = 0; i < MAX_MOUNTS; i++) {
-        const struct vfs_mount_entry *entry = &vfs_mount_table[i];
+        const struct vfs_mount_entry *entry = &mnt_ns->entries[i];
         size_t target_len;
 
         if (!entry->active || !vfs_path_matches_prefix(normalized_virtual_path, entry->target)) {
@@ -241,10 +305,15 @@ static int vfs_rewrite_mount_path_locked(const char *normalized_virtual_path, ch
 static int vfs_apply_mounts(const char *normalized_virtual_path, char *mounted_path,
                             size_t mounted_path_len) {
     int ret;
+    struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
 
-    fs_mutex_lock(&vfs_mount_table_lock);
-    ret = vfs_rewrite_mount_path_locked(normalized_virtual_path, mounted_path, mounted_path_len);
-    fs_mutex_unlock(&vfs_mount_table_lock);
+    if (!mnt_ns) {
+        return vfs_copy_string(normalized_virtual_path, mounted_path, mounted_path_len);
+    }
+
+    fs_mutex_lock(&mnt_ns->lock);
+    ret = vfs_rewrite_mount_path_locked(normalized_virtual_path, mounted_path, mnt_ns, mounted_path_len);
+    fs_mutex_unlock(&mnt_ns->lock);
 
     return ret;
 }
@@ -433,6 +502,12 @@ struct fs_struct *alloc_fs_struct(void) {
     atomic_init(&fs->users, 1);
     fs_mutex_init(&fs->lock);
     fs->umask = 022;
+    fs->mnt_ns = vfs_alloc_mount_namespace();
+    if (!fs->mnt_ns) {
+        fs_mutex_destroy(&fs->lock);
+        free(fs);
+        return NULL;
+    }
 
     return fs;
 }
@@ -443,6 +518,7 @@ void free_fs_struct(struct fs_struct *fs) {
     if (atomic_fetch_sub(&fs->users, 1) > 1)
         return;
 
+    vfs_put_mount_namespace(fs->mnt_ns);
     fs_mutex_destroy(&fs->lock);
     free(fs);
 }
@@ -463,9 +539,38 @@ struct fs_struct *dup_fs_struct(struct fs_struct *old) {
     new->umask = old->umask;
     memcpy(new->root_path, old->root_path, MAX_PATH);
     memcpy(new->pwd_path, old->pwd_path, MAX_PATH);
+    vfs_put_mount_namespace(new->mnt_ns);
+    new->mnt_ns = vfs_get_mount_namespace(old->mnt_ns);
+    if (!new->mnt_ns) {
+        fs_mutex_unlock(&old->lock);
+        free_fs_struct(new);
+        return NULL;
+    }
     fs_mutex_unlock(&old->lock);
 
     return new;
+}
+
+int fs_unshare_mount_namespace(struct fs_struct *fs) {
+    struct vfs_mount_namespace *new_ns;
+    struct vfs_mount_namespace *old_ns;
+
+    if (!fs) {
+        return -EINVAL;
+    }
+
+    fs_mutex_lock(&fs->lock);
+    old_ns = fs->mnt_ns;
+    new_ns = vfs_dup_mount_namespace(old_ns);
+    if (!new_ns) {
+        fs_mutex_unlock(&fs->lock);
+        return -ENOMEM;
+    }
+    fs->mnt_ns = new_ns;
+    fs_mutex_unlock(&fs->lock);
+
+    vfs_put_mount_namespace(old_ns);
+    return 0;
 }
 
 /* Initialize fs_struct with virtual root path */
@@ -600,9 +705,6 @@ void vfs_deinit(void) {
     /* Reset VFS initialization state for cold boot/reboot */
     vfs_backing_initialized = 0;
     vfs_etc_bootstrapped = 0;
-    fs_mutex_lock(&vfs_mount_table_lock);
-    memset(vfs_mount_table, 0, sizeof(vfs_mount_table));
-    fs_mutex_unlock(&vfs_mount_table_lock);
 }
 
 int vfs_mount(const char *source, const char *target, const char *fstype, unsigned long flags,
@@ -617,6 +719,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     int ret;
     int slot = -1;
     unsigned long supported_flags = MS_BIND;
+    struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
 
     if (!source || !target) {
         return -EFAULT;
@@ -629,6 +732,9 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     }
     if ((flags & MS_BIND) == 0) {
         return -ENOSYS;
+    }
+    if (!mnt_ns) {
+        return -ESRCH;
     }
     if (fstype && fstype[0] != '\0' && strcmp(fstype, "bind") != 0) {
         return -EINVAL;
@@ -666,26 +772,26 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         return -ENOTDIR;
     }
 
-    fs_mutex_lock(&vfs_mount_table_lock);
+    fs_mutex_lock(&mnt_ns->lock);
     for (size_t i = 0; i < MAX_MOUNTS; i++) {
-        if (vfs_mount_table[i].active && strcmp(vfs_mount_table[i].target, resolved_target) == 0) {
-            fs_mutex_unlock(&vfs_mount_table_lock);
+        if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
+            fs_mutex_unlock(&mnt_ns->lock);
             return -EBUSY;
         }
-        if (!vfs_mount_table[i].active && slot < 0) {
+        if (!mnt_ns->entries[i].active && slot < 0) {
             slot = (int)i;
         }
     }
     if (slot < 0) {
-        fs_mutex_unlock(&vfs_mount_table_lock);
+        fs_mutex_unlock(&mnt_ns->lock);
         return -ENOSPC;
     }
 
-    vfs_mount_table[slot].active = true;
-    memcpy(vfs_mount_table[slot].source, resolved_source, sizeof(vfs_mount_table[slot].source));
-    memcpy(vfs_mount_table[slot].target, resolved_target, sizeof(vfs_mount_table[slot].target));
-    vfs_mount_table[slot].flags = flags;
-    fs_mutex_unlock(&vfs_mount_table_lock);
+    mnt_ns->entries[slot].active = true;
+    memcpy(mnt_ns->entries[slot].source, resolved_source, sizeof(mnt_ns->entries[slot].source));
+    memcpy(mnt_ns->entries[slot].target, resolved_target, sizeof(mnt_ns->entries[slot].target));
+    mnt_ns->entries[slot].flags = flags;
+    fs_mutex_unlock(&mnt_ns->lock);
 
     return 0;
 }
@@ -693,6 +799,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
 int vfs_umount(const char *target) {
     char resolved_target[MAX_PATH];
     int ret;
+    struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
 
     if (!target) {
         return -EFAULT;
@@ -700,21 +807,24 @@ int vfs_umount(const char *target) {
     if (target[0] == '\0') {
         return -ENOENT;
     }
+    if (!mnt_ns) {
+        return -ESRCH;
+    }
 
     ret = vfs_resolve_virtual_path_at(AT_FDCWD, target, resolved_target, sizeof(resolved_target));
     if (ret != 0) {
         return ret;
     }
 
-    fs_mutex_lock(&vfs_mount_table_lock);
+    fs_mutex_lock(&mnt_ns->lock);
     for (size_t i = 0; i < MAX_MOUNTS; i++) {
-        if (vfs_mount_table[i].active && strcmp(vfs_mount_table[i].target, resolved_target) == 0) {
-            memset(&vfs_mount_table[i], 0, sizeof(vfs_mount_table[i]));
-            fs_mutex_unlock(&vfs_mount_table_lock);
+        if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
+            memset(&mnt_ns->entries[i], 0, sizeof(mnt_ns->entries[i]));
+            fs_mutex_unlock(&mnt_ns->lock);
             return 0;
         }
     }
-    fs_mutex_unlock(&vfs_mount_table_lock);
+    fs_mutex_unlock(&mnt_ns->lock);
 
     return -EINVAL;
 }
