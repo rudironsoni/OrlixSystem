@@ -18,6 +18,7 @@
 
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "../fs/fdtable.h"
@@ -268,6 +269,7 @@ void task_mark_continued_by_signal(struct task_struct *task);
 void task_mark_signaled_exit(struct task_struct *task, int32_t sig);
 void task_mark_exited(struct task_struct *task, int status);
 void task_notify_parent_state_change(struct task_struct *task);
+long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void *buf, size_t count);
 
 /* Virtual process identity syscalls (internal helpers) */
 int32_t getpid_impl(void);

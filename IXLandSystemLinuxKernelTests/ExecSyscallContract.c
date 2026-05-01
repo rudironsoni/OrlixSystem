@@ -351,6 +351,48 @@ static int expect_segment_image(const void *segment_image,
     return 0;
 }
 
+static int expect_task_vm_bytes(struct task_struct *task, uint64_t addr, const void *expected, size_t len) {
+    unsigned char buf[128];
+    long nread;
+
+    if (!task || !expected || len > sizeof(buf)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(buf, 0xa5, sizeof(buf));
+    nread = task_read_virtual_memory_impl(task, addr, buf, len);
+    if (nread != (long)len || memcmp(buf, expected, len) != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
+static int expect_task_vm_zeroes(struct task_struct *task, uint64_t addr, size_t len) {
+    unsigned char buf[32];
+    long nread;
+
+    if (!task || len > sizeof(buf)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(buf, 0xa5, sizeof(buf));
+    nread = task_read_virtual_memory_impl(task, addr, buf, len);
+    if (nread != (long)len) {
+        errno = EPROTO;
+        return -1;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (buf[i] != 0) {
+            errno = EPROTO;
+            return -1;
+        }
+    }
+    return 0;
+}
+
 static int native_exec_status(int argc, char **argv, char **envp) {
     (void)argc;
     (void)argv;
@@ -1187,7 +1229,10 @@ int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
         task->mm->exec_segments[0].flags != load->p_flags ||
         expect_segment_image(task->mm->exec_segments[0].image,
                              task->mm->exec_segments[0].image_size,
-                             image, load) != 0) {
+                             image, load) != 0 ||
+        expect_task_vm_bytes(task, load->p_vaddr,
+                             image + load->p_offset, 2) != 0 ||
+        expect_task_vm_zeroes(task, load->p_vaddr + load->p_filesz, 16) != 0) {
         errno = EPROTO;
         goto out;
     }
@@ -1260,7 +1305,10 @@ int exec_syscall_contract_elf_interp_loads_virtual_loader_image(void) {
         task->mm->interp_segments[0].flags != loader_load->p_flags ||
         expect_segment_image(task->mm->interp_segments[0].image,
                              task->mm->interp_segments[0].image_size,
-                             loader, loader_load) != 0) {
+                             loader, loader_load) != 0 ||
+        expect_task_vm_bytes(task, loader_load->p_vaddr,
+                             loader + loader_load->p_offset, 2) != 0 ||
+        expect_task_vm_zeroes(task, loader_load->p_vaddr + loader_load->p_filesz, 16) != 0) {
         errno = EPROTO;
         goto out;
     }
@@ -1309,7 +1357,15 @@ int exec_syscall_contract_elf_static_builds_initial_stack_and_auxv(void) {
         expect_auxv_value(task, AT_BASE, 0) != 0 ||
         expect_auxv_value(task, AT_PHDR, ehdr->e_phoff) != 0 ||
         expect_materialized_stack_vector(task, expected_argv, expected_envp) != 0 ||
-        expect_materialized_auxv_strings(task) != 0) {
+        expect_materialized_auxv_strings(task) != 0 ||
+        expect_task_vm_bytes(task, task->mm->initial_argv[0], "elf-static", sizeof("elf-static")) != 0 ||
+        expect_task_vm_bytes(task, task->mm->initial_envp[0], "A=B", sizeof("A=B")) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (task_read_virtual_memory_impl(task, 0x1000, image, 1) != -1 ||
+        expect_errno(EFAULT) != 0) {
         goto out;
     }
 
