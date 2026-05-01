@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include <linux/limits.h>
+#include <linux/capability.h>
 #include <linux/prctl.h>
 #include <linux/stat.h>
 
@@ -36,6 +37,40 @@
 #define KERNEL_DEFAULT_SUID     0       /* Virtual saved root */
 #define KERNEL_DEFAULT_SGID     0       /* Virtual saved root */
 
+static uint64_t cred_full_cap_mask(void) {
+    return (CAP_LAST_CAP >= 63) ? UINT64_MAX : ((1ULL << (CAP_LAST_CAP + 1)) - 1ULL);
+}
+
+static uint64_t cred_cap_bit(int cap) {
+    if (!cap_valid(cap) || cap >= 64) {
+        return 0;
+    }
+    return 1ULL << cap;
+}
+
+static void cred_reset_caps_for_root(struct cred *cred) {
+    uint64_t full;
+
+    if (!cred) {
+        return;
+    }
+    full = cred_full_cap_mask();
+    cred->cap_permitted = full;
+    cred->cap_effective = full;
+    cred->cap_inheritable = 0;
+    cred->cap_bounding = full;
+    cred->cap_ambient = 0;
+}
+
+static void cred_drop_privilege_caps(struct cred *cred) {
+    if (!cred) {
+        return;
+    }
+    cred->cap_permitted = 0;
+    cred->cap_effective = 0;
+    cred->cap_ambient = 0;
+}
+
 /* Global virtual credential state for init/standalone tasks */
 static struct cred global_init_cred = {
     .uid = KERNEL_DEFAULT_UID,
@@ -47,6 +82,11 @@ static struct cred global_init_cred = {
     .groups = NULL,
     .group_count = 0,
     .no_new_privs = false,
+    .cap_permitted = 0,
+    .cap_effective = 0,
+    .cap_inheritable = 0,
+    .cap_bounding = 0,
+    .cap_ambient = 0,
     .refs = 1
 };
 
@@ -95,6 +135,11 @@ struct cred *dup_cred(const struct cred *cred) {
             new->group_count = cred->group_count;
         }
         new->no_new_privs = cred->no_new_privs;
+        new->cap_permitted = cred->cap_permitted;
+        new->cap_effective = cred->cap_effective;
+        new->cap_inheritable = cred->cap_inheritable;
+        new->cap_bounding = cred->cap_bounding;
+        new->cap_ambient = cred->cap_ambient;
         new->refs = 1;
     }
     return new;
@@ -113,12 +158,14 @@ void cred_init_defaults(struct cred *cred) {
     cred->groups = NULL;
     cred->group_count = 0;
     cred->no_new_privs = false;
+    cred_reset_caps_for_root(cred);
 }
 
 int cred_init(void) {
     static int initialized = 0;
     if (!initialized) {
         initialized = 1;
+        cred_reset_caps_for_root(&global_init_cred);
         /* Ensure current_cred is initialized to global_init_cred */
         if (!current_cred) {
             current_cred = &global_init_cred;
@@ -140,6 +187,7 @@ void cred_reset_to_defaults(void) {
     global_init_cred.groups = NULL;
     global_init_cred.group_count = 0;
     global_init_cred.no_new_privs = false;
+    cred_reset_caps_for_root(&global_init_cred);
     global_init_cred.refs = 1;
     
     /* Reset current_cred pointer to point to global_init_cred */
@@ -191,7 +239,7 @@ static int check_setuid_perm(struct cred *cred, uint32_t uid) {
      * - If euid is 0 (root), any UID is allowed
      * - Otherwise, only to/from real, effective, or saved UIDs
      */
-    if (cred->euid == 0) {
+    if (cred_has_cap(cred, CAP_SETUID)) {
         return 0; /* Root can setuid to anything */
     }
     /* Non-root can only set to real/effective/saved UIDs */
@@ -203,7 +251,7 @@ static int check_setuid_perm(struct cred *cred, uint32_t uid) {
 
 static int check_setgid_perm(struct cred *cred, uint32_t gid) {
     (void)gid;
-    if (cred->egid == 0) {
+    if (cred_has_cap(cred, CAP_SETGID)) {
         return 0; /* Root can setgid to anything */
     }
     if (gid == cred->gid || gid == cred->egid || gid == cred->sgid) {
@@ -227,6 +275,11 @@ int cred_setuid(struct cred *cred, uint32_t uid) {
         cred->suid = uid;
         cred->uid = uid;
         cred->euid = uid;
+        if (uid != 0) {
+            cred_drop_privilege_caps(cred);
+        } else {
+            cred_reset_caps_for_root(cred);
+        }
     } else if (uid == cred->uid) {
         /* Setting to real UID: revert effective to real */
         cred->euid = uid;
@@ -278,13 +331,18 @@ int cred_seteuid(struct cred *cred, uint32_t euid) {
     }
 
     /* seteuid can only set to real, effective, or saved UID */
-    if (cred->euid != 0) {
+    if (!cred_has_cap(cred, CAP_SETUID)) {
         if (euid != cred->uid && euid != cred->euid && euid != cred->suid) {
             return -EPERM;
         }
     }
 
     cred->euid = euid;
+    if (euid != 0) {
+        cred_drop_privilege_caps(cred);
+    } else {
+        cred_reset_caps_for_root(cred);
+    }
     return 0;
 }
 
@@ -293,7 +351,7 @@ int cred_setegid(struct cred *cred, uint32_t egid) {
         return -EINVAL;
     }
 
-    if (cred->egid != 0) {
+    if (!cred_has_cap(cred, CAP_SETGID)) {
         if (egid != cred->gid && egid != cred->egid && egid != cred->sgid) {
             return -EPERM;
         }
@@ -309,7 +367,7 @@ int cred_setreuid(struct cred *cred, uint32_t ruid, uint32_t euid) {
     }
 
     /* setreuid requires permission to set both values */
-    if (cred->euid != 0) {
+    if (!cred_has_cap(cred, CAP_SETUID)) {
         if (ruid != (uint32_t)-1 && ruid != cred->uid && ruid != cred->euid && ruid != cred->suid) {
             return -EPERM;
         }
@@ -328,6 +386,11 @@ int cred_setreuid(struct cred *cred, uint32_t ruid, uint32_t euid) {
         }
         cred->euid = euid;
     }
+    if (cred->euid != 0) {
+        cred_drop_privilege_caps(cred);
+    } else {
+        cred_reset_caps_for_root(cred);
+    }
 
     return 0;
 }
@@ -337,7 +400,7 @@ int cred_setregid(struct cred *cred, uint32_t rgid, uint32_t egid) {
         return -EINVAL;
     }
 
-    if (cred->egid != 0) {
+    if (!cred_has_cap(cred, CAP_SETGID)) {
         if (rgid != (uint32_t)-1 && rgid != cred->gid && rgid != cred->egid && rgid != cred->sgid) {
             return -EPERM;
         }
@@ -365,7 +428,7 @@ int cred_setresuid(struct cred *cred, uint32_t ruid, uint32_t euid, uint32_t sui
     }
 
     /* setresuid is privileged; only root or allowed transitions */
-    if (cred->euid != 0) {
+    if (!cred_has_cap(cred, CAP_SETUID)) {
         /* 
          * Non-root can only use current values when -1 is specified,
          * or switch to values they already have.
@@ -390,6 +453,11 @@ int cred_setresuid(struct cred *cred, uint32_t ruid, uint32_t euid, uint32_t sui
     if (suid != (uint32_t)-1) {
         cred->suid = suid;
     }
+    if (cred->euid != 0) {
+        cred_drop_privilege_caps(cred);
+    } else {
+        cred_reset_caps_for_root(cred);
+    }
 
     return 0;
 }
@@ -399,7 +467,7 @@ int cred_setresgid(struct cred *cred, uint32_t rgid, uint32_t egid, uint32_t sgi
         return -EINVAL;
     }
 
-    if (cred->egid != 0) {
+    if (!cred_has_cap(cred, CAP_SETGID)) {
         if (rgid != (uint32_t)-1 && rgid != cred->gid && rgid != cred->egid && rgid != cred->sgid) {
             return -EPERM;
         }
@@ -445,7 +513,7 @@ int cred_setgroups(struct cred *cred, size_t size, const gid_t *list) {
     if (!cred) {
         return -EINVAL;
     }
-    if (cred->euid != 0) {
+    if (!cred_has_cap(cred, CAP_SETGID)) {
         return -EPERM;
     }
     if (size > NGROUPS_MAX) {
@@ -483,6 +551,13 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
 
     cred->suid = cred->euid;
     cred->sgid = cred->egid;
+
+    if (cred->euid == 0 && !cred->no_new_privs) {
+        cred->cap_permitted = cred->cap_bounding;
+        cred->cap_effective = cred->cap_permitted;
+    } else if (cred->euid != 0) {
+        cred_drop_privilege_caps(cred);
+    }
 }
 
 bool cred_no_new_privs(const struct cred *cred) {
@@ -495,6 +570,15 @@ int cred_set_no_new_privs(struct cred *cred) {
     }
     cred->no_new_privs = true;
     return 0;
+}
+
+bool cred_has_cap(const struct cred *cred, int cap) {
+    uint64_t bit = cred_cap_bit(cap);
+
+    if (!cred || bit == 0) {
+        return false;
+    }
+    return (cred->cap_effective & bit) != 0;
 }
 
 /* ============================================================================
@@ -622,6 +706,110 @@ int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long
     }
 }
 
+static void cred_cap_split(uint64_t value, struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3],
+                           int field) {
+    uint32_t lo = (uint32_t)(value & 0xffffffffULL);
+    uint32_t hi = (uint32_t)((value >> 32) & 0xffffffffULL);
+
+    if (field == 0) {
+        data[0].effective = lo;
+        data[1].effective = hi;
+    } else if (field == 1) {
+        data[0].permitted = lo;
+        data[1].permitted = hi;
+    } else {
+        data[0].inheritable = lo;
+        data[1].inheritable = hi;
+    }
+}
+
+static uint64_t cred_cap_join(const struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3],
+                              int field) {
+    uint64_t lo;
+    uint64_t hi;
+
+    if (field == 0) {
+        lo = data[0].effective;
+        hi = data[1].effective;
+    } else if (field == 1) {
+        lo = data[0].permitted;
+        hi = data[1].permitted;
+    } else {
+        lo = data[0].inheritable;
+        hi = data[1].inheritable;
+    }
+    return lo | (hi << 32);
+}
+
+int capget_impl(cap_user_header_t header, cap_user_data_t data) {
+    struct cred *cred = get_current_cred();
+
+    if (!header || !data) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (header->version != _LINUX_CAPABILITY_VERSION_3) {
+        header->version = _LINUX_CAPABILITY_VERSION_3;
+        errno = EINVAL;
+        return -1;
+    }
+    if (header->pid != 0) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    memset(data, 0, sizeof(struct __user_cap_data_struct) * _LINUX_CAPABILITY_U32S_3);
+    cred_cap_split(cred->cap_effective, data, 0);
+    cred_cap_split(cred->cap_permitted, data, 1);
+    cred_cap_split(cred->cap_inheritable, data, 2);
+    return 0;
+}
+
+int capset_impl(cap_user_header_t header, const cap_user_data_t data) {
+    struct cred *cred = get_current_cred();
+    uint64_t full = cred_full_cap_mask();
+    uint64_t effective;
+    uint64_t permitted;
+    uint64_t inheritable;
+
+    if (!header || !data) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (header->version != _LINUX_CAPABILITY_VERSION_3) {
+        header->version = _LINUX_CAPABILITY_VERSION_3;
+        errno = EINVAL;
+        return -1;
+    }
+    if (header->pid != 0) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    effective = cred_cap_join(data, 0) & full;
+    permitted = cred_cap_join(data, 1) & full;
+    inheritable = cred_cap_join(data, 2) & full;
+
+    if ((effective & ~permitted) != 0) {
+        errno = EPERM;
+        return -1;
+    }
+    if ((permitted & ~cred->cap_permitted) != 0 && !cred_has_cap(cred, CAP_SETPCAP)) {
+        errno = EPERM;
+        return -1;
+    }
+    if ((inheritable & ~cred->cap_bounding) != 0) {
+        errno = EPERM;
+        return -1;
+    }
+
+    cred->cap_effective = effective;
+    cred->cap_permitted = permitted;
+    cred->cap_inheritable = inheritable;
+    cred->cap_ambient &= permitted & inheritable;
+    return 0;
+}
+
 /* ============================================================================
  * PUBLIC CANONICAL WRAPPERS
  * ============================================================================
@@ -677,4 +865,12 @@ __attribute__((visibility("default"))) int prctl(int option, ...) {
 
     ret = prctl_impl(option, arg2, arg3, arg4, arg5);
     return ret;
+}
+
+__attribute__((visibility("default"))) int capget(cap_user_header_t header, cap_user_data_t data) {
+    return capget_impl(header, data);
+}
+
+__attribute__((visibility("default"))) int capset(cap_user_header_t header, const cap_user_data_t data) {
+    return capset_impl(header, data);
 }

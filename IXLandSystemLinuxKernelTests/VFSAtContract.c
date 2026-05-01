@@ -6,6 +6,7 @@
  */
 
 #include <linux/fcntl.h>
+#include <linux/capability.h>
 #include <linux/mount.h>
 
 #include <errno.h>
@@ -40,6 +41,8 @@ extern int chmod(const char *pathname, linux_mode_t mode);
 extern int fchmod(int fd, linux_mode_t mode);
 extern int chown(const char *pathname, uid_t owner, gid_t group);
 extern int fchown(int fd, uid_t owner, gid_t group);
+extern int capget(cap_user_header_t header, cap_user_data_t data);
+extern int capset(cap_user_header_t header, const cap_user_data_t data);
 
 static int vfs_contract_ignore_exists(int result) {
     if (result == 0 || errno == EEXIST) {
@@ -1053,5 +1056,61 @@ int vfs_contract_missing_supplementary_group_cannot_read_group_file(void) {
 out:
     cred_reset_to_defaults();
     unlink_impl("/tmp/vfs-cred-no-supgroup-read-file");
+    return ret;
+}
+
+int vfs_contract_root_without_dac_caps_cannot_read_private_file(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-no-dac-cap-file");
+
+    fd = open_impl("/tmp/vfs-cred-no-dac-cap-file", O_RDWR | O_CREAT | O_TRUNC, 0000);
+    if (fd < 0) {
+        goto out;
+    }
+    close_impl(fd);
+    fd = -1;
+
+    if (capget(&header, data) != 0) {
+        goto out;
+    }
+    if ((data[CAP_DAC_OVERRIDE / 32].effective & (1U << (CAP_DAC_OVERRIDE % 32))) == 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    data[CAP_DAC_OVERRIDE / 32].effective &= ~(1U << (CAP_DAC_OVERRIDE % 32));
+    data[CAP_DAC_READ_SEARCH / 32].effective &= ~(1U << (CAP_DAC_READ_SEARCH % 32));
+    if (capset(&header, data) != 0) {
+        goto out;
+    }
+    if (capget(&header, data) != 0) {
+        goto out;
+    }
+    if ((data[CAP_DAC_OVERRIDE / 32].effective & (1U << (CAP_DAC_OVERRIDE % 32))) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    errno = 0;
+    fd = open_impl("/tmp/vfs-cred-no-dac-cap-file", O_RDONLY, 0);
+    if (fd != -1 || errno != EACCES) {
+        close_impl(fd);
+        errno = EACCES;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_impl(fd);
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-no-dac-cap-file");
     return ret;
 }

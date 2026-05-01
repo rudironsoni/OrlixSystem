@@ -43,6 +43,11 @@ struct cred {
     gid_t *groups;          /* Supplementary group IDs */
     size_t group_count;     /* Number of supplementary groups */
     bool no_new_privs;      /* Blocks exec-time privilege gains */
+    uint64_t cap_permitted;
+    uint64_t cap_effective;
+    uint64_t cap_inheritable;
+    uint64_t cap_bounding;
+    uint64_t cap_ambient;
 
     /* Reference counting for credential sharing */
     int refs;
@@ -131,6 +136,9 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
 /* Virtual no_new_privs state */
 bool cred_no_new_privs(const struct cred *cred);
 int cred_set_no_new_privs(struct cred *cred);
+
+/* Virtual capability state */
+bool cred_has_cap(const struct cred *cred, int cap);
 
 /* ============================================================================
  * INTERNAL IMPLEMENTATION ENTRY POINTS

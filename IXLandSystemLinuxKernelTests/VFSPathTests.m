@@ -1272,6 +1272,12 @@ extern void cred_reset_to_defaults(void);
                    @"missing supplementary group membership should not grant group read permission, errno %d", errno);
 }
 
+- (void)testRootWithoutDacCapsCannotReadPrivateFile {
+    extern int vfs_contract_root_without_dac_caps_cannot_read_private_file(void);
+    XCTAssertEqual(vfs_contract_root_without_dac_caps_cannot_read_private_file(), 0,
+                   @"clearing virtual DAC capabilities should make root obey file mode permissions, errno %d", errno);
+}
+
 /* ============================================================================
  * SIGNAL-FAMILY SEMANTICS TESTS
  * ============================================================================ */

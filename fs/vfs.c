@@ -7,6 +7,7 @@
 #include <string.h>
 
 /* Linux UAPI headers for ABI constants */
+#include <linux/capability.h>
 #include <linux/fcntl.h>
 #include <linux/mount.h>
 #include <linux/stat.h>
@@ -327,10 +328,13 @@ static bool vfs_cred_has_mode_permission(const struct cred *cred, const struct l
         return false;
     }
 
-    if (cred->euid == 0) {
+    if (cred_has_cap(cred, CAP_DAC_OVERRIDE)) {
         if ((mask & 0111U) != 0 && (st->st_mode & 0111U) == 0) {
             return false;
         }
+        return true;
+    }
+    if ((mask & 04U) != 0 && (mask & ~04U) == 0 && cred_has_cap(cred, CAP_DAC_READ_SEARCH)) {
         return true;
     }
 
@@ -363,7 +367,7 @@ int vfs_chmod_metadata(const char *resolved_vpath, linux_mode_t mode) {
     if (ret != 0) {
         return ret;
     }
-    if (cred->euid != 0 && cred->euid != st.st_uid) {
+    if (!cred_has_cap(cred, CAP_FOWNER) && cred->euid != st.st_uid) {
         return -EPERM;
     }
 
@@ -384,7 +388,7 @@ int vfs_chown_metadata(const char *resolved_vpath, linux_uid_t owner, linux_gid_
     if (!resolved_vpath || !cred) {
         return -EINVAL;
     }
-    if (cred->euid != 0) {
+    if (!cred_has_cap(cred, CAP_CHOWN)) {
         return -EPERM;
     }
 
