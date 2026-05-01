@@ -110,6 +110,55 @@ static int exec_stack_place_string(uint64_t *cursor, const char *value, uint64_t
     return 0;
 }
 
+static int exec_stack_offset(const struct mm_struct *mm, uint64_t addr, size_t size, size_t *out_offset) {
+    if (!mm || !mm->initial_stack_image || !out_offset) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (addr < mm->initial_stack_base ||
+        addr > mm->initial_stack_base + mm->initial_stack_image_size ||
+        size > (mm->initial_stack_base + mm->initial_stack_image_size) - addr) {
+        errno = EFAULT;
+        return -1;
+    }
+    *out_offset = (size_t)(addr - mm->initial_stack_base);
+    return 0;
+}
+
+static int exec_stack_write(struct mm_struct *mm, uint64_t addr, const void *src, size_t size) {
+    size_t offset;
+
+    if (!src && size > 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (exec_stack_offset(mm, addr, size, &offset) != 0) {
+        return -1;
+    }
+    memcpy((unsigned char *)mm->initial_stack_image + offset, src, size);
+    return 0;
+}
+
+static int exec_stack_write_u64(struct mm_struct *mm, uint64_t *cursor, uint64_t value) {
+    if (!cursor) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (exec_stack_write(mm, *cursor, &value, sizeof(value)) != 0) {
+        return -1;
+    }
+    *cursor += sizeof(value);
+    return 0;
+}
+
+static int exec_stack_write_string(struct mm_struct *mm, uint64_t addr, const char *value) {
+    if (!value) {
+        errno = EINVAL;
+        return -1;
+    }
+    return exec_stack_write(mm, addr, value, strlen(value) + 1);
+}
+
 static int exec_auxv_append(struct mm_struct *mm, uint64_t type, uint64_t value) {
     if (!mm || mm->auxv_count >= TASK_EXEC_MAX_AUXV) {
         errno = E2BIG;
@@ -155,6 +204,10 @@ static int exec_build_initial_elf_stack(struct task_struct *task,
     uint64_t cursor = EXEC_INITIAL_STACK_TOP;
     uint64_t random_addr;
     uint64_t pointer_slots;
+    const unsigned char random_bytes[16] = {
+        0x49, 0x58, 0x4c, 0x41, 0x4e, 0x44, 0x5f, 0x41,
+        0x55, 0x58, 0x56, 0x5f, 0x52, 0x4e, 0x44, 0x00,
+    };
 
     if (!task || !task->mm || !plan) {
         errno = EINVAL;
@@ -168,6 +221,14 @@ static int exec_build_initial_elf_stack(struct task_struct *task,
 
     mm->initial_stack_base = EXEC_INITIAL_STACK_TOP - EXEC_INITIAL_STACK_SIZE;
     mm->initial_stack_size = EXEC_INITIAL_STACK_SIZE;
+    free(mm->initial_stack_image);
+    mm->initial_stack_image = calloc(1, EXEC_INITIAL_STACK_SIZE);
+    if (!mm->initial_stack_image) {
+        mm->initial_stack_image_size = 0;
+        errno = ENOMEM;
+        return -1;
+    }
+    mm->initial_stack_image_size = EXEC_INITIAL_STACK_SIZE;
     mm->initial_argc = exec_string_count(task->argv);
     mm->initial_envc = exec_string_count(task->envp);
     mm->auxv_count = 0;
@@ -232,6 +293,50 @@ static int exec_build_initial_elf_stack(struct task_struct *task,
         mm->initial_stack_pointer >= EXEC_INITIAL_STACK_TOP) {
         errno = E2BIG;
         return -1;
+    }
+
+    if (exec_stack_write_string(mm, mm->auxv_platform_addr, "aarch64") != 0 ||
+        exec_stack_write_string(mm, mm->auxv_execfn_addr, task->exe) != 0 ||
+        exec_stack_write(mm, mm->auxv_random_addr, random_bytes, sizeof(random_bytes)) != 0) {
+        return -1;
+    }
+
+    for (int i = 0; i < mm->initial_argc; i++) {
+        if (exec_stack_write_string(mm, mm->initial_argv[i], task->argv[i]) != 0) {
+            return -1;
+        }
+    }
+    for (int i = 0; i < mm->initial_envc; i++) {
+        if (exec_stack_write_string(mm, mm->initial_envp[i], task->envp[i]) != 0) {
+            return -1;
+        }
+    }
+
+    cursor = mm->initial_stack_pointer;
+    if (exec_stack_write_u64(mm, &cursor, (uint64_t)mm->initial_argc) != 0) {
+        return -1;
+    }
+    for (int i = 0; i < mm->initial_argc; i++) {
+        if (exec_stack_write_u64(mm, &cursor, mm->initial_argv[i]) != 0) {
+            return -1;
+        }
+    }
+    if (exec_stack_write_u64(mm, &cursor, 0) != 0) {
+        return -1;
+    }
+    for (int i = 0; i < mm->initial_envc; i++) {
+        if (exec_stack_write_u64(mm, &cursor, mm->initial_envp[i]) != 0) {
+            return -1;
+        }
+    }
+    if (exec_stack_write_u64(mm, &cursor, 0) != 0) {
+        return -1;
+    }
+    for (uint32_t i = 0; i < mm->auxv_count; i++) {
+        if (exec_stack_write_u64(mm, &cursor, mm->auxv[i].type) != 0 ||
+            exec_stack_write_u64(mm, &cursor, mm->auxv[i].value) != 0) {
+            return -1;
+        }
     }
 
     return 0;

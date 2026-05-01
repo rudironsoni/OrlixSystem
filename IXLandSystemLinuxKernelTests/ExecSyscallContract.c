@@ -118,6 +118,55 @@ static int expect_stack_addr(const struct task_struct *task, uint64_t addr) {
     return 0;
 }
 
+static int stack_image_offset(const struct task_struct *task, uint64_t addr, size_t size, size_t *out_offset) {
+    if (!task || !task->mm || !task->mm->initial_stack_image || !out_offset) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (addr < task->mm->initial_stack_base ||
+        addr > task->mm->initial_stack_base + task->mm->initial_stack_image_size ||
+        size > (task->mm->initial_stack_base + task->mm->initial_stack_image_size) - addr) {
+        errno = EPROTO;
+        return -1;
+    }
+    *out_offset = (size_t)(addr - task->mm->initial_stack_base);
+    return 0;
+}
+
+static int stack_image_read_u64(const struct task_struct *task, uint64_t *cursor, uint64_t *out_value) {
+    size_t offset;
+
+    if (!cursor || !out_value) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (stack_image_offset(task, *cursor, sizeof(*out_value), &offset) != 0) {
+        return -1;
+    }
+    memcpy(out_value, (const unsigned char *)task->mm->initial_stack_image + offset, sizeof(*out_value));
+    *cursor += sizeof(*out_value);
+    return 0;
+}
+
+static int expect_stack_string(const struct task_struct *task, uint64_t addr, const char *expected) {
+    size_t offset;
+    size_t len;
+
+    if (!expected) {
+        errno = EINVAL;
+        return -1;
+    }
+    len = strlen(expected) + 1;
+    if (stack_image_offset(task, addr, len, &offset) != 0) {
+        return -1;
+    }
+    if (memcmp((const unsigned char *)task->mm->initial_stack_image + offset, expected, len) != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
 static int expect_auxv_value(const struct task_struct *task, uint64_t type, uint64_t expected) {
     uint64_t value = 0;
 
@@ -142,6 +191,8 @@ static int expect_common_elf_initial_stack(const struct task_struct *task,
 
     if (task->mm->initial_stack_base == 0 ||
         task->mm->initial_stack_size == 0 ||
+        !task->mm->initial_stack_image ||
+        task->mm->initial_stack_image_size != task->mm->initial_stack_size ||
         task->mm->initial_stack_pointer < task->mm->initial_stack_base ||
         task->mm->initial_stack_pointer >= task->mm->initial_stack_base + task->mm->initial_stack_size ||
         (task->mm->initial_stack_pointer & 15) != 0 ||
@@ -182,6 +233,93 @@ static int expect_common_elf_initial_stack(const struct task_struct *task,
         }
     }
 
+    return 0;
+}
+
+static int expect_materialized_stack_vector(const struct task_struct *task,
+                                            const char *const expected_argv[],
+                                            const char *const expected_envp[]) {
+    uint64_t cursor;
+    uint64_t value;
+    int argc = 0;
+    int envc = 0;
+
+    if (!task || !task->mm || !expected_argv || !expected_envp) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    while (expected_argv[argc]) {
+        argc++;
+    }
+    while (expected_envp[envc]) {
+        envc++;
+    }
+
+    cursor = task->mm->initial_stack_pointer;
+    if (stack_image_read_u64(task, &cursor, &value) != 0 || value != (uint64_t)argc) {
+        errno = EPROTO;
+        return -1;
+    }
+
+    for (int i = 0; i < argc; i++) {
+        if (stack_image_read_u64(task, &cursor, &value) != 0 ||
+            value != task->mm->initial_argv[i] ||
+            expect_stack_string(task, value, expected_argv[i]) != 0) {
+            errno = EPROTO;
+            return -1;
+        }
+    }
+    if (stack_image_read_u64(task, &cursor, &value) != 0 || value != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+
+    for (int i = 0; i < envc; i++) {
+        if (stack_image_read_u64(task, &cursor, &value) != 0 ||
+            value != task->mm->initial_envp[i] ||
+            expect_stack_string(task, value, expected_envp[i]) != 0) {
+            errno = EPROTO;
+            return -1;
+        }
+    }
+    if (stack_image_read_u64(task, &cursor, &value) != 0 || value != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+
+    for (uint32_t i = 0; i < task->mm->auxv_count; i++) {
+        uint64_t type;
+
+        if (stack_image_read_u64(task, &cursor, &type) != 0 ||
+            stack_image_read_u64(task, &cursor, &value) != 0 ||
+            type != task->mm->auxv[i].type ||
+            value != task->mm->auxv[i].value) {
+            errno = EPROTO;
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+static int expect_materialized_auxv_strings(const struct task_struct *task) {
+    static const unsigned char expected_random[16] = {
+        0x49, 0x58, 0x4c, 0x41, 0x4e, 0x44, 0x5f, 0x41,
+        0x55, 0x58, 0x56, 0x5f, 0x52, 0x4e, 0x44, 0x00,
+    };
+    size_t offset;
+
+    if (expect_stack_string(task, task->mm->auxv_platform_addr, "aarch64") != 0 ||
+        expect_stack_string(task, task->mm->auxv_execfn_addr, task->exe) != 0 ||
+        stack_image_offset(task, task->mm->auxv_random_addr, sizeof(expected_random), &offset) != 0) {
+        return -1;
+    }
+    if (memcmp((const unsigned char *)task->mm->initial_stack_image + offset,
+               expected_random, sizeof(expected_random)) != 0) {
+        errno = EPROTO;
+        return -1;
+    }
     return 0;
 }
 
@@ -1096,6 +1234,8 @@ int exec_syscall_contract_elf_static_builds_initial_stack_and_auxv(void) {
     struct task_struct *task = get_current();
     char *argv[] = {"elf-static", "one", NULL};
     char *envp[] = {"A=B", NULL};
+    const char *const expected_argv[] = {"elf-static", "one", NULL};
+    const char *const expected_envp[] = {"A=B", NULL};
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     int result = -1;
@@ -1118,7 +1258,9 @@ int exec_syscall_contract_elf_static_builds_initial_stack_and_auxv(void) {
 
     if (expect_common_elf_initial_stack(task, ehdr, 2, 1) != 0 ||
         expect_auxv_value(task, AT_BASE, 0) != 0 ||
-        expect_auxv_value(task, AT_PHDR, ehdr->e_phoff) != 0) {
+        expect_auxv_value(task, AT_PHDR, ehdr->e_phoff) != 0 ||
+        expect_materialized_stack_vector(task, expected_argv, expected_envp) != 0 ||
+        expect_materialized_auxv_strings(task) != 0) {
         goto out;
     }
 
@@ -1133,6 +1275,8 @@ int exec_syscall_contract_elf_dynamic_auxv_points_to_loader_base(void) {
     struct task_struct *task = get_current();
     const char interp_path[] = "/tmp/exec-elf-aux-loader";
     char *argv[] = {"elf-dynamic", NULL};
+    const char *const expected_argv[] = {"elf-dynamic", NULL};
+    const char *const expected_envp[] = {NULL};
     unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
     unsigned char loader[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
@@ -1162,6 +1306,8 @@ int exec_syscall_contract_elf_dynamic_auxv_points_to_loader_base(void) {
 
     if (expect_common_elf_initial_stack(task, ehdr, 1, 0) != 0 ||
         expect_auxv_value(task, AT_BASE, loader_load->p_vaddr) != 0 ||
+        expect_materialized_stack_vector(task, expected_argv, expected_envp) != 0 ||
+        expect_materialized_auxv_strings(task) != 0 ||
         task->mm->entry_point != loader_ehdr->e_entry ||
         task->mm->exec_entry != ehdr->e_entry ||
         task->mm->interp_entry != loader_ehdr->e_entry) {

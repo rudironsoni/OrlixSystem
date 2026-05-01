@@ -421,6 +421,7 @@ void free_task(struct task_struct *task) {
     if (task->mm) {
         free(task->mm->exec_image_base);
         free(task->mm->interp_image_base);
+        free(task->mm->initial_stack_image);
         free(task->mm);
     }
     if (task->exec_image)

@@ -101,6 +101,8 @@ struct mm_struct {
     uint64_t initial_stack_base;
     uint64_t initial_stack_size;
     uint64_t initial_stack_pointer;
+    void *initial_stack_image;
+    size_t initial_stack_image_size;
     int initial_argc;
     int initial_envc;
     uint64_t initial_argv[TASK_MAX_ARGS];
