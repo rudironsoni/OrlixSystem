@@ -84,6 +84,19 @@ struct mm_struct {
         uint64_t offset;
         uint32_t flags;
     } exec_segments[TASK_EXEC_MAX_LOAD_SEGMENTS];
+    void *interp_image_base;
+    size_t interp_image_size;
+    uint64_t interp_entry;
+    uint32_t interp_segment_count;
+    char interp_path[MAX_PATH];
+    struct {
+        uint64_t vaddr;
+        uint64_t memsz;
+        uint64_t filesz;
+        uint64_t offset;
+        uint32_t flags;
+    } interp_segments[TASK_EXEC_MAX_LOAD_SEGMENTS];
+    uint64_t entry_point;
     struct address_space *vma_addr_space;
 };
 

@@ -173,16 +173,20 @@ static void build_minimal_elf64_aarch64(Elf64_Ehdr *ehdr) {
     ehdr->e_ehsize = sizeof(*ehdr);
 }
 
-static void build_loadable_elf64_aarch64(unsigned char *image, size_t image_len) {
+static void build_exec_elf64_with_interp(unsigned char *image, size_t image_len,
+                                         const char *interp_path,
+                                         uint64_t entry,
+                                         uint64_t load_vaddr) {
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
-    Elf64_Phdr *load;
     Elf64_Phdr *interp;
-    const char interp_path[] = "/lib/ld-linux-aarch64.so.1";
+    Elf64_Phdr *load;
+    size_t interp_len = strlen(interp_path) + 1;
     size_t interp_offset = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
-    size_t text_offset = interp_offset + sizeof(interp_path);
+    size_t text_offset = interp_offset + interp_len;
 
     memset(image, 0, image_len);
     build_minimal_elf64_aarch64(ehdr);
+    ehdr->e_entry = entry;
     ehdr->e_phoff = sizeof(Elf64_Ehdr);
     ehdr->e_phentsize = sizeof(Elf64_Phdr);
     ehdr->e_phnum = 2;
@@ -190,20 +194,44 @@ static void build_loadable_elf64_aarch64(unsigned char *image, size_t image_len)
     interp = (Elf64_Phdr *)(image + ehdr->e_phoff);
     interp->p_type = PT_INTERP;
     interp->p_offset = interp_offset;
-    interp->p_filesz = sizeof(interp_path);
-    interp->p_memsz = sizeof(interp_path);
-    memcpy(image + interp_offset, interp_path, sizeof(interp_path));
+    interp->p_filesz = interp_len;
+    interp->p_memsz = interp_len;
+    memcpy(image + interp_offset, interp_path, interp_len);
 
     load = interp + 1;
     load->p_type = PT_LOAD;
     load->p_flags = PF_R | PF_X;
     load->p_offset = text_offset;
-    load->p_vaddr = 0x400000;
+    load->p_vaddr = load_vaddr;
     load->p_filesz = image_len - text_offset;
-    load->p_memsz = load->p_filesz + 16;
+    load->p_memsz = load->p_filesz;
     load->p_align = 0x1000;
-    image[text_offset] = 0xaa;
-    image[text_offset + 1] = 0xbb;
+    image[text_offset] = 0xcc;
+}
+
+static void build_exec_elf64_without_interp(unsigned char *image, size_t image_len,
+                                            uint64_t entry,
+                                            uint64_t load_vaddr) {
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    Elf64_Phdr *load;
+    size_t text_offset = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
+
+    memset(image, 0, image_len);
+    build_minimal_elf64_aarch64(ehdr);
+    ehdr->e_entry = entry;
+    ehdr->e_phoff = sizeof(Elf64_Ehdr);
+    ehdr->e_phentsize = sizeof(Elf64_Phdr);
+    ehdr->e_phnum = 1;
+
+    load = (Elf64_Phdr *)(image + ehdr->e_phoff);
+    load->p_type = PT_LOAD;
+    load->p_flags = PF_R | PF_X;
+    load->p_offset = text_offset;
+    load->p_vaddr = load_vaddr;
+    load->p_filesz = image_len - text_offset;
+    load->p_memsz = load->p_filesz;
+    load->p_align = 0x1000;
+    image[text_offset] = 0xdd;
 }
 
 static int verify_state_unchanged(struct task_struct *task,
@@ -845,7 +873,7 @@ out:
 
 int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
     struct task_struct *task = get_current();
-    unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 64];
+    unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     Elf64_Phdr *load;
     int status;
@@ -858,8 +886,8 @@ int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
 
     native_registry_clear();
     unlink_impl("/tmp/exec-elf-loadable");
-    build_loadable_elf64_aarch64(image, sizeof(image));
-    load = ((Elf64_Phdr *)(image + ehdr->e_phoff)) + 1;
+    build_exec_elf64_without_interp(image, sizeof(image), 0x400000, 0x400000);
+    load = (Elf64_Phdr *)(image + ehdr->e_phoff);
     if (create_exec_bytes("/tmp/exec-elf-loadable", image, sizeof(image)) != 0) {
         goto out;
     }
@@ -881,8 +909,16 @@ int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
         goto out;
     }
     if (!task->exec_image ||
-        strcmp(task->exec_image->interpreter, "/lib/ld-linux-aarch64.so.1") != 0 ||
+        task->exec_image->interpreter[0] != '\0' ||
         task->exec_image->u.elf.type != ET_EXEC) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (task->mm->interp_image_base ||
+        task->mm->interp_image_size != 0 ||
+        task->mm->interp_entry != 0 ||
+        task->mm->interp_segment_count != 0 ||
+        task->mm->entry_point != ehdr->e_entry) {
         errno = EPROTO;
         goto out;
     }
@@ -891,6 +927,147 @@ int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
 
 out:
     unlink_impl("/tmp/exec-elf-loadable");
+    return result;
+}
+
+int exec_syscall_contract_elf_interp_loads_virtual_loader_image(void) {
+    struct task_struct *task = get_current();
+    const char interp_path[] = "/tmp/exec-elf-loader";
+    unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
+    unsigned char loader[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    Elf64_Ehdr *loader_ehdr = (Elf64_Ehdr *)loader;
+    Elf64_Phdr *loader_load;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-dynamic");
+    unlink_impl(interp_path);
+    build_exec_elf64_with_interp(image, sizeof(image), interp_path, 0x401000, 0x400000);
+    build_exec_elf64_without_interp(loader, sizeof(loader), 0x701000, 0x700000);
+    loader_load = (Elf64_Phdr *)(loader + loader_ehdr->e_phoff);
+    if (create_exec_bytes("/tmp/exec-elf-dynamic", image, sizeof(image)) != 0 ||
+        create_exec_bytes(interp_path, loader, sizeof(loader)) != 0) {
+        goto out;
+    }
+
+    if (execve("/tmp/exec-elf-dynamic", NULL, NULL) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (!task->mm ||
+        !task->mm->exec_image_base ||
+        !task->mm->interp_image_base ||
+        task->mm->exec_entry != ehdr->e_entry ||
+        task->mm->interp_entry != loader_ehdr->e_entry ||
+        task->mm->entry_point != loader_ehdr->e_entry ||
+        strcmp(task->mm->interp_path, interp_path) != 0 ||
+        task->mm->interp_image_size != sizeof(loader) ||
+        memcmp(task->mm->interp_image_base, loader, sizeof(loader)) != 0 ||
+        task->mm->interp_segment_count != 1 ||
+        task->mm->interp_segments[0].vaddr != loader_load->p_vaddr ||
+        task->mm->interp_segments[0].filesz != loader_load->p_filesz ||
+        task->mm->interp_segments[0].memsz != loader_load->p_memsz ||
+        task->mm->interp_segments[0].offset != loader_load->p_offset ||
+        task->mm->interp_segments[0].flags != loader_load->p_flags) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!task->exec_image ||
+        strcmp(task->exec_image->interpreter, interp_path) != 0 ||
+        task->exec_image->u.elf.entry != ehdr->e_entry) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-dynamic");
+    unlink_impl(interp_path);
+    return result;
+}
+
+int exec_syscall_contract_elf_missing_interp_returns_enoent_without_transition(void) {
+    struct task_struct *task = get_current();
+    const char interp_path[] = "/tmp/exec-missing-loader";
+    unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-missing-loader");
+    unlink_impl(interp_path);
+    build_exec_elf64_with_interp(image, sizeof(image), interp_path, 0x401000, 0x400000);
+    if (create_exec_bytes("/tmp/exec-elf-missing-loader", image, sizeof(image)) != 0) {
+        goto out;
+    }
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    errno = 0;
+    if (execve("/tmp/exec-elf-missing-loader", NULL, NULL) != -1 ||
+        expect_errno(ENOENT) != 0 ||
+        verify_state_unchanged(task, "/before", "before", false, -1, -1) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-missing-loader");
+    unlink_impl(interp_path);
+    return result;
+}
+
+int exec_syscall_contract_elf_invalid_interp_returns_enoexec_without_transition(void) {
+    struct task_struct *task = get_current();
+    const char interp_path[] = "/tmp/exec-invalid-loader";
+    unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
+    const char invalid_loader[] = "not an elf";
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-invalid-loader");
+    unlink_impl(interp_path);
+    build_exec_elf64_with_interp(image, sizeof(image), interp_path, 0x401000, 0x400000);
+    if (create_exec_bytes("/tmp/exec-elf-invalid-loader", image, sizeof(image)) != 0 ||
+        create_exec_bytes(interp_path, invalid_loader, sizeof(invalid_loader)) != 0) {
+        goto out;
+    }
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    errno = 0;
+    if (execve("/tmp/exec-elf-invalid-loader", NULL, NULL) != -1 ||
+        expect_errno(ENOEXEC) != 0 ||
+        verify_state_unchanged(task, "/before", "before", false, -1, -1) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-invalid-loader");
+    unlink_impl(interp_path);
     return result;
 }
 

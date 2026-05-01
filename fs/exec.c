@@ -338,6 +338,75 @@ static int exec_read_image_file(const char *path, void **out_image, size_t *out_
     return 0;
 }
 
+static int exec_read_elf_load_plan(const char *path, void **out_image, size_t *out_size,
+                                   struct exec_elf_load_plan *out_plan) {
+    void *image = NULL;
+    size_t image_size = 0;
+
+    if (!path || !out_image || !out_size || !out_plan) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (exec_read_image_file(path, &image, &image_size) != 0) {
+        return -1;
+    }
+    if (exec_build_elf_load_plan(image, image_size, out_plan) != 0) {
+        free(image);
+        return -1;
+    }
+
+    *out_image = image;
+    *out_size = image_size;
+    return 0;
+}
+
+static int exec_resolve_elf_interpreter(const char *interpreter, char *resolved, size_t resolved_len) {
+    int ret;
+
+    if (!interpreter || interpreter[0] == '\0' || !resolved || resolved_len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ret = vfs_resolve_virtual_path_task_follow(interpreter, resolved, resolved_len,
+                                               get_current() ? get_current()->fs : NULL, true);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+static int exec_validate_elf_interpreter_for_path(const char *path) {
+    void *image = NULL;
+    size_t image_size = 0;
+    struct exec_elf_load_plan plan;
+
+    if (exec_read_elf_load_plan(path, &image, &image_size, &plan) != 0) {
+        return -1;
+    }
+    free(image);
+
+    if (plan.interpreter[0] != '\0') {
+        char resolved_interp[MAX_PATH];
+        void *interp_image = NULL;
+        size_t interp_image_size = 0;
+        struct exec_elf_load_plan interp_plan;
+
+        if (exec_resolve_elf_interpreter(plan.interpreter, resolved_interp, sizeof(resolved_interp)) != 0) {
+            return -1;
+        }
+        if (exec_read_elf_load_plan(resolved_interp, &interp_image, &interp_image_size, &interp_plan) != 0) {
+            return -1;
+        }
+        free(interp_image);
+    }
+
+    (void)image_size;
+    return 0;
+}
+
 static int exec_read_shebang_line(const char *path, char *buffer, size_t buffer_len) {
     char resolved_path[MAX_PATH];
     if (!path || !buffer || buffer_len < 3) {
@@ -653,6 +722,11 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
         exec_record_script_image(task, resolved_path, interpreter_path);
         launch_status = entry(script_argc, script_argv, envp_copy);
     } else if (type == EXEC_IMAGE_ELF) {
+        if (exec_validate_elf_interpreter_for_path(resolved_path) != 0) {
+            exec_free_argv(argv_copy);
+            exec_free_argv(envp_copy);
+            return -1;
+        }
         if (task_record_exec_strings_impl(argv_copy, envp_copy) < 0) {
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
@@ -774,6 +848,10 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
     void *image = NULL;
     size_t image_size = 0;
     struct exec_elf_load_plan plan;
+    void *interp_image = NULL;
+    size_t interp_image_size = 0;
+    struct exec_elf_load_plan interp_plan;
+    char resolved_interp[MAX_PATH] = {0};
 
     (void)argc;
     (void)argv;
@@ -784,25 +862,33 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
         return -1;
     }
 
-    if (exec_read_image_file(path, &image, &image_size) != 0) {
+    if (exec_read_elf_load_plan(path, &image, &image_size, &plan) != 0) {
         return -1;
     }
 
-    if (exec_build_elf_load_plan(image, image_size, &plan) != 0) {
-        free(image);
-        return -1;
+    if (plan.interpreter[0] != '\0') {
+        if (exec_resolve_elf_interpreter(plan.interpreter, resolved_interp, sizeof(resolved_interp)) != 0) {
+            free(image);
+            return -1;
+        }
+        if (exec_read_elf_load_plan(resolved_interp, &interp_image, &interp_image_size, &interp_plan) != 0) {
+            free(image);
+            return -1;
+        }
     }
 
     if (!task->mm) {
         task->mm = calloc(1, sizeof(*task->mm));
         if (!task->mm) {
             free(image);
+            free(interp_image);
             errno = ENOMEM;
             return -1;
         }
     }
 
     free(task->mm->exec_image_base);
+    free(task->mm->interp_image_base);
     task->mm->exec_image_base = image;
     task->mm->exec_image_size = image_size;
     task->mm->exec_entry = plan.ehdr.e_entry;
@@ -814,6 +900,28 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
         task->mm->exec_segments[i].filesz = plan.segments[i].filesz;
         task->mm->exec_segments[i].offset = plan.segments[i].offset;
         task->mm->exec_segments[i].flags = plan.segments[i].flags;
+    }
+
+    task->mm->interp_image_base = interp_image;
+    task->mm->interp_image_size = interp_image_size;
+    task->mm->interp_entry = 0;
+    task->mm->interp_segment_count = 0;
+    task->mm->interp_path[0] = '\0';
+    memset(task->mm->interp_segments, 0, sizeof(task->mm->interp_segments));
+    task->mm->entry_point = plan.ehdr.e_entry;
+    if (interp_image) {
+        task->mm->interp_entry = interp_plan.ehdr.e_entry;
+        task->mm->interp_segment_count = interp_plan.segment_count;
+        for (uint32_t i = 0; i < interp_plan.segment_count; i++) {
+            task->mm->interp_segments[i].vaddr = interp_plan.segments[i].vaddr;
+            task->mm->interp_segments[i].memsz = interp_plan.segments[i].memsz;
+            task->mm->interp_segments[i].filesz = interp_plan.segments[i].filesz;
+            task->mm->interp_segments[i].offset = interp_plan.segments[i].offset;
+            task->mm->interp_segments[i].flags = interp_plan.segments[i].flags;
+        }
+        strncpy(task->mm->interp_path, resolved_interp, sizeof(task->mm->interp_path) - 1);
+        task->mm->interp_path[sizeof(task->mm->interp_path) - 1] = '\0';
+        task->mm->entry_point = interp_plan.ehdr.e_entry;
     }
 
     strncpy(task->exec_image->path, path, sizeof(task->exec_image->path) - 1);

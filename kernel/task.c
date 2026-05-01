@@ -420,6 +420,7 @@ void free_task(struct task_struct *task) {
         atomic_fetch_sub(&task->tty->refs, 1);
     if (task->mm) {
         free(task->mm->exec_image_base);
+        free(task->mm->interp_image_base);
         free(task->mm);
     }
     if (task->exec_image)

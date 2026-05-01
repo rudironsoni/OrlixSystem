@@ -19,6 +19,9 @@ extern int exec_syscall_contract_fexecve_uses_fd_path(void);
 extern int exec_syscall_contract_fexecve_rejects_invalid_fd(void);
 extern int exec_syscall_contract_elf64_aarch64_exec_loads_virtual_image(void);
 extern int exec_syscall_contract_elf_program_headers_create_virtual_segments(void);
+extern int exec_syscall_contract_elf_interp_loads_virtual_loader_image(void);
+extern int exec_syscall_contract_elf_missing_interp_returns_enoent_without_transition(void);
+extern int exec_syscall_contract_elf_invalid_interp_returns_enoexec_without_transition(void);
 extern int exec_syscall_contract_elf_dyn_image_is_accepted(void);
 extern int exec_syscall_contract_elf_interp_without_nul_returns_enoexec_without_transition(void);
 extern int exec_syscall_contract_elf_too_many_load_segments_returns_enoexec_without_transition(void);
@@ -101,6 +104,18 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testElfProgramHeadersCreateVirtualSegments {
     XCTAssertEqual(exec_syscall_contract_elf_program_headers_create_virtual_segments(), 0, @"errno %d", errno);
+}
+
+- (void)testElfInterpLoadsVirtualLoaderImage {
+    XCTAssertEqual(exec_syscall_contract_elf_interp_loads_virtual_loader_image(), 0, @"errno %d", errno);
+}
+
+- (void)testElfMissingInterpReturnsEnoentWithoutTransition {
+    XCTAssertEqual(exec_syscall_contract_elf_missing_interp_returns_enoent_without_transition(), 0, @"errno %d", errno);
+}
+
+- (void)testElfInvalidInterpReturnsEnoexecWithoutTransition {
+    XCTAssertEqual(exec_syscall_contract_elf_invalid_interp_returns_enoexec_without_transition(), 0, @"errno %d", errno);
 }
 
 - (void)testElfDynImageIsAccepted {
