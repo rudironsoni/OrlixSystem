@@ -1,7 +1,9 @@
 #include "NativeSyscallContract.h"
 
 #include <asm/unistd.h>
+#include <asm/ioctls.h>
 #include <linux/fcntl.h>
+#include <linux/mman.h>
 #include <linux/stat.h>
 #include <linux/time_types.h>
 
@@ -14,10 +16,21 @@
 
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
+#include "kernel/task.h"
 #include "runtime/native/registry.h"
 #include "runtime/syscall.h"
 
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
+
+struct native_syscall_dirent64 {
+    unsigned long long d_ino;
+    long long d_off;
+    unsigned short d_reclen;
+    unsigned char d_type;
+    char d_name[];
+};
+
+static int init_entry_seen;
 
 static int close_if_open(int fd) {
     if (fd >= 0 && fdtable_is_used_impl(fd)) {
@@ -100,6 +113,33 @@ static int native_syscall_entry(int argc, char **argv, char **envp) {
     return 42;
 }
 
+static int native_init_entry(int argc, char **argv, char **envp) {
+    char cwd[64];
+    long ret;
+
+    (void)envp;
+    if (argc != 1 || !argv || !argv[0] || strcmp(argv[0], "/sbin/init") != 0) {
+        errno = EPROTO;
+        return 81;
+    }
+
+    ret = syscall_dispatch_impl(__NR_getpid, 0, 0, 0, 0, 0, 0);
+    if (ret != 1) {
+        errno = EPROTO;
+        return 82;
+    }
+
+    memset(cwd, 0, sizeof(cwd));
+    ret = syscall_dispatch_impl(__NR_getcwd, (long)(uintptr_t)cwd, sizeof(cwd), 0, 0, 0, 0);
+    if (ret != 2 || strcmp(cwd, "/") != 0) {
+        errno = EPROTO;
+        return 83;
+    }
+
+    init_entry_seen = 1;
+    return 0;
+}
+
 int native_syscall_contract_dispatches_fd_pipe_and_procfs(void) {
     int pipefd[2] = {-1, -1};
     const char payload[] = "pipe-data";
@@ -172,6 +212,165 @@ out:
     close_if_open(pipefd[0]);
     close_if_open(pipefd[1]);
     return result;
+}
+
+int native_syscall_contract_dispatches_vm_identity_time_and_dirs(void) {
+    struct task_struct *task = get_current();
+    char cwd[64];
+    unsigned char dirbuf[512];
+    struct __kernel_timespec ts;
+    void *mapped;
+    int procfd = -1;
+    int nullfd = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_getpid, 0, 0, 0, 0, 0, 0);
+    if (ret != task->pid) {
+        errno = EPROTO;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_getppid, 0, 0, 0, 0, 0, 0);
+    if (ret != task->ppid) {
+        errno = EPROTO;
+        return -1;
+    }
+
+    memset(cwd, 0, sizeof(cwd));
+    ret = syscall_dispatch_impl(__NR_getcwd, (long)(uintptr_t)cwd, sizeof(cwd), 0, 0, 0, 0);
+    if (ret != 2 || strcmp(cwd, "/") != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_mmap, 0, 4096, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)ret;
+    if (task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, "A", 1) != 1) {
+        errno = EPROTO;
+        goto out_mmap;
+    }
+    ret = syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)mapped, 4096, PROT_READ, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mmap;
+    }
+    if (task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, "B", 1) >= 0 || errno != EACCES) {
+        errno = EPROTO;
+        goto out_mmap;
+    }
+
+    memset(&ts, 0, sizeof(ts));
+    ret = syscall_dispatch_impl(__NR_clock_gettime, 0, (long)(uintptr_t)&ts, 0, 0, 0, 0);
+    if (ret != 0 || ts.tv_nsec < 0 || ts.tv_nsec >= 1000000000L) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mmap;
+    }
+
+    procfd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)"/proc/self/fd",
+                                        O_RDONLY | O_DIRECTORY, 0, 0, 0);
+    if (procfd < 0) {
+        errno = -procfd;
+        goto out_mmap;
+    }
+    memset(dirbuf, 0, sizeof(dirbuf));
+    ret = syscall_dispatch_impl(__NR_getdents64, procfd, (long)(uintptr_t)dirbuf, sizeof(dirbuf), 0, 0, 0);
+    if (ret <= 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mmap;
+    }
+    if (((struct native_syscall_dirent64 *)dirbuf)->d_reclen == 0) {
+        errno = EPROTO;
+        goto out_mmap;
+    }
+
+    nullfd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)"/dev/null",
+                                        O_RDONLY, 0, 0, 0);
+    if (nullfd < 0) {
+        errno = -nullfd;
+        goto out_mmap;
+    }
+    ret = syscall_dispatch_impl(__NR_ioctl, nullfd, TIOCGWINSZ, (long)(uintptr_t)&ts, 0, 0, 0);
+    if (ret != -ENOTTY) {
+        errno = EPROTO;
+        goto out_mmap;
+    }
+
+    result = 0;
+
+out_mmap:
+    close_if_open(procfd);
+    close_if_open(nullfd);
+    ret = syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    if (result == 0 && ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        result = -1;
+    }
+    return result;
+}
+
+int native_syscall_contract_registers_native_artifact_descriptor(void) {
+    native_program_t program;
+
+    native_registry_clear();
+    if (native_register_artifact("//sbin///init", "/ixland/packages/core/init.xcframework",
+                                 "native-ios-arm64", native_init_entry) != 0) {
+        return -1;
+    }
+    if (native_lookup_program("/sbin/init", &program) != 0) {
+        native_registry_clear();
+        return -1;
+    }
+    if (strcmp(program.path, "/sbin/init") != 0 ||
+        strcmp(program.artifact_path, "/ixland/packages/core/init.xcframework") != 0 ||
+        strcmp(program.abi, "native-ios-arm64") != 0 ||
+        program.entry != native_init_entry) {
+        native_registry_clear();
+        errno = EPROTO;
+        return -1;
+    }
+    native_registry_clear();
+    return 0;
+}
+
+int native_syscall_contract_execs_sbin_init_through_syscall_surface(void) {
+    struct task_struct *task = get_current();
+    char *argv[] = {"/sbin/init", NULL};
+    char *envp[] = {"PATH=/bin:/usr/bin", NULL};
+    long ret;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    init_entry_seen = 0;
+    if (native_register_artifact("/sbin/init", "/ixland/packages/core/init.xcframework",
+                                 "native-ios-arm64", native_init_entry) != 0) {
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_execve, (long)(uintptr_t)"/sbin/init",
+                                (long)(uintptr_t)argv, (long)(uintptr_t)envp, 0, 0, 0);
+    if (ret != 0 || !init_entry_seen || strcmp(task->exe, "/sbin/init") != 0 ||
+        strcmp(task->comm, "init") != 0) {
+        native_registry_clear();
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+
+    native_registry_clear();
+    return 0;
 }
 
 int native_syscall_contract_returns_raw_negative_errno(void) {

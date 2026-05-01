@@ -31,6 +31,18 @@
     XCTAssertEqual(native_syscall_contract_dispatches_fd_pipe_and_procfs(), 0, @"errno %d", errno);
 }
 
+- (void)testDispatchesVmIdentityTimeAndDirs {
+    XCTAssertEqual(native_syscall_contract_dispatches_vm_identity_time_and_dirs(), 0, @"errno %d", errno);
+}
+
+- (void)testRegistersNativeArtifactDescriptor {
+    XCTAssertEqual(native_syscall_contract_registers_native_artifact_descriptor(), 0, @"errno %d", errno);
+}
+
+- (void)testExecsSbinInitThroughSyscallSurface {
+    XCTAssertEqual(native_syscall_contract_execs_sbin_init_through_syscall_surface(), 0, @"errno %d", errno);
+}
+
 - (void)testReturnsRawNegativeErrno {
     XCTAssertEqual(native_syscall_contract_returns_raw_negative_errno(), 0, @"errno %d", errno);
 }

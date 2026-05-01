@@ -48,10 +48,24 @@ int settimeofday_impl(const struct timeval *tv, const struct timezone *tz) {
  * ============================================================================ */
 
 int clock_gettime_impl(clockid_t clk_id, struct timespec *tp) {
-    (void)clk_id;
-    (void)tp;
-    errno = ENOSYS;
-    return -1;
+    uint64_t ns;
+
+    if (!tp) {
+        errno = EFAULT;
+        return -1;
+    }
+
+    switch (clk_id) {
+    case CLOCK_REALTIME:
+    case CLOCK_MONOTONIC:
+        ns = clock_gettime_nsec_np(clk_id);
+        tp->tv_sec = (time_t)(ns / 1000000000ULL);
+        tp->tv_nsec = (long)(ns % 1000000000ULL);
+        return 0;
+    default:
+        errno = EINVAL;
+        return -1;
+    }
 }
 
 int clock_getres_impl(clockid_t clk_id, struct timespec *res) {

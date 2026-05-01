@@ -2,18 +2,22 @@
 
 #include <asm/unistd.h>
 #include <linux/fcntl.h>
+#include <linux/mman.h>
 #include <linux/time_types.h>
 
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/poll.h>
 #include <sys/select.h>
+#include <time.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
+#include "../kernel/mm.h"
 #include "../kernel/task.h"
 
 extern int openat_impl(int dirfd, const char *pathname, int flags, linux_mode_t mode);
@@ -22,8 +26,12 @@ extern ssize_t write_impl(int fd, const void *buf, size_t count);
 extern int fcntl_impl(int fd, int cmd, ...);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int fstatat_impl(int dirfd, const char *pathname, struct linux_stat *statbuf, int flags);
+extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
+extern char *getcwd_impl(char *buf, size_t size);
+extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
+extern int clock_gettime_impl(clockid_t clk_id, struct timespec *tp);
 
 static long syscall_result(long ret) {
     if (ret < 0) {
@@ -81,6 +89,10 @@ long syscall_dispatch_impl(long number,
         return syscall_result((long)pipe2_impl((int *)(uintptr_t)arg0, (int)arg1));
     case __NR_fcntl:
         return syscall_result((long)fcntl_impl((int)arg0, (int)arg1, (int)arg2));
+    case __NR_ioctl:
+        return syscall_result((long)ioctl_impl((int)arg0, (unsigned long)arg1, (void *)(uintptr_t)arg2));
+    case __NR_getdents64:
+        return syscall_result((long)getdents64_impl((int)arg0, (void *)(uintptr_t)arg1, (size_t)arg2));
     case __NR_ppoll: {
         int timeout_ms = ppoll_timeout_ms((const struct __kernel_timespec *)(uintptr_t)arg2);
         if (timeout_ms == -2) {
@@ -96,6 +108,42 @@ long syscall_dispatch_impl(long number,
                                                  (struct linux_stat *)(uintptr_t)arg2, (int)arg3));
     case __NR_fstat:
         return syscall_result((long)fstat_impl((int)arg0, (struct linux_stat *)(uintptr_t)arg1));
+    case __NR_getcwd: {
+        char *buf = (char *)(uintptr_t)arg0;
+        size_t size = (size_t)arg1;
+        if (!getcwd_impl(buf, size)) {
+            return -(long)errno;
+        }
+        return (long)strlen(buf) + 1;
+    }
+    case __NR_getpid:
+        return (long)getpid_impl();
+    case __NR_getppid:
+        return (long)getppid_impl();
+    case __NR_mmap:
+        return syscall_result((long)(uintptr_t)mmap_impl((void *)(uintptr_t)arg0, (size_t)arg1,
+                                                         (int)arg2, (int)arg3, (int)arg4,
+                                                         (int64_t)arg5));
+    case __NR_mprotect:
+        return syscall_result((long)mprotect_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
+    case __NR_munmap:
+        return syscall_result((long)munmap_impl((void *)(uintptr_t)arg0, (size_t)arg1));
+    case __NR_clock_gettime: {
+        struct timespec host_ts;
+        struct __kernel_timespec *linux_ts = (struct __kernel_timespec *)(uintptr_t)arg1;
+        long ret;
+
+        if (!linux_ts) {
+            return -EFAULT;
+        }
+        ret = syscall_result((long)clock_gettime_impl((clockid_t)arg0, &host_ts));
+        if (ret < 0) {
+            return ret;
+        }
+        linux_ts->tv_sec = host_ts.tv_sec;
+        linux_ts->tv_nsec = host_ts.tv_nsec;
+        return 0;
+    }
     case __NR_execve:
         return syscall_result((long)execve((const char *)(uintptr_t)arg0,
                                            (char *const *)(uintptr_t)arg1,

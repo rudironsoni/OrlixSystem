@@ -1343,8 +1343,8 @@ int fexecve(int fd, char *const argv[], char *const envp[]) {
 }
 
 int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
-    native_entry_fn entry = native_lookup(path);
-    if (!entry) {
+    native_program_t program;
+    if (native_lookup_program(path, &program) != 0) {
         errno = ENOENT;
         return -1;
     }
@@ -1353,8 +1353,7 @@ int exec_native(struct task_struct *task, const char *path, int argc, char **arg
     task->exec_image->path[sizeof(task->exec_image->path) - 1] = '\0';
     task->exec_image->type = EXEC_IMAGE_NATIVE;
 
-    (void)task;  /* task is unused for native execution */
-    return entry(argc, argv, envp);
+    return program.entry(argc, argv, envp);
 }
 
 int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
