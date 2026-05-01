@@ -142,6 +142,19 @@ static int rename_apply_host_operation(const char *old_virtual_path, const char 
     return 0;
 }
 
+static int rename_apply_host_exchange(const char *old_virtual_path, const char *new_virtual_path,
+                                      const char *old_host_path, const char *new_host_path) {
+    if (rename_validate_same_route(old_virtual_path, new_virtual_path) != 0) {
+        return -1;
+    }
+
+    if (host_rename_exchange_impl(old_host_path, new_host_path) != 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
                           unsigned int flags) {
     char resolved_old[MAX_PATH];
@@ -172,8 +185,13 @@ static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const
         return -1;
     }
 
-    if ((flags & (AT_RENAME_EXCHANGE | AT_RENAME_WHITEOUT)) != 0) {
+    if ((flags & AT_RENAME_WHITEOUT) != 0) {
         errno = EOPNOTSUPP;
+        return -1;
+    }
+
+    if ((flags & AT_RENAME_EXCHANGE) != 0 && (flags & AT_RENAME_NOREPLACE) != 0) {
+        errno = EINVAL;
         return -1;
     }
 
@@ -190,6 +208,14 @@ static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const
     if (ret != 0) {
         errno = -ret;
         return -1;
+    }
+
+    if ((flags & AT_RENAME_EXCHANGE) != 0) {
+        ret = rename_apply_host_exchange(resolved_old, resolved_new, translated_old, translated_new);
+        if (ret == 0) {
+            vfs_exchange_path_metadata(resolved_old, resolved_new);
+        }
+        return ret;
     }
 
     ret = rename_apply_host_operation(resolved_old, resolved_new, translated_old, translated_new, host_flags);

@@ -41,6 +41,7 @@ extern int unlinkat(int dirfd, const char *pathname, int flags);
 extern int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);
 extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
 extern long readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
+extern int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);
 extern void cred_reset_to_defaults(void);
 extern int chmod(const char *pathname, linux_mode_t mode);
 extern int fchmod(int fd, linux_mode_t mode);
@@ -1262,6 +1263,93 @@ out:
     close_impl(dirfd);
     unlink_impl("/tmp/vfs-at-symlink-dir/link");
     rmdir_impl("/tmp/vfs-at-symlink-dir");
+    return ret;
+}
+
+int vfs_contract_renameat2_exchange_swaps_files_through_virtual_dirfds(void) {
+    int dirfd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-at-rename-dir/left");
+    unlink_impl("/tmp/vfs-at-rename-dir/right");
+    rmdir_impl("/tmp/vfs-at-rename-dir");
+    if (mkdir_impl("/tmp/vfs-at-rename-dir", 0700) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-at-rename-dir/left", "left") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-at-rename-dir/right", "right") != 0) {
+        goto out;
+    }
+    dirfd = open_impl("/tmp/vfs-at-rename-dir", O_RDONLY | O_DIRECTORY, 0);
+    if (dirfd < 0) {
+        goto out;
+    }
+
+    if (renameat2(dirfd, "left", dirfd, "right", AT_RENAME_EXCHANGE) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-at-rename-dir/left", "right") != 0 ||
+        vfs_contract_read_file_exact("/tmp/vfs-at-rename-dir/right", "left") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_impl(dirfd);
+    unlink_impl("/tmp/vfs-at-rename-dir/left");
+    unlink_impl("/tmp/vfs-at-rename-dir/right");
+    rmdir_impl("/tmp/vfs-at-rename-dir");
+    return ret;
+}
+
+int vfs_contract_renameat2_exchange_swaps_virtual_metadata(void) {
+    struct linux_stat left_st;
+    struct linux_stat right_st;
+    int dirfd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-at-rename-dir/left");
+    unlink_impl("/tmp/vfs-at-rename-dir/right");
+    rmdir_impl("/tmp/vfs-at-rename-dir");
+    if (mkdir_impl("/tmp/vfs-at-rename-dir", 0700) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-at-rename-dir/left", "left") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-at-rename-dir/right", "right") != 0) {
+        goto out;
+    }
+    if (chown("/tmp/vfs-at-rename-dir/left", 1000, 1000) != 0 ||
+        chown("/tmp/vfs-at-rename-dir/right", 2000, 2000) != 0) {
+        goto out;
+    }
+    dirfd = open_impl("/tmp/vfs-at-rename-dir", O_RDONLY | O_DIRECTORY, 0);
+    if (dirfd < 0) {
+        goto out;
+    }
+
+    if (renameat2(dirfd, "left", dirfd, "right", AT_RENAME_EXCHANGE) != 0) {
+        goto out;
+    }
+    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-at-rename-dir/left", &left_st, 0) != 0 ||
+        vfs_fstatat(AT_FDCWD, "/tmp/vfs-at-rename-dir/right", &right_st, 0) != 0) {
+        goto out;
+    }
+    if (left_st.st_uid != 2000 || right_st.st_uid != 1000) {
+        errno = EIO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_impl(dirfd);
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-at-rename-dir/left");
+    unlink_impl("/tmp/vfs-at-rename-dir/right");
+    rmdir_impl("/tmp/vfs-at-rename-dir");
     return ret;
 }
 

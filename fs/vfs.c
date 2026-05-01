@@ -326,6 +326,40 @@ void vfs_rename_path_metadata(const char *old_resolved_vpath, const char *new_re
     fs_mutex_unlock(&vfs_metadata_lock);
 }
 
+void vfs_exchange_path_metadata(const char *left_resolved_vpath, const char *right_resolved_vpath) {
+    int left_idx;
+    int right_idx;
+
+    if (!left_resolved_vpath || !right_resolved_vpath || strcmp(left_resolved_vpath, right_resolved_vpath) == 0) {
+        return;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    left_idx = vfs_metadata_find_locked(left_resolved_vpath);
+    right_idx = vfs_metadata_find_locked(right_resolved_vpath);
+
+    if (left_idx >= 0 && right_idx >= 0) {
+        linux_uid_t uid = vfs_metadata_table[left_idx].uid;
+        linux_gid_t gid = vfs_metadata_table[left_idx].gid;
+        linux_mode_t mode = vfs_metadata_table[left_idx].mode;
+
+        vfs_metadata_table[left_idx].uid = vfs_metadata_table[right_idx].uid;
+        vfs_metadata_table[left_idx].gid = vfs_metadata_table[right_idx].gid;
+        vfs_metadata_table[left_idx].mode = vfs_metadata_table[right_idx].mode;
+        vfs_metadata_table[right_idx].uid = uid;
+        vfs_metadata_table[right_idx].gid = gid;
+        vfs_metadata_table[right_idx].mode = mode;
+    } else if (left_idx >= 0) {
+        vfs_copy_string(right_resolved_vpath, vfs_metadata_table[left_idx].path,
+                        sizeof(vfs_metadata_table[left_idx].path));
+    } else if (right_idx >= 0) {
+        vfs_copy_string(left_resolved_vpath, vfs_metadata_table[right_idx].path,
+                        sizeof(vfs_metadata_table[right_idx].path));
+    }
+
+    fs_mutex_unlock(&vfs_metadata_lock);
+}
+
 static bool vfs_cred_has_mode_permission(const struct cred *cred, const struct linux_stat *st,
                                          linux_mode_t mask) {
     linux_mode_t perm;

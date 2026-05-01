@@ -1296,6 +1296,18 @@ extern void cred_reset_to_defaults(void);
                    @"symlinkat/readlinkat should resolve through virtual dirfds, errno %d", errno);
 }
 
+- (void)testRenameat2ExchangeSwapsFilesThroughVirtualDirfds {
+    extern int vfs_contract_renameat2_exchange_swaps_files_through_virtual_dirfds(void);
+    XCTAssertEqual(vfs_contract_renameat2_exchange_swaps_files_through_virtual_dirfds(), 0,
+                   @"renameat2 exchange should swap files through virtual dirfds, errno %d", errno);
+}
+
+- (void)testRenameat2ExchangeSwapsVirtualMetadata {
+    extern int vfs_contract_renameat2_exchange_swaps_virtual_metadata(void);
+    XCTAssertEqual(vfs_contract_renameat2_exchange_swaps_virtual_metadata(), 0,
+                   @"renameat2 exchange should swap virtual metadata with files, errno %d", errno);
+}
+
 - (void)testRootChownUpdatesVirtualOwner {
     extern int vfs_contract_root_chown_updates_virtual_owner(void);
     XCTAssertEqual(vfs_contract_root_chown_updates_virtual_owner(), 0,

@@ -317,6 +317,7 @@ int vfs_check_parent_mutation_permission(const char *resolved_vpath);
 void vfs_record_created_path(const char *resolved_vpath, linux_mode_t mode);
 void vfs_forget_path_metadata(const char *resolved_vpath);
 void vfs_rename_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath);
+void vfs_exchange_path_metadata(const char *left_resolved_vpath, const char *right_resolved_vpath);
 void vfs_apply_stat_metadata(const char *resolved_vpath, struct linux_stat *statbuf);
 int vfs_chmod_metadata(const char *resolved_vpath, linux_mode_t mode);
 int vfs_chown_metadata(const char *resolved_vpath, linux_uid_t owner, linux_gid_t group);

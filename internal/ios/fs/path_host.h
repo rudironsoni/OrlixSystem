@@ -26,6 +26,7 @@ int host_access_impl(const char *path, int mode);
 
 /* Host rename operation (Darwin renameatx_np) */
 int host_renameatx_np_impl(int fromfd, const char *from, int tofd, const char *to, unsigned int flags);
+int host_rename_exchange_impl(const char *from, const char *to);
 
 /* Directory operations */
 int host_mkdir_impl(const char *pathname, uint32_t mode);

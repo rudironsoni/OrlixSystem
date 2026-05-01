@@ -18,6 +18,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 
 #include "errno_host.h"
@@ -85,6 +86,11 @@ int host_access_impl(const char *path, int mode)
 int host_renameatx_np_impl(int fromfd, const char *from, int tofd, const char *to, unsigned int flags)
 {
     return renameatx_np(fromfd, from, tofd, to, flags);
+}
+
+int host_rename_exchange_impl(const char *from, const char *to)
+{
+    return renameatx_np(AT_FDCWD, from, AT_FDCWD, to, RENAME_SWAP);
 }
 
 /* Directory operations */
