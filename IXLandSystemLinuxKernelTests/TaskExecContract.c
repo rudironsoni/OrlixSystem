@@ -1,4 +1,5 @@
 #include <linux/fcntl.h>
+#include <linux/prctl.h>
 #include <linux/stat.h>
 
 #include <errno.h>
@@ -19,6 +20,7 @@ extern int chmod(const char *pathname, linux_mode_t mode);
 extern int chown(const char *pathname, uid_t owner, gid_t group);
 extern int setuid_impl(uid_t uid);
 extern int setgid_impl(gid_t gid);
+extern int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);
 extern void cred_reset_to_defaults(void);
 
 static int close_if_open(int fd) {
@@ -338,4 +340,121 @@ out:
     cred_reset_to_defaults();
     unlink_impl("/tmp/task-exec-sgid-file");
     return ret;
+}
+
+int task_exec_contract_no_new_privs_blocks_setuid_exec_gain(void) {
+    struct cred *cred;
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-nnp-suid-file");
+
+    fd = open_impl("/tmp/task-exec-nnp-suid-file", O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    if (chown("/tmp/task-exec-nnp-suid-file", 2000, 3000) != 0) {
+        goto out;
+    }
+    if (chmod("/tmp/task-exec-nnp-suid-file", S_ISUID | 0755) != 0) {
+        goto out;
+    }
+    if (prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        goto out;
+    }
+    if (prctl_impl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    if (task_exec_transition_impl("/tmp/task-exec-nnp-suid-file", "nnp-suid-file") != 0) {
+        goto out;
+    }
+
+    cred = get_current_cred();
+    if (!cred || cred->uid != 1000 || cred->euid != 1000 || cred->suid != 1000) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-nnp-suid-file");
+    return ret;
+}
+
+int task_exec_contract_no_new_privs_blocks_setgid_exec_gain(void) {
+    struct cred *cred;
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-nnp-sgid-file");
+
+    fd = open_impl("/tmp/task-exec-nnp-sgid-file", O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    if (chown("/tmp/task-exec-nnp-sgid-file", 2000, 3000) != 0) {
+        goto out;
+    }
+    if (chmod("/tmp/task-exec-nnp-sgid-file", S_ISGID | 0755) != 0) {
+        goto out;
+    }
+    if (prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        goto out;
+    }
+    if (setgid_impl(1000) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    if (task_exec_transition_impl("/tmp/task-exec-nnp-sgid-file", "nnp-sgid-file") != 0) {
+        goto out;
+    }
+
+    cred = get_current_cred();
+    if (!cred || cred->gid != 1000 || cred->egid != 1000 || cred->sgid != 1000) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-nnp-sgid-file");
+    return ret;
+}
+
+int task_exec_contract_no_new_privs_is_irreversible(void) {
+    cred_reset_to_defaults();
+    if (prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        return -1;
+    }
+    errno = 0;
+    if (prctl_impl(PR_SET_NO_NEW_PRIVS, 0, 0, 0, 0) != -1 || errno != EINVAL) {
+        errno = EPROTO;
+        return -1;
+    }
+    if (prctl_impl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) {
+        errno = EPROTO;
+        return -1;
+    }
+    cred_reset_to_defaults();
+    return 0;
 }

@@ -42,6 +42,7 @@ struct cred {
     uint32_t sgid;          /* Saved group ID */
     gid_t *groups;          /* Supplementary group IDs */
     size_t group_count;     /* Number of supplementary groups */
+    bool no_new_privs;      /* Blocks exec-time privilege gains */
 
     /* Reference counting for credential sharing */
     int refs;
@@ -127,6 +128,10 @@ int cred_setgroups(struct cred *cred, size_t size, const gid_t *list);
 /* Apply executable owner and mode metadata during exec */
 void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid, uint32_t mode);
 
+/* Virtual no_new_privs state */
+bool cred_no_new_privs(const struct cred *cred);
+int cred_set_no_new_privs(struct cred *cred);
+
 /* ============================================================================
  * INTERNAL IMPLEMENTATION ENTRY POINTS
  * ============================================================================
@@ -157,6 +162,9 @@ int getgroups_impl(int size, gid_t list[]);
 
 /* Set supplementary groups - virtual implementation */
 int setgroups_impl(int size, const gid_t *list);
+
+/* prctl - virtual implementation */
+int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);
 
 #ifdef __cplusplus
 }

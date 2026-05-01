@@ -11,10 +11,12 @@
  */
 
 #include <errno.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <linux/limits.h>
+#include <linux/prctl.h>
 #include <linux/stat.h>
 
 #include "cred_internal.h"
@@ -44,6 +46,7 @@ static struct cred global_init_cred = {
     .sgid = KERNEL_DEFAULT_SGID,
     .groups = NULL,
     .group_count = 0,
+    .no_new_privs = false,
     .refs = 1
 };
 
@@ -91,6 +94,7 @@ struct cred *dup_cred(const struct cred *cred) {
             memcpy(new->groups, cred->groups, cred->group_count * sizeof(gid_t));
             new->group_count = cred->group_count;
         }
+        new->no_new_privs = cred->no_new_privs;
         new->refs = 1;
     }
     return new;
@@ -108,6 +112,7 @@ void cred_init_defaults(struct cred *cred) {
     cred->sgid = KERNEL_DEFAULT_SGID;
     cred->groups = NULL;
     cred->group_count = 0;
+    cred->no_new_privs = false;
 }
 
 int cred_init(void) {
@@ -134,6 +139,7 @@ void cred_reset_to_defaults(void) {
     free(global_init_cred.groups);
     global_init_cred.groups = NULL;
     global_init_cred.group_count = 0;
+    global_init_cred.no_new_privs = false;
     global_init_cred.refs = 1;
     
     /* Reset current_cred pointer to point to global_init_cred */
@@ -468,15 +474,27 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
         return;
     }
 
-    if ((mode & S_ISUID) != 0) {
+    if (!cred->no_new_privs && (mode & S_ISUID) != 0) {
         cred->euid = file_uid;
     }
-    if ((mode & S_ISGID) != 0) {
+    if (!cred->no_new_privs && (mode & S_ISGID) != 0) {
         cred->egid = file_gid;
     }
 
     cred->suid = cred->euid;
     cred->sgid = cred->egid;
+}
+
+bool cred_no_new_privs(const struct cred *cred) {
+    return cred && cred->no_new_privs;
+}
+
+int cred_set_no_new_privs(struct cred *cred) {
+    if (!cred) {
+        return -EINVAL;
+    }
+    cred->no_new_privs = true;
+    return 0;
 }
 
 /* ============================================================================
@@ -578,6 +596,32 @@ int setgroups_impl(int size, const gid_t *list) {
     return 0;
 }
 
+int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5) {
+    struct cred *cred = get_current_cred();
+
+    switch (option) {
+    case PR_SET_NO_NEW_PRIVS:
+        if (arg2 != 1 || arg3 != 0 || arg4 != 0 || arg5 != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (cred_set_no_new_privs(cred) < 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        return 0;
+    case PR_GET_NO_NEW_PRIVS:
+        if (arg2 != 0 || arg3 != 0 || arg4 != 0 || arg5 != 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        return cred_no_new_privs(cred) ? 1 : 0;
+    default:
+        errno = EINVAL;
+        return -1;
+    }
+}
+
 /* ============================================================================
  * PUBLIC CANONICAL WRAPPERS
  * ============================================================================
@@ -614,4 +658,23 @@ __attribute__((visibility("default"))) int getgroups(int size, gid_t list[]) {
 
 __attribute__((visibility("default"))) int setgroups(int size, const gid_t *list) {
     return setgroups_impl(size, list);
+}
+
+__attribute__((visibility("default"))) int prctl(int option, ...) {
+    va_list ap;
+    unsigned long arg2;
+    unsigned long arg3;
+    unsigned long arg4;
+    unsigned long arg5;
+    int ret;
+
+    va_start(ap, option);
+    arg2 = va_arg(ap, unsigned long);
+    arg3 = va_arg(ap, unsigned long);
+    arg4 = va_arg(ap, unsigned long);
+    arg5 = va_arg(ap, unsigned long);
+    va_end(ap);
+
+    ret = prctl_impl(option, arg2, arg3, arg4, arg5);
+    return ret;
 }

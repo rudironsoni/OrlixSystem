@@ -202,6 +202,7 @@ extern void cred_reset_to_defaults(void);
     XCTAssertEqual(cred->suid, 0u, @"Default cred SUID should be 0");
     XCTAssertEqual(cred->sgid, 0u, @"Default cred SGID should be 0");
     XCTAssertEqual(cred->group_count, (size_t)0, @"Default cred should have no supplementary groups");
+    XCTAssertFalse(cred->no_new_privs, @"Default cred should allow exec privilege transitions");
 
     free_cred(cred);
 }

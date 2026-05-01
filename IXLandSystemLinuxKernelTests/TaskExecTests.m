@@ -15,6 +15,9 @@ extern int task_exec_contract_truncates_comm_to_task_comm_len_minus_one(void);
 extern int task_exec_contract_preserves_task_identity_and_non_exec_state(void);
 extern int task_exec_contract_setuid_mode_updates_virtual_effective_uid(void);
 extern int task_exec_contract_setgid_mode_updates_virtual_effective_gid(void);
+extern int task_exec_contract_no_new_privs_blocks_setuid_exec_gain(void);
+extern int task_exec_contract_no_new_privs_blocks_setgid_exec_gain(void);
+extern int task_exec_contract_no_new_privs_is_irreversible(void);
 
 @interface TaskExecTests : XCTestCase
 @end
@@ -75,6 +78,18 @@ extern int task_exec_contract_setgid_mode_updates_virtual_effective_gid(void);
 
 - (void)testSetgidModeUpdatesVirtualEffectiveGid {
     XCTAssertEqual(task_exec_contract_setgid_mode_updates_virtual_effective_gid(), 0, @"errno %d", errno);
+}
+
+- (void)testNoNewPrivsBlocksSetuidExecGain {
+    XCTAssertEqual(task_exec_contract_no_new_privs_blocks_setuid_exec_gain(), 0, @"errno %d", errno);
+}
+
+- (void)testNoNewPrivsBlocksSetgidExecGain {
+    XCTAssertEqual(task_exec_contract_no_new_privs_blocks_setgid_exec_gain(), 0, @"errno %d", errno);
+}
+
+- (void)testNoNewPrivsIsIrreversible {
+    XCTAssertEqual(task_exec_contract_no_new_privs_is_irreversible(), 0, @"errno %d", errno);
 }
 
 @end
