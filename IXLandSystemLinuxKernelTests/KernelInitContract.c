@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <string.h>
 
 #ifndef S_IFMT
@@ -21,13 +22,17 @@
 #include "fs/vfs.h"
 #include "kernel/init.h"
 #include "kernel/task.h"
+#include "runtime/native/registry.h"
 
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
+extern long write_impl(int fd, const void *buf, size_t count);
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
 extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
+extern int unlink_impl(const char *pathname);
+extern int kernel_exec_init(const char *preferred_path, char *const argv[], char *const envp[]);
 
 struct linux_dirent64 {
     uint64_t d_ino;
@@ -85,6 +90,69 @@ static int dir_contains_name(int fd, const char *needle) {
         offset += entry->d_reclen;
     }
 
+    return 0;
+}
+
+static int create_exec_file(const char *path, const char *content) {
+    int fd;
+    size_t len;
+
+    fd = open_impl(path, O_WRONLY | O_CREAT | O_TRUNC, 0700);
+    if (fd < 0) {
+        return -1;
+    }
+
+    len = content ? strlen(content) : 0;
+    if (len > 0 && write_impl(fd, content, len) != (long)len) {
+        int saved_errno = errno;
+        close_impl(fd);
+        errno = saved_errno;
+        return -1;
+    }
+
+    return close_impl(fd);
+}
+
+static int reset_boot_state(void) {
+    native_registry_clear();
+    if (kernel_shutdown() != 0) {
+        return -1;
+    }
+    return start_kernel();
+}
+
+static int captured_argc;
+static char captured_argv[8][128];
+static char captured_env0[128];
+
+static void clear_captured_init(void) {
+    captured_argc = 0;
+    memset(captured_argv, 0, sizeof(captured_argv));
+    memset(captured_env0, 0, sizeof(captured_env0));
+}
+
+static int native_capture_init(int argc, char **argv, char **envp) {
+    int i;
+
+    captured_argc = argc;
+    for (i = 0; i < argc && i < 8; i++) {
+        if (argv && argv[i]) {
+            size_t len = strlen(argv[i]);
+            if (len >= sizeof(captured_argv[i])) {
+                errno = ENAMETOOLONG;
+                return -1;
+            }
+            memcpy(captured_argv[i], argv[i], len + 1);
+        }
+    }
+    if (envp && envp[0]) {
+        size_t len = strlen(envp[0]);
+        if (len >= sizeof(captured_env0)) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        memcpy(captured_env0, envp[0], len + 1);
+    }
     return 0;
 }
 
@@ -452,4 +520,293 @@ int kernel_init_contract_kernel_shutdown_and_reboot_restores_init_state(void) {
         return -1;
     }
     return 0;
+}
+
+int kernel_init_contract_exec_preferred_init_launches_pid1(void) {
+    struct task_struct *task;
+    char *argv[] = {"synthetic-init", "--boot", NULL};
+    char *envp[] = {"INIT=preferred", NULL};
+    int result = -1;
+
+    if (reset_boot_state() != 0) {
+        return -1;
+    }
+    clear_captured_init();
+    if (native_register("/tmp/preferred-init", native_capture_init) != 0) {
+        goto out;
+    }
+    if (kernel_exec_init("/tmp/preferred-init", argv, envp) != 0) {
+        goto out;
+    }
+
+    task = get_current();
+    if (!task || task->pid != 1 || strcmp(task->exe, "/tmp/preferred-init") != 0 ||
+        strcmp(task->comm, "synthetic-init") != 0 || !atomic_load(&task->execed)) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (captured_argc != 2 || strcmp(captured_argv[0], "synthetic-init") != 0 ||
+        strcmp(captured_argv[1], "--boot") != 0 || strcmp(captured_env0, "INIT=preferred") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        reset_boot_state();
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int kernel_init_contract_exec_init_search_uses_first_existing_candidate(void) {
+    struct task_struct *task;
+    int result = -1;
+
+    if (reset_boot_state() != 0) {
+        return -1;
+    }
+    clear_captured_init();
+    if (native_register("/bin/sh", native_capture_init) != 0 ||
+        native_register("/sbin/init", native_capture_init) != 0) {
+        goto out;
+    }
+    if (kernel_exec_init(NULL, NULL, NULL) != 0) {
+        goto out;
+    }
+
+    task = get_current();
+    if (!task || task->pid != 1 || strcmp(task->exe, "/sbin/init") != 0 ||
+        strcmp(task->comm, "init") != 0 || !atomic_load(&task->execed)) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (captured_argc != 1 || strcmp(captured_argv[0], "/sbin/init") != 0 ||
+        strcmp(captured_env0, "HOME=/") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        reset_boot_state();
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int kernel_init_contract_exec_init_returns_enoent_when_no_candidate_exists(void) {
+    int result = -1;
+
+    if (reset_boot_state() != 0) {
+        return -1;
+    }
+    clear_captured_init();
+    errno = 0;
+    if (kernel_exec_init("/tmp/missing-init", NULL, NULL) != -1 || errno != ENOENT) {
+        errno = EPROTO;
+        goto out;
+    }
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        reset_boot_state();
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int kernel_init_contract_exec_init_preserves_pid1_identity(void) {
+    struct task_struct *task;
+    int result = -1;
+
+    if (reset_boot_state() != 0) {
+        return -1;
+    }
+    clear_captured_init();
+    if (native_register("/sbin/init", native_capture_init) != 0 ||
+        kernel_exec_init(NULL, NULL, NULL) != 0) {
+        goto out;
+    }
+
+    task = get_current();
+    if (!task || task != init_task || task->pid != 1 || task->tgid != 1 ||
+        task->ppid != 0 || task->pgid != 1 || task->sid != 1 ||
+        atomic_load(&task->state) != TASK_RUNNING) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        reset_boot_state();
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int kernel_init_contract_exec_init_updates_proc_self_exe_cmdline_comm(void) {
+    char buf[512];
+    ssize_t nread;
+    int fd;
+    int result = -1;
+
+    if (reset_boot_state() != 0) {
+        return -1;
+    }
+    clear_captured_init();
+    if (native_register("/sbin/init", native_capture_init) != 0 ||
+        kernel_exec_init(NULL, NULL, NULL) != 0) {
+        goto out;
+    }
+
+    nread = readlink_impl("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (nread < 0) {
+        goto out;
+    }
+    buf[nread] = '\0';
+    if (strcmp(buf, "/sbin/init") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    fd = open_impl("/proc/self/cmdline", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = read_impl(fd, buf, sizeof(buf));
+    close_impl(fd);
+    if (nread <= 0 || !buffer_contains(buf, (size_t)nread, "/sbin/init")) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    fd = open_impl("/proc/self/comm", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = read_impl(fd, buf, sizeof(buf) - 1);
+    close_impl(fd);
+    if (nread <= 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    buf[nread] = '\0';
+    if (strcmp(buf, "init\n") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    fd = open_impl("/proc/1/status", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = read_impl(fd, buf, sizeof(buf) - 1);
+    close_impl(fd);
+    if (nread <= 0 || !buffer_contains(buf, (size_t)nread, "Name:\tinit\n") ||
+        !buffer_contains(buf, (size_t)nread, "Pid:\t1\n")) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        reset_boot_state();
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int kernel_init_contract_exec_init_closes_cloexec_only(void) {
+    int cloexec_fd = -1;
+    int keep_fd = -1;
+    int result = -1;
+
+    if (reset_boot_state() != 0) {
+        return -1;
+    }
+    clear_captured_init();
+    cloexec_fd = open_impl("/dev/null", O_RDONLY | O_CLOEXEC, 0);
+    keep_fd = open_impl("/dev/null", O_RDONLY, 0);
+    if (cloexec_fd < 0 || keep_fd < 0) {
+        goto out;
+    }
+    if (native_register("/sbin/init", native_capture_init) != 0 ||
+        kernel_exec_init(NULL, NULL, NULL) != 0) {
+        goto out;
+    }
+    if (fdtable_is_used_impl(cloexec_fd) || !fdtable_is_used_impl(keep_fd)) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (keep_fd >= 0 && fdtable_is_used_impl(keep_fd)) {
+            close_impl(keep_fd);
+        }
+        if (cloexec_fd >= 0 && fdtable_is_used_impl(cloexec_fd)) {
+            close_impl(cloexec_fd);
+        }
+        reset_boot_state();
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int kernel_init_contract_exec_script_init_uses_interpreter(void) {
+    int result = -1;
+
+    if (reset_boot_state() != 0) {
+        return -1;
+    }
+    clear_captured_init();
+    unlink_impl("/tmp/init-script");
+    if (create_exec_file("/tmp/init-script", "#!/usr/bin/init-interp\n") != 0) {
+        goto out;
+    }
+    if (native_register("/usr/bin/init-interp", native_capture_init) != 0 ||
+        kernel_exec_init("/tmp/init-script", NULL, NULL) != 0) {
+        goto out;
+    }
+    if (captured_argc != 2 || strcmp(captured_argv[0], "/usr/bin/init-interp") != 0 ||
+        strcmp(captured_argv[1], "/tmp/init-script") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!get_current() || strcmp(get_current()->exe, "/tmp/init-script") != 0 ||
+        !get_current()->exec_image ||
+        get_current()->exec_image->type != EXEC_IMAGE_SCRIPT ||
+        strcmp(get_current()->exec_image->interpreter, "/usr/bin/init-interp") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        unlink_impl("/tmp/init-script");
+        reset_boot_state();
+        errno = saved_errno;
+    }
+    return result;
 }

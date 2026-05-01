@@ -6,11 +6,14 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
 #include "../runtime/native/registry.h"
 #include "task.h"
+
+extern int execve(const char *pathname, char *const argv[], char *const envp[]);
 
 /* Global initialization state */
 static atomic_int library_initialized = 0;
@@ -175,4 +178,54 @@ int kernel_shutdown(void) {
 
     kernel_mutex_unlock(&library_init_lock);
     return 0;
+}
+
+static int kernel_try_exec_init_path(const char *path, char *const argv[], char *const envp[]) {
+    char *default_argv[] = {(char *)path, NULL};
+    char *default_envp[] = {
+        "HOME=/",
+        "PATH=/sbin:/bin:/usr/sbin:/usr/bin",
+        NULL,
+    };
+    int status;
+
+    if (!path || path[0] == '\0') {
+        errno = ENOENT;
+        return -1;
+    }
+
+    status = execve(path, argv ? argv : default_argv, envp ? envp : default_envp);
+    if (status == -1) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int kernel_exec_init(const char *preferred_path, char *const argv[], char *const envp[]) {
+    static const char *const init_candidates[] = {
+        "/sbin/init",
+        "/etc/init",
+        "/bin/init",
+        "/bin/sh",
+    };
+    int saved_errno = ENOENT;
+
+    if (!kernel_is_booted() && start_kernel() != 0) {
+        return -1;
+    }
+
+    if (preferred_path) {
+        return kernel_try_exec_init_path(preferred_path, argv, envp);
+    }
+
+    for (size_t i = 0; i < sizeof(init_candidates) / sizeof(init_candidates[0]); i++) {
+        if (kernel_try_exec_init_path(init_candidates[i], argv, envp) == 0) {
+            return 0;
+        }
+        saved_errno = errno;
+    }
+
+    errno = saved_errno;
+    return -1;
 }

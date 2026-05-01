@@ -23,6 +23,7 @@ void library_deinit(void);
 int start_kernel(void);
 int kernel_is_booted(void);
 int kernel_shutdown(void);
+int kernel_exec_init(const char *preferred_path, char *const argv[], char *const envp[]);
 
 #ifdef __cplusplus
 }

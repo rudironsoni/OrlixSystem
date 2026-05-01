@@ -19,6 +19,13 @@ extern int kernel_init_contract_proc_self_fd_reflects_boot_descriptors(void);
 extern int kernel_init_contract_proc_self_fdinfo_reflects_boot_descriptors(void);
 extern int kernel_init_contract_proc_self_exe_policy_before_exec_is_explicit(void);
 extern int kernel_init_contract_kernel_shutdown_and_reboot_restores_init_state(void);
+extern int kernel_init_contract_exec_preferred_init_launches_pid1(void);
+extern int kernel_init_contract_exec_init_search_uses_first_existing_candidate(void);
+extern int kernel_init_contract_exec_init_returns_enoent_when_no_candidate_exists(void);
+extern int kernel_init_contract_exec_init_preserves_pid1_identity(void);
+extern int kernel_init_contract_exec_init_updates_proc_self_exe_cmdline_comm(void);
+extern int kernel_init_contract_exec_init_closes_cloexec_only(void);
+extern int kernel_init_contract_exec_script_init_uses_interpreter(void);
 
 @interface KernelInitTests : XCTestCase
 @end
@@ -89,6 +96,34 @@ extern int kernel_init_contract_kernel_shutdown_and_reboot_restores_init_state(v
 
 - (void)testKernelShutdownAndRebootRestoresInitState {
     XCTAssertEqual(kernel_init_contract_kernel_shutdown_and_reboot_restores_init_state(), 0, @"errno %d", errno);
+}
+
+- (void)testExecPreferredInitLaunchesPid1 {
+    XCTAssertEqual(kernel_init_contract_exec_preferred_init_launches_pid1(), 0, @"errno %d", errno);
+}
+
+- (void)testExecInitSearchUsesFirstExistingCandidate {
+    XCTAssertEqual(kernel_init_contract_exec_init_search_uses_first_existing_candidate(), 0, @"errno %d", errno);
+}
+
+- (void)testExecInitReturnsEnoentWhenNoCandidateExists {
+    XCTAssertEqual(kernel_init_contract_exec_init_returns_enoent_when_no_candidate_exists(), 0, @"errno %d", errno);
+}
+
+- (void)testExecInitPreservesPid1Identity {
+    XCTAssertEqual(kernel_init_contract_exec_init_preserves_pid1_identity(), 0, @"errno %d", errno);
+}
+
+- (void)testExecInitUpdatesProcSelfExeCmdlineComm {
+    XCTAssertEqual(kernel_init_contract_exec_init_updates_proc_self_exe_cmdline_comm(), 0, @"errno %d", errno);
+}
+
+- (void)testExecInitClosesCloexecOnly {
+    XCTAssertEqual(kernel_init_contract_exec_init_closes_cloexec_only(), 0, @"errno %d", errno);
+}
+
+- (void)testExecScriptInitUsesInterpreter {
+    XCTAssertEqual(kernel_init_contract_exec_script_init_uses_interpreter(), 0, @"errno %d", errno);
 }
 
 @end
