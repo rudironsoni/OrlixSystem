@@ -282,6 +282,95 @@ out:
     return ret;
 }
 
+int vfs_contract_nonroot_cannot_chroot(void) {
+    struct task_struct *task = get_current();
+    char old_root[MAX_PATH];
+    char old_pwd[MAX_PATH];
+    int ret = -1;
+
+    if (!task || !task->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    cred_reset_to_defaults();
+    __builtin_memcpy(old_root, task->fs->root_path, sizeof(old_root));
+    __builtin_memcpy(old_pwd, task->fs->pwd_path, sizeof(old_pwd));
+    fs_set_root(task->fs, "/");
+    fs_set_pwd(task->fs, "/");
+
+    rmdir_impl("/tmp/vfs-chroot-cred-root");
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-chroot-cred-root", 0700)) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (chroot("/tmp/vfs-chroot-cred-root") != -1 || errno != EPERM) {
+        errno = EPERM;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    vfs_contract_restore_fs(task->fs, old_root, old_pwd);
+    rmdir_impl("/tmp/vfs-chroot-cred-root");
+    return ret;
+}
+
+int vfs_contract_root_without_sys_chroot_cannot_chroot(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    struct task_struct *task = get_current();
+    char old_root[MAX_PATH];
+    char old_pwd[MAX_PATH];
+    int ret = -1;
+
+    if (!task || !task->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    cred_reset_to_defaults();
+    __builtin_memcpy(old_root, task->fs->root_path, sizeof(old_root));
+    __builtin_memcpy(old_pwd, task->fs->pwd_path, sizeof(old_pwd));
+    fs_set_root(task->fs, "/");
+    fs_set_pwd(task->fs, "/");
+
+    rmdir_impl("/tmp/vfs-chroot-cred-root");
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-chroot-cred-root", 0700)) != 0) {
+        goto out;
+    }
+    if (capget(&header, data) != 0) {
+        goto out;
+    }
+    data[CAP_SYS_CHROOT / 32].effective &= ~(1U << (CAP_SYS_CHROOT % 32));
+    if (capset(&header, data) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (chroot("/tmp/vfs-chroot-cred-root") != -1 || errno != EPERM) {
+        errno = EPERM;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    vfs_contract_restore_fs(task->fs, old_root, old_pwd);
+    rmdir_impl("/tmp/vfs-chroot-cred-root");
+    return ret;
+}
+
 int vfs_contract_fchdir_updates_virtual_pwd(void) {
     struct task_struct *task = get_current();
     char old_root[MAX_PATH];

@@ -1134,6 +1134,18 @@ extern void cred_reset_to_defaults(void);
                    @"chroot should rebase task root and getcwd through IXLand VFS, errno %d", errno);
 }
 
+- (void)testNonrootCannotChroot {
+    extern int vfs_contract_nonroot_cannot_chroot(void);
+    XCTAssertEqual(vfs_contract_nonroot_cannot_chroot(), 0,
+                   @"non-root virtual credentials should not chroot, errno %d", errno);
+}
+
+- (void)testRootWithoutSysChrootCannotChroot {
+    extern int vfs_contract_root_without_sys_chroot_cannot_chroot(void);
+    XCTAssertEqual(vfs_contract_root_without_sys_chroot_cannot_chroot(), 0,
+                   @"root without CAP_SYS_CHROOT should not chroot, errno %d", errno);
+}
+
 - (void)testFchdirUpdatesVirtualPwd {
     extern int vfs_contract_fchdir_updates_virtual_pwd(void);
     XCTAssertEqual(vfs_contract_fchdir_updates_virtual_pwd(), 0,

@@ -12,6 +12,7 @@
 #include <string.h>
 
 /* Linux UAPI headers for ABI constants and types */
+#include <linux/capability.h>
 #include <linux/fcntl.h>
 #include <linux/stat.h>
 #include <asm-generic/stat.h>
@@ -29,6 +30,7 @@
 
 #include "vfs.h"
 #include "../kernel/task.h"
+#include "../kernel/cred_internal.h"
 
 static int directory_validate_path(const char *path) {
     if (path == NULL) {
@@ -640,6 +642,11 @@ int chroot_impl(const char *path) {
     int ret;
 
     if (directory_validate_path(path) != 0) {
+        return -1;
+    }
+
+    if (!cred_has_cap(get_current_cred(), CAP_SYS_CHROOT)) {
+        errno = EPERM;
         return -1;
     }
 
