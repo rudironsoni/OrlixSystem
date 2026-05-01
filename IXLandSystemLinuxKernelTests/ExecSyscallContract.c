@@ -1,6 +1,7 @@
 #include <linux/fcntl.h>
 #include <linux/elf.h>
 #include <linux/auxvec.h>
+#include <linux/mman.h>
 
 #include <errno.h>
 #include <stdbool.h>
@@ -11,8 +12,10 @@
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "kernel/cred_internal.h"
+#include "kernel/mm.h"
 #include "kernel/task.h"
 #include "runtime/aarch64/exec_context.h"
+#include "runtime/aarch64/elf_reloc.h"
 #include "runtime/native/registry.h"
 
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
@@ -408,6 +411,10 @@ static int expect_task_vm_write(struct task_struct *task, uint64_t addr, const v
         return -1;
     }
     return expect_task_vm_bytes(task, addr, bytes, len);
+}
+
+static uint64_t make_r_info(uint64_t symbol, uint64_t type) {
+    return (symbol << 32) | (type & 0xffffffffULL);
 }
 
 static int expect_vma(const struct task_struct *task, uint32_t index, uint64_t start, uint64_t size,
@@ -2203,6 +2210,205 @@ int exec_syscall_contract_aarch64_exec_context_uses_exec_handoff(void) {
 out:
     unlink_impl("/tmp/exec-elf-aarch64-context");
     unlink_impl(interp_path);
+    return result;
+}
+
+int exec_syscall_contract_aarch64_relocations_apply_relative_globdat_and_jumpslot(void) {
+    struct task_struct *task = get_current();
+    unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 768];
+    Elf64_Dyn dyn[8];
+    Elf64_Rela rela[3];
+    Elf64_Sym sym[2];
+    uint64_t relative_target = 0x400260;
+    uint64_t globdat_target = 0x400268;
+    uint64_t jumpslot_target = 0x400270;
+    uint64_t rela_vaddr = 0x400120;
+    uint64_t symtab_vaddr = 0x4001c0;
+    uint64_t value = 0;
+    uint32_t applied = 0;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    memset(dyn, 0, sizeof(dyn));
+    dyn[0].d_tag = DT_RELA;
+    dyn[0].d_un.d_ptr = rela_vaddr;
+    dyn[1].d_tag = DT_RELASZ;
+    dyn[1].d_un.d_val = 2 * sizeof(Elf64_Rela);
+    dyn[2].d_tag = DT_RELAENT;
+    dyn[2].d_un.d_val = sizeof(Elf64_Rela);
+    dyn[3].d_tag = DT_SYMTAB;
+    dyn[3].d_un.d_ptr = symtab_vaddr;
+    dyn[4].d_tag = DT_JMPREL;
+    dyn[4].d_un.d_ptr = rela_vaddr + (2 * sizeof(Elf64_Rela));
+    dyn[5].d_tag = DT_PLTRELSZ;
+    dyn[5].d_un.d_val = sizeof(Elf64_Rela);
+    dyn[6].d_tag = DT_PLTREL;
+    dyn[6].d_un.d_val = DT_RELA;
+    dyn[7].d_tag = DT_NULL;
+
+    memset(rela, 0, sizeof(rela));
+    rela[0].r_offset = relative_target;
+    rela[0].r_info = make_r_info(0, R_AARCH64_RELATIVE);
+    rela[0].r_addend = 0x88;
+    rela[1].r_offset = globdat_target;
+    rela[1].r_info = make_r_info(1, R_AARCH64_GLOB_DAT);
+    rela[1].r_addend = 0x10;
+    rela[2].r_offset = jumpslot_target;
+    rela[2].r_info = make_r_info(1, R_AARCH64_JUMP_SLOT);
+    rela[2].r_addend = 0x20;
+
+    memset(sym, 0, sizeof(sym));
+    sym[1].st_value = 0x400300;
+
+    unlink_impl("/tmp/exec-elf-reloc-apply");
+    build_exec_elf64_with_dynamic_entries(image, sizeof(image), 0x40e000, 0x400000, 0x400040,
+                                          dyn, sizeof(dyn) / sizeof(dyn[0]));
+    memcpy(image + (size_t)(rela_vaddr - 0x400000) + sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)),
+           rela, sizeof(rela));
+    memcpy(image + (size_t)(symtab_vaddr - 0x400000) + sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)),
+           sym, sizeof(sym));
+    if (create_exec_bytes("/tmp/exec-elf-reloc-apply", image, sizeof(image)) != 0) {
+        goto out;
+    }
+
+    if (execve("/tmp/exec-elf-reloc-apply", NULL, NULL) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (aarch64_apply_dynamic_relocations(task, &task->mm->exec_dynamic, 0x400000, &applied) != 0 ||
+        applied != 3) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (task_read_virtual_memory_impl(task, relative_target, &value, sizeof(value)) != (long)sizeof(value) ||
+        value != 0x400088) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (task_read_virtual_memory_impl(task, globdat_target, &value, sizeof(value)) != (long)sizeof(value) ||
+        value != 0x400310) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (task_read_virtual_memory_impl(task, jumpslot_target, &value, sizeof(value)) != (long)sizeof(value) ||
+        value != 0x400320) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-reloc-apply");
+    return result;
+}
+
+int exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(void) {
+    struct task_struct *task = get_current();
+    void *addr;
+    uint64_t vaddr;
+    const unsigned char patch[] = {0xa1, 0xa2};
+    unsigned char bytes[2] = {0};
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    addr = mmap_impl(NULL, TASK_VMA_PAGE_SIZE * 2, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (addr == (void *)-1) {
+        return -1;
+    }
+    vaddr = (uint64_t)(uintptr_t)addr;
+    if ((vaddr % TASK_VMA_PAGE_SIZE) != 0 ||
+        !task_find_vma_impl(task, vaddr) ||
+        task_find_vma_impl(task, vaddr)->kind != TASK_VMA_ANON ||
+        task_write_virtual_memory_impl(task, vaddr, patch, sizeof(patch)) != (long)sizeof(patch) ||
+        task_read_virtual_memory_impl(task, vaddr, bytes, sizeof(bytes)) != (long)sizeof(bytes) ||
+        memcmp(bytes, patch, sizeof(patch)) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (mprotect_impl(addr, TASK_VMA_PAGE_SIZE, PROT_READ) != 0) {
+        goto out;
+    }
+    errno = 0;
+    if (task_write_virtual_memory_impl(task, vaddr, patch, sizeof(patch)) != -1 ||
+        expect_errno(EACCES) != 0) {
+        goto out;
+    }
+    if (mprotect_impl(addr, TASK_VMA_PAGE_SIZE, PROT_READ | PROT_WRITE) != 0 ||
+        task_write_virtual_memory_impl(task, vaddr, patch, sizeof(patch)) != (long)sizeof(patch)) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (munmap_impl(addr, TASK_VMA_PAGE_SIZE * 2) != 0 ||
+        task_find_vma_impl(task, vaddr) != NULL) {
+        errno = EPROTO;
+        goto out;
+    }
+    errno = 0;
+    if (task_read_virtual_memory_impl(task, vaddr, bytes, sizeof(bytes)) != -1 ||
+        expect_errno(EFAULT) != 0) {
+        goto out;
+    }
+
+    result = 0;
+    return result;
+
+out:
+    munmap_impl(addr, TASK_VMA_PAGE_SIZE * 2);
+    return result;
+}
+
+int exec_syscall_contract_aarch64_exec_context_runs_nop_until_brk(void) {
+    struct task_struct *task = get_current();
+    unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    Elf64_Phdr *load;
+    struct aarch64_exec_context context;
+    uint32_t program[] = {0xd503201fU, 0xd503201fU, 0xd4200000U};
+    uint64_t steps = 0;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    unlink_impl("/tmp/exec-elf-aarch64-run");
+    build_exec_elf64_writable_load(image, sizeof(image), 0x400000, 0x400000);
+    load = (Elf64_Phdr *)(image + ehdr->e_phoff);
+    memcpy(image + load->p_offset, program, sizeof(program));
+    if (create_exec_bytes("/tmp/exec-elf-aarch64-run", image, sizeof(image)) != 0) {
+        goto out;
+    }
+
+    if (execve("/tmp/exec-elf-aarch64-run", NULL, NULL) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (aarch64_exec_context_from_task(task, &context) != 0 ||
+        aarch64_exec_context_run(&context, 8, &steps) != 0 ||
+        steps != 3 ||
+        context.steps != 3 ||
+        context.stopped != 1 ||
+        context.pc != 0x400008) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-aarch64-run");
     return result;
 }
 

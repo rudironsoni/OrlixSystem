@@ -32,6 +32,9 @@ extern int exec_syscall_contract_elf_exec_handoff_exposes_entry_stack_and_memory
 extern int exec_syscall_contract_elf_vma_page_permissions_are_page_granular(void);
 extern int exec_syscall_contract_elf_dynamic_relocation_metadata_is_discovered(void);
 extern int exec_syscall_contract_aarch64_exec_context_uses_exec_handoff(void);
+extern int exec_syscall_contract_aarch64_relocations_apply_relative_globdat_and_jumpslot(void);
+extern int exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(void);
+extern int exec_syscall_contract_aarch64_exec_context_runs_nop_until_brk(void);
 extern int exec_syscall_contract_elf_missing_interp_returns_enoent_without_transition(void);
 extern int exec_syscall_contract_elf_invalid_interp_returns_enoexec_without_transition(void);
 extern int exec_syscall_contract_elf_dyn_image_is_accepted(void);
@@ -168,6 +171,18 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testAarch64ExecContextUsesExecHandoff {
     XCTAssertEqual(exec_syscall_contract_aarch64_exec_context_uses_exec_handoff(), 0, @"errno %d", errno);
+}
+
+- (void)testAarch64RelocationsApplyRelativeGlobdatAndJumpslot {
+    XCTAssertEqual(exec_syscall_contract_aarch64_relocations_apply_relative_globdat_and_jumpslot(), 0, @"errno %d", errno);
+}
+
+- (void)testMmapMprotectAndMunmapUpdateVmas {
+    XCTAssertEqual(exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(), 0, @"errno %d", errno);
+}
+
+- (void)testAarch64ExecContextRunsNopUntilBrk {
+    XCTAssertEqual(exec_syscall_contract_aarch64_exec_context_runs_nop_until_brk(), 0, @"errno %d", errno);
 }
 
 - (void)testElfMissingInterpReturnsEnoentWithoutTransition {

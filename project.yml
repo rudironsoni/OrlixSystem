@@ -85,6 +85,8 @@ targets:
       group: kernel
     - path: kernel/init.c
       group: kernel
+    - path: kernel/mm.c
+      group: kernel
     - path: kernel/net/network.c
       group: kernel/net
     - path: kernel/pid.c
@@ -120,6 +122,8 @@ targets:
     - path: observability/ixland_observability.c
       group: observability
     - path: runtime/aarch64/exec_context.c
+      group: runtime/aarch64
+    - path: runtime/aarch64/elf_reloc.c
       group: runtime/aarch64
     - path: runtime/native/registry.c
       group: runtime/native

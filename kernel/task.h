@@ -56,6 +56,7 @@ enum task_vma_kind {
     TASK_VMA_EXEC = 1,
     TASK_VMA_INTERP = 2,
     TASK_VMA_STACK = 3,
+    TASK_VMA_ANON = 4,
 };
 
 struct task_vma {
