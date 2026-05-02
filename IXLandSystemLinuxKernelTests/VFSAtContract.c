@@ -35,6 +35,7 @@ extern int access(const char *pathname, int mode);
 extern int mount(const char *source, const char *target, const char *filesystemtype,
                  unsigned long mountflags, const void *data);
 extern int umount(const char *target);
+extern int umount2(const char *target, int flags);
 extern int mkdir_impl(const char *pathname, linux_mode_t mode);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 
@@ -1703,6 +1704,43 @@ out:
     return ret;
 }
 
+int vfs_contract_move_mount_relocates_bind_subtree(void) {
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-a", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "moved") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-target", "/tmp/vfs-mntns-peer-a", NULL, MS_MOVE, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-peer-a/file", "moved") != 0) {
+        goto out;
+    }
+    if (open_impl("/tmp/vfs-mntns-target/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_proc_self_mounts_lists_bind_mount(void) {
     char content[4096];
     int ret = -1;
@@ -2204,6 +2242,48 @@ out:
         chmod("/tmp/vfs-cred-no-search-dir", 0700);
         unlink_impl("/tmp/vfs-cred-no-search-dir/file");
         rmdir_impl("/tmp/vfs-cred-no-search-dir");
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_sticky_directory_blocks_nonowner_unlink(void) {
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-sticky-dir/file");
+    rmdir_impl("/tmp/vfs-cred-sticky-dir");
+    if (mkdir_impl("/tmp/vfs-cred-sticky-dir", 01777) != 0) {
+        goto out;
+    }
+    fd = open_impl("/tmp/vfs-cred-sticky-dir/file", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0) {
+        goto out;
+    }
+    close_impl(fd);
+    fd = -1;
+    if (chown("/tmp/vfs-cred-sticky-dir/file", 2000, 2000) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    errno = 0;
+    if (unlink_impl("/tmp/vfs-cred-sticky-dir/file") != -1 || errno != EPERM) {
+        errno = EPERM;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        close_impl(fd);
+        cred_reset_to_defaults();
+        unlink_impl("/tmp/vfs-cred-sticky-dir/file");
+        rmdir_impl("/tmp/vfs-cred-sticky-dir");
         errno = saved_errno;
     }
     return ret;

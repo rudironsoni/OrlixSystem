@@ -1974,3 +1974,45 @@ out:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 8192, 0, 0, 0, 0);
     return result;
 }
+
+int native_syscall_contract_mincore_reports_virtual_residency(void) {
+    void *mapped = (void *)-1;
+    unsigned char vec[2] = {0xff, 0xff};
+    int result = -1;
+
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 8192,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    if (syscall_dispatch_impl(__NR_mincore, (long)(uintptr_t)mapped, 8192,
+                              (long)(uintptr_t)vec, 0, 0, 0) != 0) {
+        goto out;
+    }
+    if ((vec[0] & 1) == 0 || (vec[1] & 1) == 0) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (syscall_dispatch_impl(__NR_madvise, (long)(uintptr_t)mapped, 4096, MADV_DONTNEED,
+                              0, 0, 0) != 0) {
+        goto out;
+    }
+    vec[0] = 0xff;
+    vec[1] = 0xff;
+    if (syscall_dispatch_impl(__NR_mincore, (long)(uintptr_t)mapped, 8192,
+                              (long)(uintptr_t)vec, 0, 0, 0) != 0) {
+        goto out;
+    }
+    if ((vec[0] & 1) != 0 || (vec[1] & 1) == 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 8192, 0, 0, 0, 0);
+    return result;
+}

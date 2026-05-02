@@ -445,6 +445,52 @@ static int vfs_mount_clone_recursive_children_locked(struct vfs_mount_namespace 
     return 0;
 }
 
+static int vfs_mount_move_tree_locked(struct vfs_mount_namespace *mnt_ns,
+                                      const char *old_target,
+                                      const char *new_target) {
+    bool found = false;
+    size_t old_len;
+
+    if (!mnt_ns || !old_target || !new_target || strcmp(old_target, new_target) == 0) {
+        return -EINVAL;
+    }
+
+    old_len = strlen(old_target);
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, old_target) == 0) {
+            found = true;
+        }
+        if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, new_target) == 0) {
+            return -EBUSY;
+        }
+    }
+    if (!found) {
+        return -EINVAL;
+    }
+
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        struct vfs_mount_entry *entry = &mnt_ns->entries[i];
+        const char *suffix;
+        char moved_target[MAX_PATH];
+        int ret;
+
+        if (!entry->active || !vfs_mount_target_matches_tree(entry->target, old_target)) {
+            continue;
+        }
+        suffix = entry->target + old_len;
+        ret = snprintf(moved_target, sizeof(moved_target), "%s%s", new_target, suffix);
+        if (ret < 0 || (size_t)ret >= sizeof(moved_target)) {
+            return -ENAMETOOLONG;
+        }
+        ret = vfs_copy_string(moved_target, entry->target, sizeof(entry->target));
+        if (ret != 0) {
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
 struct vfs_route_entry {
     enum vfs_route_identity route_id;
     const char *linux_prefix;
@@ -932,6 +978,54 @@ int vfs_check_parent_mutation_permission(const char *resolved_vpath) {
     }
 
     return 0;
+}
+
+int vfs_check_sticky_unlink_permission(const char *resolved_vpath) {
+    char parent[MAX_PATH];
+    char translated_parent[MAX_PATH];
+    char translated_target[MAX_PATH];
+    struct linux_stat parent_st;
+    struct linux_stat target_st;
+    struct cred *cred = get_current_cred();
+    int ret;
+
+    if (!resolved_vpath || !cred) {
+        return -EINVAL;
+    }
+
+    ret = vfs_parent_path(resolved_vpath, parent, sizeof(parent));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_translate_path(parent, translated_parent, sizeof(translated_parent));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_stat_virtual_backed_path(parent, translated_parent, &parent_st);
+    if (ret != 0) {
+        return ret;
+    }
+    if ((parent_st.st_mode & S_ISVTX) == 0) {
+        return 0;
+    }
+    if (cred_has_cap(cred, CAP_FOWNER) || cred->fsuid == parent_st.st_uid) {
+        return 0;
+    }
+
+    ret = vfs_translate_path(resolved_vpath, translated_target, sizeof(translated_target));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_lstat(translated_target, &target_st);
+    if (ret != 0) {
+        return ret;
+    }
+    vfs_apply_stat_metadata(resolved_vpath, &target_st);
+    if (cred->fsuid == target_st.st_uid) {
+        return 0;
+    }
+
+    return -EPERM;
 }
 
 static int vfs_check_search_permission(const char *resolved_vpath) {
@@ -1686,10 +1780,12 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     struct linux_stat target_stat;
     int ret;
     int slot = -1;
-    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY | MS_REC | vfs_mount_propagation_flags();
+    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY | MS_REC | MS_MOVE |
+                                    vfs_mount_propagation_flags();
     unsigned long propagation = vfs_mount_selected_propagation(flags);
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
     bool remount = (flags & MS_REMOUNT) != 0;
+    bool move_mount = (flags & MS_MOVE) != 0;
 
     if ((!source && !remount) || !target) {
         return -EFAULT;
@@ -1703,7 +1799,10 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     if (propagation == (unsigned long)-1) {
         return -EINVAL;
     }
-    if (!remount && (flags & MS_BIND) == 0) {
+    if (move_mount && (flags & ~MS_MOVE) != 0) {
+        return -EINVAL;
+    }
+    if (!remount && !move_mount && (flags & MS_BIND) == 0) {
         return -ENOSYS;
     }
     if (remount && (flags & MS_BIND) == 0) {
@@ -1746,6 +1845,20 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
 
     ret = vfs_resolve_virtual_path_at(AT_FDCWD, source, resolved_source, sizeof(resolved_source));
     if (ret != 0) {
+        return ret;
+    }
+
+    if (move_mount) {
+        ret = vfs_translate_path(resolved_target, host_target, sizeof(host_target));
+        if (ret != 0) {
+            return ret;
+        }
+        if (host_stat_impl(host_target, &target_stat) != 0) {
+            return -errno;
+        }
+        fs_mutex_lock(&mnt_ns->lock);
+        ret = vfs_mount_move_tree_locked(mnt_ns, resolved_source, resolved_target);
+        fs_mutex_unlock(&mnt_ns->lock);
         return ret;
     }
 

@@ -1373,6 +1373,54 @@ int madvise_impl(void *addr, size_t length, int advice) {
     return 0;
 }
 
+int mincore_impl(void *addr, size_t length, unsigned char *vec) {
+    struct task_struct *task = get_current();
+    uint64_t start = (uint64_t)(uintptr_t)addr;
+    uint64_t size;
+    uint64_t page_count;
+
+    if (!task || !task->mm) {
+        errno = ENOMEM;
+        return -1;
+    }
+    if (!vec) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (length == 0) {
+        return 0;
+    }
+    if ((start % TASK_VMA_PAGE_SIZE) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    size = mm_align_up((uint64_t)length, TASK_VMA_PAGE_SIZE);
+    if (size == 0 || size > UINT64_MAX - start) {
+        errno = ENOMEM;
+        return -1;
+    }
+    page_count = size / TASK_VMA_PAGE_SIZE;
+
+    for (uint64_t page = 0; page < page_count; page++) {
+        uint64_t addr_for_page = start + (page * TASK_VMA_PAGE_SIZE);
+        const struct task_vma *vma = task_find_vma_impl(task, addr_for_page);
+        uint64_t page_index;
+
+        if (!vma) {
+            errno = ENOMEM;
+            return -1;
+        }
+        page_index = (addr_for_page - vma->start) / TASK_VMA_PAGE_SIZE;
+        if (page_index >= vma->page_count) {
+            errno = ENOMEM;
+            return -1;
+        }
+        vec[page] = (!vma->resident_pages || vma->resident_pages[page_index]) ? 1U : 0U;
+    }
+
+    return 0;
+}
+
 void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags, void *new_address) {
     struct task_struct *task = get_current();
     uint64_t old_start = (uint64_t)(uintptr_t)old_address;

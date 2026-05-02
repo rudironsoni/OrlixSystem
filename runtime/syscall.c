@@ -615,6 +615,9 @@ long syscall_dispatch_impl(long number,
                                                            (void *)(uintptr_t)arg4));
     case __NR_madvise:
         return syscall_result((long)madvise_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
+    case __NR_mincore:
+        return syscall_result((long)mincore_impl((void *)(uintptr_t)arg0, (size_t)arg1,
+                                                 (unsigned char *)(uintptr_t)arg2));
     case __NR_msync:
         return syscall_result((long)msync_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
     case __NR_ftruncate:

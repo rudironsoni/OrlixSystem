@@ -1336,6 +1336,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"MS_REC bind should clone nested mount topology, errno %d", errno);
 }
 
+- (void)testMoveMountRelocatesBindSubtree {
+    extern int vfs_contract_move_mount_relocates_bind_subtree(void);
+    XCTAssertEqual(vfs_contract_move_mount_relocates_bind_subtree(), 0,
+                   @"MS_MOVE should relocate a virtual mount subtree, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,
@@ -1418,6 +1424,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     extern int vfs_contract_nonroot_cannot_open_through_unsearchable_parent_directory(void);
     XCTAssertEqual(vfs_contract_nonroot_cannot_open_through_unsearchable_parent_directory(), 0,
                    @"non-root should need execute permission on parent directories, errno %d", errno);
+}
+
+- (void)testStickyDirectoryBlocksNonOwnerUnlink {
+    extern int vfs_contract_sticky_directory_blocks_nonowner_unlink(void);
+    XCTAssertEqual(vfs_contract_sticky_directory_blocks_nonowner_unlink(), 0,
+                   @"sticky directories should block unlink by non-owners, errno %d", errno);
 }
 
 - (void)testNonrootCannotMkdiratInsideRootPrivateDir {

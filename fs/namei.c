@@ -576,6 +576,11 @@ static int unlinkat_impl(int dirfd, const char *pathname, int flags) {
         errno = EISDIR;
         return -1;
     }
+    ret = vfs_check_sticky_unlink_permission(resolved_path);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
 
     ret = remove_dir ? host_rmdir_impl(translated_path) : host_unlink_impl(translated_path);
     if (ret == 0) {
