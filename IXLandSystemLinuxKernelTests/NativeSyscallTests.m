@@ -88,6 +88,10 @@
     XCTAssertEqual(native_syscall_contract_flistxattr_reports_fd_user_attribute(), 0, @"errno %d", errno);
 }
 
+- (void)testLxattrTargetsSymlinkInode {
+    XCTAssertEqual(native_syscall_contract_lxattr_targets_symlink_inode(), 0, @"errno %d", errno);
+}
+
 - (void)testSharedMappingFaultPolicyTracksTruncateAfterFdClose {
     XCTAssertEqual(native_syscall_contract_shared_mapping_fault_policy_tracks_truncate_after_fd_close(), 0, @"errno %d", errno);
 }
@@ -111,6 +115,10 @@
 
 - (void)testCloneWithoutVmCopiesPrivateVmas {
     XCTAssertEqual(native_syscall_contract_clone_without_vm_copies_private_vmas(), 0, @"errno %d", errno);
+}
+
+- (void)testCloneWithoutVmCowsPrivateFileMapping {
+    XCTAssertEqual(native_syscall_contract_clone_without_vm_cows_private_file_mapping(), 0, @"errno %d", errno);
 }
 
 - (void)testCloneWithoutVmPreservesSharedFileMappings {

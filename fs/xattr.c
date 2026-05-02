@@ -66,7 +66,8 @@ static size_t xattr_encode_capability(uint64_t permitted, uint64_t inheritable, 
     return sizeof(cap);
 }
 
-int setxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags) {
+static int setxattr_impl_follow(const char *path, const char *name, const void *value, size_t size,
+                                int flags, int follow_final_symlink) {
     uint64_t permitted;
     uint64_t inheritable;
     bool effective;
@@ -83,7 +84,7 @@ int setxattr_impl(const char *path, const char *name, const void *value, size_t 
         return -1;
     }
     if (!xattr_is_security_capability(name)) {
-        ret = vfs_set_user_xattr(path, name, value, size, flags);
+        ret = vfs_set_user_xattr_follow(path, name, value, size, flags, follow_final_symlink);
         if (ret != 0) {
             errno = -ret;
             return -1;
@@ -91,7 +92,8 @@ int setxattr_impl(const char *path, const char *name, const void *value, size_t 
         return 0;
     }
 
-    ret = vfs_get_file_capabilities(path, &permitted, &inheritable, &effective);
+    ret = vfs_get_file_capabilities_follow(path, &permitted, &inheritable, &effective,
+                                           follow_final_symlink);
     exists = ret == 0;
     if ((flags & XATTR_CREATE) != 0 && exists) {
         errno = EEXIST;
@@ -107,10 +109,20 @@ int setxattr_impl(const char *path, const char *name, const void *value, size_t 
         errno = -ret;
         return -1;
     }
-    return vfs_set_file_capabilities(path, permitted, inheritable, effective);
+    return vfs_set_file_capabilities_follow(path, permitted, inheritable, effective,
+                                            follow_final_symlink);
 }
 
-long getxattr_impl(const char *path, const char *name, void *value, size_t size) {
+int setxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags) {
+    return setxattr_impl_follow(path, name, value, size, flags, 1);
+}
+
+int lsetxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags) {
+    return setxattr_impl_follow(path, name, value, size, flags, 0);
+}
+
+static long getxattr_impl_follow(const char *path, const char *name, void *value, size_t size,
+                                 int follow_final_symlink) {
     uint64_t permitted;
     uint64_t inheritable;
     bool effective;
@@ -123,14 +135,15 @@ long getxattr_impl(const char *path, const char *name, void *value, size_t size)
         return -1;
     }
     if (!xattr_is_security_capability(name)) {
-        size_ret = vfs_get_user_xattr(path, name, value, size);
+        size_ret = vfs_get_user_xattr_follow(path, name, value, size, follow_final_symlink);
         if (size_ret < 0) {
             errno = (int)-size_ret;
             return -1;
         }
         return size_ret;
     }
-    ret = vfs_get_file_capabilities(path, &permitted, &inheritable, &effective);
+    ret = vfs_get_file_capabilities_follow(path, &permitted, &inheritable, &effective,
+                                           follow_final_symlink);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -142,35 +155,60 @@ long getxattr_impl(const char *path, const char *name, void *value, size_t size)
     return (long)encoded_size;
 }
 
-int removexattr_impl(const char *path, const char *name) {
+long getxattr_impl(const char *path, const char *name, void *value, size_t size) {
+    return getxattr_impl_follow(path, name, value, size, 1);
+}
+
+long lgetxattr_impl(const char *path, const char *name, void *value, size_t size) {
+    return getxattr_impl_follow(path, name, value, size, 0);
+}
+
+static int removexattr_impl_follow(const char *path, const char *name, int follow_final_symlink) {
     if (!path || !name) {
         errno = EFAULT;
         return -1;
     }
     if (!xattr_is_security_capability(name)) {
-        int ret = vfs_remove_user_xattr(path, name);
+        int ret = vfs_remove_user_xattr_follow(path, name, follow_final_symlink);
         if (ret != 0) {
             errno = -ret;
             return -1;
         }
         return 0;
     }
-    return vfs_remove_file_capabilities(path);
+    return vfs_remove_file_capabilities_follow(path, follow_final_symlink);
 }
 
-long listxattr_impl(const char *path, char *list, size_t size) {
+int removexattr_impl(const char *path, const char *name) {
+    return removexattr_impl_follow(path, name, 1);
+}
+
+int lremovexattr_impl(const char *path, const char *name) {
+    return removexattr_impl_follow(path, name, 0);
+}
+
+static long listxattr_impl_follow(const char *path, char *list, size_t size,
+                                  int follow_final_symlink) {
     long ret;
 
     if (!path || (!list && size > 0)) {
         errno = EFAULT;
         return -1;
     }
-    ret = vfs_list_xattr(path, list, size);
+    ret = vfs_list_xattr_follow(path, list, size, follow_final_symlink);
     if (ret < 0) {
         errno = -ret;
         return -1;
     }
     return ret;
+}
+
+long listxattr_impl(const char *path, char *list, size_t size) {
+    return listxattr_impl_follow(path, list, size, 1);
+}
+
+long llistxattr_impl(const char *path, char *list, size_t size) {
+    return listxattr_impl_follow(path, list, size, 0);
 }
 
 static int xattr_path_from_fd(int fd, char *path, size_t path_len) {
@@ -230,7 +268,7 @@ __attribute__((visibility("default"))) int setxattr(const char *path, const char
 
 __attribute__((visibility("default"))) int lsetxattr(const char *path, const char *name,
                                                       const void *value, size_t size, int flags) {
-    return setxattr_impl(path, name, value, size, flags);
+    return lsetxattr_impl(path, name, value, size, flags);
 }
 
 __attribute__((visibility("default"))) int fsetxattr(int fd, const char *name,
@@ -245,7 +283,7 @@ __attribute__((visibility("default"))) long getxattr(const char *path, const cha
 
 __attribute__((visibility("default"))) long lgetxattr(const char *path, const char *name,
                                                       void *value, size_t size) {
-    return getxattr_impl(path, name, value, size);
+    return lgetxattr_impl(path, name, value, size);
 }
 
 __attribute__((visibility("default"))) long fgetxattr(int fd, const char *name,
@@ -258,7 +296,7 @@ __attribute__((visibility("default"))) int removexattr(const char *path, const c
 }
 
 __attribute__((visibility("default"))) int lremovexattr(const char *path, const char *name) {
-    return removexattr_impl(path, name);
+    return lremovexattr_impl(path, name);
 }
 
 __attribute__((visibility("default"))) int fremovexattr(int fd, const char *name) {
@@ -270,7 +308,7 @@ __attribute__((visibility("default"))) long listxattr(const char *path, char *li
 }
 
 __attribute__((visibility("default"))) long llistxattr(const char *path, char *list, size_t size) {
-    return listxattr_impl(path, list, size);
+    return llistxattr_impl(path, list, size);
 }
 
 __attribute__((visibility("default"))) long flistxattr(int fd, char *list, size_t size) {

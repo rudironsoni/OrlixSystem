@@ -1354,6 +1354,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"lazy unmount should detach a busy mount from the namespace, errno %d", errno);
 }
 
+- (void)testLazyUnmountRemovesBusyMountFromProcMountinfo {
+    extern int vfs_contract_lazy_umount_removes_busy_mount_from_proc_mountinfo(void);
+    XCTAssertEqual(vfs_contract_lazy_umount_removes_busy_mount_from_proc_mountinfo(), 0,
+                   @"lazy unmount should remove a busy detached mount from proc mountinfo, errno %d", errno);
+}
+
 - (void)testUnmountBusyWhenPwdPinsMountTree {
     extern int vfs_contract_umount_busy_when_pwd_pins_mount_tree(void);
     XCTAssertEqual(vfs_contract_umount_busy_when_pwd_pins_mount_tree(), 0,

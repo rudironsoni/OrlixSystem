@@ -203,12 +203,16 @@ extern int open_tree(int dirfd, const char *pathname, unsigned int flags);
 extern int move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
                       const char *to_pathname, unsigned int flags);
 extern int setxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags);
+extern int lsetxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags);
 extern int fsetxattr_impl(int fd, const char *name, const void *value, size_t size, int flags);
 extern long getxattr_impl(const char *path, const char *name, void *value, size_t size);
+extern long lgetxattr_impl(const char *path, const char *name, void *value, size_t size);
 extern long fgetxattr_impl(int fd, const char *name, void *value, size_t size);
 extern long listxattr_impl(const char *path, char *list, size_t size);
+extern long llistxattr_impl(const char *path, char *list, size_t size);
 extern long flistxattr_impl(int fd, char *list, size_t size);
 extern int removexattr_impl(const char *path, const char *name);
+extern int lremovexattr_impl(const char *path, const char *name);
 extern int fremovexattr_impl(int fd, const char *name);
 
 static int syscall_copy_sigset_to_mask(const uint64_t *sigset, size_t sigsetsize,
@@ -658,34 +662,45 @@ long syscall_dispatch_impl(long number,
     case __NR_ftruncate:
         return syscall_result((long)ftruncate_impl((int)arg0, (linux_off_t)arg1));
     case __NR_setxattr:
-    case __NR_lsetxattr:
         return syscall_result((long)setxattr_impl((const char *)(uintptr_t)arg0,
                                                   (const char *)(uintptr_t)arg1,
                                                   (const void *)(uintptr_t)arg2,
                                                   (size_t)arg3, (int)arg4));
+    case __NR_lsetxattr:
+        return syscall_result((long)lsetxattr_impl((const char *)(uintptr_t)arg0,
+                                                   (const char *)(uintptr_t)arg1,
+                                                   (const void *)(uintptr_t)arg2,
+                                                   (size_t)arg3, (int)arg4));
     case __NR_fsetxattr:
         return syscall_result((long)fsetxattr_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                    (const void *)(uintptr_t)arg2,
                                                    (size_t)arg3, (int)arg4));
     case __NR_getxattr:
-    case __NR_lgetxattr:
         return syscall_result(getxattr_impl((const char *)(uintptr_t)arg0,
                                             (const char *)(uintptr_t)arg1,
                                             (void *)(uintptr_t)arg2, (size_t)arg3));
+    case __NR_lgetxattr:
+        return syscall_result(lgetxattr_impl((const char *)(uintptr_t)arg0,
+                                             (const char *)(uintptr_t)arg1,
+                                             (void *)(uintptr_t)arg2, (size_t)arg3));
     case __NR_fgetxattr:
         return syscall_result(fgetxattr_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                              (void *)(uintptr_t)arg2, (size_t)arg3));
     case __NR_listxattr:
-    case __NR_llistxattr:
         return syscall_result(listxattr_impl((const char *)(uintptr_t)arg0,
                                              (char *)(uintptr_t)arg1, (size_t)arg2));
+    case __NR_llistxattr:
+        return syscall_result(llistxattr_impl((const char *)(uintptr_t)arg0,
+                                              (char *)(uintptr_t)arg1, (size_t)arg2));
     case __NR_flistxattr:
         return syscall_result(flistxattr_impl((int)arg0, (char *)(uintptr_t)arg1,
                                               (size_t)arg2));
     case __NR_removexattr:
-    case __NR_lremovexattr:
         return syscall_result((long)removexattr_impl((const char *)(uintptr_t)arg0,
                                                      (const char *)(uintptr_t)arg1));
+    case __NR_lremovexattr:
+        return syscall_result((long)lremovexattr_impl((const char *)(uintptr_t)arg0,
+                                                      (const char *)(uintptr_t)arg1));
     case __NR_fremovexattr:
         return syscall_result((long)fremovexattr_impl((int)arg0, (const char *)(uintptr_t)arg1));
     case __NR_prlimit64:

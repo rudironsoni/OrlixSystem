@@ -929,18 +929,22 @@ uint64_t vfs_file_identity_for_path(const char *resolved_vpath) {
     return identity;
 }
 
-static int vfs_resolve_existing_metadata_path(const char *path, char *resolved, size_t resolved_len) {
+static int vfs_resolve_existing_metadata_path_follow(const char *path, char *resolved,
+                                                     size_t resolved_len,
+                                                     int follow_final_symlink) {
     struct linux_stat st;
     int ret;
 
     if (!path || !resolved || resolved_len == 0) {
         return -EFAULT;
     }
-    ret = vfs_resolve_virtual_path_at(AT_FDCWD, path, resolved, resolved_len);
+    ret = vfs_resolve_virtual_path_at_follow(AT_FDCWD, path, resolved, resolved_len,
+                                             follow_final_symlink);
     if (ret != 0) {
         return ret;
     }
-    if (vfs_fstatat(AT_FDCWD, resolved, &st, 0) != 0) {
+    if (vfs_fstatat(AT_FDCWD, resolved, &st,
+                    follow_final_symlink ? 0 : AT_SYMLINK_NOFOLLOW) != 0) {
         return -errno;
     }
     return 0;
@@ -1019,7 +1023,8 @@ static void vfs_user_xattr_remove_identity_locked(uint64_t identity, const char 
     }
 }
 
-int vfs_set_user_xattr(const char *path, const char *name, const void *value, size_t size, int flags) {
+int vfs_set_user_xattr_follow(const char *path, const char *name, const void *value, size_t size,
+                              int flags, int follow_final_symlink) {
     char resolved[MAX_PATH];
     struct vfs_user_xattr_entry updated;
     int idx;
@@ -1043,7 +1048,8 @@ int vfs_set_user_xattr(const char *path, const char *name, const void *value, si
         return -EINVAL;
     }
 
-    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
+                                                    follow_final_symlink);
     if (ret != 0) {
         return ret;
     }
@@ -1090,7 +1096,12 @@ int vfs_set_user_xattr(const char *path, const char *name, const void *value, si
     return 0;
 }
 
-long vfs_get_user_xattr(const char *path, const char *name, void *value, size_t size) {
+int vfs_set_user_xattr(const char *path, const char *name, const void *value, size_t size, int flags) {
+    return vfs_set_user_xattr_follow(path, name, value, size, flags, 1);
+}
+
+long vfs_get_user_xattr_follow(const char *path, const char *name, void *value, size_t size,
+                               int follow_final_symlink) {
     char resolved[MAX_PATH];
     int idx;
     int xidx;
@@ -1103,7 +1114,8 @@ long vfs_get_user_xattr(const char *path, const char *name, void *value, size_t 
     if (strncmp(name, "user.", 5) != 0) {
         return -ENODATA;
     }
-    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
+                                                    follow_final_symlink);
     if (ret != 0) {
         return ret;
     }
@@ -1131,14 +1143,19 @@ long vfs_get_user_xattr(const char *path, const char *name, void *value, size_t 
     return (long)value_size;
 }
 
-long vfs_list_xattr(const char *path, char *list, size_t size) {
+long vfs_get_user_xattr(const char *path, const char *name, void *value, size_t size) {
+    return vfs_get_user_xattr_follow(path, name, value, size, 1);
+}
+
+long vfs_list_xattr_follow(const char *path, char *list, size_t size, int follow_final_symlink) {
     char resolved[MAX_PATH];
     int idx;
     size_t required = 0;
     size_t pos = 0;
     int ret;
 
-    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
+                                                    follow_final_symlink);
     if (ret != 0) {
         return ret;
     }
@@ -1178,7 +1195,11 @@ long vfs_list_xattr(const char *path, char *list, size_t size) {
     return (long)required;
 }
 
-int vfs_remove_user_xattr(const char *path, const char *name) {
+long vfs_list_xattr(const char *path, char *list, size_t size) {
+    return vfs_list_xattr_follow(path, list, size, 1);
+}
+
+int vfs_remove_user_xattr_follow(const char *path, const char *name, int follow_final_symlink) {
     char resolved[MAX_PATH];
     int idx;
     int xidx;
@@ -1191,7 +1212,8 @@ int vfs_remove_user_xattr(const char *path, const char *name) {
     if (strncmp(name, "user.", 5) != 0) {
         return -ENODATA;
     }
-    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
+                                                    follow_final_symlink);
     if (ret != 0) {
         return ret;
     }
@@ -1213,14 +1235,19 @@ int vfs_remove_user_xattr(const char *path, const char *name) {
     return 0;
 }
 
-int vfs_set_file_capabilities(const char *path, uint64_t permitted, uint64_t inheritable,
-                              bool effective) {
+int vfs_remove_user_xattr(const char *path, const char *name) {
+    return vfs_remove_user_xattr_follow(path, name, 1);
+}
+
+int vfs_set_file_capabilities_follow(const char *path, uint64_t permitted, uint64_t inheritable,
+                                     bool effective, int follow_final_symlink) {
     char resolved[MAX_PATH];
     int idx;
     int free_slot = -1;
     int ret;
 
-    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
+                                                    follow_final_symlink);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -1259,8 +1286,14 @@ int vfs_set_file_capabilities(const char *path, uint64_t permitted, uint64_t inh
     return 0;
 }
 
-int vfs_get_file_capabilities(const char *path, uint64_t *permitted, uint64_t *inheritable,
-                              bool *effective) {
+int vfs_set_file_capabilities(const char *path, uint64_t permitted, uint64_t inheritable,
+                              bool effective) {
+    return vfs_set_file_capabilities_follow(path, permitted, inheritable, effective, 1);
+}
+
+int vfs_get_file_capabilities_follow(const char *path, uint64_t *permitted,
+                                     uint64_t *inheritable, bool *effective,
+                                     int follow_final_symlink) {
     char resolved[MAX_PATH];
     int idx;
     int ret;
@@ -1272,7 +1305,8 @@ int vfs_get_file_capabilities(const char *path, uint64_t *permitted, uint64_t *i
     *inheritable = 0;
     *effective = false;
 
-    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
+                                                    follow_final_symlink);
     if (ret != 0) {
         return ret;
     }
@@ -1290,12 +1324,18 @@ int vfs_get_file_capabilities(const char *path, uint64_t *permitted, uint64_t *i
     return 0;
 }
 
-int vfs_remove_file_capabilities(const char *path) {
+int vfs_get_file_capabilities(const char *path, uint64_t *permitted, uint64_t *inheritable,
+                              bool *effective) {
+    return vfs_get_file_capabilities_follow(path, permitted, inheritable, effective, 1);
+}
+
+int vfs_remove_file_capabilities_follow(const char *path, int follow_final_symlink) {
     char resolved[MAX_PATH];
     int idx;
     int ret;
 
-    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
+                                                    follow_final_symlink);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -1318,6 +1358,10 @@ int vfs_remove_file_capabilities(const char *path) {
     vfs_metadata_table[idx].cap_effective = false;
     fs_mutex_unlock(&vfs_metadata_lock);
     return 0;
+}
+
+int vfs_remove_file_capabilities(const char *path) {
+    return vfs_remove_file_capabilities_follow(path, 1);
 }
 
 void vfs_forget_path_metadata(const char *resolved_vpath) {

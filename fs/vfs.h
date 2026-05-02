@@ -370,10 +370,22 @@ int vfs_set_file_capabilities(const char *path, uint64_t permitted, uint64_t inh
 int vfs_get_file_capabilities(const char *path, uint64_t *permitted, uint64_t *inheritable,
                               bool *effective);
 int vfs_remove_file_capabilities(const char *path);
+int vfs_set_file_capabilities_follow(const char *path, uint64_t permitted, uint64_t inheritable,
+                                     bool effective, int follow_final_symlink);
+int vfs_get_file_capabilities_follow(const char *path, uint64_t *permitted,
+                                     uint64_t *inheritable, bool *effective,
+                                     int follow_final_symlink);
+int vfs_remove_file_capabilities_follow(const char *path, int follow_final_symlink);
 int vfs_set_user_xattr(const char *path, const char *name, const void *value, size_t size, int flags);
 long vfs_get_user_xattr(const char *path, const char *name, void *value, size_t size);
 long vfs_list_xattr(const char *path, char *list, size_t size);
 int vfs_remove_user_xattr(const char *path, const char *name);
+int vfs_set_user_xattr_follow(const char *path, const char *name, const void *value, size_t size,
+                              int flags, int follow_final_symlink);
+long vfs_get_user_xattr_follow(const char *path, const char *name, void *value, size_t size,
+                               int follow_final_symlink);
+long vfs_list_xattr_follow(const char *path, char *list, size_t size, int follow_final_symlink);
+int vfs_remove_user_xattr_follow(const char *path, const char *name, int follow_final_symlink);
 void vfs_forget_path_metadata(const char *resolved_vpath);
 void vfs_link_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath);
 void vfs_rename_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath);
