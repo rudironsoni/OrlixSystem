@@ -167,7 +167,14 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         return (ssize_t)to_copy;
     }
 
-    ssize_t bytes = host_read_impl(get_real_fd_impl(entry), buf, count);
+    int real_fd = get_real_fd_impl(entry);
+    ssize_t bytes = host_read_impl(real_fd, buf, count);
+    if (bytes > 0) {
+        linux_off_t pos = (linux_off_t)host_lseek_impl(real_fd, 0, SEEK_CUR);
+        if (pos >= 0) {
+            set_fd_offset_impl((fd_entry_t *)entry, pos);
+        }
+    }
     put_fd_entry_impl(entry);
     return bytes;
 }
@@ -245,20 +252,27 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
         return -1;
     }
 
-    linux_off_t current_size = host_lseek_impl(get_real_fd_impl(entry), 0, SEEK_END);
+    int real_fd = get_real_fd_impl(entry);
+    linux_off_t current_size = host_lseek_impl(real_fd, 0, SEEK_END);
     if (current_size < 0) {
         put_fd_entry_impl(entry);
         return -1;
     }
 
     if (get_fd_is_append_impl(entry)) {
-        if (host_lseek_impl(get_real_fd_impl(entry), 0, SEEK_END) < 0) {
+        if (host_lseek_impl(real_fd, 0, SEEK_END) < 0) {
             put_fd_entry_impl(entry);
             return -1;
         }
     }
 
-    ssize_t bytes = host_write_impl(get_real_fd_impl(entry), buf, count);
+    ssize_t bytes = host_write_impl(real_fd, buf, count);
+    if (bytes > 0) {
+        linux_off_t pos = (linux_off_t)host_lseek_impl(real_fd, 0, SEEK_CUR);
+        if (pos >= 0) {
+            set_fd_offset_impl((fd_entry_t *)entry, pos);
+        }
+    }
     put_fd_entry_impl(entry);
     return bytes;
 }
@@ -296,6 +310,9 @@ linux_off_t lseek_impl(int fd, linux_off_t offset, int whence) {
     }
 
     linux_off_t result = (linux_off_t)host_lseek_impl(get_real_fd_impl(entry), (long long)offset, whence);
+    if (result >= 0) {
+        set_fd_offset_impl((fd_entry_t *)entry, result);
+    }
     put_fd_entry_impl(entry);
     return result;
 }

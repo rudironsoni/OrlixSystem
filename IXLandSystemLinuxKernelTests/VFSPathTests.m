@@ -1296,6 +1296,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"mount should reject multiple propagation flags, errno %d", errno);
 }
 
+- (void)testSharedMountPropagatesChildBindToPeer {
+    extern int vfs_contract_shared_mount_propagates_child_bind_to_peer(void);
+    XCTAssertEqual(vfs_contract_shared_mount_propagates_child_bind_to_peer(), 0,
+                   @"shared mount peers should receive child bind propagation, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,

@@ -1,4 +1,5 @@
 #include <linux/fcntl.h>
+#include <linux/fs.h>
 #include <linux/mman.h>
 #include <linux/mount.h>
 #include <linux/sched.h>
@@ -30,6 +31,7 @@ extern int mount(const char *source, const char *target, const char *filesystemt
 extern int umount(const char *target);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int close_impl(int fd);
+extern long long lseek_impl(int fd, long long offset, int whence);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
@@ -218,6 +220,36 @@ static int procfs_read_fdinfo_flags_for_pid(int pid, int fd_num, unsigned int *f
         flags = (flags << 3) | (unsigned int)(*flags_line - '0');
     }
     *flags_out = flags;
+    return 0;
+}
+
+static int procfs_read_fdinfo_pos_for_pid(int pid, int fd_num, long long *pos_out) {
+    char path[96] = {0};
+    char content[512];
+    char *pos_line;
+    long long pos = 0;
+
+    if (!pos_out) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    proc_pid_file_path(path, sizeof(path), pid, "/fdinfo/");
+    append_positive_decimal(path, sizeof(path), fd_num);
+    if (read_file_content(path, content, sizeof(content)) != 0) {
+        return -1;
+    }
+
+    pos_line = strstr(content, "pos:\t");
+    if (!pos_line) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    for (pos_line += 5; *pos_line >= '0' && *pos_line <= '9'; pos_line++) {
+        pos = (pos * 10) + (*pos_line - '0');
+    }
+    *pos_out = pos;
     return 0;
 }
 
@@ -729,6 +761,126 @@ int procfs_namespace_contract_fdinfo_flags_are_per_task_descriptor_state(void) {
     set_current(saved);
 
     if ((child_flags & O_CLOEXEC) == 0 || (parent_flags & O_CLOEXEC) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    set_current(parent);
+    if (fd >= 0) {
+        close_impl(fd);
+    }
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_child_close_does_not_close_parent_descriptor(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    int fd = -1;
+    char path[96] = {0};
+    char link_target[MAX_PATH];
+    char byte;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    fd = open_impl("/dev/null", O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    if (close_impl(fd) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    proc_pid_file_path(path, sizeof(path), parent->pid, "/fd/");
+    append_positive_decimal(path, sizeof(path), fd);
+    if (read_link_content(path, link_target, sizeof(link_target)) != 0 ||
+        strcmp(link_target, "/dev/null") != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (read_impl(fd, &byte, sizeof(byte)) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/fd/");
+    append_positive_decimal(path, sizeof(path), fd);
+    if (read_link_content(path, link_target, sizeof(link_target)) == 0 || errno != ENOENT) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    set_current(parent);
+    if (fd >= 0) {
+        close_impl(fd);
+    }
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_fdinfo_offset_tracks_shared_open_file_description(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    int fd = -1;
+    long long child_pos = -1;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    fd = open_impl("/tmp/proc-fdinfo-offset", O_CREAT | O_RDWR | O_TRUNC, 0600);
+    if (fd < 0) {
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+
+    if (lseek_impl(fd, 7, SEEK_SET) != 7 ||
+        procfs_read_fdinfo_pos_for_pid(child->pid, fd, &child_pos) != 0) {
+        goto out;
+    }
+    if (child_pos != 7) {
         errno = ENODATA;
         goto out;
     }

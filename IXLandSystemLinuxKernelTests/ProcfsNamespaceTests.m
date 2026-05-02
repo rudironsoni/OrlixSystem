@@ -64,6 +64,14 @@
     XCTAssertEqual(procfs_namespace_contract_fdinfo_flags_are_per_task_descriptor_state(), 0, @"errno %d", errno);
 }
 
+- (void)testChildCloseDoesNotCloseParentDescriptor {
+    XCTAssertEqual(procfs_namespace_contract_child_close_does_not_close_parent_descriptor(), 0, @"errno %d", errno);
+}
+
+- (void)testFdinfoOffsetTracksSharedOpenFileDescription {
+    XCTAssertEqual(procfs_namespace_contract_fdinfo_offset_tracks_shared_open_file_description(), 0, @"errno %d", errno);
+}
+
 - (void)testProcPidCmdlineEnvironAndCommReportTargetTask {
     XCTAssertEqual(procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_task(), 0, @"errno %d", errno);
 }

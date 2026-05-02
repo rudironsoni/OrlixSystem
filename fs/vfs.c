@@ -41,6 +41,8 @@ static int vfs_stat_virtual_backed_path(const char *resolved_vpath, const char *
                                         struct linux_stat *st);
 static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath);
 static int vfs_proc_append(char *buf, size_t buf_len, size_t *pos, const char *fmt, ...);
+static int vfs_copy_string(const char *src, char *dst, size_t dst_len);
+static bool vfs_path_matches_prefix(const char *vpath, const char *prefix);
 
 /* Backing storage class roots - discovered at runtime from host container */
 static char vfs_persistent_root[MAX_PATH] = {0};
@@ -153,6 +155,118 @@ static unsigned long vfs_mount_selected_propagation(unsigned long flags) {
         return (unsigned long)-1;
     }
     return propagation;
+}
+
+static int vfs_mount_copy_entry(struct vfs_mount_entry *entry, const char *source, const char *target,
+                                const char *fstype, unsigned long flags, unsigned long propagation) {
+    int ret;
+
+    memset(entry, 0, sizeof(*entry));
+    entry->active = true;
+    ret = vfs_copy_string(source, entry->source, sizeof(entry->source));
+    if (ret != 0) {
+        memset(entry, 0, sizeof(*entry));
+        return ret;
+    }
+    ret = vfs_copy_string(target, entry->target, sizeof(entry->target));
+    if (ret != 0) {
+        memset(entry, 0, sizeof(*entry));
+        return ret;
+    }
+    if (fstype && fstype[0] != '\0') {
+        ret = vfs_copy_string(fstype, entry->fstype, sizeof(entry->fstype));
+        if (ret != 0) {
+            memset(entry, 0, sizeof(*entry));
+            return ret;
+        }
+    } else {
+        memcpy(entry->fstype, "none", sizeof("none"));
+    }
+    entry->flags = flags;
+    entry->propagation = propagation;
+    return 0;
+}
+
+static int vfs_mount_find_free_slot_locked(struct vfs_mount_namespace *mnt_ns) {
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        if (!mnt_ns->entries[i].active) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static int vfs_mount_propagate_shared_child_locked(struct vfs_mount_namespace *mnt_ns, int mounted_slot) {
+    struct vfs_mount_entry *mounted;
+    struct vfs_mount_entry *parent = NULL;
+    size_t parent_len = 0;
+    const char *suffix;
+
+    if (!mnt_ns || mounted_slot < 0 || mounted_slot >= MAX_MOUNTS ||
+        !mnt_ns->entries[mounted_slot].active) {
+        return -EINVAL;
+    }
+
+    mounted = &mnt_ns->entries[mounted_slot];
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        struct vfs_mount_entry *entry = &mnt_ns->entries[i];
+        size_t entry_len;
+
+        if ((int)i == mounted_slot || !entry->active || entry->propagation != MS_SHARED ||
+            !vfs_path_matches_prefix(mounted->target, entry->target) ||
+            strcmp(mounted->target, entry->target) == 0) {
+            continue;
+        }
+        entry_len = strlen(entry->target);
+        if (!parent || entry_len > parent_len) {
+            parent = entry;
+            parent_len = entry_len;
+        }
+    }
+
+    if (!parent) {
+        return 0;
+    }
+
+    suffix = mounted->target + parent_len;
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        struct vfs_mount_entry *peer = &mnt_ns->entries[i];
+        char peer_target[MAX_PATH];
+        int slot;
+        int ret;
+
+        if (!peer->active || peer == parent || peer->propagation != MS_SHARED ||
+            strcmp(peer->source, parent->source) != 0) {
+            continue;
+        }
+
+        ret = snprintf(peer_target, sizeof(peer_target), "%s%s", peer->target, suffix);
+        if (ret < 0 || (size_t)ret >= sizeof(peer_target)) {
+            return -ENAMETOOLONG;
+        }
+
+        bool exists = false;
+        for (size_t j = 0; j < MAX_MOUNTS; j++) {
+            if (mnt_ns->entries[j].active && strcmp(mnt_ns->entries[j].target, peer_target) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists) {
+            continue;
+        }
+
+        slot = vfs_mount_find_free_slot_locked(mnt_ns);
+        if (slot < 0) {
+            return -ENOSPC;
+        }
+        ret = vfs_mount_copy_entry(&mnt_ns->entries[slot], mounted->source, peer_target,
+                                   mounted->fstype, mounted->flags, mounted->propagation);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+    return 0;
 }
 
 struct vfs_route_entry {
@@ -1439,21 +1553,18 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         return -ENOSPC;
     }
 
-    mnt_ns->entries[slot].active = true;
-    memcpy(mnt_ns->entries[slot].source, resolved_source, sizeof(mnt_ns->entries[slot].source));
-    memcpy(mnt_ns->entries[slot].target, resolved_target, sizeof(mnt_ns->entries[slot].target));
-    if (fstype && fstype[0] != '\0') {
-        ret = vfs_copy_string(fstype, mnt_ns->entries[slot].fstype, sizeof(mnt_ns->entries[slot].fstype));
-        if (ret != 0) {
-            memset(&mnt_ns->entries[slot], 0, sizeof(mnt_ns->entries[slot]));
-            fs_mutex_unlock(&mnt_ns->lock);
-            return ret;
-        }
-    } else {
-        memcpy(mnt_ns->entries[slot].fstype, "none", sizeof("none"));
+    ret = vfs_mount_copy_entry(&mnt_ns->entries[slot], resolved_source, resolved_target,
+                               fstype, flags, propagation);
+    if (ret != 0) {
+        fs_mutex_unlock(&mnt_ns->lock);
+        return ret;
     }
-    mnt_ns->entries[slot].flags = flags;
-    mnt_ns->entries[slot].propagation = propagation;
+    ret = vfs_mount_propagate_shared_child_locked(mnt_ns, slot);
+    if (ret != 0) {
+        memset(&mnt_ns->entries[slot], 0, sizeof(mnt_ns->entries[slot]));
+        fs_mutex_unlock(&mnt_ns->lock);
+        return ret;
+    }
     fs_mutex_unlock(&mnt_ns->lock);
 
     return 0;
