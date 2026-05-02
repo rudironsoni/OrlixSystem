@@ -514,6 +514,118 @@ out:
     return result;
 }
 
+int native_syscall_contract_mremap_grows_and_moves_mapping(void) {
+    struct task_struct *task = get_current();
+    void *mapped;
+    void *fixed;
+    void *moved;
+    uint64_t base;
+    char byte = 0;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096, PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    base = (uint64_t)(uintptr_t)mapped;
+    task = get_current();
+    if (task_write_virtual_memory_impl(task, base, "R", 1) != 1) {
+        goto out_original;
+    }
+    fixed = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 8192, PROT_READ | PROT_WRITE,
+                                                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)fixed < 0) {
+        errno = -(int)(long)(uintptr_t)fixed;
+        goto out_original;
+    }
+    moved = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mremap, (long)(uintptr_t)mapped, 4096, 8192,
+                                                     MREMAP_MAYMOVE | MREMAP_FIXED,
+                                                     (long)(uintptr_t)fixed, 0);
+    if (moved != fixed) {
+        errno = (long)(uintptr_t)moved < 0 ? -(int)(long)(uintptr_t)moved : EDESTADDRREQ;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)fixed, 4096, 0, 0, 0, 0);
+        return -1;
+    }
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)fixed, &byte, 1) != 1 || byte != 'R') {
+        errno = ENODATA;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)fixed, 4096, 0, 0, 0, 0);
+        return -1;
+    }
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)fixed + 4096, &byte, 1) != 1 ||
+        byte != 0) {
+        errno = EALREADY;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)fixed, 8192, 0, 0, 0, 0);
+        return -1;
+    }
+    if (task_read_virtual_memory_impl(task, base, &byte, 1) >= 0 || errno != EFAULT) {
+        errno = ENOMSG;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)fixed, 8192, 0, 0, 0, 0);
+        return -1;
+    }
+    result = 0;
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)fixed, 8192, 0, 0, 0, 0);
+    return result;
+
+out_original:
+    {
+        int saved_errno = errno;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 8192, 0, 0, 0, 0);
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int native_syscall_contract_madvise_dontneed_discards_private_page(void) {
+    struct task_struct *task = get_current();
+    void *mapped;
+    uint64_t base;
+    char byte = 0;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 8192, PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    base = (uint64_t)(uintptr_t)mapped;
+    if (task_write_virtual_memory_impl(task, base, "A", 1) != 1 ||
+        task_write_virtual_memory_impl(task, base + 4096, "B", 1) != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_madvise, (long)(uintptr_t)(base + 4096), 4096,
+                                MADV_DONTNEED, 0, 0, 0);
+    if (ret != 0 ||
+        task_read_virtual_memory_impl(task, base, &byte, 1) != 1 || byte != 'A' ||
+        task_read_virtual_memory_impl(task, base + 4096, &byte, 1) != 1 || byte != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_madvise, (long)(uintptr_t)(base + 1), 4096,
+                                MADV_DONTNEED, 0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = EBUSY;
+        goto out;
+    }
+    result = 0;
+
+out:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 8192, 0, 0, 0, 0);
+    return result;
+}
+
 int native_syscall_contract_maps_shared_file_and_syncs(void) {
     struct task_struct *task = get_current();
     const char path[] = "/tmp/native-shared-map";
@@ -1000,6 +1112,66 @@ out_child:
     free_task(child);
 out_mapped:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+out:
+    close_if_open(fd);
+    unlink_impl(path);
+    return result;
+}
+
+int native_syscall_contract_ftruncate_updates_shared_mapping_fault_policy(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-shared-map-truncate";
+    char page[8192];
+    char byte = 0;
+    struct linux_stat st;
+    void *mapped;
+    int fd = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(page, 'T', sizeof(page));
+    unlink_impl(path);
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)page, sizeof(page), 0, 0, 0);
+    if (ret != (long)sizeof(page)) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(page),
+                                                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_ftruncate, fd, 4096, 0, 0, 0, 0);
+    if (ret != 0 ||
+        syscall_dispatch_impl(__NR_fstat, fd, (long)(uintptr_t)&st, 0, 0, 0, 0) != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mapped;
+    }
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, &byte, 1) != 1 ||
+        byte != 'T') {
+        errno = ENODATA;
+        goto out_mapped;
+    }
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped + 4096, &byte, 1) >= 0 ||
+        errno != EFAULT) {
+        errno = ENOMSG;
+        goto out_mapped;
+    }
+    result = 0;
+
+out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, sizeof(page), 0, 0, 0, 0);
 out:
     close_if_open(fd);
     unlink_impl(path);

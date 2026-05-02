@@ -266,6 +266,11 @@ void task_clear_vmas_impl(struct mm_struct *mm) {
                     mm_shared_mapping_put_impl(mm->vmas[i].shared_pages[page]);
                 }
                 free(mm->vmas[i].shared_pages);
+            } else if (mm->vmas[i].private_pages) {
+                for (uint64_t page = 0; page < mm->vmas[i].page_count; page++) {
+                    mm_private_page_put_impl(mm->vmas[i].private_pages[page]);
+                }
+                free(mm->vmas[i].private_pages);
             } else if (mm->vmas[i].shared_mapping) {
                 mm_shared_mapping_put_impl(mm->vmas[i].shared_mapping);
             } else {
@@ -273,6 +278,7 @@ void task_clear_vmas_impl(struct mm_struct *mm) {
             }
             mm->vmas[i].image = NULL;
             mm->vmas[i].shared_pages = NULL;
+            mm->vmas[i].private_pages = NULL;
         }
         free(mm->vmas[i].page_flags);
         mm->vmas[i].page_flags = NULL;
@@ -340,6 +346,9 @@ static long task_read_vma(const struct task_vma *vma, uint64_t addr, void *buf, 
     if (vma->shared_pages) {
         return mm_shared_vma_read_impl(vma, addr, buf, count);
     }
+    if (vma->private_pages) {
+        return mm_private_vma_read_impl(vma, addr, buf, count);
+    }
 
     offset = (size_t)(addr - vma->start);
     available = vma->image_size - offset;
@@ -376,6 +385,9 @@ static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf,
     }
     if (vma->shared_pages) {
         return mm_shared_vma_write_impl(vma, addr, buf, count);
+    }
+    if (vma->private_pages) {
+        return mm_private_vma_write_impl(vma, addr, buf, count);
     }
 
     offset = (size_t)(addr - vma->start);

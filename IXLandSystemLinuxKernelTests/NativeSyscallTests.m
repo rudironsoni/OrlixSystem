@@ -44,6 +44,14 @@
     XCTAssertEqual(native_syscall_contract_munmap_gap_and_map_fixed_replace_policy(), 0, @"errno %d", errno);
 }
 
+- (void)testMremapGrowsAndMovesMapping {
+    XCTAssertEqual(native_syscall_contract_mremap_grows_and_moves_mapping(), 0, @"errno %d", errno);
+}
+
+- (void)testMadviseDontneedDiscardsPrivatePage {
+    XCTAssertEqual(native_syscall_contract_madvise_dontneed_discards_private_page(), 0, @"errno %d", errno);
+}
+
 - (void)testMapsSharedFileAndSyncs {
     XCTAssertEqual(native_syscall_contract_maps_shared_file_and_syncs(), 0, @"errno %d", errno);
 }
@@ -70,6 +78,10 @@
 
 - (void)testCloneWithoutVmPreservesSharedFileMappings {
     XCTAssertEqual(native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(), 0, @"errno %d", errno);
+}
+
+- (void)testFtruncateUpdatesSharedMappingFaultPolicy {
+    XCTAssertEqual(native_syscall_contract_ftruncate_updates_shared_mapping_fault_policy(), 0, @"errno %d", errno);
 }
 
 - (void)testDispatchesProcessStartupSyscalls {

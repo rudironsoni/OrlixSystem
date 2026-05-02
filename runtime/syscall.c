@@ -185,6 +185,7 @@ extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, long long offs
 extern int fcntl_impl(int fd, int cmd, ...);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int fstatat_impl(int dirfd, const char *pathname, struct linux_stat *statbuf, int flags);
+extern int ftruncate_impl(int fd, linux_off_t length);
 extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
 extern int ioctl_impl(int fd, unsigned long request, void *arg);
@@ -509,8 +510,16 @@ long syscall_dispatch_impl(long number,
         return syscall_result((long)mprotect_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
     case __NR_munmap:
         return syscall_result((long)munmap_impl((void *)(uintptr_t)arg0, (size_t)arg1));
+    case __NR_mremap:
+        return syscall_result((long)(uintptr_t)mremap_impl((void *)(uintptr_t)arg0, (size_t)arg1,
+                                                           (size_t)arg2, (int)arg3,
+                                                           (void *)(uintptr_t)arg4));
+    case __NR_madvise:
+        return syscall_result((long)madvise_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
     case __NR_msync:
         return syscall_result((long)msync_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
+    case __NR_ftruncate:
+        return syscall_result((long)ftruncate_impl((int)arg0, (linux_off_t)arg1));
     case __NR_prlimit64:
         return syscall_prlimit64((int32_t)arg0, (int)arg1,
                                  (const uint64_t *)(uintptr_t)arg2,

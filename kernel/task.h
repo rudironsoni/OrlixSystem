@@ -43,6 +43,7 @@ struct task_struct;
 struct signal_struct;
 struct tty_struct;
 struct mm_struct;
+struct vm_private_page;
 struct vm_shared_mapping;
 struct exec_image;
 struct wait_queue_head;
@@ -72,6 +73,7 @@ struct task_vma {
     uint64_t page_count;
     uint32_t *page_flags;
     uint8_t *dirty_pages;
+    struct vm_private_page **private_pages;
     int backing_fd;
     uint64_t backing_offset;
     int shared;
@@ -366,8 +368,11 @@ struct mm_struct *task_mm_dup_impl(const struct mm_struct *mm);
 void task_mm_put_impl(struct mm_struct *mm);
 void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping);
 void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping);
+void mm_private_page_put_impl(struct vm_private_page *page);
 long mm_shared_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *buf, size_t count);
 long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
+long mm_private_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *buf, size_t count);
+long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
 
 /* Virtual process identity syscalls (internal helpers) */
 int32_t getpid_impl(void);

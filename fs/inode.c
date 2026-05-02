@@ -10,6 +10,8 @@
 
 #include "fdtable.h"
 #include "vfs.h"
+#include "internal/ios/fs/file_io_host.h"
+#include "../kernel/mm.h"
 #include "../kernel/task.h"
 
 static int inode_resolve_path_at(int dirfd, const char *pathname, char *resolved_path,
@@ -181,18 +183,65 @@ static linux_mode_t umask_impl(linux_mode_t mask) {
     return old;
 }
 
-static int truncate_impl(const char *path, linux_off_t length) {
-    (void)path;
-    (void)length;
-    errno = ENOSYS;
-    return -1;
+int truncate_impl(const char *path, linux_off_t length) {
+    char resolved_path[MAX_PATH];
+    char translated_path[MAX_PATH];
+    int ret;
+
+    if (length < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (inode_resolve_path_at(AT_FDCWD, path, resolved_path, sizeof(resolved_path)) != 0) {
+        return -1;
+    }
+    ret = vfs_translate_path(resolved_path, translated_path, sizeof(translated_path));
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    ret = host_truncate_impl(translated_path, length);
+    if (ret != 0) {
+        return -1;
+    }
+    return 0;
 }
 
-static int ftruncate_impl(int fd, linux_off_t length) {
-    (void)fd;
-    (void)length;
-    errno = ENOSYS;
-    return -1;
+int ftruncate_impl(int fd, linux_off_t length) {
+    fd_entry_t *entry;
+    int real_fd;
+    int ret;
+
+    if (length < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
+        errno = EBADF;
+        return -1;
+    }
+    entry = get_fd_entry_impl(fd);
+    if (!entry) {
+        errno = EBADF;
+        return -1;
+    }
+    if (get_fd_is_pipe_impl(entry)) {
+        put_fd_entry_impl(entry);
+        errno = EINVAL;
+        return -1;
+    }
+    real_fd = get_real_fd_impl(entry);
+    put_fd_entry_impl(entry);
+    if (real_fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    ret = host_ftruncate_impl(real_fd, length);
+    if (ret != 0) {
+        return -1;
+    }
+    mm_note_file_truncate_impl(fd, length);
+    return 0;
 }
 
 __attribute__((visibility("default"))) int chmod(const char *pathname, linux_mode_t mode) {
