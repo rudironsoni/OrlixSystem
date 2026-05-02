@@ -2326,6 +2326,9 @@ int vfs_proc_self_fd_link_target(const char *vpath, char *target, size_t target_
     return 0;
 }
 
+static struct task_struct *vfs_task_for_proc_pid(int32_t pid);
+static void vfs_put_proc_task(struct task_struct *task);
+
 int vfs_proc_self_cwd_target(char *target, size_t target_len) {
     struct task_struct *task;
 
@@ -2339,6 +2342,27 @@ int vfs_proc_self_cwd_target(char *target, size_t target_len) {
     }
 
     return vfs_getcwd_path_task(task->fs, target, target_len);
+}
+
+int vfs_proc_task_cwd_target(int32_t pid, char *target, size_t target_len) {
+    struct task_struct *task;
+    int ret;
+
+    if (!target || target_len == 0) {
+        return -EINVAL;
+    }
+
+    task = vfs_task_for_proc_pid(pid);
+    if (!task || !task->fs) {
+        if (task) {
+            vfs_put_proc_task(task);
+        }
+        return -ESRCH;
+    }
+
+    ret = vfs_getcwd_path_task(task->fs, target, target_len);
+    vfs_put_proc_task(task);
+    return ret;
 }
 
 int vfs_proc_self_exe_target(char *target, size_t target_len) {
@@ -2364,6 +2388,35 @@ int vfs_proc_self_exe_target(char *target, size_t target_len) {
     }
 
     memcpy(target, task->exe, exe_len + 1);
+    return 0;
+}
+
+int vfs_proc_task_exe_target(int32_t pid, char *target, size_t target_len) {
+    struct task_struct *task;
+    size_t exe_len;
+
+    if (!target || target_len == 0) {
+        return -EINVAL;
+    }
+
+    task = vfs_task_for_proc_pid(pid);
+    if (!task) {
+        return -ESRCH;
+    }
+
+    if (task->exe[0] == '\0') {
+        vfs_put_proc_task(task);
+        return -ENOENT;
+    }
+
+    exe_len = strlen(task->exe);
+    if (exe_len >= target_len) {
+        vfs_put_proc_task(task);
+        return -ENAMETOOLONG;
+    }
+
+    memcpy(target, task->exe, exe_len + 1);
+    vfs_put_proc_task(task);
     return 0;
 }
 
@@ -2553,7 +2606,7 @@ int vfs_proc_self_comm_content(char *buf, size_t buf_len) {
     return (int)(comm_len + 1);
 }
 
-int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
+int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
     struct task_struct *task;
     int ret;
     char state_char;
@@ -2562,7 +2615,7 @@ int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
         return -EINVAL;
     }
 
-    task = get_current();
+    task = vfs_task_for_proc_pid(pid);
     if (!task) {
         return -ESRCH;
     }
@@ -2600,12 +2653,20 @@ int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
     );
 
     if (ret < 0) {
+        vfs_put_proc_task(task);
         return -EINVAL;
     }
     if ((size_t)ret >= buf_len) {
+        vfs_put_proc_task(task);
         return (int)(buf_len - 1);
     }
+    vfs_put_proc_task(task);
     return ret;
+}
+
+int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_stat_content(task ? task->pid : -1, buf, buf_len);
 }
 
 struct vfs_vm_accounting {
@@ -2913,7 +2974,7 @@ int vfs_proc_self_mountinfo_content(char *buf, size_t buf_len) {
         return -ESRCH;
     }
 
-    if (vfs_proc_append(buf, buf_len, &pos, "1 0 0:1 / / rw - ixland-root ixland-root rw\n") != 0) {
+    if (vfs_proc_append(buf, buf_len, &pos, "1 0 0:1 / / rw,relatime - ixland-root ixland-root rw\n") != 0) {
         return (int)pos;
     }
 
@@ -2927,8 +2988,8 @@ int vfs_proc_self_mountinfo_content(char *buf, size_t buf_len) {
 
         const char *mode = (entry->flags & MS_RDONLY) ? "ro" : "rw";
         const char *fstype = entry->fstype[0] ? entry->fstype : "none";
-        if (vfs_proc_append(buf, buf_len, &pos, "%d 1 0:%d %s %s %s - %s %s %s,bind\n",
-                            mount_id, mount_id, entry->source, entry->target, mode,
+        if (vfs_proc_append(buf, buf_len, &pos, "%d 1 0:%d / %s %s,relatime - %s %s %s,bind\n",
+                            mount_id, mount_id, entry->target, mode,
                             fstype, entry->source, mode) != 0) {
             break;
         }
@@ -3044,7 +3105,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
     struct task_struct *task;
     struct cred *cred;
     struct vfs_vm_accounting acct;
-    int ret;
+    size_t pos = 0;
     char state_char;
 
     if (!buf || buf_len == 0) {
@@ -3058,6 +3119,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
 
     cred = task->cred ? task->cred : get_current_cred();
     if (!cred) {
+        vfs_put_proc_task(task);
         return -ESRCH;
     }
 
@@ -3083,7 +3145,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
     }
     vfs_vm_account_task(task, &acct);
 
-    ret = snprintf(buf, buf_len,
+    if (vfs_proc_append(buf, buf_len, &pos,
         "Name:\t%s\n"
         "State:\t%c (running)\n"
         "Tgid:\t%d\n"
@@ -3092,43 +3154,65 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         "TracerPid:\t0\n"
         "Uid:\t%u\t%u\t%u\t%u\n"
         "Gid:\t%u\t%u\t%u\t%u\n"
-        "NStgid:\t%d\n"
-        "NSpid:\t%d\n"
-        "NSpgid:\t%d\n"
-        "NSsid:\t%d\n"
-        "VmSize:\t%llu kB\n"
-        "VmRSS:\t%llu kB\n"
-        "RssAnon:\t%llu kB\n"
-        "RssFile:\t%llu kB\n"
-        "VmData:\t%llu kB\n"
-        "VmDirty:\t%llu kB\n",
+        "Groups:\t",
         task->comm,
         state_char,
         task->tgid,
         task->pid,
         task->ppid,
         cred->uid, cred->euid, cred->suid, cred->suid,
-        cred->gid, cred->egid, cred->sgid, cred->sgid,
+        cred->gid, cred->egid, cred->sgid, cred->sgid) != 0) {
+        vfs_put_proc_task(task);
+        return (int)pos;
+    }
+
+    for (size_t i = 0; i < cred->group_count; i++) {
+        if (vfs_proc_append(buf, buf_len, &pos, "%u%s", cred->groups[i],
+                            (i + 1 == cred->group_count) ? "" : " ") != 0) {
+            vfs_put_proc_task(task);
+            return (int)pos;
+        }
+    }
+
+    if (vfs_proc_append(buf, buf_len, &pos,
+        "\n"
+        "NStgid:\t%d\n"
+        "NSpid:\t%d\n"
+        "NSpgid:\t%d\n"
+        "NSsid:\t%d\n"
+        "CapInh:\t%016llx\n"
+        "CapPrm:\t%016llx\n"
+        "CapEff:\t%016llx\n"
+        "CapBnd:\t%016llx\n"
+        "CapAmb:\t%016llx\n"
+        "NoNewPrivs:\t%d\n"
+        "VmSize:\t%llu kB\n"
+        "VmRSS:\t%llu kB\n"
+        "RssAnon:\t%llu kB\n"
+        "RssFile:\t%llu kB\n"
+        "VmData:\t%llu kB\n"
+        "VmDirty:\t%llu kB\n",
         task->ns_pid,
         task->ns_pid,
         task->pgid,
         task->sid,
+        (unsigned long long)cred->cap_inheritable,
+        (unsigned long long)cred->cap_permitted,
+        (unsigned long long)cred->cap_effective,
+        (unsigned long long)cred->cap_bounding,
+        (unsigned long long)cred->cap_ambient,
+        cred->no_new_privs ? 1 : 0,
         (unsigned long long)(acct.size_pages * 4ULL),
         (unsigned long long)(acct.resident_pages * 4ULL),
         (unsigned long long)((acct.resident_pages - acct.shared_pages) * 4ULL),
         (unsigned long long)(acct.shared_pages * 4ULL),
         (unsigned long long)(acct.data_pages * 4ULL),
-        (unsigned long long)(acct.dirty_pages * 4ULL)
-    );
+        (unsigned long long)(acct.dirty_pages * 4ULL)) != 0) {
+        vfs_put_proc_task(task);
+        return (int)pos;
+    }
     vfs_put_proc_task(task);
-
-    if (ret < 0) {
-        return -EINVAL;
-    }
-    if ((size_t)ret >= buf_len) {
-        return (int)(buf_len - 1);
-    }
-    return ret;
+    return (int)pos;
 }
 
 int vfs_proc_self_status_content(char *buf, size_t buf_len) {
@@ -3281,7 +3365,8 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
             return 0;
         } else if (proc_class == PROC_SELF_CWD_LINK) {
             char link_target[MAX_PATH];
-            ret = vfs_proc_self_cwd_target(link_target, sizeof(link_target));
+            ret = vfs_proc_task_cwd_target(vfs_proc_target_pid_for_path(resolved_virtual),
+                                           link_target, sizeof(link_target));
             if (ret != 0) {
                 return ret;
             }
@@ -3296,7 +3381,8 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
             return 0;
         } else if (proc_class == PROC_SELF_EXE_LINK) {
             char link_target[MAX_PATH];
-            ret = vfs_proc_self_exe_target(link_target, sizeof(link_target));
+            ret = vfs_proc_task_exe_target(vfs_proc_target_pid_for_path(resolved_virtual),
+                                           link_target, sizeof(link_target));
             if (ret != 0) {
                 return ret;
             }

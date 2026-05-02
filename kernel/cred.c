@@ -680,6 +680,46 @@ int setgid_impl(gid_t gid) {
     return 0;
 }
 
+int seteuid_impl(uid_t euid) {
+    struct cred *cred = get_current_cred();
+    int ret = cred_seteuid(cred, (uint32_t)euid);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+int setegid_impl(gid_t egid) {
+    struct cred *cred = get_current_cred();
+    int ret = cred_setegid(cred, (uint32_t)egid);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+int setresuid_impl(uid_t ruid, uid_t euid, uid_t suid) {
+    struct cred *cred = get_current_cred();
+    int ret = cred_setresuid(cred, (uint32_t)ruid, (uint32_t)euid, (uint32_t)suid);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+int setresgid_impl(gid_t rgid, gid_t egid, gid_t sgid) {
+    struct cred *cred = get_current_cred();
+    int ret = cred_setresgid(cred, (uint32_t)rgid, (uint32_t)egid, (uint32_t)sgid);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
 int getgroups_impl(int size, gid_t list[]) {
     struct cred *cred = get_current_cred();
 
@@ -983,6 +1023,22 @@ __attribute__((visibility("default"))) int setuid(uid_t uid) {
 
 __attribute__((visibility("default"))) int setgid(gid_t gid) {
     return setgid_impl(gid);
+}
+
+__attribute__((visibility("default"))) int seteuid(uid_t euid) {
+    return seteuid_impl(euid);
+}
+
+__attribute__((visibility("default"))) int setegid(gid_t egid) {
+    return setegid_impl(egid);
+}
+
+__attribute__((visibility("default"))) int setresuid(uid_t ruid, uid_t euid, uid_t suid) {
+    return setresuid_impl(ruid, euid, suid);
+}
+
+__attribute__((visibility("default"))) int setresgid(gid_t rgid, gid_t egid, gid_t sgid) {
+    return setresgid_impl(rgid, egid, sgid);
 }
 
 __attribute__((visibility("default"))) int getgroups(int size, gid_t list[]) {

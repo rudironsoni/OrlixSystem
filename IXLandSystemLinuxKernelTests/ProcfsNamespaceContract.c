@@ -105,6 +105,17 @@ static void proc_pid_status_path(char *buf, size_t buf_len, int pid) {
     }
 }
 
+static void proc_pid_file_path(char *buf, size_t buf_len, int pid, const char *leaf) {
+    size_t len;
+
+    memcpy(buf, "/proc/", 7);
+    append_positive_decimal(buf, buf_len, pid);
+    len = strlen(buf);
+    if (leaf && len + strlen(leaf) + 1 < buf_len) {
+        memcpy(buf + len, leaf, strlen(leaf) + 1);
+    }
+}
+
 static void release_lookup_child(struct task_struct *parent, struct task_struct *child) {
     if (!child) {
         return;
@@ -322,6 +333,98 @@ out:
     if (child_cred) {
         put_cred(child_cred);
     }
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_proc_status_reports_groups_and_capabilities(void) {
+    gid_t groups[2] = {3000, 3001};
+    char content[2048];
+
+    reset_procfs_namespace_state();
+
+    if (setgroups_impl(2, groups) != 0) {
+        return -1;
+    }
+
+    if (read_file_content("/proc/self/status", content, sizeof(content)) != 0) {
+        return -1;
+    }
+
+    if (!contains(content, "Groups:\t3000 3001\n") ||
+        !contains(content, "CapInh:\t") ||
+        !contains(content, "CapPrm:\t") ||
+        !contains(content, "CapEff:\t") ||
+        !contains(content, "CapBnd:\t") ||
+        !contains(content, "CapAmb:\t") ||
+        !contains(content, "NoNewPrivs:\t0\n")) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    return 0;
+}
+
+int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    char path[96] = {0};
+    char content[1024];
+    char link_target[MAX_PATH];
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    memset(child->comm, 0, sizeof(child->comm));
+    memcpy(child->comm, "pid-child", 10);
+    memset(child->exe, 0, sizeof(child->exe));
+    memcpy(child->exe, "/tmp/proc-pid-child-exe", 24);
+    if (fs_set_pwd(child->fs, "/tmp") != 0) {
+        errno = EINVAL;
+        goto out;
+    }
+
+    proc_pid_file_path(path, sizeof(path), child->pid, "/stat");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "(pid-child)")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/cwd");
+    if (read_link_content(path, link_target, sizeof(link_target)) != 0 ||
+        strcmp(link_target, "/tmp") != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/exe");
+    if (read_link_content(path, link_target, sizeof(link_target)) != 0 ||
+        strcmp(link_target, "/tmp/proc-pid-child-exe") != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
     if (child) {
         task_unlink_child_impl(parent, child);
         free_task(child);

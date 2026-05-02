@@ -110,7 +110,7 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
             content_len = vfs_proc_self_comm_content(content, sizeof(content));
             break;
         case SYNTHETIC_PROC_FILE_STAT:
-            content_len = vfs_proc_self_stat_content(content, sizeof(content));
+            content_len = vfs_proc_task_stat_content(target_pid, content, sizeof(content));
             break;
         case SYNTHETIC_PROC_FILE_STATM:
             content_len = vfs_proc_task_statm_content(target_pid, content, sizeof(content));
@@ -311,7 +311,7 @@ static int synthetic_proc_file_content(synthetic_proc_file_t proc_file, int fd_n
     case SYNTHETIC_PROC_FILE_COMM:
         return vfs_proc_self_comm_content(content, content_size);
     case SYNTHETIC_PROC_FILE_STAT:
-        return vfs_proc_self_stat_content(content, content_size);
+        return vfs_proc_task_stat_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_STATM:
         return vfs_proc_task_statm_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_MAPS:

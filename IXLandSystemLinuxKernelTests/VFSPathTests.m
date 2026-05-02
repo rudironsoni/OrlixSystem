@@ -1272,6 +1272,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"/proc/self/mountinfo should expose virtual bind mounts, errno %d", errno);
 }
 
+- (void)testProcSelfMountinfoUsesLinuxShapedOptionalFields {
+    extern int vfs_contract_proc_self_mountinfo_uses_linux_shaped_optional_fields(void);
+    XCTAssertEqual(vfs_contract_proc_self_mountinfo_uses_linux_shaped_optional_fields(), 0,
+                   @"/proc/self/mountinfo should use Linux-shaped root/source/mount option fields, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,

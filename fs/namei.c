@@ -773,7 +773,8 @@ static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_
             return (ssize_t)target_len;
         } else if (proc_class == PROC_SELF_CWD_LINK) {
             char link_target[MAX_PATH];
-            ret = vfs_proc_self_cwd_target(link_target, sizeof(link_target));
+            ret = vfs_proc_task_cwd_target(vfs_proc_target_pid_for_path(resolved_virtual),
+                                           link_target, sizeof(link_target));
             if (ret != 0) {
                 errno = -ret;
                 return -1;
@@ -786,7 +787,8 @@ static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_
             return (ssize_t)target_len;
         } else if (proc_class == PROC_SELF_EXE_LINK) {
             char link_target[MAX_PATH];
-            ret = vfs_proc_self_exe_target(link_target, sizeof(link_target));
+            ret = vfs_proc_task_exe_target(vfs_proc_target_pid_for_path(resolved_virtual),
+                                           link_target, sizeof(link_target));
             if (ret != 0) {
                 errno = -ret;
                 return -1;

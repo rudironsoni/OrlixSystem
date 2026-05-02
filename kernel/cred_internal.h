@@ -166,6 +166,18 @@ int setuid_impl(uid_t uid);
 /* Set GID - virtual implementation */
 int setgid_impl(gid_t gid);
 
+/* Set effective UID - virtual implementation */
+int seteuid_impl(uid_t euid);
+
+/* Set effective GID - virtual implementation */
+int setegid_impl(gid_t egid);
+
+/* Set real/effective/saved UID - virtual implementation */
+int setresuid_impl(uid_t ruid, uid_t euid, uid_t suid);
+
+/* Set real/effective/saved GID - virtual implementation */
+int setresgid_impl(gid_t rgid, gid_t egid, gid_t sgid);
+
 /* Get supplementary groups - virtual implementation */
 int getgroups_impl(int size, gid_t list[]);
 

@@ -44,6 +44,14 @@
     XCTAssertEqual(procfs_namespace_contract_proc_pid_status_reports_target_credentials(), 0, @"errno %d", errno);
 }
 
+- (void)testProcStatusReportsGroupsAndCapabilities {
+    XCTAssertEqual(procfs_namespace_contract_proc_status_reports_groups_and_capabilities(), 0, @"errno %d", errno);
+}
+
+- (void)testProcPidStatCwdAndExeReportTargetTask {
+    XCTAssertEqual(procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(), 0, @"errno %d", errno);
+}
+
 - (void)testRootProcFilesAreReadable {
     XCTAssertEqual(procfs_namespace_contract_root_files_are_readable(), 0, @"errno %d", errno);
 }

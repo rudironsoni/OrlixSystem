@@ -22,6 +22,10 @@ extern gid_t getgid_impl(void);
 extern gid_t getegid_impl(void);
 extern int setuid_impl(uid_t uid);
 extern int setgid_impl(gid_t gid);
+extern int seteuid_impl(uid_t euid);
+extern int setegid_impl(gid_t egid);
+extern int setresuid_impl(uid_t ruid, uid_t euid, uid_t suid);
+extern int setresgid_impl(gid_t rgid, gid_t egid, gid_t sgid);
 extern int getgroups_impl(int size, gid_t list[]);
 extern int setgroups_impl(int size, const gid_t *list);
 extern void cred_reset_to_defaults(void);
@@ -136,6 +140,36 @@ extern void cred_reset_to_defaults(void);
     result = setuid_impl(1000);
 
     XCTAssertEqual(result, 0, @"setuid_impl should succeed for reverting to own UID");
+}
+
+- (void)testSeteuidImplVirtualRootChangesEffectiveUidOnly {
+    XCTAssertEqual(setresuid_impl(1000, 0, 2000), 0, @"root should establish saved uid state");
+
+    XCTAssertEqual(seteuid_impl(2000), 0, @"seteuid should select saved uid");
+    XCTAssertEqual(getuid_impl(), 1000u, @"real uid should remain unchanged");
+    XCTAssertEqual(geteuid_impl(), 2000u, @"effective uid should change");
+}
+
+- (void)testSetegidImplVirtualRootChangesEffectiveGidOnly {
+    XCTAssertEqual(setresgid_impl(1000, 0, 2000), 0, @"root should establish saved gid state");
+
+    XCTAssertEqual(setegid_impl(2000), 0, @"setegid should select saved gid");
+    XCTAssertEqual(getgid_impl(), 1000u, @"real gid should remain unchanged");
+    XCTAssertEqual(getegid_impl(), 2000u, @"effective gid should change");
+}
+
+- (void)testSetresuidImplUpdatesRealEffectiveAndSavedUid {
+    XCTAssertEqual(setresuid_impl(1000, 1001, 1002), 0, @"root should set all uid slots");
+
+    XCTAssertEqual(getuid_impl(), 1000u, @"real uid should update");
+    XCTAssertEqual(geteuid_impl(), 1001u, @"effective uid should update");
+}
+
+- (void)testSetresgidImplUpdatesRealEffectiveAndSavedGid {
+    XCTAssertEqual(setresgid_impl(2000, 2001, 2002), 0, @"root should set all gid slots");
+
+    XCTAssertEqual(getgid_impl(), 2000u, @"real gid should update");
+    XCTAssertEqual(getegid_impl(), 2001u, @"effective gid should update");
 }
 
 /* ============================================================================
