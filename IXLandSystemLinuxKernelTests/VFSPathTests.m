@@ -1474,6 +1474,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"recursive unmount should propagate nested shared subtree removal, errno %d", errno);
 }
 
+- (void)testMountIdsStableAcrossMoveUnmountAndNamespaceClone {
+    extern int vfs_contract_mount_ids_stable_across_move_unmount_and_namespace_clone(void);
+    XCTAssertEqual(vfs_contract_mount_ids_stable_across_move_unmount_and_namespace_clone(), 0,
+                   @"virtual mount ids should survive move, sibling unmount, and namespace clone, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,

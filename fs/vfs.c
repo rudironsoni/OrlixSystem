@@ -13,6 +13,123 @@
 #include <linux/mount.h>
 #include <linux/stat.h>
 #include <linux/xattr.h>
+#ifdef SIGHUP
+#undef SIGHUP
+#endif
+#ifdef SIGINT
+#undef SIGINT
+#endif
+#ifdef SIGQUIT
+#undef SIGQUIT
+#endif
+#ifdef SIGILL
+#undef SIGILL
+#endif
+#ifdef SIGTRAP
+#undef SIGTRAP
+#endif
+#ifdef SIGABRT
+#undef SIGABRT
+#endif
+#ifdef SIGIOT
+#undef SIGIOT
+#endif
+#ifdef SIGBUS
+#undef SIGBUS
+#endif
+#ifdef SIGFPE
+#undef SIGFPE
+#endif
+#ifdef SIGKILL
+#undef SIGKILL
+#endif
+#ifdef SIGUSR1
+#undef SIGUSR1
+#endif
+#ifdef SIGSEGV
+#undef SIGSEGV
+#endif
+#ifdef SIGUSR2
+#undef SIGUSR2
+#endif
+#ifdef SIGPIPE
+#undef SIGPIPE
+#endif
+#ifdef SIGALRM
+#undef SIGALRM
+#endif
+#ifdef SIGTERM
+#undef SIGTERM
+#endif
+#ifdef SIGSTKFLT
+#undef SIGSTKFLT
+#endif
+#ifdef SIGCHLD
+#undef SIGCHLD
+#endif
+#ifdef SIGCONT
+#undef SIGCONT
+#endif
+#ifdef SIGSTOP
+#undef SIGSTOP
+#endif
+#ifdef SIGTSTP
+#undef SIGTSTP
+#endif
+#ifdef SIGTTIN
+#undef SIGTTIN
+#endif
+#ifdef SIGTTOU
+#undef SIGTTOU
+#endif
+#ifdef SIGURG
+#undef SIGURG
+#endif
+#ifdef SIGXCPU
+#undef SIGXCPU
+#endif
+#ifdef SIGXFSZ
+#undef SIGXFSZ
+#endif
+#ifdef SIGVTALRM
+#undef SIGVTALRM
+#endif
+#ifdef SIGPROF
+#undef SIGPROF
+#endif
+#ifdef SIGWINCH
+#undef SIGWINCH
+#endif
+#ifdef SIGIO
+#undef SIGIO
+#endif
+#ifdef SIGPOLL
+#undef SIGPOLL
+#endif
+#ifdef SIGPWR
+#undef SIGPWR
+#endif
+#ifdef SIGSYS
+#undef SIGSYS
+#endif
+#ifdef SIGUNUSED
+#undef SIGUNUSED
+#endif
+#ifdef SIGRTMIN
+#undef SIGRTMIN
+#endif
+#ifdef SIGRTMAX
+#undef SIGRTMAX
+#endif
+#ifdef MINSIGSTKSZ
+#undef MINSIGSTKSZ
+#endif
+#ifdef SIGSTKSZ
+#undef SIGSTKSZ
+#endif
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
 
 /* Narrow seam headers for host operations */
 #include "internal/ios/fs/file_io_host.h"
@@ -55,6 +172,7 @@ static int vfs_etc_bootstrapped = 0;
 
 struct vfs_mount_entry {
     bool active;
+    uint64_t mount_id;
     char source[MAX_PATH];
     char target[MAX_PATH];
     char fstype[32];
@@ -103,6 +221,7 @@ static struct vfs_metadata_entry vfs_metadata_table[VFS_METADATA_MAX];
 static fs_mutex_t vfs_metadata_lock = FS_MUTEX_INITIALIZER;
 static linux_atomic_int vfs_next_mount_ns_id = 1;
 static linux_atomic_int vfs_next_file_identity = 1;
+static linux_atomic_int vfs_next_mount_id = 2;
 static linux_atomic_int vfs_next_mount_peer_group_id = 1;
 
 #define VFS_DETACHED_MOUNT_MAX 64
@@ -188,6 +307,10 @@ static unsigned long vfs_mount_selected_propagation(unsigned long flags) {
     return propagation;
 }
 
+static uint64_t vfs_mount_next_id(void) {
+    return (uint64_t)atomic_fetch_add(&vfs_next_mount_id, 1);
+}
+
 static int vfs_mount_copy_entry(struct vfs_mount_entry *entry, const char *source, const char *target,
                                 const char *fstype, unsigned long flags, unsigned long propagation) {
     int ret;
@@ -218,6 +341,7 @@ static int vfs_mount_copy_entry(struct vfs_mount_entry *entry, const char *sourc
     entry->peer_group_id = 0;
     entry->master_group_id = 0;
     entry->expiry_candidate = false;
+    entry->mount_id = vfs_mount_next_id();
     return 0;
 }
 
@@ -2163,28 +2287,15 @@ unsigned long vfs_mount_flags_for_path(const char *resolved_vpath) {
 }
 
 static uint64_t vfs_mount_id_for_index_locked(const struct vfs_mount_namespace *mnt_ns, size_t target_index) {
-    uint64_t id = 2;
-
     if (!mnt_ns || target_index >= MAX_MOUNTS || !mnt_ns->entries[target_index].active) {
         return 0;
     }
-    for (size_t i = 0; i < MAX_MOUNTS; i++) {
-        if (!mnt_ns->entries[i].active) {
-            continue;
-        }
-        if (i == target_index) {
-            return id;
-        }
-        id++;
-    }
-    return 0;
+    return mnt_ns->entries[target_index].mount_id;
 }
 
 static const struct vfs_mount_entry *vfs_mount_for_id_locked(const struct vfs_mount_namespace *mnt_ns,
                                                              uint64_t id,
                                                              size_t *index_out) {
-    uint64_t current = 2;
-
     if (!mnt_ns || id < 2) {
         return NULL;
     }
@@ -2192,15 +2303,41 @@ static const struct vfs_mount_entry *vfs_mount_for_id_locked(const struct vfs_mo
         if (!mnt_ns->entries[i].active) {
             continue;
         }
-        if (current == id) {
+        if (mnt_ns->entries[i].mount_id == id) {
             if (index_out) {
                 *index_out = i;
             }
             return &mnt_ns->entries[i];
         }
-        current++;
     }
     return NULL;
+}
+
+static uint64_t vfs_mount_parent_id_locked(const struct vfs_mount_namespace *mnt_ns, size_t target_index) {
+    const struct vfs_mount_entry *entry;
+    uint64_t parent_id = 1;
+    size_t parent_len = 0;
+
+    if (!mnt_ns || target_index >= MAX_MOUNTS || !mnt_ns->entries[target_index].active) {
+        return 1;
+    }
+    entry = &mnt_ns->entries[target_index];
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        const struct vfs_mount_entry *candidate = &mnt_ns->entries[i];
+        size_t candidate_len;
+
+        if (i == target_index || !candidate->active || candidate->mount_id == 0 ||
+            !vfs_path_matches_prefix(entry->target, candidate->target) ||
+            strcmp(entry->target, candidate->target) == 0) {
+            continue;
+        }
+        candidate_len = strlen(candidate->target);
+        if (candidate_len > parent_len) {
+            parent_len = candidate_len;
+            parent_id = candidate->mount_id;
+        }
+    }
+    return parent_id;
 }
 
 static int vfs_statmount_store_string(struct statmount *buf, size_t bufsize,
@@ -2561,8 +2698,8 @@ int vfs_statmount(const struct mnt_id_req *req, struct statmount *buf, size_t bu
     buf->mask = req->param;
     buf->mnt_id = req->mnt_id;
     buf->mnt_id_old = (__u32)req->mnt_id;
-    buf->mnt_parent_id = 1;
-    buf->mnt_parent_id_old = 1;
+    buf->mnt_parent_id = vfs_mount_parent_id_locked(mnt_ns, index);
+    buf->mnt_parent_id_old = (__u32)buf->mnt_parent_id;
     buf->mnt_attr = 0;
     if ((entry->flags & MS_RDONLY) != 0) {
         buf->mnt_attr |= MOUNT_ATTR_RDONLY;
@@ -4568,88 +4705,6 @@ int vfs_proc_self_comm_content(char *buf, size_t buf_len) {
     return vfs_proc_task_comm_content(task ? task->pid : -1, buf, buf_len);
 }
 
-int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task;
-    int ret;
-    char state_char;
-
-    if (!buf || buf_len == 0) {
-        return -EINVAL;
-    }
-
-    task = vfs_task_for_proc_pid(pid);
-    if (!task) {
-        return -ESRCH;
-    }
-
-    switch (atomic_load(&task->state)) {
-        case TASK_RUNNING:
-            state_char = 'R';
-            break;
-        case TASK_INTERRUPTIBLE:
-            state_char = 'S';
-            break;
-        case TASK_UNINTERRUPTIBLE:
-            state_char = 'D';
-            break;
-        case TASK_STOPPED:
-            state_char = 'T';
-            break;
-        case TASK_ZOMBIE:
-            state_char = 'Z';
-            break;
-        default:
-            state_char = 'R';
-            break;
-    }
-
-    ret = snprintf(buf, buf_len,
-        "%d (%s) %c %d %d %d 0 -1 0 0 0 0 0 0 0 0 0 0 1 0 %llu 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
-        task->pid,
-        task->comm,
-        state_char,
-        task->ppid,
-        task->pgid,
-        task->sid,
-        (unsigned long long)(task->start_time_ns / 1000000000ULL)
-    );
-
-    if (ret < 0) {
-        vfs_put_proc_task(task);
-        return -EINVAL;
-    }
-    if ((size_t)ret >= buf_len) {
-        vfs_put_proc_task(task);
-        return (int)(buf_len - 1);
-    }
-    vfs_put_proc_task(task);
-    return ret;
-}
-
-int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
-    return vfs_proc_task_stat_content(task ? task->pid : -1, buf, buf_len);
-}
-
-static const char *vfs_proc_task_state_name(enum task_state state) {
-    switch (state) {
-    case TASK_RUNNING:
-        return "running";
-    case TASK_INTERRUPTIBLE:
-        return "sleeping";
-    case TASK_UNINTERRUPTIBLE:
-        return "disk sleep";
-    case TASK_STOPPED:
-        return "stopped";
-    case TASK_ZOMBIE:
-        return "zombie";
-    case TASK_DEAD:
-        return "dead";
-    default:
-        return "running";
-    }
-}
-
 struct vfs_vm_accounting {
     uint64_t size_pages;
     uint64_t resident_pages;
@@ -4685,6 +4740,108 @@ static void vfs_vm_account_task(const struct task_struct *task, struct vfs_vm_ac
                 }
             }
         }
+    }
+}
+
+int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
+    struct task_struct *task;
+    struct vfs_vm_accounting acct;
+    int ret;
+    char state_char;
+    long long tty_nr = 0;
+    long long tpgid = -1;
+    unsigned long long starttime;
+    unsigned long long vsize;
+    unsigned long long rss;
+
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+
+    task = vfs_task_for_proc_pid(pid);
+    if (!task) {
+        return -ESRCH;
+    }
+
+    switch (atomic_load(&task->state)) {
+        case TASK_RUNNING:
+            state_char = 'R';
+            break;
+        case TASK_INTERRUPTIBLE:
+            state_char = 'S';
+            break;
+        case TASK_UNINTERRUPTIBLE:
+            state_char = 'D';
+            break;
+        case TASK_STOPPED:
+            state_char = 'T';
+            break;
+        case TASK_ZOMBIE:
+            state_char = 'Z';
+            break;
+        default:
+            state_char = 'R';
+            break;
+    }
+
+    vfs_vm_account_task(task, &acct);
+    if (task->tty) {
+        tty_nr = task->tty->index;
+        tpgid = task->tty->foreground_pgrp;
+    }
+    starttime = (unsigned long long)(task->start_time_ns / 10000000ULL);
+    vsize = (unsigned long long)(acct.size_pages * TASK_VMA_PAGE_SIZE);
+    rss = (unsigned long long)acct.resident_pages;
+
+    ret = snprintf(buf, buf_len,
+        "%d (%s) %c %d %d %d %lld %lld 0 0 0 0 0 0 0 0 0 20 0 1 0 %llu %llu %llu 0 0 0 0 0 0 0 0 0 0 0 0 0 %d 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+        task->pid,
+        task->comm,
+        state_char,
+        task->ppid,
+        task->pgid,
+        task->sid,
+        tty_nr,
+        tpgid,
+        starttime,
+        vsize,
+        rss,
+        SIGCHLD
+    );
+
+    if (ret < 0) {
+        vfs_put_proc_task(task);
+        return -EINVAL;
+    }
+    if ((size_t)ret >= buf_len) {
+        vfs_put_proc_task(task);
+        return (int)(buf_len - 1);
+    }
+    vfs_put_proc_task(task);
+    return ret;
+}
+
+int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_stat_content(task ? task->pid : -1, buf, buf_len);
+}
+
+static const char *vfs_proc_task_state_name(enum task_state state) {
+    switch (state) {
+    case TASK_RUNNING:
+        return "running";
+    case TASK_INTERRUPTIBLE:
+        return "sleeping";
+    case TASK_UNINTERRUPTIBLE:
+        return "disk sleep";
+    case TASK_STOPPED:
+        return "stopped";
+    case TASK_ZOMBIE:
+        return "zombie";
+    case TASK_DEAD:
+        return "dead";
+    default:
+        return "running";
     }
 }
 
@@ -5241,8 +5398,6 @@ static int vfs_proc_append_mount_optional_fields(struct vfs_mount_namespace *mnt
 
 static int vfs_proc_mountinfo_content_for_namespace(struct vfs_mount_namespace *mnt_ns, char *buf, size_t buf_len) {
     size_t pos = 0;
-    int mount_id = 2;
-    int mount_ids[MAX_MOUNTS] = {0};
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
@@ -5258,40 +5413,22 @@ static int vfs_proc_mountinfo_content_for_namespace(struct vfs_mount_namespace *
 
     fs_mutex_lock(&mnt_ns->lock);
     for (size_t i = 0; i < MAX_MOUNTS; i++) {
-        if (mnt_ns->entries[i].active) {
-            mount_ids[i] = mount_id++;
-        }
-    }
-
-    for (size_t i = 0; i < MAX_MOUNTS; i++) {
         struct vfs_mount_entry *entry = &mnt_ns->entries[i];
-        int parent_id = 1;
-        size_t parent_len = 0;
+        uint64_t parent_id;
 
         if (!entry->active) {
             continue;
         }
 
-        for (size_t j = 0; j < MAX_MOUNTS; j++) {
-            const struct vfs_mount_entry *candidate = &mnt_ns->entries[j];
-            size_t candidate_len;
-
-            if (i == j || !candidate->active || mount_ids[j] == 0 ||
-                !vfs_path_matches_prefix(entry->target, candidate->target) ||
-                strcmp(entry->target, candidate->target) == 0) {
-                continue;
-            }
-            candidate_len = strlen(candidate->target);
-            if (candidate_len > parent_len) {
-                parent_len = candidate_len;
-                parent_id = mount_ids[j];
-            }
-        }
+        parent_id = vfs_mount_parent_id_locked(mnt_ns, i);
 
         const char *mode = (entry->flags & MS_RDONLY) ? "ro" : "rw";
         const char *fstype = entry->fstype[0] ? entry->fstype : "none";
-        if (vfs_proc_append(buf, buf_len, &pos, "%d %d 0:%d / %s %s,relatime",
-                            mount_ids[i], parent_id, mount_ids[i], entry->target, mode) != 0 ||
+        if (vfs_proc_append(buf, buf_len, &pos, "%llu %llu 0:%llu / %s %s,relatime",
+                            (unsigned long long)entry->mount_id,
+                            (unsigned long long)parent_id,
+                            (unsigned long long)entry->mount_id,
+                            entry->target, mode) != 0 ||
             vfs_proc_append_mount_optional_fields(mnt_ns, entry, buf, buf_len, &pos) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, " - %s %s %s,bind\n",
                             fstype, entry->source, mode) != 0) {

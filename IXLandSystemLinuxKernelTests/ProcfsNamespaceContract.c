@@ -200,6 +200,61 @@ static void proc_pid_file_path(char *buf, size_t buf_len, int pid, const char *l
     }
 }
 
+static int parse_signed_decimal_token(const char *token, long long *value_out) {
+    long long value = 0;
+    int sign = 1;
+
+    if (!token || !value_out) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (*token == '-') {
+        sign = -1;
+        token++;
+    }
+    if (*token < '0' || *token > '9') {
+        errno = EPROTO;
+        return -1;
+    }
+    while (*token >= '0' && *token <= '9') {
+        value = (value * 10) + (*token - '0');
+        token++;
+    }
+    *value_out = value * sign;
+    return 0;
+}
+
+static int proc_stat_numeric_field(const char *stat, int field, long long *value_out) {
+    const char *cursor;
+    int current_field = 3;
+
+    if (!stat || !value_out || field < 4) {
+        errno = EINVAL;
+        return -1;
+    }
+    cursor = strrchr(stat, ')');
+    if (!cursor || cursor[1] != ' ' || cursor[2] == '\0' || cursor[3] != ' ') {
+        errno = EPROTO;
+        return -1;
+    }
+    cursor += 4;
+    current_field = 4;
+    while (current_field < field) {
+        while (*cursor && *cursor != ' ') {
+            cursor++;
+        }
+        while (*cursor == ' ') {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            errno = ENODATA;
+            return -1;
+        }
+        current_field++;
+    }
+    return parse_signed_decimal_token(cursor, value_out);
+}
+
 static bool procfs_dirents_contain_name(char *buf, long nread, const char *name) {
     long offset = 0;
 
@@ -1157,6 +1212,101 @@ out:
         set_current(child);
         if (child_fd >= 0) {
             close_impl(child_fd);
+        }
+        set_current(saved);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_proc_pid_stat_reports_tty_start_rss_and_exit_signal(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    void *mapping = (void *)-1;
+    char path[96] = {0};
+    char content[2048];
+    long long tty_nr = -1;
+    long long tpgid = 0;
+    long long starttime = -1;
+    long long vsize = 0;
+    long long rss = 0;
+    long long exit_signal = 0;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    saved = get_current();
+    set_current(child);
+    memset(child->comm, 0, sizeof(child->comm));
+    memcpy(child->comm, "proc-stat", 10);
+    mapping = mmap_impl(NULL, TASK_VMA_PAGE_SIZE * 2, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    set_current(saved);
+    if (mapping == (void *)-1) {
+        goto out;
+    }
+
+    proc_pid_file_path(path, sizeof(path), child->pid, "/stat");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "(proc-stat)") ||
+        !contains(content, " R ")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    if (proc_stat_numeric_field(content, 7, &tty_nr) != 0 ||
+        proc_stat_numeric_field(content, 8, &tpgid) != 0 ||
+        proc_stat_numeric_field(content, 22, &starttime) != 0 ||
+        proc_stat_numeric_field(content, 23, &vsize) != 0 ||
+        proc_stat_numeric_field(content, 24, &rss) != 0 ||
+        proc_stat_numeric_field(content, 38, &exit_signal) != 0) {
+        goto out;
+    }
+    if (tty_nr != 0) {
+        errno = ENXIO;
+        goto out;
+    }
+    if (tpgid != -1) {
+        errno = ENOTTY;
+        goto out;
+    }
+    if (starttime < 0) {
+        errno = ERANGE;
+        goto out;
+    }
+    if (vsize < (long long)(TASK_VMA_PAGE_SIZE * 2)) {
+        errno = EFBIG;
+        goto out;
+    }
+    if (rss < 2) {
+        errno = ENOMEM;
+        goto out;
+    }
+    if (exit_signal != SIGCHLD) {
+        errno = ECHILD;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (child) {
+        saved = get_current();
+        set_current(child);
+        if (mapping != (void *)-1) {
+            munmap_impl(mapping, TASK_VMA_PAGE_SIZE * 2);
         }
         set_current(saved);
         task_unlink_child_impl(parent, child);
