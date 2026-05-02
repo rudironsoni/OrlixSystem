@@ -16,6 +16,7 @@
 #include "pipe.h"
 #include "pty.h"
 #include "vfs.h"
+#include "kernel/cgroup.h"
 
 /* Linux-owner type for file offsets (matches __kernel_off_t) */
 typedef long long linux_off_t;
@@ -98,6 +99,31 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         int target_pid = get_fd_proc_file_target_pid_impl(entry);
         char content[32768];
         int content_len = -EINVAL;
+        char path[MAX_PATH];
+
+        if (get_fd_path_impl(entry, path, sizeof(path)) == 0 &&
+            cgroupfs_classify_path(path) != CGROUPFS_NODE_NONE) {
+            content_len = cgroupfs_read_path(path, content, sizeof(content));
+            if (content_len < 0) {
+                put_fd_entry_impl(entry);
+                errno = -content_len;
+                return -1;
+            }
+            linux_off_t offset = (linux_off_t)get_fd_offset_impl(entry);
+            if (offset < 0) {
+                offset = 0;
+            }
+            if ((size_t)offset >= (size_t)content_len) {
+                put_fd_entry_impl(entry);
+                return 0;
+            }
+            size_t available = (size_t)content_len - (size_t)offset;
+            size_t to_copy = count < available ? count : available;
+            memcpy(buf, content + offset, to_copy);
+            set_fd_offset_impl((fd_entry_t *)entry, offset + (linux_off_t)to_copy);
+            put_fd_entry_impl(entry);
+            return (ssize_t)to_copy;
+        }
 
         switch (proc_file) {
         case SYNTHETIC_PROC_FILE_CMDLINE:
@@ -253,6 +279,17 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
     }
 
     if (get_fd_is_synthetic_proc_file_impl(entry)) {
+        char path[MAX_PATH];
+        if (get_fd_path_impl(entry, path, sizeof(path)) == 0 &&
+            cgroupfs_classify_path(path) != CGROUPFS_NODE_NONE) {
+            long ret = cgroupfs_write_path(path, (const char *)buf, count);
+            put_fd_entry_impl(entry);
+            if (ret < 0) {
+                errno = (int)-ret;
+                return -1;
+            }
+            return (ssize_t)ret;
+        }
         put_fd_entry_impl(entry);
         errno = EINVAL;
         return -1;

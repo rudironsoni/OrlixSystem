@@ -293,6 +293,7 @@ struct task_struct {
     struct signal_struct *signal;
     struct cred *cred;
     struct cgroup *cgroup;
+    struct cgroup *cgroup_ns_root;
     struct tty_struct *tty;
     struct mm_struct *mm;
     struct exec_image *exec_image;

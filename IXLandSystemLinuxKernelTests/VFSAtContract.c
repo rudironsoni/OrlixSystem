@@ -3824,6 +3824,100 @@ out:
     return ret;
 }
 
+int vfs_contract_lazy_umount_ref_survives_descendant_task_tree(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct task_struct *grandchild = NULL;
+    int fd = -1;
+    int ret = -1;
+
+    if (!parent || !parent->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    vfs_reap_detached_mount_refs();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "tree") != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+    grandchild = task_create_child_impl(child);
+    if (!grandchild) {
+        goto out;
+    }
+
+    set_current(grandchild);
+    fd = open_impl("/tmp/vfs-mntns-target/file", O_RDONLY, 0);
+    set_current(parent);
+    if (fd < 0) {
+        goto out;
+    }
+
+    if (vfs_umount_lazy("/tmp/vfs-mntns-target") != 0 ||
+        vfs_detached_mount_ref_count() == 0) {
+        errno = EBUSY;
+        goto out;
+    }
+    if (vfs_reap_detached_mount_refs() != 0 || vfs_detached_mount_ref_count() == 0) {
+        errno = ENOTRECOVERABLE;
+        goto out;
+    }
+
+    set_current(grandchild);
+    if (close_impl(fd) != 0) {
+        fd = -1;
+        set_current(parent);
+        goto out;
+    }
+    fd = -1;
+    set_current(parent);
+
+    task_unlink_child_impl(child, grandchild);
+    free_task(grandchild);
+    grandchild = NULL;
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    child = NULL;
+
+    if (vfs_reap_detached_mount_refs() != 1 || vfs_detached_mount_ref_count() != 0) {
+        errno = EBUSY;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (fd >= 0) {
+            set_current(grandchild ? grandchild : parent);
+            close_impl(fd);
+            fd = -1;
+        }
+        set_current(parent);
+        if (grandchild) {
+            task_unlink_child_impl(child ? child : parent, grandchild);
+            free_task(grandchild);
+        }
+        if (child) {
+            task_unlink_child_impl(parent, child);
+            free_task(child);
+        }
+        vfs_contract_cleanup_mount_namespace_paths();
+        vfs_reap_detached_mount_refs();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_proc_self_mounts_lists_bind_mount(void) {
     char content[4096];
     int ret = -1;

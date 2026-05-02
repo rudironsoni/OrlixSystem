@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -14,6 +15,7 @@
 #include "path.h"
 #include "pty.h"
 #include "vfs.h"
+#include "kernel/cgroup.h"
 
 struct linux_dirent64 {
     uint64_t d_ino;
@@ -105,6 +107,51 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
             goto done;
         }
         cursor = 2;
+    }
+
+    if (dir_class == SYNTHETIC_DIR_CGROUPFS) {
+        char dir_path[MAX_PATH];
+        size_t idx = (size_t)(cursor - 2);
+
+        if (get_fd_path_impl(entry, dir_path, sizeof(dir_path)) != 0) {
+            errno = ENOENT;
+            return -1;
+        }
+        if (strcmp(dir_path, "/sys/fs") == 0) {
+            if (idx == 0) {
+                rc = append_linux_dirent64(dirp, count, &written, 1, 3, DT_DIR, "cgroup");
+                if (rc != 0) {
+                    cursor++;
+                }
+            }
+            goto done;
+        }
+        while (idx < cgroupfs_child_count(dir_path)) {
+            char name[256];
+            enum cgroupfs_node_type node_type;
+            char child_path[MAX_PATH];
+            unsigned char dtype = DT_REG;
+            int ret;
+
+            ret = cgroupfs_child_at(dir_path, idx, name, sizeof(name));
+            if (ret != 0) {
+                break;
+            }
+            ret = snprintf(child_path, sizeof(child_path), "%s/%s", dir_path, name);
+            if (ret >= 0 && (size_t)ret < sizeof(child_path)) {
+                node_type = cgroupfs_classify_path(child_path);
+                if (node_type == CGROUPFS_NODE_DIR) {
+                    dtype = DT_DIR;
+                }
+            }
+            rc = append_linux_dirent64(dirp, count, &written, 1, (int64_t)(idx + 3), dtype, name);
+            if (rc == 0) {
+                break;
+            }
+            idx++;
+            cursor++;
+        }
+        goto done;
     }
 
     if (dir_class == SYNTHETIC_DIR_PROC_SELF) {

@@ -32,4 +32,19 @@
                    @"/proc/self/cgroup should expose cgroup v2 root membership, errno %d", errno);
 }
 
+- (void)testCgroupfsCreatesGroupAndMovesCurrentTask {
+    XCTAssertEqual(cgroup_contract_cgroupfs_creates_group_and_moves_current_task(), 0,
+                   @"cgroupfs should create a group and move the current task through cgroup.procs, errno %d", errno);
+}
+
+- (void)testCgroupfsMovesChildAndProcPidReportsMembership {
+    XCTAssertEqual(cgroup_contract_cgroupfs_moves_child_and_proc_pid_reports_membership(), 0,
+                   @"cgroupfs should move a child task and /proc/<pid>/cgroup should report it, errno %d", errno);
+}
+
+- (void)testCgroupNamespaceRebasesProcAndCgroupfsVisibility {
+    XCTAssertEqual(cgroup_contract_cgroup_namespace_rebases_proc_and_cgroupfs_visibility(), 0,
+                   @"cgroup namespace should rebase /proc cgroup paths and cgroupfs visibility, errno %d", errno);
+}
+
 @end

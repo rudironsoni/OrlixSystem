@@ -4,5 +4,8 @@
 int cgroup_contract_current_task_starts_in_root(void);
 int cgroup_contract_child_inherits_parent_cgroup(void);
 int cgroup_contract_proc_self_cgroup_reports_root(void);
+int cgroup_contract_cgroupfs_creates_group_and_moves_current_task(void);
+int cgroup_contract_cgroupfs_moves_child_and_proc_pid_reports_membership(void);
+int cgroup_contract_cgroup_namespace_rebases_proc_and_cgroupfs_visibility(void);
 
 #endif /* IXLAND_SYSTEM_LINUX_KERNEL_TESTS_CGROUP_CONTRACT_H */

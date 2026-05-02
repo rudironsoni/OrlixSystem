@@ -5803,6 +5803,30 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
         return 0;
     }
 
+    if (strcmp(resolved_virtual, "/sys/fs") == 0 ||
+        cgroupfs_classify_path(resolved_virtual) == CGROUPFS_NODE_DIR) {
+        memset(statbuf, 0, sizeof(*statbuf));
+        statbuf->st_mode = S_IFDIR | 0555;
+        statbuf->st_nlink = 2;
+        statbuf->st_uid = 0;
+        statbuf->st_gid = 0;
+        statbuf->st_size = 0;
+        statbuf->st_blksize = 4096;
+        statbuf->st_blocks = 0;
+        return 0;
+    }
+    if (cgroupfs_classify_path(resolved_virtual) != CGROUPFS_NODE_NONE) {
+        memset(statbuf, 0, sizeof(*statbuf));
+        statbuf->st_mode = S_IFREG | 0644;
+        statbuf->st_nlink = 1;
+        statbuf->st_uid = 0;
+        statbuf->st_gid = 0;
+        statbuf->st_size = 0;
+        statbuf->st_blksize = 4096;
+        statbuf->st_blocks = 0;
+        return 0;
+    }
+
     if (vfs_path_is_synthetic_dev_dir(resolved_virtual)) {
         memset(statbuf, 0, sizeof(*statbuf));
         statbuf->st_mode = S_IFDIR | 0555;
@@ -6037,6 +6061,11 @@ int vfs_faccessat(int dirfd, const char *pathname, int mode, int flags) {
     }
 
     if (vfs_path_is_synthetic_root(resolved_virtual)) {
+        return 0;
+    }
+
+    if (strcmp(resolved_virtual, "/sys/fs") == 0 ||
+        cgroupfs_classify_path(resolved_virtual) != CGROUPFS_NODE_NONE) {
         return 0;
     }
 

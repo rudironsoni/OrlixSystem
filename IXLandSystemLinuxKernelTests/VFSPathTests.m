@@ -1504,6 +1504,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"dropping a child mount namespace should reclaim its detached refs, errno %d", errno);
 }
 
+- (void)testLazyUmountRefSurvivesDescendantTaskTree {
+    extern int vfs_contract_lazy_umount_ref_survives_descendant_task_tree(void);
+    XCTAssertEqual(vfs_contract_lazy_umount_ref_survives_descendant_task_tree(), 0,
+                   @"lazy detached refs should survive descendant task pins and reap after task release, errno %d", errno);
+}
+
 - (void)testUmount2DetachDetachesBusyMountFromNamespace {
     extern int vfs_contract_umount2_detach_detaches_busy_mount_from_namespace(void);
     XCTAssertEqual(vfs_contract_umount2_detach_detaches_busy_mount_from_namespace(), 0,

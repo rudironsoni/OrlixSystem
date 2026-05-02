@@ -865,8 +865,11 @@ struct task_struct *alloc_task(void) {
         free(task);
         return NULL;
     }
+    task->cgroup_ns_root = cgroup_get(task->cgroup);
     task->cred = alloc_cred();
     if (!task->cred) {
+        cgroup_put(task->cgroup_ns_root);
+        task->cgroup_ns_root = NULL;
         task_detach_cgroup(task);
         uts_put(task->uts_ns);
         kernel_cond_destroy(&task->wait_cond);
@@ -942,6 +945,10 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
             errno = ENOMEM;
             return NULL;
         }
+    }
+    if (parent->cgroup_ns_root) {
+        cgroup_put(child->cgroup_ns_root);
+        child->cgroup_ns_root = cgroup_get(parent->cgroup_ns_root);
     }
 
     if (parent->fs) {
@@ -1139,6 +1146,8 @@ void free_task(struct task_struct *task) {
         put_cred(task->cred);
     if (task->cgroup)
         task_detach_cgroup(task);
+    if (task->cgroup_ns_root)
+        cgroup_put(task->cgroup_ns_root);
     if (task->tty)
         atomic_fetch_sub(&task->tty->refs, 1);
     if (task->mm)

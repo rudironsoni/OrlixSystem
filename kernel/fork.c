@@ -8,6 +8,7 @@
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
+#include "cgroup.h"
 #include "cred_internal.h"
 #include "signal.h"
 #include "task.h"
@@ -48,7 +49,7 @@ typedef struct {
 static __thread fork_ctx_t *active_fork_ctx = NULL;
 
 static unsigned long clone_namespace_flags(void) {
-    return CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWPID;
+    return CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWCGROUP;
 }
 
 static unsigned long clone_supported_flags(void) {
@@ -111,6 +112,13 @@ static int task_apply_clone_namespace_flags(struct task_struct *task, uint64_t f
     if ((masked & CLONE_NEWPID) != 0) {
         task->pid_ns_level += 1;
         task->ns_pid = 1;
+    }
+
+    if ((masked & CLONE_NEWCGROUP) != 0) {
+        if (task_unshare_cgroup_namespace(task) != 0) {
+            errno = ENOMEM;
+            return -1;
+        }
     }
 
     return 0;

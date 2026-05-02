@@ -10,6 +10,7 @@
 #include "internal/ios/fs/sync.h"
 #include "pty.h"
 #include "vfs.h"
+#include "kernel/cgroup.h"
 
 #define MAX_PATH 4096
 
@@ -101,6 +102,58 @@ static int try_open_proc_self_file(const char *resolved_path, int flags, mode_t 
     return 1;
 }
 
+static int try_open_cgroupfs(const char *resolved_path, int flags, mode_t mode, int *out_fd) {
+    enum cgroupfs_node_type node_type;
+    int fd;
+
+    if (!out_fd) {
+        errno = EINVAL;
+        return -1;
+    }
+    *out_fd = -1;
+
+    if (strcmp(resolved_path, "/sys/fs") == 0) {
+        if ((flags & O_DIRECTORY) == 0 && (flags & O_PATH) != 0) {
+            return 0;
+        }
+        fd = alloc_fd_impl();
+        if (fd < 0) {
+            return -1;
+        }
+        init_synthetic_subdir_fd_entry_impl(fd, flags, mode, resolved_path, SYNTHETIC_DIR_CGROUPFS);
+        *out_fd = fd;
+        return 1;
+    }
+
+    node_type = cgroupfs_classify_path(resolved_path);
+    if (node_type == CGROUPFS_NODE_NONE) {
+        return 0;
+    }
+    if (node_type == CGROUPFS_NODE_DIR) {
+        if ((flags & O_DIRECTORY) == 0 && (flags & O_PATH) != 0) {
+            return 0;
+        }
+        fd = alloc_fd_impl();
+        if (fd < 0) {
+            return -1;
+        }
+        init_synthetic_subdir_fd_entry_impl(fd, flags, mode, resolved_path, SYNTHETIC_DIR_CGROUPFS);
+        *out_fd = fd;
+        return 1;
+    }
+    if ((flags & O_ACCMODE) == O_RDWR) {
+        errno = EACCES;
+        return -1;
+    }
+    fd = alloc_fd_impl();
+    if (fd < 0) {
+        return -1;
+    }
+    init_synthetic_proc_file_fd_entry_impl(fd, flags, mode, resolved_path, SYNTHETIC_PROC_FILE_NONE);
+    *out_fd = fd;
+    return 1;
+}
+
 int open_impl(const char *pathname, int flags, mode_t mode) {
     char translated_path[MAX_PATH];
     char resolved_path[MAX_PATH];
@@ -165,6 +218,14 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
             if (proc_ret != 0) {
                 return (proc_ret < 0) ? -1 : proc_fd;
             }
+        }
+    }
+
+    {
+        int cgroup_fd;
+        int cgroup_ret = try_open_cgroupfs(resolved_path, flags, mode, &cgroup_fd);
+        if (cgroup_ret != 0) {
+            return (cgroup_ret < 0) ? -1 : cgroup_fd;
         }
     }
 
@@ -331,6 +392,14 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
             if (proc_ret != 0) {
                 return (proc_ret < 0) ? -1 : proc_fd;
             }
+        }
+    }
+
+    {
+        int cgroup_fd;
+        int cgroup_ret = try_open_cgroupfs(resolved_path, flags, mode, &cgroup_fd);
+        if (cgroup_ret != 0) {
+            return (cgroup_ret < 0) ? -1 : cgroup_fd;
         }
     }
 

@@ -18,6 +18,7 @@
 #include <asm-generic/stat.h>
 
 #include "internal/ios/fs/path_host.h"
+#include "kernel/cgroup.h"
 
 /* Standard file descriptors - local definitions to avoid Darwin <unistd.h> */
 #ifndef STDERR_FILENO
@@ -511,6 +512,14 @@ static int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
     if (ret != 0) {
         errno = -ret;
         return -1;
+    }
+    if (strncmp(resolved_path, "/sys/fs/cgroup/", 15) == 0) {
+        ret = cgroupfs_mkdir(resolved_path);
+        if (ret != 0) {
+            errno = -ret;
+            return -1;
+        }
+        return 0;
     }
     ret = vfs_check_parent_mutation_permission(resolved_path);
     if (ret != 0) {
