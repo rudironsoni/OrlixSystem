@@ -337,3 +337,91 @@ int signal_syscall_contract_rt_sigreturn_restores_mask_and_altstack(void) {
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
     return 0;
 }
+
+int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
+    struct task_struct *task = get_current();
+    stack_t stack;
+    uint64_t frame_sp = 0;
+    uint64_t frame_words[12] = {0};
+    uint64_t block_set = 1ULL << (SIGTERM - 1);
+    uint64_t queried = 0;
+    void *mapped;
+    long ret;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    signal_contract_disable_altstack();
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    memset(&stack, 0, sizeof(stack));
+    stack.ss_sp = mapped;
+    stack.ss_size = 16384;
+    if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
+        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK, (long)(uintptr_t)&block_set,
+                              0, sizeof(block_set), 0, 0) != 0 ||
+        signal_prepare_frame_impl(task, SIGUSR1, 0xabcddcba, 0x7ffff000, &frame_sp) != 0 ||
+        task_read_virtual_memory_impl(task, frame_sp, frame_words, sizeof(frame_words)) !=
+            (long)sizeof(frame_words)) {
+        errno = EPROTO;
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
+                              0, sizeof(block_set), 0, 0);
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
+    if (frame_words[0] != SIGUSR1 ||
+        frame_words[1] != 0xabcddcba ||
+        frame_words[4] != block_set ||
+        frame_words[5] != (uint64_t)(uintptr_t)mapped ||
+        frame_words[6] != 16384 ||
+        frame_words[8] != 0x7ffff000 ||
+        frame_words[9] != frame_sp ||
+        frame_words[10] != block_set ||
+        frame_words[11] == 0 ||
+        task->mm->signal_frame_current_sp != 0x7ffff000 ||
+        task->mm->signal_frame_size != sizeof(frame_words)) {
+        errno = ENODATA;
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
+                              0, sizeof(block_set), 0, 0);
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
+                                0, sizeof(block_set), 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_rt_sigreturn, 0, 0, 0, 0, 0, 0);
+    if (ret != 0xabcddcba) {
+        errno = EPROTO;
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK, 0,
+                                (long)(uintptr_t)&queried, sizeof(queried), 0, 0);
+    if (ret != 0 || (queried & block_set) == 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
+                              0, sizeof(block_set), 0, 0);
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
+
+    signal_contract_disable_altstack();
+    syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
+                          0, sizeof(block_set), 0, 0);
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+    return 0;
+}

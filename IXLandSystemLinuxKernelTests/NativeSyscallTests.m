@@ -40,6 +40,10 @@
     XCTAssertEqual(native_syscall_contract_enforces_vma_fault_policy(), 0, @"errno %d", errno);
 }
 
+- (void)testMunmapGapAndMapFixedReplacePolicy {
+    XCTAssertEqual(native_syscall_contract_munmap_gap_and_map_fixed_replace_policy(), 0, @"errno %d", errno);
+}
+
 - (void)testMapsSharedFileAndSyncs {
     XCTAssertEqual(native_syscall_contract_maps_shared_file_and_syncs(), 0, @"errno %d", errno);
 }
@@ -58,6 +62,14 @@
 
 - (void)testSharedFileMappingsAreCoherentAcrossHardlink {
     XCTAssertEqual(native_syscall_contract_shared_file_mappings_are_coherent_across_hardlink(), 0, @"errno %d", errno);
+}
+
+- (void)testCloneWithoutVmCopiesPrivateVmas {
+    XCTAssertEqual(native_syscall_contract_clone_without_vm_copies_private_vmas(), 0, @"errno %d", errno);
+}
+
+- (void)testCloneWithoutVmPreservesSharedFileMappings {
+    XCTAssertEqual(native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(), 0, @"errno %d", errno);
 }
 
 - (void)testDispatchesProcessStartupSyscalls {
@@ -86,6 +98,10 @@
 
 - (void)testRtSigreturnRestoresMaskAndAltstack {
     XCTAssertEqual(signal_syscall_contract_rt_sigreturn_restores_mask_and_altstack(), 0, @"errno %d", errno);
+}
+
+- (void)testRtSigreturnRestoresFrameContextRecord {
+    XCTAssertEqual(signal_syscall_contract_rt_sigreturn_restores_frame_context_record(), 0, @"errno %d", errno);
 }
 
 - (void)testRegistersNativeArtifactDescriptor {

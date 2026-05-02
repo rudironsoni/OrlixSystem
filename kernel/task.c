@@ -220,7 +220,7 @@ int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64
     while (cursor < end) {
         found = task_find_vma_impl(task, cursor);
         if (!found) {
-            errno = EFAULT;
+            errno = ENOMEM;
             return -1;
         }
         cursor = found->end < end ? found->end : end;
@@ -649,6 +649,14 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
 
     if ((flags & CLONE_VM) != 0 && parent->mm) {
         child->mm = task_mm_get_impl(parent->mm);
+    } else if (parent->mm) {
+        task_mm_put_impl(child->mm);
+        child->mm = task_mm_dup_impl(parent->mm);
+        if (!child->mm) {
+            free_task(child);
+            errno = ENOMEM;
+            return NULL;
+        }
     }
 
     if ((flags & CLONE_SIGHAND) != 0 && parent->signal) {

@@ -446,6 +446,74 @@ out_mapped:
     return result;
 }
 
+int native_syscall_contract_munmap_gap_and_map_fixed_replace_policy(void) {
+    struct task_struct *task = get_current();
+    void *mapped;
+    uint64_t base;
+    char byte = 0;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_mmap, 0, 12288, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)ret;
+    base = (uint64_t)(uintptr_t)mapped;
+    if (task_write_virtual_memory_impl(task, base, "A", 1) != 1 ||
+        task_write_virtual_memory_impl(task, base + 4096, "B", 1) != 1 ||
+        task_write_virtual_memory_impl(task, base + 8192, "C", 1) != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(base + 4096), 4096, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(base + 4096), 4096, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)(base + 4096), 4096,
+                                PROT_READ, 0, 0, 0);
+    if (ret != -ENOMEM) {
+        errno = EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_mmap, (long)(uintptr_t)base, 4096, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    if (ret != -EEXIST) {
+        errno = EBUSY;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_mmap, (long)(uintptr_t)base, 4096, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+    if (ret != (long)base) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    if (task_read_virtual_memory_impl(task, base, &byte, 1) != 1 || byte != 0 ||
+        task_read_virtual_memory_impl(task, base + 8192, &byte, 1) != 1 || byte != 'C') {
+        errno = ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)base, 4096, 0, 0, 0, 0);
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(base + 8192), 4096, 0, 0, 0, 0);
+    return result;
+}
+
 int native_syscall_contract_maps_shared_file_and_syncs(void) {
     struct task_struct *task = get_current();
     const char path[] = "/tmp/native-shared-map";
@@ -800,6 +868,140 @@ out:
     close_if_open(fd2);
     close_if_open(fd1);
     unlink_impl(alias);
+    unlink_impl(path);
+    return result;
+}
+
+int native_syscall_contract_clone_without_vm_copies_private_vmas(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    void *mapped;
+    int32_t child_pid;
+    char parent_before = 'P';
+    char parent_after = 'p';
+    char child_after = 'c';
+    char byte = 0;
+    int result = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096, PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    if (task_write_virtual_memory_impl(parent, (uint64_t)(uintptr_t)mapped, &parent_before, 1) != 1) {
+        errno = EPROTO;
+        goto out_map;
+    }
+    child_pid = clone_impl(0);
+    if (child_pid < 0) {
+        goto out_map;
+    }
+    child = task_lookup(child_pid);
+    if (!child) {
+        errno = ESRCH;
+        goto out_map;
+    }
+    if (child->mm == parent->mm ||
+        task_read_virtual_memory_impl(child, (uint64_t)(uintptr_t)mapped, &byte, 1) != 1 ||
+        byte != parent_before) {
+        errno = ENODATA;
+        goto out_child;
+    }
+    if (task_write_virtual_memory_impl(parent, (uint64_t)(uintptr_t)mapped, &parent_after, 1) != 1 ||
+        task_read_virtual_memory_impl(child, (uint64_t)(uintptr_t)mapped, &byte, 1) != 1 ||
+        byte != parent_before) {
+        errno = EPROTO;
+        goto out_child;
+    }
+    if (task_write_virtual_memory_impl(child, (uint64_t)(uintptr_t)mapped, &child_after, 1) != 1 ||
+        task_read_virtual_memory_impl(parent, (uint64_t)(uintptr_t)mapped, &byte, 1) != 1 ||
+        byte != parent_after) {
+        errno = EBUSY;
+        goto out_child;
+    }
+    result = 0;
+
+out_child:
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    free_task(child);
+out_map:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    return result;
+}
+
+int native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    const char path[] = "/tmp/native-clone-shared-map";
+    const char initial[] = "clone-shared-page";
+    const char patch[] = "CSHARE";
+    char verify[sizeof(patch)];
+    void *mapped;
+    int fd = -1;
+    int32_t child_pid;
+    long ret;
+    int result = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    unlink_impl(path);
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)initial, sizeof(initial), 0, 0, 0);
+    if (ret != (long)sizeof(initial)) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096, PROT_READ | PROT_WRITE,
+                                                      MAP_SHARED, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    child_pid = clone_impl(0);
+    if (child_pid < 0) {
+        goto out_mapped;
+    }
+    child = task_lookup(child_pid);
+    if (!child) {
+        errno = ESRCH;
+        goto out_mapped;
+    }
+    if (child->mm == parent->mm ||
+        task_write_virtual_memory_impl(child, (uint64_t)(uintptr_t)mapped, patch, sizeof(patch) - 1) !=
+            (long)sizeof(patch) - 1) {
+        errno = EPROTO;
+        goto out_child;
+    }
+    memset(verify, 0, sizeof(verify));
+    if (task_read_virtual_memory_impl(parent, (uint64_t)(uintptr_t)mapped, verify, sizeof(patch) - 1) !=
+            (long)sizeof(patch) - 1 ||
+        memcmp(verify, patch, sizeof(patch) - 1) != 0) {
+        errno = ENODATA;
+        goto out_child;
+    }
+    result = 0;
+
+out_child:
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    free_task(child);
+out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+out:
+    close_if_open(fd);
     unlink_impl(path);
     return result;
 }

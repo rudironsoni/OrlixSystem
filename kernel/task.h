@@ -199,6 +199,9 @@ struct mm_struct {
     uint64_t signal_frame_altstack_sp;
     uint64_t signal_frame_altstack_size;
     uint64_t signal_frame_altstack_flags;
+    uint64_t signal_frame_current_sp;
+    uint64_t signal_frame_size;
+    uint64_t signal_frame_ucontext_flags;
 };
 
 /* Exec image types - virtual kernel internal */
@@ -359,6 +362,7 @@ int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task);
 void task_clear_vmas_impl(struct mm_struct *mm);
 struct mm_struct *task_mm_get_impl(struct mm_struct *mm);
+struct mm_struct *task_mm_dup_impl(const struct mm_struct *mm);
 void task_mm_put_impl(struct mm_struct *mm);
 void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping);
 void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping);

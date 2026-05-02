@@ -584,6 +584,125 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
     return 0;
 }
 
+static void *mm_dup_bytes(const void *source, size_t size) {
+    void *copy;
+
+    if (!source || size == 0) {
+        return NULL;
+    }
+    copy = malloc(size);
+    if (!copy) {
+        return NULL;
+    }
+    memcpy(copy, source, size);
+    return copy;
+}
+
+struct mm_struct *task_mm_dup_impl(const struct mm_struct *source) {
+    struct mm_struct *copy;
+
+    if (!source) {
+        return NULL;
+    }
+    copy = calloc(1, sizeof(*copy));
+    if (!copy) {
+        errno = ENOMEM;
+        return NULL;
+    }
+    atomic_init(&copy->refs, 1);
+    copy->exec_entry = source->exec_entry;
+    copy->exec_dynamic_vaddr = source->exec_dynamic_vaddr;
+    copy->exec_dynamic_size = source->exec_dynamic_size;
+    copy->exec_dynamic = source->exec_dynamic;
+    copy->interp_entry = source->interp_entry;
+    copy->interp_dynamic_vaddr = source->interp_dynamic_vaddr;
+    copy->interp_dynamic_size = source->interp_dynamic_size;
+    copy->interp_dynamic = source->interp_dynamic;
+    memcpy(copy->interp_path, source->interp_path, sizeof(copy->interp_path));
+    copy->entry_point = source->entry_point;
+    copy->initial_stack_base = source->initial_stack_base;
+    copy->initial_stack_size = source->initial_stack_size;
+    copy->initial_stack_pointer = source->initial_stack_pointer;
+    copy->initial_argc = source->initial_argc;
+    copy->initial_envc = source->initial_envc;
+    memcpy(copy->initial_argv, source->initial_argv, sizeof(copy->initial_argv));
+    memcpy(copy->initial_envp, source->initial_envp, sizeof(copy->initial_envp));
+    copy->auxv_random_addr = source->auxv_random_addr;
+    copy->auxv_platform_addr = source->auxv_platform_addr;
+    copy->auxv_execfn_addr = source->auxv_execfn_addr;
+    memcpy(copy->auxv, source->auxv, sizeof(copy->auxv));
+    copy->auxv_count = source->auxv_count;
+    copy->handoff = source->handoff;
+    copy->vma_addr_space = source->vma_addr_space;
+    copy->brk_start = source->brk_start;
+    copy->brk_current = source->brk_current;
+    copy->signal_frame_sp = source->signal_frame_sp;
+    copy->signal_frame_signo = source->signal_frame_signo;
+    copy->signal_frame_return_pc = source->signal_frame_return_pc;
+    copy->signal_handler_pc = source->signal_handler_pc;
+    copy->signal_frame_flags = source->signal_frame_flags;
+    copy->signal_frame_restorer_pc = source->signal_frame_restorer_pc;
+    copy->signal_frame_mask = source->signal_frame_mask;
+    copy->signal_frame_altstack_sp = source->signal_frame_altstack_sp;
+    copy->signal_frame_altstack_size = source->signal_frame_altstack_size;
+    copy->signal_frame_altstack_flags = source->signal_frame_altstack_flags;
+    copy->signal_frame_current_sp = source->signal_frame_current_sp;
+    copy->signal_frame_size = source->signal_frame_size;
+    copy->signal_frame_ucontext_flags = source->signal_frame_ucontext_flags;
+
+    copy->exec_image_size = source->exec_image_size;
+    copy->exec_image_base = mm_dup_bytes(source->exec_image_base, source->exec_image_size);
+    if (source->exec_image_base && !copy->exec_image_base) {
+        goto oom;
+    }
+    copy->interp_image_size = source->interp_image_size;
+    copy->interp_image_base = mm_dup_bytes(source->interp_image_base, source->interp_image_size);
+    if (source->interp_image_base && !copy->interp_image_base) {
+        goto oom;
+    }
+    copy->initial_stack_image_size = source->initial_stack_image_size;
+    copy->initial_stack_image = mm_dup_bytes(source->initial_stack_image,
+                                            source->initial_stack_image_size);
+    if (source->initial_stack_image && !copy->initial_stack_image) {
+        goto oom;
+    }
+
+    copy->exec_segment_count = source->exec_segment_count;
+    for (uint32_t i = 0; i < source->exec_segment_count; i++) {
+        copy->exec_segments[i] = source->exec_segments[i];
+        copy->exec_segments[i].image = mm_dup_bytes(source->exec_segments[i].image,
+                                                    source->exec_segments[i].image_size);
+        if (source->exec_segments[i].image && !copy->exec_segments[i].image) {
+            goto oom;
+        }
+    }
+    copy->interp_segment_count = source->interp_segment_count;
+    for (uint32_t i = 0; i < source->interp_segment_count; i++) {
+        copy->interp_segments[i] = source->interp_segments[i];
+        copy->interp_segments[i].image = mm_dup_bytes(source->interp_segments[i].image,
+                                                      source->interp_segments[i].image_size);
+        if (source->interp_segments[i].image && !copy->interp_segments[i].image) {
+            goto oom;
+        }
+    }
+
+    for (uint32_t i = 0; i < source->vma_count; i++) {
+        struct task_vma *source_vma = (struct task_vma *)&source->vmas[i];
+
+        if (mm_copy_vma_slice(source_vma, source_vma->start, source_vma->end,
+                              &copy->vmas[copy->vma_count]) != 0) {
+            goto oom;
+        }
+        copy->vma_count++;
+    }
+    return copy;
+
+oom:
+    task_mm_put_impl(copy);
+    errno = ENOMEM;
+    return NULL;
+}
+
 static void mm_free_vma_contents(struct task_vma *vma) {
     if (!vma) {
         return;
@@ -730,8 +849,13 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
     if ((flags & (MAP_FIXED | MAP_FIXED_NOREPLACE)) != 0) {
         map_addr = (uint64_t)(uintptr_t)addr;
         if ((map_addr % TASK_VMA_PAGE_SIZE) != 0 || map_addr == 0 ||
-            map_len > UINT64_MAX - map_addr || mm_range_overlaps(task->mm, map_addr, map_addr + map_len)) {
+            map_len > UINT64_MAX - map_addr) {
             errno = EINVAL;
+            return (void *)-1;
+        }
+        if ((flags & MAP_FIXED_NOREPLACE) != 0 &&
+            mm_range_overlaps(task->mm, map_addr, map_addr + map_len)) {
+            errno = EEXIST;
             return (void *)-1;
         }
     } else {
@@ -740,6 +864,11 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
             errno = ENOMEM;
             return (void *)-1;
         }
+    }
+
+    if ((flags & MAP_FIXED) != 0 &&
+        munmap_impl((void *)(uintptr_t)map_addr, (size_t)map_len) != 0) {
+        return (void *)-1;
     }
 
     kind = (flags & MAP_ANONYMOUS) != 0 ? TASK_VMA_ANON : TASK_VMA_FILE;
@@ -853,11 +982,8 @@ int munmap_impl(void *addr, size_t len) {
         }
         i++;
     }
-    if (unmapped) {
-        return 0;
-    }
-    errno = EINVAL;
-    return -1;
+    (void)unmapped;
+    return 0;
 }
 
 int msync_impl(void *addr, size_t len, int flags) {
