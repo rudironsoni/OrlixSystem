@@ -368,6 +368,7 @@ int vfs_set_file_capabilities(const char *path, uint64_t permitted, uint64_t inh
                               bool effective);
 int vfs_get_file_capabilities(const char *path, uint64_t *permitted, uint64_t *inheritable,
                               bool *effective);
+int vfs_remove_file_capabilities(const char *path);
 void vfs_forget_path_metadata(const char *resolved_vpath);
 void vfs_link_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath);
 void vfs_rename_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath);

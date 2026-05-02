@@ -439,6 +439,41 @@ static void vfs_umount_propagate_tree_locked(struct vfs_mount_namespace *mnt_ns,
     }
 }
 
+static bool vfs_task_fs_path_pins_mount(const struct task_struct *task, const char *target) {
+    bool pins = false;
+
+    if (!task || !task->fs || !target) {
+        return false;
+    }
+    fs_mutex_lock(&task->fs->lock);
+    pins = vfs_mount_target_matches_tree(task->fs->pwd_path, target) ||
+           vfs_mount_target_matches_tree(task->fs->root_path, target);
+    fs_mutex_unlock(&task->fs->lock);
+    return pins;
+}
+
+static bool vfs_any_task_fs_pins_mount_tree(const char *target) {
+    bool pins = false;
+
+    if (!target) {
+        return false;
+    }
+    kernel_mutex_lock(&task_table_lock);
+    for (int i = 0; i < TASK_MAX_TASKS && !pins; i++) {
+        struct task_struct *task = task_table[i];
+
+        while (task) {
+            if (vfs_task_fs_path_pins_mount(task, target)) {
+                pins = true;
+                break;
+            }
+            task = task->hash_next;
+        }
+    }
+    kernel_mutex_unlock(&task_table_lock);
+    return pins;
+}
+
 static int vfs_mount_clone_recursive_children_locked(struct vfs_mount_namespace *mnt_ns,
                                                      int mounted_slot) {
     struct vfs_mount_entry snapshots[MAX_MOUNTS];
@@ -972,6 +1007,36 @@ int vfs_get_file_capabilities(const char *path, uint64_t *permitted, uint64_t *i
     *permitted = vfs_metadata_table[idx].cap_permitted;
     *inheritable = vfs_metadata_table[idx].cap_inheritable;
     *effective = vfs_metadata_table[idx].cap_effective;
+    fs_mutex_unlock(&vfs_metadata_lock);
+    return 0;
+}
+
+int vfs_remove_file_capabilities(const char *path) {
+    char resolved[MAX_PATH];
+    int idx;
+    int ret;
+
+    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    if (!cred_has_cap(get_current_cred(), CAP_SETFCAP)) {
+        errno = EPERM;
+        return -1;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    idx = vfs_metadata_find_locked(resolved);
+    if (idx < 0 || !vfs_metadata_table[idx].has_file_caps) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        errno = ENODATA;
+        return -1;
+    }
+    vfs_metadata_table[idx].has_file_caps = false;
+    vfs_metadata_table[idx].cap_permitted = 0;
+    vfs_metadata_table[idx].cap_inheritable = 0;
+    vfs_metadata_table[idx].cap_effective = false;
     fs_mutex_unlock(&vfs_metadata_lock);
     return 0;
 }
@@ -2680,7 +2745,8 @@ int vfs_umount(const char *target) {
     fs_mutex_lock(&mnt_ns->lock);
     for (size_t i = 0; i < MAX_MOUNTS; i++) {
         if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
-            if (fdtable_has_open_path_under_impl(resolved_target)) {
+            if (fdtable_has_open_path_under_impl(resolved_target) ||
+                vfs_any_task_fs_pins_mount_tree(resolved_target)) {
                 fs_mutex_unlock(&mnt_ns->lock);
                 return -EBUSY;
             }

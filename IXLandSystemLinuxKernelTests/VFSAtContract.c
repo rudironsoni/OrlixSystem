@@ -1889,6 +1889,54 @@ out:
     return ret;
 }
 
+int vfs_contract_umount_busy_when_pwd_pins_mount_tree(void) {
+    struct task_struct *task = get_current();
+    char old_root[MAX_PATH];
+    char old_pwd[MAX_PATH];
+    int ret = -1;
+
+    if (!task || !task->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+    fs_mutex_lock(&task->fs->lock);
+    memcpy(old_root, task->fs->root_path, sizeof(old_root));
+    memcpy(old_pwd, task->fs->pwd_path, sizeof(old_pwd));
+    fs_mutex_unlock(&task->fs->lock);
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    fs_set_root(task->fs, "/");
+    fs_set_pwd(task->fs, "/");
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-source/dir", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0 ||
+        mount("/tmp/vfs-mntns-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0 ||
+        chdir("/tmp/vfs-mntns-target/dir") != 0) {
+        goto out;
+    }
+
+    if (umount("/tmp/vfs-mntns-target") != -1 || errno != EBUSY) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (chdir("/") != 0 ||
+        umount("/tmp/vfs-mntns-target") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        fs_set_root(task->fs, old_root);
+        fs_set_pwd(task->fs, old_pwd);
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_slave_mount_receives_nested_child_from_shared_master(void) {
     int ret = -1;
 

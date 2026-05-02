@@ -394,10 +394,16 @@ static long long mm_shared_file_remaining(const struct task_vma *vma, size_t off
     uint64_t file_offset;
     uint64_t identity;
 
-    if (!vma || vma->backing_fd < 0) {
-        return (long long)(vma ? vma->image_size - offset : 0);
+    if (!vma) {
+        return 0;
     }
-    identity = mm_fd_file_identity(vma->backing_fd);
+    identity = vma->backing_file_identity;
+    if (identity == 0 && vma->backing_fd >= 0) {
+        identity = mm_fd_file_identity(vma->backing_fd);
+    }
+    if (identity == 0) {
+        return (long long)(vma->image_size - offset);
+    }
     for (size_t i = 0; i < sizeof(mm_file_size_notes) / sizeof(mm_file_size_notes[0]); i++) {
         if (mm_file_size_notes[i].file_identity != 0 &&
             mm_file_size_notes[i].file_identity == identity) {
@@ -707,6 +713,7 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
     vma->image = image;
     vma->image_size = (size_t)size;
     vma->backing_fd = -1;
+    vma->backing_file_identity = 0;
     vma->page_count = page_count;
     vma->page_flags = calloc((size_t)page_count, sizeof(*vma->page_flags));
     if (!vma->page_flags) {
@@ -1266,6 +1273,7 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
         struct task_vma *vma = task_find_vma_mutable_impl(task, map_addr);
         if (vma) {
             vma->backing_fd = fd;
+            vma->backing_file_identity = mm_fd_file_identity(fd);
             {
                 void *entry = get_fd_entry_impl(fd);
                 if (entry) {

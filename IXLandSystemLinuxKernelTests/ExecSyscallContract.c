@@ -5,6 +5,8 @@
 #include <linux/mman.h>
 #include <linux/prctl.h>
 #include <linux/stat.h>
+#include <linux/xattr.h>
+#include <asm/unistd.h>
 #include <asm-generic/siginfo.h>
 #include <asm-generic/resource.h>
 
@@ -30,6 +32,7 @@
 #include "runtime/aarch64/exec_context.h"
 #include "runtime/aarch64/elf_reloc.h"
 #include "runtime/native/registry.h"
+#include "runtime/syscall.h"
 
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
 extern int fexecve(int fd, char *const argv[], char *const envp[]);
@@ -1274,6 +1277,60 @@ int exec_syscall_contract_native_execve_no_new_privs_blocks_file_capabilities(vo
     if ((data[0].permitted & (1U << CAP_NET_BIND_SERVICE)) != 0 ||
         (data[0].effective & (1U << CAP_NET_BIND_SERVICE)) != 0 ||
         prctl_impl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl(path);
+    cred_reset_to_defaults();
+    return result;
+}
+
+int exec_syscall_contract_native_execve_applies_security_capability_xattr(void) {
+    char *argv[] = {"cap-xattr-native", NULL};
+    char *envp[] = {NULL};
+    const char *path = "/tmp/exec-native-file-cap-xattr";
+    const char name[] = "security.capability";
+    struct vfs_ns_cap_data cap = {0};
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    int status;
+    int result = -1;
+
+    cred_reset_to_defaults();
+    native_registry_clear();
+    unlink_impl(path);
+    cap.magic_etc = VFS_CAP_REVISION_3 | VFS_CAP_FLAGS_EFFECTIVE;
+    cap.data[0].permitted = 1U << CAP_NET_BIND_SERVICE;
+    cap.rootid = 0;
+    if (native_register(path, native_exec_status) != 0 ||
+        write_file_exact(path, "native") != 0 ||
+        chmod(path, 0755) != 0 ||
+        syscall_dispatch_impl(__NR_setxattr, (long)(uintptr_t)path, (long)(uintptr_t)name,
+                              (long)(uintptr_t)&cap, sizeof(cap), XATTR_CREATE, 0) != 0 ||
+        setgid_impl(1000) != 0 ||
+        setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    status = execve(path, argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+    memset(data, 0, sizeof(data));
+    if (capget_impl(&header, data) != 0) {
+        goto out;
+    }
+    if ((data[0].permitted & (1U << CAP_NET_BIND_SERVICE)) == 0 ||
+        (data[0].effective & (1U << CAP_NET_BIND_SERVICE)) == 0) {
         errno = ENODATA;
         goto out;
     }

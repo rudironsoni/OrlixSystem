@@ -79,6 +79,8 @@ targets:
       group: fs
     - path: fs/vfs.c
       group: fs
+    - path: fs/xattr.c
+      group: fs
     - path: kernel/cred.c
       group: kernel
     - path: kernel/exit.c

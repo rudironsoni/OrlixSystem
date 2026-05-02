@@ -77,6 +77,7 @@ struct task_vma {
     uint8_t *dirty_pages;
     struct vm_private_page **private_pages;
     int backing_fd;
+    uint64_t backing_file_identity;
     char backing_path[MAX_PATH];
     uint64_t backing_offset;
     int shared;

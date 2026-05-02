@@ -76,6 +76,14 @@
     XCTAssertEqual(native_syscall_contract_unlinked_shared_mapping_survives_fd_close_and_syncs(), 0, @"errno %d", errno);
 }
 
+- (void)testSecurityCapabilityXattrRoundTrips {
+    XCTAssertEqual(native_syscall_contract_security_capability_xattr_round_trips(), 0, @"errno %d", errno);
+}
+
+- (void)testSharedMappingFaultPolicyTracksTruncateAfterFdClose {
+    XCTAssertEqual(native_syscall_contract_shared_mapping_fault_policy_tracks_truncate_after_fd_close(), 0, @"errno %d", errno);
+}
+
 - (void)testSharedFileMappingsAreCoherent {
     XCTAssertEqual(native_syscall_contract_shared_file_mappings_are_coherent(), 0, @"errno %d", errno);
 }

@@ -4,9 +4,11 @@
 #include <asm/ioctls.h>
 #include <linux/fcntl.h>
 #include <linux/futex.h>
+#include <linux/capability.h>
 #include <linux/mman.h>
 #include <linux/stat.h>
 #include <linux/time_types.h>
+#include <linux/xattr.h>
 #include <asm-generic/siginfo.h>
 
 #include <errno.h>
@@ -1080,6 +1082,143 @@ int native_syscall_contract_unlinked_shared_mapping_survives_fd_close_and_syncs(
     result = 0;
 
 out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, sizeof(page), 0, 0, 0, 0);
+out:
+    close_if_open(fd);
+    unlink_impl(path);
+    return result;
+}
+
+int native_syscall_contract_security_capability_xattr_round_trips(void) {
+    const char path[] = "/tmp/native-security-capability-xattr";
+    const char name[] = "security.capability";
+    struct vfs_ns_cap_data cap = {0};
+    struct vfs_ns_cap_data readback;
+    int fd;
+    long ret;
+    int result = -1;
+
+    unlink_impl(path);
+    fd = open_impl(path, O_CREAT | O_RDWR | O_TRUNC, 0700);
+    if (fd < 0) {
+        return -1;
+    }
+    close_if_open(fd);
+
+    cap.magic_etc = VFS_CAP_REVISION_3 | VFS_CAP_FLAGS_EFFECTIVE;
+    cap.data[0].permitted = 1U << CAP_NET_BIND_SERVICE;
+    cap.rootid = 0;
+
+    ret = syscall_dispatch_impl(__NR_setxattr, (long)(uintptr_t)path, (long)(uintptr_t)name,
+                                (long)(uintptr_t)&cap, sizeof(cap), XATTR_CREATE, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_setxattr, (long)(uintptr_t)path, (long)(uintptr_t)name,
+                                (long)(uintptr_t)&cap, sizeof(cap), XATTR_CREATE, 0);
+    if (ret != -EEXIST) {
+        errno = ENODATA;
+        goto out;
+    }
+    memset(&readback, 0, sizeof(readback));
+    ret = syscall_dispatch_impl(__NR_getxattr, (long)(uintptr_t)path, (long)(uintptr_t)name,
+                                (long)(uintptr_t)&readback, sizeof(readback), 0, 0);
+    if (ret != (long)sizeof(readback) ||
+        readback.magic_etc != cap.magic_etc ||
+        readback.data[0].permitted != cap.data[0].permitted) {
+        errno = ENOMSG;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_removexattr, (long)(uintptr_t)path, (long)(uintptr_t)name,
+                                0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_getxattr, (long)(uintptr_t)path, (long)(uintptr_t)name,
+                                (long)(uintptr_t)&readback, sizeof(readback), 0, 0);
+    if (ret != -ENODATA) {
+        errno = ERANGE;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl(path);
+    return result;
+}
+
+int native_syscall_contract_shared_mapping_fault_policy_tracks_truncate_after_fd_close(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-shared-map-truncate-after-close";
+    char page[8192];
+    char byte = 0;
+    void *mapped;
+    int fd = -1;
+    int reopened = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(page, 'F', sizeof(page));
+    unlink_impl(path);
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)page, sizeof(page), 0, 0, 0);
+    if (ret != (long)sizeof(page)) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(page),
+                                                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+    reopened = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                          O_RDWR, 0, 0, 0);
+    if (reopened < 0) {
+        errno = -reopened;
+        goto out_mapped;
+    }
+    if (syscall_dispatch_impl(__NR_ftruncate, reopened, 4096, 0, 0, 0, 0) != 0) {
+        goto out_mapped;
+    }
+    close_if_open(reopened);
+    reopened = -1;
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, &byte, 1) != 1 ||
+        byte != 'F') {
+        errno = ENODATA;
+        goto out_mapped;
+    }
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped + 4096, &byte, 1) != -1 ||
+        errno != EFAULT) {
+        errno = ENOMSG;
+        goto out_mapped;
+    }
+    if (!signal_is_pending(task, SIGBUS) ||
+        task->last_fault_signal != SIGBUS ||
+        task->last_fault_code != BUS_ADRERR ||
+        task->last_fault_addr != (uint64_t)(uintptr_t)mapped + 4096) {
+        errno = EPROTO;
+        goto out_mapped;
+    }
+
+    result = 0;
+
+out_mapped:
+    close_if_open(reopened);
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, sizeof(page), 0, 0, 0, 0);
 out:
     close_if_open(fd);

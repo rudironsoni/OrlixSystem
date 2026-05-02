@@ -54,6 +54,7 @@
 		70B890304D2A8DBDB1E37441 /* FutexContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E2223F1FD9574F6D12DBCBE9 /* FutexContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		70DFBB25D68D1C86B3F68C17 /* epoll_bridge.c in Sources */ = {isa = PBXBuildFile; fileRef = BA898A59834C42247E34F3A2 /* epoll_bridge.c */; };
 		71702A8784D42476587D0887 /* exec_context.c in Sources */ = {isa = PBXBuildFile; fileRef = A9306CBCC1D6DF896A69232C /* exec_context.c */; };
+		72FE89D08FE3C94D6898AE2E /* xattr.c in Sources */ = {isa = PBXBuildFile; fileRef = BADF6ED531973B1440C2F049 /* xattr.c */; };
 		7382EBBD679D92B216EB7155 /* PTYJobControlTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 88CA631FAF0EDC1ABC5785AE /* PTYJobControlTests.m */; };
 		76236EBE1D125F243FE8D067 /* sync.c in Sources */ = {isa = PBXBuildFile; fileRef = CC4338AECA611FDBA915367D /* sync.c */; };
 		770ABACD2190C861D5E11AC4 /* DevfsContract.c in Sources */ = {isa = PBXBuildFile; fileRef = F78BA3D6A3CC08D9DF7FDC05 /* DevfsContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
@@ -237,6 +238,7 @@
 		B814A84B3136F79F9CA46B29 /* errno_host.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = errno_host.c; sourceTree = "<group>"; };
 		B9B17DC7494FE76059C4240F /* ExecFdTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ExecFdTests.m; sourceTree = "<group>"; };
 		BA898A59834C42247E34F3A2 /* epoll_bridge.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = epoll_bridge.c; sourceTree = "<group>"; };
+		BADF6ED531973B1440C2F049 /* xattr.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = xattr.c; sourceTree = "<group>"; };
 		BB13E6189986C573D19FA8F7 /* elf_reloc.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = elf_reloc.c; sourceTree = "<group>"; };
 		C0A71140476601A06FC988D7 /* inode.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = inode.c; sourceTree = "<group>"; };
 		C0AF109259D4E9A9AD8BF7FA /* DevfsContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DevfsContract.h; sourceTree = "<group>"; };
@@ -366,6 +368,7 @@
 				DB47AFBCA86B478A6F48BAE6 /* stat.c */,
 				2117B106A13B76478FE5B3A1 /* super.c */,
 				CC8A063128CC02CB6B938762 /* vfs.c */,
+				BADF6ED531973B1440C2F049 /* xattr.c */,
 			);
 			path = fs;
 			sourceTree = "<group>";
@@ -740,6 +743,7 @@
 				6DCCC30A9E2767FEAA8316D2 /* vfs.c in Sources */,
 				9F514956A3C3161C5CC61226 /* wait.c in Sources */,
 				2077D735BE58886F9AC9D02F /* wait_queue.c in Sources */,
+				72FE89D08FE3C94D6898AE2E /* xattr.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -161,6 +161,7 @@
 #include <linux/mman.h>
 #include <linux/sched.h>
 #include <linux/time_types.h>
+#include <linux/xattr.h>
 
 #include <errno.h>
 #include <stddef.h>
@@ -201,6 +202,12 @@ extern int mount_setattr(int dirfd, const char *pathname, unsigned int flags,
 extern int open_tree(int dirfd, const char *pathname, unsigned int flags);
 extern int move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
                       const char *to_pathname, unsigned int flags);
+extern int setxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags);
+extern int fsetxattr_impl(int fd, const char *name, const void *value, size_t size, int flags);
+extern long getxattr_impl(const char *path, const char *name, void *value, size_t size);
+extern long fgetxattr_impl(int fd, const char *name, void *value, size_t size);
+extern int removexattr_impl(const char *path, const char *name);
+extern int fremovexattr_impl(int fd, const char *name);
 
 static int syscall_copy_sigset_to_mask(const uint64_t *sigset, size_t sigsetsize,
                                        struct signal_mask_bits *mask) {
@@ -648,6 +655,30 @@ long syscall_dispatch_impl(long number,
         return syscall_result((long)msync_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
     case __NR_ftruncate:
         return syscall_result((long)ftruncate_impl((int)arg0, (linux_off_t)arg1));
+    case __NR_setxattr:
+    case __NR_lsetxattr:
+        return syscall_result((long)setxattr_impl((const char *)(uintptr_t)arg0,
+                                                  (const char *)(uintptr_t)arg1,
+                                                  (const void *)(uintptr_t)arg2,
+                                                  (size_t)arg3, (int)arg4));
+    case __NR_fsetxattr:
+        return syscall_result((long)fsetxattr_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                   (const void *)(uintptr_t)arg2,
+                                                   (size_t)arg3, (int)arg4));
+    case __NR_getxattr:
+    case __NR_lgetxattr:
+        return syscall_result(getxattr_impl((const char *)(uintptr_t)arg0,
+                                            (const char *)(uintptr_t)arg1,
+                                            (void *)(uintptr_t)arg2, (size_t)arg3));
+    case __NR_fgetxattr:
+        return syscall_result(fgetxattr_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                             (void *)(uintptr_t)arg2, (size_t)arg3));
+    case __NR_removexattr:
+    case __NR_lremovexattr:
+        return syscall_result((long)removexattr_impl((const char *)(uintptr_t)arg0,
+                                                     (const char *)(uintptr_t)arg1));
+    case __NR_fremovexattr:
+        return syscall_result((long)fremovexattr_impl((int)arg0, (const char *)(uintptr_t)arg1));
     case __NR_prlimit64:
         return syscall_prlimit64((int32_t)arg0, (int)arg1,
                                  (const uint64_t *)(uintptr_t)arg2,
