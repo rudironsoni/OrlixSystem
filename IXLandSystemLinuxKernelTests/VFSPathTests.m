@@ -1210,6 +1210,18 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"faccessat/access should reject symlink loops with ELOOP, errno %d", errno);
 }
 
+- (void)testFsuidControlsOwnerFileAccess {
+    extern int vfs_contract_fsuid_controls_owner_file_access(void);
+    XCTAssertEqual(vfs_contract_fsuid_controls_owner_file_access(), 0,
+                   @"fsuid should control Linux owner permission checks, errno %d", errno);
+}
+
+- (void)testFsgidControlsGroupFileAccess {
+    extern int vfs_contract_fsgid_controls_group_file_access(void);
+    XCTAssertEqual(vfs_contract_fsgid_controls_group_file_access(), 0,
+                   @"fsgid should control Linux group permission checks, errno %d", errno);
+}
+
 - (void)testChrootRebasesAbsolutePathsAndGetcwd {
     extern int vfs_contract_chroot_rebases_absolute_paths_and_getcwd(void);
     XCTAssertEqual(vfs_contract_chroot_rebases_absolute_paths_and_getcwd(), 0,
@@ -1322,6 +1334,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     extern int vfs_contract_shared_mount_unmount_propagates_nested_child_from_peer(void);
     XCTAssertEqual(vfs_contract_shared_mount_unmount_propagates_nested_child_from_peer(), 0,
                    @"shared mount peers should receive nested unmount propagation, errno %d", errno);
+}
+
+- (void)testRecursiveUnmountPropagatesNestedChildrenFromSharedPeer {
+    extern int vfs_contract_recursive_umount_propagates_nested_children_from_shared_peer(void);
+    XCTAssertEqual(vfs_contract_recursive_umount_propagates_nested_children_from_shared_peer(), 0,
+                   @"recursive unmount should propagate nested child unmounts from shared peer trees, errno %d", errno);
 }
 
 - (void)testSlaveMountReceivesNestedChildFromSharedMaster {

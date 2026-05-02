@@ -57,6 +57,10 @@ extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int setuid_impl(uid_t uid);
+extern uid_t setfsuid_impl(uid_t fsuid);
+extern gid_t setfsgid_impl(gid_t fsgid);
+extern int setresuid_impl(uid_t ruid, uid_t euid, uid_t suid);
+extern int setresgid_impl(gid_t rgid, gid_t egid, gid_t sgid);
 extern int setgroups_impl(int size, const gid_t *list);
 extern int mkdirat(int dirfd, const char *pathname, linux_mode_t mode);
 extern int unlinkat(int dirfd, const char *pathname, int flags);
@@ -378,6 +382,119 @@ out:
         unlink_impl("/tmp/vfs-access-loop/a");
         unlink_impl("/tmp/vfs-access-loop/b");
         rmdir_impl("/tmp/vfs-access-loop");
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_fsuid_controls_owner_file_access(void) {
+    const char *path = "/tmp/vfs-fsuid-owner-file";
+    int fd;
+    int ret = -1;
+
+    unlink_impl(path);
+    cred_reset_to_defaults();
+    if (vfs_contract_write_file(path, "owner") != 0 ||
+        chown(path, 2000, 3000) != 0 ||
+        chmod(path, 0600) != 0 ||
+        setresuid_impl(1000, 1000, 2000) != 0) {
+        goto out;
+    }
+
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd != -1 || errno != EACCES) {
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        errno = ENODATA;
+        goto out;
+    }
+    if (setfsuid_impl(2000) != 1000) {
+        errno = EPROTO;
+        goto out;
+    }
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    close_impl(fd);
+    if (setfsuid_impl(1000) != 2000) {
+        errno = EPROTO;
+        goto out;
+    }
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd != -1 || errno != EACCES) {
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        errno = ENOMSG;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        cred_reset_to_defaults();
+        unlink_impl(path);
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_fsgid_controls_group_file_access(void) {
+    const char *path = "/tmp/vfs-fsgid-group-file";
+    int fd;
+    int ret = -1;
+
+    unlink_impl(path);
+    cred_reset_to_defaults();
+    if (vfs_contract_write_file(path, "group") != 0 ||
+        chown(path, 2000, 3000) != 0 ||
+        chmod(path, 0060) != 0 ||
+        setresgid_impl(1000, 1000, 3000) != 0 ||
+        setresuid_impl(1000, 1000, 1000) != 0) {
+        goto out;
+    }
+
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd != -1 || errno != EACCES) {
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        errno = ENODATA;
+        goto out;
+    }
+    if (setfsgid_impl(3000) != 1000) {
+        errno = EPROTO;
+        goto out;
+    }
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    close_impl(fd);
+    if (setfsgid_impl(1000) != 3000) {
+        errno = EPROTO;
+        goto out;
+    }
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd != -1 || errno != EACCES) {
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        errno = ENOMSG;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        cred_reset_to_defaults();
+        unlink_impl(path);
         errno = saved_errno;
     }
     return ret;
@@ -1669,6 +1786,51 @@ int vfs_contract_shared_mount_unmount_propagates_nested_child_from_peer(void) {
     }
     if (open_impl("/tmp/vfs-mntns-peer-b/child/grand/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
         errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_recursive_umount_propagates_nested_children_from_shared_peer(void) {
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-a", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-b", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-child-source/file", "recursive-detach") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-a", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-b", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-peer-a/child", NULL, MS_BIND | MS_SHARED, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-peer-b/child/file", "recursive-detach") != 0) {
+        goto out;
+    }
+    if (umount("/tmp/vfs-mntns-peer-a") != 0) {
+        goto out;
+    }
+    if (open_impl("/tmp/vfs-mntns-peer-a/child/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (open_impl("/tmp/vfs-mntns-peer-b/child/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = ENOMSG;
         goto out;
     }
 

@@ -958,6 +958,73 @@ out:
     return result;
 }
 
+int native_syscall_contract_shared_mapping_survives_fd_close_and_syncs(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-shared-map-close-sync";
+    char page[4096];
+    char verify = 0;
+    void *mapped;
+    int fd = -1;
+    int reopened = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(page, 'C', sizeof(page));
+    unlink_impl(path);
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)page, sizeof(page), 0, 0, 0);
+    if (ret != (long)sizeof(page)) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(page),
+                                                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+    if (task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, "Q", 1) != 1) {
+        errno = EIO;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_msync, (long)(uintptr_t)mapped, sizeof(page), MS_SYNC, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mapped;
+    }
+    reopened = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                          O_RDONLY, 0, 0, 0);
+    if (reopened < 0) {
+        errno = -reopened;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_pread64, reopened, (long)(uintptr_t)&verify, 1, 0, 0, 0);
+    if (ret != 1 || verify != 'Q') {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out_mapped;
+    }
+    result = 0;
+
+out_mapped:
+    close_if_open(reopened);
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, sizeof(page), 0, 0, 0, 0);
+out:
+    close_if_open(fd);
+    unlink_impl(path);
+    return result;
+}
+
 int native_syscall_contract_shared_file_mappings_are_coherent(void) {
     struct task_struct *task = get_current();
     const char path[] = "/tmp/native-shared-map-coherent";

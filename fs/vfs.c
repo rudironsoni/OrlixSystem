@@ -401,6 +401,40 @@ static void vfs_umount_propagate_shared_child_locked(struct vfs_mount_namespace 
     }
 }
 
+static void vfs_umount_propagate_tree_locked(struct vfs_mount_namespace *mnt_ns, const char *target) {
+    struct vfs_mount_entry snapshots[MAX_MOUNTS];
+    bool propagated[MAX_MOUNTS] = {false};
+
+    if (!mnt_ns || !target) {
+        return;
+    }
+
+    memcpy(snapshots, mnt_ns->entries, sizeof(snapshots));
+    for (;;) {
+        size_t best = MAX_MOUNTS;
+        size_t best_len = 0;
+
+        for (size_t i = 0; i < MAX_MOUNTS; i++) {
+            size_t target_len;
+
+            if (propagated[i] || !snapshots[i].active ||
+                !vfs_mount_target_matches_tree(snapshots[i].target, target)) {
+                continue;
+            }
+            target_len = strlen(snapshots[i].target);
+            if (best == MAX_MOUNTS || target_len > best_len) {
+                best = i;
+                best_len = target_len;
+            }
+        }
+        if (best == MAX_MOUNTS) {
+            break;
+        }
+        vfs_umount_propagate_shared_child_locked(mnt_ns, snapshots[best].target);
+        propagated[best] = true;
+    }
+}
+
 static int vfs_mount_clone_recursive_children_locked(struct vfs_mount_namespace *mnt_ns,
                                                      int mounted_slot) {
     struct vfs_mount_entry snapshots[MAX_MOUNTS];
@@ -2548,7 +2582,7 @@ int vfs_umount(const char *target) {
     fs_mutex_lock(&mnt_ns->lock);
     for (size_t i = 0; i < MAX_MOUNTS; i++) {
         if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
-            vfs_umount_propagate_shared_child_locked(mnt_ns, resolved_target);
+            vfs_umount_propagate_tree_locked(mnt_ns, resolved_target);
             vfs_umount_remove_tree_locked(mnt_ns, resolved_target);
             fs_mutex_unlock(&mnt_ns->lock);
             return 0;

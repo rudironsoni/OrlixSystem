@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include <linux/elf.h>
+#include <linux/fcntl.h>
 #include <linux/mman.h>
 
 #ifndef MAP_ANONYMOUS
@@ -54,6 +55,8 @@ extern long long pwrite_impl(int fd, const void *buf, size_t count, long long of
 extern long long lseek_impl(int fd, long long offset, int whence);
 extern long long read_impl(int fd, void *buf, size_t count);
 extern long long write_impl(int fd, const void *buf, size_t count);
+extern int open_impl(const char *path, int flags, unsigned int mode);
+extern int close_impl(int fd);
 
 static long long mm_fd_pread(int fd, void *buf, size_t count, long long offset);
 
@@ -595,6 +598,43 @@ static long long mm_fd_pwrite(int fd, const void *buf, size_t count, long long o
     bytes = write_impl(fd, buf, count);
     int saved_errno = errno;
     if (lseek_impl(fd, original, SEEK_SET) < 0 && bytes >= 0) {
+        return -1;
+    }
+    if (bytes < 0) {
+        errno = saved_errno;
+    }
+    return bytes;
+}
+
+static long long mm_vma_pwrite(struct task_vma *vma, const void *buf, size_t count,
+                               long long offset) {
+    long long bytes;
+    int reopened;
+    int saved_errno;
+
+    if (!vma) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (vma->backing_fd >= 0) {
+        bytes = mm_fd_pwrite(vma->backing_fd, buf, count, offset);
+        if (bytes >= 0 || errno != EBADF) {
+            return bytes;
+        }
+    }
+    if (vma->backing_path[0] == '\0') {
+        errno = EBADF;
+        return -1;
+    }
+
+    reopened = open_impl(vma->backing_path, O_RDWR, 0);
+    if (reopened < 0) {
+        return -1;
+    }
+    bytes = mm_fd_pwrite(reopened, buf, count, offset);
+    saved_errno = errno;
+    if (close_impl(reopened) != 0 && bytes >= 0) {
         return -1;
     }
     if (bytes < 0) {
@@ -1708,8 +1748,8 @@ int msync_impl(void *addr, size_t len, int flags) {
             const unsigned char *source = vma->shared_pages && vma->shared_pages[page]
                 ? vma->shared_pages[page]->image + (image_offset % TASK_VMA_PAGE_SIZE)
                 : (const unsigned char *)vma->image + image_offset;
-            written = mm_fd_pwrite(vma->backing_fd, source,
-                                   to_write, (long long)(vma->backing_offset + image_offset));
+            written = mm_vma_pwrite(vma, source, to_write,
+                                    (long long)(vma->backing_offset + image_offset));
             if (written < 0) {
                 return -1;
             }

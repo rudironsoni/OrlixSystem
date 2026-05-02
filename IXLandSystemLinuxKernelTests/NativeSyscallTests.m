@@ -68,6 +68,10 @@
     XCTAssertEqual(native_syscall_contract_unlinked_shared_mapping_syncs_through_open_fd(), 0, @"errno %d", errno);
 }
 
+- (void)testSharedMappingSurvivesFdCloseAndSyncs {
+    XCTAssertEqual(native_syscall_contract_shared_mapping_survives_fd_close_and_syncs(), 0, @"errno %d", errno);
+}
+
 - (void)testSharedFileMappingsAreCoherent {
     XCTAssertEqual(native_syscall_contract_shared_file_mappings_are_coherent(), 0, @"errno %d", errno);
 }
