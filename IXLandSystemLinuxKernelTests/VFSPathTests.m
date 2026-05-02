@@ -1330,6 +1330,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"/proc/self/mountinfo should report nested parent mount ids, errno %d", errno);
 }
 
+- (void)testRecursiveBindClonesNestedMountTopology {
+    extern int vfs_contract_recursive_bind_clones_nested_mount_topology(void);
+    XCTAssertEqual(vfs_contract_recursive_bind_clones_nested_mount_topology(), 0,
+                   @"MS_REC bind should clone nested mount topology, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,
@@ -1406,6 +1412,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     extern int vfs_contract_nonroot_cannot_unlink_inside_root_private_dir(void);
     XCTAssertEqual(vfs_contract_nonroot_cannot_unlink_inside_root_private_dir(), 0,
                    @"non-root virtual credentials should not unlink inside root-private directories, errno %d", errno);
+}
+
+- (void)testNonrootCannotOpenThroughUnsearchableParentDirectory {
+    extern int vfs_contract_nonroot_cannot_open_through_unsearchable_parent_directory(void);
+    XCTAssertEqual(vfs_contract_nonroot_cannot_open_through_unsearchable_parent_directory(), 0,
+                   @"non-root should need execute permission on parent directories, errno %d", errno);
 }
 
 - (void)testNonrootCannotMkdiratInsideRootPrivateDir {

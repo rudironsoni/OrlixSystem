@@ -233,6 +233,9 @@ long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *
         to_copy = TASK_VMA_PAGE_SIZE - page_offset;
     }
     memcpy(page->image + page_offset, buf, to_copy);
+    if (vma->resident_pages && page_index < vma->page_count) {
+        vma->resident_pages[page_index] = 1;
+    }
     if (vma->dirty_pages && page_index < vma->page_count) {
         vma->dirty_pages[page_index] = 1;
     }
@@ -471,6 +474,9 @@ long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *b
         to_copy = (size_t)file_remaining;
     }
     memcpy(vma->shared_pages[page_index]->image + page_offset, buf, to_copy);
+    if (vma->resident_pages && page_index < vma->page_count) {
+        vma->resident_pages[page_index] = 1;
+    }
     if (vma->dirty_pages && page_index < vma->page_count) {
         vma->dirty_pages[page_index] = 1;
     }
@@ -662,8 +668,16 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
         errno = ENOMEM;
         return -1;
     }
+    vma->resident_pages = calloc((size_t)page_count, sizeof(*vma->resident_pages));
+    if (!vma->resident_pages) {
+        free(vma->page_flags);
+        memset(vma, 0, sizeof(*vma));
+        errno = ENOMEM;
+        return -1;
+    }
     vma->dirty_pages = calloc((size_t)page_count, sizeof(*vma->dirty_pages));
     if (!vma->dirty_pages) {
+        free(vma->resident_pages);
         free(vma->page_flags);
         memset(vma, 0, sizeof(*vma));
         errno = ENOMEM;
@@ -671,6 +685,7 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
     }
     for (uint64_t i = 0; i < page_count; i++) {
         vma->page_flags[i] = pf_flags;
+        vma->resident_pages[i] = 1;
     }
     mm->vma_count++;
     return 0;
@@ -695,6 +710,7 @@ static void mm_remove_vma_at(struct mm_struct *mm, uint32_t index) {
         }
     }
     free(vma->page_flags);
+    free(vma->resident_pages);
     free(vma->dirty_pages);
     for (uint32_t i = index + 1; i < mm->vma_count; i++) {
         mm->vmas[i - 1] = mm->vmas[i];
@@ -820,8 +836,25 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
         errno = ENOMEM;
         return -1;
     }
+    dest->resident_pages = calloc((size_t)page_count, sizeof(*dest->resident_pages));
+    if (!dest->resident_pages) {
+        free(dest->page_flags);
+        if (dest->shared_pages) {
+            mm_shared_pages_put(dest->shared_pages, page_count);
+        } else if (dest->private_pages) {
+            mm_private_pages_put(dest->private_pages, page_count);
+        } else if (dest->shared_mapping) {
+            mm_shared_mapping_put(dest->shared_mapping);
+        } else {
+            free(dest->image);
+        }
+        memset(dest, 0, sizeof(*dest));
+        errno = ENOMEM;
+        return -1;
+    }
     dest->dirty_pages = calloc((size_t)page_count, sizeof(*dest->dirty_pages));
     if (!dest->dirty_pages) {
+        free(dest->resident_pages);
         free(dest->page_flags);
         if (dest->shared_pages) {
             mm_shared_pages_put(dest->shared_pages, page_count);
@@ -844,6 +877,9 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
     for (uint64_t i = 0; i < page_count; i++) {
         uint64_t source_page = ((start - source->start) / TASK_VMA_PAGE_SIZE) + i;
         dest->page_flags[i] = task_vma_page_flags_impl(source, start + (i * TASK_VMA_PAGE_SIZE));
+        if (source->resident_pages && source_page < source->page_count) {
+            dest->resident_pages[i] = source->resident_pages[source_page];
+        }
         if (source->dirty_pages && source_page < source->page_count) {
             dest->dirty_pages[i] = source->dirty_pages[source_page];
         }
@@ -987,6 +1023,7 @@ static void mm_free_vma_contents(struct task_vma *vma) {
         }
     }
     free(vma->page_flags);
+    free(vma->resident_pages);
     free(vma->dirty_pages);
     memset(vma, 0, sizeof(*vma));
 }
@@ -1283,6 +1320,9 @@ static int mm_zero_vma_range(struct task_vma *vma, uint64_t start, uint64_t end)
         if (vma->dirty_pages && page_index < vma->page_count) {
             vma->dirty_pages[page_index] = 0;
         }
+        if (vma->resident_pages && page_index < vma->page_count) {
+            vma->resident_pages[page_index] = 0;
+        }
         cursor += to_zero;
     }
     return 0;
@@ -1386,26 +1426,31 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
 
         uint64_t new_pages = old_pages + added_pages;
         uint32_t *page_flags = calloc((size_t)new_pages, sizeof(*page_flags));
+        uint8_t *resident_pages = calloc((size_t)new_pages, sizeof(*resident_pages));
         uint8_t *dirty_pages = calloc((size_t)new_pages, sizeof(*dirty_pages));
         void *new_image = NULL;
         struct vm_private_page **private_pages = NULL;
         struct vm_shared_mapping **shared_pages = NULL;
 
-        if (!page_flags || !dirty_pages) {
+        if (!page_flags || !resident_pages || !dirty_pages) {
             free(page_flags);
+            free(resident_pages);
             free(dirty_pages);
             errno = ENOMEM;
             return (void *)-1;
         }
         memcpy(page_flags, vma->page_flags, (size_t)old_pages * sizeof(*page_flags));
+        memcpy(resident_pages, vma->resident_pages, (size_t)old_pages * sizeof(*resident_pages));
         memcpy(dirty_pages, vma->dirty_pages, (size_t)old_pages * sizeof(*dirty_pages));
         for (uint64_t i = old_pages; i < new_pages; i++) {
             page_flags[i] = vma->flags;
+            resident_pages[i] = 1;
         }
         if (!vma->private_pages && !vma->shared_pages && !vma->shared_mapping) {
             new_image = calloc(1, (size_t)new_len);
             if (!new_image) {
                 free(page_flags);
+                free(resident_pages);
                 free(dirty_pages);
                 errno = ENOMEM;
                 return (void *)-1;
@@ -1415,6 +1460,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
             private_pages = calloc((size_t)new_pages, sizeof(*private_pages));
             if (!private_pages) {
                 free(page_flags);
+                free(resident_pages);
                 free(dirty_pages);
                 errno = ENOMEM;
                 return (void *)-1;
@@ -1428,6 +1474,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                     }
                     free(private_pages);
                     free(page_flags);
+                    free(resident_pages);
                     free(dirty_pages);
                     return (void *)-1;
                 }
@@ -1436,6 +1483,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
             shared_pages = calloc((size_t)new_pages, sizeof(*shared_pages));
             if (!shared_pages) {
                 free(page_flags);
+                free(resident_pages);
                 free(dirty_pages);
                 errno = ENOMEM;
                 return (void *)-1;
@@ -1450,7 +1498,8 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                         mm_shared_mapping_put(shared_pages[j]);
                     }
                     free(shared_pages);
-                    free(page_flags);
+                   free(page_flags);
+                    free(resident_pages);
                     free(dirty_pages);
                     return (void *)-1;
                 }
@@ -1458,14 +1507,17 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                 free(page);
             }
         } else {
-            free(page_flags);
+           free(page_flags);
+            free(resident_pages);
             free(dirty_pages);
             errno = ENOSYS;
             return (void *)-1;
         }
         free(vma->page_flags);
+        free(vma->resident_pages);
         free(vma->dirty_pages);
         vma->page_flags = page_flags;
+        vma->resident_pages = resident_pages;
         vma->dirty_pages = dirty_pages;
         if (private_pages) {
             free(vma->private_pages);

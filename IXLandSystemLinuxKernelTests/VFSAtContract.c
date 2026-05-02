@@ -199,6 +199,7 @@ static void vfs_contract_cleanup_mount_paths(void) {
 static void vfs_contract_cleanup_mount_namespace_paths(void) {
     umount("/tmp/vfs-mntns-peer-a/child/grand");
     umount("/tmp/vfs-mntns-peer-b/child/grand");
+    umount("/tmp/vfs-mntns-target/child");
     umount("/tmp/vfs-mntns-peer-a/child");
     umount("/tmp/vfs-mntns-peer-b/child");
     umount("/tmp/vfs-mntns-peer-a");
@@ -212,9 +213,11 @@ static void vfs_contract_cleanup_mount_namespace_paths(void) {
     unlink_impl("/tmp/vfs-mntns-peer-b/child/grand/file");
     unlink_impl("/tmp/vfs-mntns-target/file");
     unlink_impl("/tmp/vfs-mntns-target/newfile");
+    unlink_impl("/tmp/vfs-mntns-target/child/file");
     rmdir_impl("/tmp/vfs-mntns-parent-source/child/grand");
     rmdir_impl("/tmp/vfs-mntns-parent-source/child");
     rmdir_impl("/tmp/vfs-mntns-child-source/grand");
+    rmdir_impl("/tmp/vfs-mntns-target/child");
     rmdir_impl("/tmp/vfs-mntns-peer-a/child/grand");
     rmdir_impl("/tmp/vfs-mntns-peer-a/child");
     rmdir_impl("/tmp/vfs-mntns-peer-b/child/grand");
@@ -1666,6 +1669,40 @@ out:
     return ret;
 }
 
+int vfs_contract_recursive_bind_clones_nested_mount_topology(void) {
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-child-source/file", "child") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-parent-source/child", NULL, MS_BIND, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REC, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/file", "parent") != 0 ||
+        vfs_contract_read_file_exact("/tmp/vfs-mntns-target/child/file", "child") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_proc_self_mounts_lists_bind_mount(void) {
     char content[4096];
     int ret = -1;
@@ -2119,6 +2156,56 @@ out:
     cred_reset_to_defaults();
     unlink_impl("/tmp/vfs-cred-private-dir/file");
     rmdir_impl("/tmp/vfs-cred-private-dir");
+    return ret;
+}
+
+int vfs_contract_nonroot_cannot_open_through_unsearchable_parent_directory(void) {
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-no-search-dir/file");
+    rmdir_impl("/tmp/vfs-cred-no-search-dir");
+    if (mkdir_impl("/tmp/vfs-cred-no-search-dir", 0700) != 0) {
+        goto out;
+    }
+    fd = open_impl("/tmp/vfs-cred-no-search-dir/file", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        goto out;
+    }
+    if (write_impl(fd, "visible", 7) != 7) {
+        goto out;
+    }
+    close_impl(fd);
+    fd = -1;
+    if (chmod("/tmp/vfs-cred-no-search-dir", 0000) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    fd = open_impl("/tmp/vfs-cred-no-search-dir/file", O_RDONLY, 0);
+    if (fd != -1 || errno != EACCES) {
+        close_impl(fd);
+        fd = -1;
+        errno = EACCES;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        close_impl(fd);
+        cred_reset_to_defaults();
+        chmod("/tmp/vfs-cred-no-search-dir", 0700);
+        unlink_impl("/tmp/vfs-cred-no-search-dir/file");
+        rmdir_impl("/tmp/vfs-cred-no-search-dir");
+        errno = saved_errno;
+    }
     return ret;
 }
 

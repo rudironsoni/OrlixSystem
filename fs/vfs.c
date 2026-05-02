@@ -43,6 +43,7 @@ static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath);
 static int vfs_proc_append(char *buf, size_t buf_len, size_t *pos, const char *fmt, ...);
 static int vfs_copy_string(const char *src, char *dst, size_t dst_len);
 static bool vfs_path_matches_prefix(const char *vpath, const char *prefix);
+static uint64_t vfs_vma_resident_page_count(const struct task_vma *vma);
 
 /* Backing storage class roots - discovered at runtime from host container */
 static char vfs_persistent_root[MAX_PATH] = {0};
@@ -383,6 +384,65 @@ static void vfs_umount_propagate_shared_child_locked(struct vfs_mount_namespace 
         }
         vfs_umount_remove_tree_locked(mnt_ns, peer_target);
     }
+}
+
+static int vfs_mount_clone_recursive_children_locked(struct vfs_mount_namespace *mnt_ns,
+                                                     int mounted_slot) {
+    struct vfs_mount_entry snapshots[MAX_MOUNTS];
+    struct vfs_mount_entry *mounted;
+
+    if (!mnt_ns || mounted_slot < 0 || mounted_slot >= MAX_MOUNTS ||
+        !mnt_ns->entries[mounted_slot].active) {
+        return -EINVAL;
+    }
+
+    mounted = &mnt_ns->entries[mounted_slot];
+    memcpy(snapshots, mnt_ns->entries, sizeof(snapshots));
+
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        const struct vfs_mount_entry *child = &snapshots[i];
+        const char *suffix;
+        char child_target[MAX_PATH];
+        int slot;
+        int ret;
+        bool exists = false;
+
+        if (!child->active || strcmp(child->target, mounted->source) == 0 ||
+            !vfs_path_matches_prefix(child->target, mounted->source)) {
+            continue;
+        }
+
+        suffix = child->target + strlen(mounted->source);
+        ret = snprintf(child_target, sizeof(child_target), "%s%s", mounted->target, suffix);
+        if (ret < 0 || (size_t)ret >= sizeof(child_target)) {
+            return -ENAMETOOLONG;
+        }
+
+        for (size_t j = 0; j < MAX_MOUNTS; j++) {
+            if (mnt_ns->entries[j].active && strcmp(mnt_ns->entries[j].target, child_target) == 0) {
+                exists = true;
+                break;
+            }
+        }
+        if (exists) {
+            continue;
+        }
+
+        slot = vfs_mount_find_free_slot_locked(mnt_ns);
+        if (slot < 0) {
+            return -ENOSPC;
+        }
+        ret = vfs_mount_copy_entry(&mnt_ns->entries[slot], child->source, child_target,
+                                   child->fstype, child->flags, child->propagation);
+        if (ret != 0) {
+            return ret;
+        }
+        mnt_ns->entries[slot].peer_group_id = child->peer_group_id;
+        mnt_ns->entries[slot].master_group_id = child->master_group_id;
+        vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[slot]);
+    }
+
+    return 0;
 }
 
 struct vfs_route_entry {
@@ -874,6 +934,54 @@ int vfs_check_parent_mutation_permission(const char *resolved_vpath) {
     return 0;
 }
 
+static int vfs_check_search_permission(const char *resolved_vpath) {
+    char current[MAX_PATH];
+    struct cred *cred = get_current_cred();
+    size_t len;
+
+    if (!resolved_vpath || resolved_vpath[0] != '/') {
+        return -EINVAL;
+    }
+    if (!cred) {
+        return -ESRCH;
+    }
+
+    len = strlen(resolved_vpath);
+    for (size_t i = 1; i < len; i++) {
+        char translated[MAX_PATH];
+        struct linux_stat st;
+        int ret;
+
+        if (resolved_vpath[i] != '/') {
+            continue;
+        }
+        if (i >= sizeof(current)) {
+            return -ENAMETOOLONG;
+        }
+        memcpy(current, resolved_vpath, i);
+        current[i] = '\0';
+        if (strcmp(current, "/") == 0) {
+            continue;
+        }
+        ret = vfs_translate_path(current, translated, sizeof(translated));
+        if (ret != 0) {
+            return ret;
+        }
+        ret = vfs_stat_virtual_backed_path(current, translated, &st);
+        if (ret != 0) {
+            return ret;
+        }
+        if (!S_ISDIR(st.st_mode)) {
+            return -ENOTDIR;
+        }
+        if (!vfs_cred_has_mode_permission(cred, &st, 01U)) {
+            return -EACCES;
+        }
+    }
+
+    return 0;
+}
+
 int vfs_check_open_permission(const char *resolved_vpath, const char *translated_path, int flags) {
     struct linux_stat st;
     struct cred *cred = get_current_cred();
@@ -912,6 +1020,11 @@ int vfs_check_open_permission(const char *resolved_vpath, const char *translated
             return -ENOENT;
         }
         return vfs_check_parent_mutation_permission(resolved_vpath);
+    }
+
+    ret = vfs_check_search_permission(resolved_vpath);
+    if (ret != 0) {
+        return ret;
     }
 
     if (S_ISDIR(st.st_mode) && wants_write) {
@@ -1573,7 +1686,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     struct linux_stat target_stat;
     int ret;
     int slot = -1;
-    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY | vfs_mount_propagation_flags();
+    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY | MS_REC | vfs_mount_propagation_flags();
     unsigned long propagation = vfs_mount_selected_propagation(flags);
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
     bool remount = (flags & MS_REMOUNT) != 0;
@@ -1678,6 +1791,14 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         return ret;
     }
     vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[slot]);
+    if ((flags & MS_REC) != 0) {
+        ret = vfs_mount_clone_recursive_children_locked(mnt_ns, slot);
+        if (ret != 0) {
+            memset(&mnt_ns->entries[slot], 0, sizeof(mnt_ns->entries[slot]));
+            fs_mutex_unlock(&mnt_ns->lock);
+            return ret;
+        }
+    }
     ret = vfs_mount_propagate_shared_child_locked(mnt_ns, slot);
     if (ret != 0) {
         memset(&mnt_ns->entries[slot], 0, sizeof(mnt_ns->entries[slot]));
@@ -3035,7 +3156,7 @@ int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
 struct vfs_vm_accounting {
     uint64_t size_pages;
     uint64_t resident_pages;
-    uint64_t shared_pages;
+    uint64_t resident_shared_pages;
     uint64_t text_pages;
     uint64_t data_pages;
     uint64_t dirty_pages;
@@ -3049,10 +3170,11 @@ static void vfs_vm_account_task(const struct task_struct *task, struct vfs_vm_ac
     for (uint32_t i = 0; i < task->mm->vma_count; i++) {
         const struct task_vma *vma = &task->mm->vmas[i];
         uint64_t pages = vma->page_count;
+        uint64_t resident_pages = vfs_vma_resident_page_count(vma);
         acct->size_pages += pages;
-        acct->resident_pages += pages;
+        acct->resident_pages += resident_pages;
         if (vma->shared) {
-            acct->shared_pages += pages;
+            acct->resident_shared_pages += resident_pages;
         }
         if (vma->kind == TASK_VMA_EXEC || vma->kind == TASK_VMA_INTERP) {
             acct->text_pages += pages;
@@ -3102,7 +3224,7 @@ int vfs_proc_task_statm_content(int32_t pid, char *buf, size_t buf_len) {
     ret = snprintf(buf, buf_len, "%llu %llu %llu %llu 0 %llu 0\n",
                    (unsigned long long)acct.size_pages,
                    (unsigned long long)acct.resident_pages,
-                   (unsigned long long)acct.shared_pages,
+                   (unsigned long long)acct.resident_shared_pages,
                    (unsigned long long)acct.text_pages,
                    (unsigned long long)acct.data_pages);
     vfs_put_proc_task(task);
@@ -3258,6 +3380,23 @@ static uint64_t vfs_vma_dirty_page_count(const struct task_vma *vma) {
     return dirty;
 }
 
+static uint64_t vfs_vma_resident_page_count(const struct task_vma *vma) {
+    uint64_t resident = 0;
+
+    if (!vma) {
+        return 0;
+    }
+    if (!vma->resident_pages) {
+        return vma->page_count;
+    }
+    for (uint64_t page = 0; page < vma->page_count; page++) {
+        if (vma->resident_pages[page]) {
+            resident++;
+        }
+    }
+    return resident;
+}
+
 static int vfs_vma_vmflags(const struct task_vma *vma, char *buf, size_t buf_len) {
     uint32_t flags;
     size_t pos = 0;
@@ -3314,6 +3453,7 @@ static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *
         char perms[5];
         char path[MAX_PATH];
         uint64_t size_kb = vma->page_count * 4ULL;
+        uint64_t resident_kb = vfs_vma_resident_page_count(vma) * 4ULL;
         uint64_t dirty_kb = vfs_vma_dirty_page_count(vma) * 4ULL;
         uint64_t shared_clean_kb = vma->shared ? (size_kb > dirty_kb ? size_kb - dirty_kb : 0) : 0;
         uint64_t private_clean_kb = vma->shared ? 0 : (size_kb > dirty_kb ? size_kb - dirty_kb : 0);
@@ -3347,13 +3487,13 @@ static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *
             vfs_proc_append(buf, buf_len, &pos, "Size:           %8llu kB\n", (unsigned long long)size_kb) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "KernelPageSize: %8llu kB\n", 4ULL) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "MMUPageSize:    %8llu kB\n", 4ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Rss:            %8llu kB\n", (unsigned long long)size_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Pss:            %8llu kB\n", (unsigned long long)size_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Rss:            %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Pss:            %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "Shared_Clean:   %8llu kB\n", (unsigned long long)shared_clean_kb) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "Shared_Dirty:   %8llu kB\n", (unsigned long long)shared_dirty_kb) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "Private_Clean:  %8llu kB\n", (unsigned long long)private_clean_kb) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "Private_Dirty:  %8llu kB\n", (unsigned long long)private_dirty_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Referenced:     %8llu kB\n", (unsigned long long)size_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Referenced:     %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "Anonymous:      %8llu kB\n", (unsigned long long)anonymous_kb) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "LazyFree:       %8llu kB\n", 0ULL) != 0 ||
             vfs_proc_append(buf, buf_len, &pos, "AnonHugePages:  %8llu kB\n", 0ULL) != 0 ||
@@ -3811,8 +3951,8 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         cred->no_new_privs ? 1 : 0,
         (unsigned long long)(acct.size_pages * 4ULL),
         (unsigned long long)(acct.resident_pages * 4ULL),
-        (unsigned long long)((acct.resident_pages - acct.shared_pages) * 4ULL),
-        (unsigned long long)(acct.shared_pages * 4ULL),
+        (unsigned long long)((acct.resident_pages - acct.resident_shared_pages) * 4ULL),
+        (unsigned long long)(acct.resident_shared_pages * 4ULL),
         (unsigned long long)(acct.data_pages * 4ULL),
         (unsigned long long)(acct.dirty_pages * 4ULL)) != 0) {
         vfs_put_proc_task(task);

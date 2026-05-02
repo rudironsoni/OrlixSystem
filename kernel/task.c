@@ -305,6 +305,8 @@ void task_clear_vmas_impl(struct mm_struct *mm) {
         }
         free(mm->vmas[i].page_flags);
         mm->vmas[i].page_flags = NULL;
+        free(mm->vmas[i].resident_pages);
+        mm->vmas[i].resident_pages = NULL;
         free(mm->vmas[i].dirty_pages);
         mm->vmas[i].dirty_pages = NULL;
         mm->vmas[i].page_count = 0;
@@ -424,6 +426,9 @@ static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf,
     if (vma->dirty_pages) {
         uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
         if (page_index < vma->page_count) {
+            if (vma->resident_pages) {
+                vma->resident_pages[page_index] = 1;
+            }
             vma->dirty_pages[page_index] = 1;
         }
     }

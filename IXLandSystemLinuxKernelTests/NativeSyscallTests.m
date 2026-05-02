@@ -120,6 +120,10 @@
     XCTAssertEqual(native_syscall_contract_proc_self_smaps_dirty_clears_after_madvise(), 0, @"errno %d", errno);
 }
 
+- (void)testProcSelfSmapsReclaimsDontneedResidency {
+    XCTAssertEqual(native_syscall_contract_proc_self_smaps_reclaims_dontneed_residency(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesProcessStartupSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
 }
