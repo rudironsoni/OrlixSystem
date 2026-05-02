@@ -295,6 +295,7 @@ enum proc_self_path_class {
     PROC_SELF_COMM_FILE,
     PROC_SELF_STAT_FILE,
     PROC_SELF_STATM_FILE,
+    PROC_SELF_MAPS_FILE,
     PROC_SELF_FDINFO_FILE,
     PROC_SELF_STATUS_FILE,
     PROC_SELF_MOUNTINFO_FILE,
@@ -315,6 +316,7 @@ int vfs_proc_self_environ_content(char *buf, size_t buf_len);
 int vfs_proc_self_comm_content(char *buf, size_t buf_len);
 int vfs_proc_self_stat_content(char *buf, size_t buf_len);
 int vfs_proc_self_statm_content(char *buf, size_t buf_len);
+int vfs_proc_self_maps_content(char *buf, size_t buf_len);
 int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len);
 int vfs_proc_self_status_content(char *buf, size_t buf_len);
 int vfs_proc_self_mountinfo_content(char *buf, size_t buf_len);

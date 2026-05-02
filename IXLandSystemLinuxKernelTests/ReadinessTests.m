@@ -48,5 +48,6 @@
 - (void)testPselect6PipeUsesSharedReadinessEngine { XCTAssertEqual(readiness_contract_pselect6_pipe_uses_shared_readiness_engine(), 0, @"errno %d", errno); }
 - (void)testPselect6MaskBlocksSignalUntilPipeReadyAndRestores { XCTAssertEqual(readiness_contract_pselect6_mask_blocks_signal_until_pipe_ready_and_restores(), 0, @"errno %d", errno); }
 - (void)testProcAndDevFdsReportReadiness { XCTAssertEqual(readiness_contract_proc_and_dev_fds_report_readiness(), 0, @"errno %d", errno); }
+- (void)testSyntheticDirsAndDevZeroReportReadiness { XCTAssertEqual(readiness_contract_synthetic_dirs_and_dev_zero_report_readiness(), 0, @"errno %d", errno); }
 
 @end

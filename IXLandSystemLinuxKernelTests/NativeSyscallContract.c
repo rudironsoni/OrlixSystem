@@ -48,6 +48,8 @@
 
 extern int link_impl(const char *oldpath, const char *newpath);
 extern int unlink_impl(const char *pathname);
+extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
+extern long read_impl(int fd, void *buf, size_t count);
 #include "runtime/native/registry.h"
 #include "runtime/syscall.h"
 
@@ -112,6 +114,32 @@ static int format_outfd_env(char *buf, size_t buf_len, int fd) {
     }
     buf[pos] = '\0';
     return 0;
+}
+
+static int format_maps_range(char *buf, size_t buf_len, uint64_t start, uint64_t end) {
+    static const char hex[] = "0123456789abcdef";
+    size_t pos = 0;
+
+    if (!buf || buf_len < 27) {
+        errno = EINVAL;
+        return -1;
+    }
+    for (int shift = 44; shift >= 0; shift -= 4) {
+        buf[pos++] = hex[(start >> shift) & 0xfU];
+    }
+    buf[pos++] = '-';
+    for (int shift = 44; shift >= 0; shift -= 4) {
+        buf[pos++] = hex[(end >> shift) & 0xfU];
+    }
+    buf[pos] = '\0';
+    return 0;
+}
+
+static int contains_host_path_fragment(const char *buf) {
+    return strstr(buf, "/private/") != NULL ||
+           strstr(buf, "/var/mobile/") != NULL ||
+           strstr(buf, "/Users/") != NULL ||
+           strstr(buf, "/Volumes/") != NULL;
 }
 
 static int native_syscall_entry(int argc, char **argv, char **envp) {
@@ -1504,5 +1532,119 @@ out:
     native_registry_clear();
     close_if_open(pipefd[0]);
     close_if_open(pipefd[1]);
+    return result;
+}
+
+int native_syscall_contract_proc_self_maps_reports_permission_runs(void) {
+    struct task_struct *task = get_current();
+    void *mapped = (void *)-1;
+    int fd = -1;
+    char maps[2048];
+    long ret;
+    char needle[32];
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 12288,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)mapped + 4096, 4096,
+                                PROT_READ, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    fd = open_impl("/proc/self/maps", O_RDONLY, 0);
+    if (fd < 0) {
+        result = errno ? errno : ENOENT;
+        goto out;
+    }
+    ret = read_impl(fd, maps, sizeof(maps) - 1);
+    if (ret <= 0) {
+        result = errno ? errno : ENODATA;
+        goto out;
+    }
+    maps[ret] = '\0';
+    if (format_maps_range(needle, sizeof(needle), (uint64_t)(uintptr_t)mapped,
+                          (uint64_t)((uintptr_t)mapped + 4096)) != 0 ||
+        !strstr(maps, needle) ||
+        !strstr(maps, "rw-p") ||
+        !strstr(maps, "r--p")) {
+        result = ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    close_if_open(fd);
+    if ((long)(uintptr_t)mapped >= 0) {
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 12288, 0, 0, 0, 0);
+    }
+    return result;
+}
+
+int native_syscall_contract_dev_zero_mmap_is_virtual_zero_memory(void) {
+    struct task_struct *task = get_current();
+    int fd = -1;
+    void *mapped = (void *)-1;
+    unsigned char bytes[4] = {1, 1, 1, 1};
+    char maps[2048];
+    long ret;
+    int maps_fd = -1;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    fd = open_impl("/dev/zero", O_RDWR, 0);
+    if (fd < 0) {
+        return errno ? errno : ENOENT;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        result = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, bytes, sizeof(bytes)) !=
+            (long)sizeof(bytes) ||
+        bytes[0] != 0 || bytes[1] != 0 || bytes[2] != 0 || bytes[3] != 0 ||
+        task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, "D", 1) != 1) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    maps_fd = open_impl("/proc/self/maps", O_RDONLY, 0);
+    if (maps_fd < 0) {
+        result = errno ? errno : ENOENT;
+        goto out;
+    }
+    ret = read_impl(maps_fd, maps, sizeof(maps) - 1);
+    if (ret <= 0) {
+        result = errno ? errno : ENODATA;
+        goto out;
+    }
+    maps[ret] = '\0';
+    if (!strstr(maps, "/dev/zero") || contains_host_path_fragment(maps)) {
+        result = ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    close_if_open(maps_fd);
+    if ((long)(uintptr_t)mapped >= 0) {
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    }
+    close_if_open(fd);
     return result;
 }

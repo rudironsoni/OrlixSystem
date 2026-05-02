@@ -25,6 +25,8 @@ static synthetic_proc_file_t proc_self_file_for_class(proc_self_path_class_t pro
         return SYNTHETIC_PROC_FILE_STAT;
     case PROC_SELF_STATM_FILE:
         return SYNTHETIC_PROC_FILE_STATM;
+    case PROC_SELF_MAPS_FILE:
+        return SYNTHETIC_PROC_FILE_MAPS;
     case PROC_SELF_STATUS_FILE:
         return SYNTHETIC_PROC_FILE_STATUS;
     case PROC_SELF_MOUNTINFO_FILE:

@@ -8,6 +8,7 @@
 
 /* Linux UAPI headers for ABI constants */
 #include <linux/capability.h>
+#include <linux/elf.h>
 #include <linux/fcntl.h>
 #include <linux/mount.h>
 #include <linux/stat.h>
@@ -39,6 +40,7 @@ static int vfs_join_virtual_path(const char *base_path, const char *suffix, char
 static int vfs_stat_virtual_backed_path(const char *resolved_vpath, const char *translated_path,
                                         struct linux_stat *st);
 static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath);
+static int vfs_proc_append(char *buf, size_t buf_len, size_t *pos, const char *fmt, ...);
 
 /* Backing storage class roots - discovered at runtime from host container */
 static char vfs_persistent_root[MAX_PATH] = {0};
@@ -2213,6 +2215,9 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
     if (strcmp(suffix, "/statm") == 0) {
         return PROC_SELF_STATM_FILE;
     }
+    if (strcmp(suffix, "/maps") == 0) {
+        return PROC_SELF_MAPS_FILE;
+    }
     if (strcmp(suffix, "/status") == 0) {
         return PROC_SELF_STATUS_FILE;
     }
@@ -2571,6 +2576,114 @@ int vfs_proc_self_statm_content(char *buf, size_t buf_len) {
         return (int)(buf_len - 1);
     }
     return ret;
+}
+
+static void vfs_maps_permissions(uint32_t flags, int shared, char perms[5]) {
+    perms[0] = (flags & PF_R) ? 'r' : '-';
+    perms[1] = (flags & PF_W) ? 'w' : '-';
+    perms[2] = (flags & PF_X) ? 'x' : '-';
+    perms[3] = shared ? 's' : 'p';
+    perms[4] = '\0';
+}
+
+static const char *vfs_maps_kind_name(const struct task_vma *vma) {
+    if (!vma) {
+        return "";
+    }
+    switch (vma->kind) {
+    case TASK_VMA_STACK:
+        return "[stack]";
+    case TASK_VMA_ANON:
+        return "[anon]";
+    default:
+        return "";
+    }
+}
+
+static int vfs_maps_path_for_vma(const struct task_vma *vma, char *path, size_t path_len) {
+    void *entry;
+    int ret;
+
+    if (!vma || !path || path_len == 0) {
+        return -EINVAL;
+    }
+    path[0] = '\0';
+    if (vma->kind != TASK_VMA_FILE || vma->backing_fd < 0) {
+        return 0;
+    }
+    entry = get_fd_entry_impl(vma->backing_fd);
+    if (!entry) {
+        return 0;
+    }
+    ret = get_fd_path_impl(entry, path, path_len);
+    put_fd_entry_impl(entry);
+    return ret == 0 ? 0 : -ENOENT;
+}
+
+int vfs_proc_self_maps_content(char *buf, size_t buf_len) {
+    struct task_struct *task;
+    size_t pos = 0;
+
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+    task = get_current();
+    if (!task || !task->mm) {
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < task->mm->vma_count; i++) {
+        const struct task_vma *vma = &task->mm->vmas[i];
+        uint64_t run_start = vma->start;
+        uint32_t run_flags = task_vma_page_flags_impl(vma, run_start);
+        char path[MAX_PATH];
+
+        if (vfs_maps_path_for_vma(vma, path, sizeof(path)) != 0 || path[0] == '\0') {
+            const char *kind = vfs_maps_kind_name(vma);
+            size_t kind_len = strlen(kind);
+            if (kind_len >= sizeof(path)) {
+                kind_len = sizeof(path) - 1;
+            }
+            memcpy(path, kind, kind_len);
+            path[kind_len] = '\0';
+        }
+
+        for (uint64_t addr = vma->start + TASK_VMA_PAGE_SIZE; addr < vma->end; addr += TASK_VMA_PAGE_SIZE) {
+            uint32_t flags = task_vma_page_flags_impl(vma, addr);
+            if (flags == run_flags) {
+                continue;
+            }
+            char perms[5];
+            uint64_t offset = vma->backing_offset + (run_start - vma->start);
+            vfs_maps_permissions(run_flags, vma->shared, perms);
+            if (vfs_proc_append(buf, buf_len, &pos,
+                                "%012llx-%012llx %s %08llx 00:00 0%s%s\n",
+                                (unsigned long long)run_start,
+                                (unsigned long long)addr,
+                                perms,
+                                (unsigned long long)offset,
+                                path[0] ? " " : "",
+                                path) != 0) {
+                return (int)pos;
+            }
+            run_start = addr;
+            run_flags = flags;
+        }
+        char perms[5];
+        uint64_t offset = vma->backing_offset + (run_start - vma->start);
+        vfs_maps_permissions(run_flags, vma->shared, perms);
+        if (vfs_proc_append(buf, buf_len, &pos,
+                            "%012llx-%012llx %s %08llx 00:00 0%s%s\n",
+                            (unsigned long long)run_start,
+                            (unsigned long long)vma->end,
+                            perms,
+                            (unsigned long long)offset,
+                            path[0] ? " " : "",
+                            path) != 0) {
+            return (int)pos;
+        }
+    }
+    return (int)pos;
 }
 
 int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len) {
@@ -2996,6 +3109,7 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
         } else if (proc_class == PROC_SELF_CMDLINE_FILE || proc_class == PROC_SELF_ENVIRON_FILE ||
                    proc_class == PROC_SELF_COMM_FILE ||
                    proc_class == PROC_SELF_STAT_FILE || proc_class == PROC_SELF_STATM_FILE ||
+                   proc_class == PROC_SELF_MAPS_FILE ||
                    proc_class == PROC_SELF_STATUS_FILE || proc_class == PROC_SELF_MOUNTINFO_FILE ||
                    proc_class == PROC_SELF_MOUNTS_FILE) {
             memset(statbuf, 0, sizeof(*statbuf));

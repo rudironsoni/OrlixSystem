@@ -634,3 +634,43 @@ out:
     close_if_open(nullfd);
     return result;
 }
+
+int readiness_contract_synthetic_dirs_and_dev_zero_report_readiness(void) {
+    int proc_dir = -1;
+    int dev_dir = -1;
+    int zero_fd = -1;
+    struct pollfd pfds[3];
+    int result = -1;
+
+    proc_dir = open_impl("/proc/self", O_RDONLY | O_DIRECTORY, 0);
+    dev_dir = open_impl("/dev", O_RDONLY | O_DIRECTORY, 0);
+    zero_fd = open_impl("/dev/zero", O_RDWR, 0);
+    if (proc_dir < 0 || dev_dir < 0 || zero_fd < 0) {
+        result = errno ? errno : ENOENT;
+        goto out;
+    }
+
+    memset(pfds, 0, sizeof(pfds));
+    pfds[0].fd = proc_dir;
+    pfds[0].events = POLLIN;
+    pfds[1].fd = dev_dir;
+    pfds[1].events = POLLIN;
+    pfds[2].fd = zero_fd;
+    pfds[2].events = POLLIN | POLLOUT;
+
+    if (poll_impl(pfds, 3, 0) != 3 ||
+        (pfds[0].revents & POLLIN) == 0 ||
+        (pfds[1].revents & POLLIN) == 0 ||
+        (pfds[2].revents & POLLIN) == 0 ||
+        (pfds[2].revents & POLLOUT) == 0) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    result = 0;
+
+out:
+    close_if_open(proc_dir);
+    close_if_open(dev_dir);
+    close_if_open(zero_fd);
+    return result;
+}

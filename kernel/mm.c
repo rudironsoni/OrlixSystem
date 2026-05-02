@@ -252,6 +252,20 @@ static uint64_t mm_fd_file_identity(int fd) {
     return identity;
 }
 
+static int mm_fd_is_synthetic_zero(int fd) {
+    fd_entry_t *entry;
+    int is_zero = 0;
+
+    entry = get_fd_entry_impl(fd);
+    if (!entry) {
+        return 0;
+    }
+    is_zero = get_fd_is_synthetic_dev_impl(entry) &&
+              get_fd_synthetic_dev_node_impl(entry) == SYNTHETIC_DEV_ZERO;
+    put_fd_entry_impl(entry);
+    return is_zero;
+}
+
 static struct vm_shared_mapping *mm_shared_mapping_lookup_locked(uint64_t file_identity,
                                                                  uint64_t page_index) {
     for (struct vm_shared_mapping *mapping = mm_shared_mappings; mapping; mapping = mapping->next) {
@@ -1128,7 +1142,8 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
     }
 
     kind = (flags & MAP_ANONYMOUS) != 0 ? TASK_VMA_ANON : TASK_VMA_FILE;
-    if (kind == TASK_VMA_FILE && (flags & MAP_SHARED) != 0) {
+    int synthetic_zero = kind == TASK_VMA_FILE && mm_fd_is_synthetic_zero(fd);
+    if (kind == TASK_VMA_FILE && (flags & MAP_SHARED) != 0 && !synthetic_zero) {
         shared_pages = mm_shared_pages_get_or_create(fd, (uint64_t)offset, map_len / TASK_VMA_PAGE_SIZE);
         if (!shared_pages) {
             return (void *)-1;
@@ -1141,7 +1156,7 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
             return (void *)-1;
         }
     }
-    if (kind == TASK_VMA_FILE && !shared_pages) {
+    if (kind == TASK_VMA_FILE && !shared_pages && !synthetic_zero) {
         bytes = mm_fd_pread(fd, image, (size_t)map_len, (long long)offset);
         if (bytes < 0) {
             int saved_errno = errno;

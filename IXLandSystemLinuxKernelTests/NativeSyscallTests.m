@@ -92,6 +92,14 @@
     XCTAssertEqual(native_syscall_contract_ftruncate_updates_shared_mapping_fault_policy(), 0, @"errno %d", errno);
 }
 
+- (void)testProcSelfMapsReportsPermissionRuns {
+    XCTAssertEqual(native_syscall_contract_proc_self_maps_reports_permission_runs(), 0, @"errno %d", errno);
+}
+
+- (void)testDevZeroMmapIsVirtualZeroMemory {
+    XCTAssertEqual(native_syscall_contract_dev_zero_mmap_is_virtual_zero_memory(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesProcessStartupSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
 }
