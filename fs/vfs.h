@@ -243,6 +243,7 @@ int vfs_kern_mount(struct file_system_type *type, int flags, const char *dev_nam
 int vfs_mount(const char *source, const char *target, const char *fstype, unsigned long flags,
               const void *data);
 int vfs_umount(const char *target);
+int vfs_umount_lazy(const char *target);
 unsigned long vfs_mount_flags_for_path(const char *resolved_vpath);
 int vfs_mount_setattr(int dirfd, const char *pathname, unsigned int flags,
                       const struct mount_attr *attr, size_t size);
@@ -369,6 +370,10 @@ int vfs_set_file_capabilities(const char *path, uint64_t permitted, uint64_t inh
 int vfs_get_file_capabilities(const char *path, uint64_t *permitted, uint64_t *inheritable,
                               bool *effective);
 int vfs_remove_file_capabilities(const char *path);
+int vfs_set_user_xattr(const char *path, const char *name, const void *value, size_t size, int flags);
+long vfs_get_user_xattr(const char *path, const char *name, void *value, size_t size);
+long vfs_list_xattr(const char *path, char *list, size_t size);
+int vfs_remove_user_xattr(const char *path, const char *name);
 void vfs_forget_path_metadata(const char *resolved_vpath);
 void vfs_link_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath);
 void vfs_rename_path_metadata(const char *old_resolved_vpath, const char *new_resolved_vpath);

@@ -80,6 +80,14 @@
     XCTAssertEqual(native_syscall_contract_security_capability_xattr_round_trips(), 0, @"errno %d", errno);
 }
 
+- (void)testUserXattrListRemoveRoundTrips {
+    XCTAssertEqual(native_syscall_contract_user_xattr_list_remove_round_trips(), 0, @"errno %d", errno);
+}
+
+- (void)testFlistxattrReportsFdUserAttribute {
+    XCTAssertEqual(native_syscall_contract_flistxattr_reports_fd_user_attribute(), 0, @"errno %d", errno);
+}
+
 - (void)testSharedMappingFaultPolicyTracksTruncateAfterFdClose {
     XCTAssertEqual(native_syscall_contract_shared_mapping_fault_policy_tracks_truncate_after_fd_close(), 0, @"errno %d", errno);
 }
@@ -94,6 +102,11 @@
 
 - (void)testSharedFileMappingsAreCoherentAcrossHardlink {
     XCTAssertEqual(native_syscall_contract_shared_file_mappings_are_coherent_across_hardlink(), 0, @"errno %d", errno);
+}
+
+- (void)testSharedHardlinkMappingFaultPolicyTracksTruncateAfterOriginalUnlink {
+    XCTAssertEqual(native_syscall_contract_shared_hardlink_mapping_fault_policy_tracks_truncate_after_original_unlink(), 0,
+                   @"errno %d", errno);
 }
 
 - (void)testCloneWithoutVmCopiesPrivateVmas {

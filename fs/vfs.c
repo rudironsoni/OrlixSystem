@@ -12,6 +12,7 @@
 #include <linux/fcntl.h>
 #include <linux/mount.h>
 #include <linux/stat.h>
+#include <linux/xattr.h>
 
 /* Narrow seam headers for host operations */
 #include "internal/ios/fs/file_io_host.h"
@@ -71,6 +72,16 @@ struct vfs_mount_namespace {
 };
 
 #define VFS_METADATA_MAX 256
+#define VFS_USER_XATTR_MAX 8
+#define VFS_USER_XATTR_NAME_MAX 255
+#define VFS_USER_XATTR_VALUE_MAX 1024
+
+struct vfs_user_xattr_entry {
+    bool active;
+    char name[VFS_USER_XATTR_NAME_MAX + 1];
+    size_t size;
+    uint8_t value[VFS_USER_XATTR_VALUE_MAX];
+};
 
 struct vfs_metadata_entry {
     bool active;
@@ -84,6 +95,7 @@ struct vfs_metadata_entry {
     uint64_t cap_permitted;
     uint64_t cap_inheritable;
     bool cap_effective;
+    struct vfs_user_xattr_entry user_xattrs[VFS_USER_XATTR_MAX];
 };
 
 static struct vfs_metadata_entry vfs_metadata_table[VFS_METADATA_MAX];
@@ -934,6 +946,273 @@ static int vfs_resolve_existing_metadata_path(const char *path, char *resolved, 
     return 0;
 }
 
+static int vfs_metadata_ensure_locked(const char *resolved_vpath) {
+    int idx;
+
+    idx = vfs_metadata_find_locked(resolved_vpath);
+    if (idx >= 0) {
+        if (vfs_metadata_table[idx].file_identity == 0) {
+            vfs_metadata_table[idx].file_identity =
+                (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+        }
+        return idx;
+    }
+    for (size_t i = 0; i < VFS_METADATA_MAX; i++) {
+        if (!vfs_metadata_table[i].active) {
+            vfs_metadata_table[i].active = true;
+            vfs_copy_string(resolved_vpath, vfs_metadata_table[i].path,
+                            sizeof(vfs_metadata_table[i].path));
+            vfs_metadata_table[i].file_identity =
+                (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static int vfs_user_xattr_find_locked(const struct vfs_metadata_entry *entry, const char *name) {
+    for (size_t i = 0; i < VFS_USER_XATTR_MAX; i++) {
+        if (entry->user_xattrs[i].active &&
+            strcmp(entry->user_xattrs[i].name, name) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+static void vfs_user_xattr_sync_identity_locked(uint64_t identity,
+                                                const struct vfs_user_xattr_entry *source) {
+    for (size_t i = 0; i < VFS_METADATA_MAX; i++) {
+        struct vfs_metadata_entry *entry = &vfs_metadata_table[i];
+        int idx;
+
+        if (!entry->active || entry->file_identity != identity || !source) {
+            continue;
+        }
+        idx = vfs_user_xattr_find_locked(entry, source->name);
+        if (idx < 0) {
+            for (size_t slot = 0; slot < VFS_USER_XATTR_MAX; slot++) {
+                if (!entry->user_xattrs[slot].active) {
+                    idx = (int)slot;
+                    break;
+                }
+            }
+        }
+        if (idx >= 0) {
+            entry->user_xattrs[idx] = *source;
+        }
+    }
+}
+
+static void vfs_user_xattr_remove_identity_locked(uint64_t identity, const char *name) {
+    for (size_t i = 0; i < VFS_METADATA_MAX; i++) {
+        struct vfs_metadata_entry *entry = &vfs_metadata_table[i];
+        int idx;
+
+        if (!entry->active || entry->file_identity != identity) {
+            continue;
+        }
+        idx = vfs_user_xattr_find_locked(entry, name);
+        if (idx >= 0) {
+            memset(&entry->user_xattrs[idx], 0, sizeof(entry->user_xattrs[idx]));
+        }
+    }
+}
+
+int vfs_set_user_xattr(const char *path, const char *name, const void *value, size_t size, int flags) {
+    char resolved[MAX_PATH];
+    struct vfs_user_xattr_entry updated;
+    int idx;
+    int xidx;
+    int free_xidx = -1;
+    uint64_t identity;
+    int ret;
+
+    if (!name || (!value && size > 0)) {
+        return -EFAULT;
+    }
+    if (strncmp(name, "user.", 5) != 0) {
+        return -ENOTSUP;
+    }
+    if (name[5] == '\0' || strlen(name) > VFS_USER_XATTR_NAME_MAX ||
+        size > VFS_USER_XATTR_VALUE_MAX) {
+        return -ERANGE;
+    }
+    if ((flags & ~(XATTR_CREATE | XATTR_REPLACE)) != 0 ||
+        ((flags & XATTR_CREATE) != 0 && (flags & XATTR_REPLACE) != 0)) {
+        return -EINVAL;
+    }
+
+    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    if (ret != 0) {
+        return ret;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    idx = vfs_metadata_ensure_locked(resolved);
+    if (idx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return -ENOSPC;
+    }
+    xidx = vfs_user_xattr_find_locked(&vfs_metadata_table[idx], name);
+    if ((flags & XATTR_CREATE) != 0 && xidx >= 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return -EEXIST;
+    }
+    if ((flags & XATTR_REPLACE) != 0 && xidx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return -ENODATA;
+    }
+    if (xidx < 0) {
+        for (size_t i = 0; i < VFS_USER_XATTR_MAX; i++) {
+            if (!vfs_metadata_table[idx].user_xattrs[i].active) {
+                free_xidx = (int)i;
+                break;
+            }
+        }
+        xidx = free_xidx;
+    }
+    if (xidx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return -ENOSPC;
+    }
+    memset(&updated, 0, sizeof(updated));
+    updated.active = true;
+    vfs_copy_string(name, updated.name, sizeof(updated.name));
+    updated.size = size;
+    if (size > 0) {
+        memcpy(updated.value, value, size);
+    }
+    vfs_metadata_table[idx].user_xattrs[xidx] = updated;
+    identity = vfs_metadata_table[idx].file_identity;
+    vfs_user_xattr_sync_identity_locked(identity, &updated);
+    fs_mutex_unlock(&vfs_metadata_lock);
+    return 0;
+}
+
+long vfs_get_user_xattr(const char *path, const char *name, void *value, size_t size) {
+    char resolved[MAX_PATH];
+    int idx;
+    int xidx;
+    size_t value_size;
+    int ret;
+
+    if (!name) {
+        return -EFAULT;
+    }
+    if (strncmp(name, "user.", 5) != 0) {
+        return -ENODATA;
+    }
+    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    if (ret != 0) {
+        return ret;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    idx = vfs_metadata_find_locked(resolved);
+    if (idx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return -ENODATA;
+    }
+    xidx = vfs_user_xattr_find_locked(&vfs_metadata_table[idx], name);
+    if (xidx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return -ENODATA;
+    }
+    value_size = vfs_metadata_table[idx].user_xattrs[xidx].size;
+    if (value) {
+        if (size < value_size) {
+            fs_mutex_unlock(&vfs_metadata_lock);
+            return -ERANGE;
+        }
+        memcpy(value, vfs_metadata_table[idx].user_xattrs[xidx].value, value_size);
+    }
+    fs_mutex_unlock(&vfs_metadata_lock);
+    return (long)value_size;
+}
+
+long vfs_list_xattr(const char *path, char *list, size_t size) {
+    char resolved[MAX_PATH];
+    int idx;
+    size_t required = 0;
+    size_t pos = 0;
+    int ret;
+
+    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    if (ret != 0) {
+        return ret;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    idx = vfs_metadata_find_locked(resolved);
+    if (idx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return 0;
+    }
+    if (vfs_metadata_table[idx].has_file_caps) {
+        required += sizeof("security.capability");
+    }
+    for (size_t i = 0; i < VFS_USER_XATTR_MAX; i++) {
+        if (vfs_metadata_table[idx].user_xattrs[i].active) {
+            required += strlen(vfs_metadata_table[idx].user_xattrs[i].name) + 1;
+        }
+    }
+    if (list) {
+        if (size < required) {
+            fs_mutex_unlock(&vfs_metadata_lock);
+            return -ERANGE;
+        }
+        if (vfs_metadata_table[idx].has_file_caps) {
+            memcpy(list + pos, "security.capability", sizeof("security.capability"));
+            pos += sizeof("security.capability");
+        }
+        for (size_t i = 0; i < VFS_USER_XATTR_MAX; i++) {
+            if (vfs_metadata_table[idx].user_xattrs[i].active) {
+                size_t name_len = strlen(vfs_metadata_table[idx].user_xattrs[i].name) + 1;
+                memcpy(list + pos, vfs_metadata_table[idx].user_xattrs[i].name, name_len);
+                pos += name_len;
+            }
+        }
+    }
+    fs_mutex_unlock(&vfs_metadata_lock);
+    return (long)required;
+}
+
+int vfs_remove_user_xattr(const char *path, const char *name) {
+    char resolved[MAX_PATH];
+    int idx;
+    int xidx;
+    uint64_t identity;
+    int ret;
+
+    if (!name) {
+        return -EFAULT;
+    }
+    if (strncmp(name, "user.", 5) != 0) {
+        return -ENODATA;
+    }
+    ret = vfs_resolve_existing_metadata_path(path, resolved, sizeof(resolved));
+    if (ret != 0) {
+        return ret;
+    }
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    idx = vfs_metadata_find_locked(resolved);
+    if (idx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return -ENODATA;
+    }
+    xidx = vfs_user_xattr_find_locked(&vfs_metadata_table[idx], name);
+    if (xidx < 0) {
+        fs_mutex_unlock(&vfs_metadata_lock);
+        return -ENODATA;
+    }
+    identity = vfs_metadata_table[idx].file_identity;
+    vfs_user_xattr_remove_identity_locked(identity, name);
+    fs_mutex_unlock(&vfs_metadata_lock);
+    return 0;
+}
+
 int vfs_set_file_capabilities(const char *path, uint64_t permitted, uint64_t inheritable,
                               bool effective) {
     char resolved[MAX_PATH];
@@ -1103,6 +1382,12 @@ void vfs_link_path_metadata(const char *old_resolved_vpath, const char *new_reso
             vfs_metadata_table[new_idx].uid = vfs_metadata_table[old_idx].uid;
             vfs_metadata_table[new_idx].gid = vfs_metadata_table[old_idx].gid;
             vfs_metadata_table[new_idx].mode = vfs_metadata_table[old_idx].mode;
+            vfs_metadata_table[new_idx].has_file_caps = vfs_metadata_table[old_idx].has_file_caps;
+            vfs_metadata_table[new_idx].cap_permitted = vfs_metadata_table[old_idx].cap_permitted;
+            vfs_metadata_table[new_idx].cap_inheritable = vfs_metadata_table[old_idx].cap_inheritable;
+            vfs_metadata_table[new_idx].cap_effective = vfs_metadata_table[old_idx].cap_effective;
+            memcpy(vfs_metadata_table[new_idx].user_xattrs, vfs_metadata_table[old_idx].user_xattrs,
+                   sizeof(vfs_metadata_table[new_idx].user_xattrs));
         }
     }
     fs_mutex_unlock(&vfs_metadata_lock);
@@ -2750,6 +3035,43 @@ int vfs_umount(const char *target) {
                 fs_mutex_unlock(&mnt_ns->lock);
                 return -EBUSY;
             }
+            vfs_umount_propagate_tree_locked(mnt_ns, resolved_target);
+            vfs_umount_remove_tree_locked(mnt_ns, resolved_target);
+            fs_mutex_unlock(&mnt_ns->lock);
+            return 0;
+        }
+    }
+    fs_mutex_unlock(&mnt_ns->lock);
+
+    return -EINVAL;
+}
+
+int vfs_umount_lazy(const char *target) {
+    char resolved_target[MAX_PATH];
+    int ret;
+    struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
+
+    if (!target) {
+        return -EFAULT;
+    }
+    if (target[0] == '\0') {
+        return -ENOENT;
+    }
+    if (!mnt_ns) {
+        return -ESRCH;
+    }
+    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+        return -EPERM;
+    }
+
+    ret = vfs_resolve_virtual_path_at(AT_FDCWD, target, resolved_target, sizeof(resolved_target));
+    if (ret != 0) {
+        return ret;
+    }
+
+    fs_mutex_lock(&mnt_ns->lock);
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
             vfs_umount_propagate_tree_locked(mnt_ns, resolved_target);
             vfs_umount_remove_tree_locked(mnt_ns, resolved_target);
             fs_mutex_unlock(&mnt_ns->lock);

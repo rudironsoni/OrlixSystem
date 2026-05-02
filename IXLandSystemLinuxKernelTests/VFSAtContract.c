@@ -77,6 +77,7 @@ extern int capget(cap_user_header_t header, cap_user_data_t data);
 extern int capset(cap_user_header_t header, const cap_user_data_t data);
 extern int statfs(const char *path, struct statfs *buf);
 extern int fstatfs(int fd, struct statfs *buf);
+extern int vfs_umount_lazy(const char *target);
 
 static int vfs_contract_ignore_exists(int result) {
     if (result == 0 || errno == EEXIST) {
@@ -1875,6 +1876,49 @@ int vfs_contract_umount_busy_when_open_fd_pins_mount_tree(void) {
         goto out;
     }
 
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_lazy_umount_detaches_busy_mount_from_namespace(void) {
+    int fd = -1;
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-source/dir", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-source/dir/file", "lazy") != 0 ||
+        mount("/tmp/vfs-mntns-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+
+    fd = open_impl("/tmp/vfs-mntns-target/dir/file", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    if (vfs_umount_lazy("/tmp/vfs-mntns-target") != 0) {
+        goto out;
+    }
+    if (open_impl("/tmp/vfs-mntns-target/dir/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (close_impl(fd) != 0) {
+        fd = -1;
+        goto out;
+    }
+    fd = -1;
     ret = 0;
 
 out:

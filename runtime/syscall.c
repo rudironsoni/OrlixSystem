@@ -206,6 +206,8 @@ extern int setxattr_impl(const char *path, const char *name, const void *value, 
 extern int fsetxattr_impl(int fd, const char *name, const void *value, size_t size, int flags);
 extern long getxattr_impl(const char *path, const char *name, void *value, size_t size);
 extern long fgetxattr_impl(int fd, const char *name, void *value, size_t size);
+extern long listxattr_impl(const char *path, char *list, size_t size);
+extern long flistxattr_impl(int fd, char *list, size_t size);
 extern int removexattr_impl(const char *path, const char *name);
 extern int fremovexattr_impl(int fd, const char *name);
 
@@ -673,6 +675,13 @@ long syscall_dispatch_impl(long number,
     case __NR_fgetxattr:
         return syscall_result(fgetxattr_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                              (void *)(uintptr_t)arg2, (size_t)arg3));
+    case __NR_listxattr:
+    case __NR_llistxattr:
+        return syscall_result(listxattr_impl((const char *)(uintptr_t)arg0,
+                                             (char *)(uintptr_t)arg1, (size_t)arg2));
+    case __NR_flistxattr:
+        return syscall_result(flistxattr_impl((int)arg0, (char *)(uintptr_t)arg1,
+                                              (size_t)arg2));
     case __NR_removexattr:
     case __NR_lremovexattr:
         return syscall_result((long)removexattr_impl((const char *)(uintptr_t)arg0,

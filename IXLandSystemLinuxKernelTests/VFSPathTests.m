@@ -1348,6 +1348,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"normal unmount should return EBUSY while an open fd pins the mount tree, errno %d", errno);
 }
 
+- (void)testLazyUnmountDetachesBusyMountFromNamespace {
+    extern int vfs_contract_lazy_umount_detaches_busy_mount_from_namespace(void);
+    XCTAssertEqual(vfs_contract_lazy_umount_detaches_busy_mount_from_namespace(), 0,
+                   @"lazy unmount should detach a busy mount from the namespace, errno %d", errno);
+}
+
 - (void)testUnmountBusyWhenPwdPinsMountTree {
     extern int vfs_contract_umount_busy_when_pwd_pins_mount_tree(void);
     XCTAssertEqual(vfs_contract_umount_busy_when_pwd_pins_mount_tree(), 0,
