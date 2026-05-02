@@ -104,6 +104,7 @@ bool get_fd_is_synthetic_dir_impl(void *entry);
 bool get_fd_is_dir_impl(void *entry);
 int get_fd_path_impl(fd_entry_t *entry, char *path, size_t path_len);
 uint64_t get_fd_file_identity_impl(void *entry);
+bool get_fd_path_deleted_impl(void *entry);
 void set_fd_flags_impl(fd_entry_t *entry, int flags);
 void set_fd_descriptor_flags_impl(fd_entry_t *entry, int flags);
 linux_off_t get_fd_offset_impl(fd_entry_t *entry);
@@ -199,6 +200,7 @@ int get_fd_proc_file_target_pid_impl(void *entry);
 
 bool fdtable_is_used_impl(int fd);
 bool fdtable_has_open_path_under_impl(const char *root);
+void fdtable_mark_path_deleted_impl(const char *path);
 bool fdtable_task_is_used_impl(struct task_struct *task, int fd);
 int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size_t path_len);
 int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, char *buf, size_t buf_len);

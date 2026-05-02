@@ -1348,10 +1348,22 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"hardlink inode metadata should sync across aliases and survive unlink, errno %d", errno);
 }
 
+- (void)testProcFdMarksOpenUnlinkedFileDeleted {
+    extern int vfs_contract_proc_fd_marks_open_unlinked_file_deleted(void);
+    XCTAssertEqual(vfs_contract_proc_fd_marks_open_unlinked_file_deleted(), 0,
+                   @"/proc/self/fd should preserve open unlinked file identity, errno %d", errno);
+}
+
 - (void)testPrivateChildUnmountDoesNotPropagateToSharedPeer {
     extern int vfs_contract_private_child_unmount_does_not_propagate_to_shared_peer(void);
     XCTAssertEqual(vfs_contract_private_child_unmount_does_not_propagate_to_shared_peer(), 0,
                    @"private child unmount should not propagate to shared peer trees, errno %d", errno);
+}
+
+- (void)testCloneNewnsSharedPropagationStaysInsideChildNamespace {
+    extern int vfs_contract_clone_newns_shared_propagation_stays_inside_child_namespace(void);
+    XCTAssertEqual(vfs_contract_clone_newns_shared_propagation_stays_inside_child_namespace(), 0,
+                   @"CLONE_NEWNS propagation should stay within the child mount namespace, errno %d", errno);
 }
 
 - (void)testUnmountBusyWhenOpenFdPinsMountTree {

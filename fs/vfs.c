@@ -4217,6 +4217,16 @@ int vfs_proc_task_fd_link_target(int32_t pid, int fd_num, char *target, size_t t
     }
 
     ret = get_fd_path_impl(entry, target, target_len);
+    if (ret == 0 && get_fd_path_deleted_impl(entry)) {
+        const char deleted_suffix[] = " (deleted)";
+        size_t target_used = strlen(target);
+        size_t suffix_len = sizeof(deleted_suffix) - 1;
+        if (target_used + suffix_len >= target_len) {
+            put_fd_entry_impl(entry);
+            return -ENAMETOOLONG;
+        }
+        memcpy(target + target_used, deleted_suffix, suffix_len + 1);
+    }
     put_fd_entry_impl(entry);
 
     if (ret != 0) {
@@ -4824,20 +4834,6 @@ int vfs_proc_self_maps_content(char *buf, size_t buf_len) {
     return vfs_proc_task_maps_content(task ? task->pid : -1, buf, buf_len);
 }
 
-static uint64_t vfs_vma_dirty_page_count(const struct task_vma *vma) {
-    uint64_t dirty = 0;
-
-    if (!vma || !vma->dirty_pages) {
-        return 0;
-    }
-    for (uint64_t page = 0; page < vma->page_count; page++) {
-        if (vma->dirty_pages[page]) {
-            dirty++;
-        }
-    }
-    return dirty;
-}
-
 static uint64_t vfs_vma_resident_page_count(const struct task_vma *vma) {
     uint64_t resident = 0;
 
@@ -4849,6 +4845,47 @@ static uint64_t vfs_vma_resident_page_count(const struct task_vma *vma) {
     }
     for (uint64_t page = 0; page < vma->page_count; page++) {
         if (vma->resident_pages[page]) {
+            resident++;
+        }
+    }
+    return resident;
+}
+
+static uint64_t vfs_vma_dirty_page_count_range(const struct task_vma *vma,
+                                               uint64_t first_page,
+                                               uint64_t page_count) {
+    uint64_t dirty = 0;
+
+    if (!vma || !vma->dirty_pages || first_page >= vma->page_count) {
+        return 0;
+    }
+    if (page_count > vma->page_count - first_page) {
+        page_count = vma->page_count - first_page;
+    }
+    for (uint64_t page = 0; page < page_count; page++) {
+        if (vma->dirty_pages[first_page + page]) {
+            dirty++;
+        }
+    }
+    return dirty;
+}
+
+static uint64_t vfs_vma_resident_page_count_range(const struct task_vma *vma,
+                                                  uint64_t first_page,
+                                                  uint64_t page_count) {
+    uint64_t resident = 0;
+
+    if (!vma || first_page >= vma->page_count) {
+        return 0;
+    }
+    if (page_count > vma->page_count - first_page) {
+        page_count = vma->page_count - first_page;
+    }
+    if (!vma->resident_pages) {
+        return page_count;
+    }
+    for (uint64_t page = 0; page < page_count; page++) {
+        if (vma->resident_pages[first_page + page]) {
             resident++;
         }
     }
@@ -4908,25 +4945,11 @@ static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *
 
     for (uint32_t i = 0; i < task->mm->vma_count; i++) {
         const struct task_vma *vma = &task->mm->vmas[i];
-        char perms[5];
         char path[MAX_PATH];
-        uint64_t size_kb = vma->page_count * 4ULL;
-        uint64_t resident_kb = vfs_vma_resident_page_count(vma) * 4ULL;
-        uint64_t dirty_kb = vfs_vma_dirty_page_count(vma) * 4ULL;
-        uint64_t shared_clean_kb = vma->shared ? (size_kb > dirty_kb ? size_kb - dirty_kb : 0) : 0;
-        uint64_t private_clean_kb = vma->shared ? 0 : (size_kb > dirty_kb ? size_kb - dirty_kb : 0);
-        uint64_t shared_dirty_kb = vma->shared ? dirty_kb : 0;
-        uint64_t private_dirty_kb = vma->shared ? 0 : dirty_kb;
-        uint64_t anonymous_kb = 0;
         char vmflags[64];
+        uint64_t run_start;
+        uint32_t run_flags;
 
-        if (vma->kind == TASK_VMA_ANON || vma->kind == TASK_VMA_STACK) {
-            anonymous_kb = size_kb;
-        } else if (vma->kind == TASK_VMA_FILE && !vma->shared) {
-            anonymous_kb = dirty_kb;
-        }
-
-        vfs_maps_permissions(task_vma_page_flags_impl(vma, vma->start), vma->shared, perms);
         if (vfs_vma_vmflags(vma, vmflags, sizeof(vmflags)) != 0) {
             vmflags[0] = '\0';
         }
@@ -4940,38 +4963,68 @@ static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *
             path[kind_len] = '\0';
         }
 
-        if (vfs_proc_append(buf, buf_len, &pos,
-                            "%012llx-%012llx %s %08llx 00:00 0%s%s\n",
-                            (unsigned long long)vma->start,
-                            (unsigned long long)vma->end,
-                            perms,
-                            (unsigned long long)vma->backing_offset,
-                            path[0] ? " " : "",
-                            path) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Size:           %8llu kB\n", (unsigned long long)size_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "KernelPageSize: %8llu kB\n", 4ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "MMUPageSize:    %8llu kB\n", 4ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Rss:            %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Pss:            %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Shared_Clean:   %8llu kB\n", (unsigned long long)shared_clean_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Shared_Dirty:   %8llu kB\n", (unsigned long long)shared_dirty_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Private_Clean:  %8llu kB\n", (unsigned long long)private_clean_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Private_Dirty:  %8llu kB\n", (unsigned long long)private_dirty_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Referenced:     %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Anonymous:      %8llu kB\n", (unsigned long long)anonymous_kb) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "LazyFree:       %8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "AnonHugePages:  %8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "ShmemPmdMapped: %8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "FilePmdMapped:  %8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Shared_Hugetlb: %8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Private_Hugetlb:%8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Swap:           %8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "SwapPss:        %8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "Locked:         %8llu kB\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "THPeligible:    %8llu\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "ProtectionKey:  %8llu\n", 0ULL) != 0 ||
-            vfs_proc_append(buf, buf_len, &pos, "VmFlags: %s\n", vmflags) != 0) {
-            return (int)pos;
+        run_start = vma->start;
+        run_flags = task_vma_page_flags_impl(vma, run_start);
+        for (uint64_t addr = vma->start + TASK_VMA_PAGE_SIZE; addr <= vma->end; addr += TASK_VMA_PAGE_SIZE) {
+            uint32_t flags = addr < vma->end ? task_vma_page_flags_impl(vma, addr) : run_flags ^ UINT32_MAX;
+            if (addr < vma->end && flags == run_flags) {
+                continue;
+            }
+
+            char perms[5];
+            uint64_t first_page = (run_start - vma->start) / TASK_VMA_PAGE_SIZE;
+            uint64_t page_count = (addr - run_start) / TASK_VMA_PAGE_SIZE;
+            uint64_t size_kb = page_count * 4ULL;
+            uint64_t resident_kb = vfs_vma_resident_page_count_range(vma, first_page, page_count) * 4ULL;
+            uint64_t dirty_kb = vfs_vma_dirty_page_count_range(vma, first_page, page_count) * 4ULL;
+            uint64_t shared_clean_kb = vma->shared ? (size_kb > dirty_kb ? size_kb - dirty_kb : 0) : 0;
+            uint64_t private_clean_kb = vma->shared ? 0 : (size_kb > dirty_kb ? size_kb - dirty_kb : 0);
+            uint64_t shared_dirty_kb = vma->shared ? dirty_kb : 0;
+            uint64_t private_dirty_kb = vma->shared ? 0 : dirty_kb;
+            uint64_t anonymous_kb = 0;
+
+            if (vma->kind == TASK_VMA_ANON || vma->kind == TASK_VMA_STACK) {
+                anonymous_kb = size_kb;
+            } else if (vma->kind == TASK_VMA_FILE && !vma->shared) {
+                anonymous_kb = dirty_kb;
+            }
+
+            vfs_maps_permissions(run_flags, vma->shared, perms);
+            if (vfs_proc_append(buf, buf_len, &pos,
+                                "%012llx-%012llx %s %08llx 00:00 0%s%s\n",
+                                (unsigned long long)run_start,
+                                (unsigned long long)addr,
+                                perms,
+                                (unsigned long long)(vma->backing_offset + (run_start - vma->start)),
+                                path[0] ? " " : "",
+                                path) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Size:           %8llu kB\n", (unsigned long long)size_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "KernelPageSize: %8llu kB\n", 4ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "MMUPageSize:    %8llu kB\n", 4ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Rss:            %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Pss:            %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Shared_Clean:   %8llu kB\n", (unsigned long long)shared_clean_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Shared_Dirty:   %8llu kB\n", (unsigned long long)shared_dirty_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Private_Clean:  %8llu kB\n", (unsigned long long)private_clean_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Private_Dirty:  %8llu kB\n", (unsigned long long)private_dirty_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Referenced:     %8llu kB\n", (unsigned long long)resident_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Anonymous:      %8llu kB\n", (unsigned long long)anonymous_kb) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "LazyFree:       %8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "AnonHugePages:  %8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "ShmemPmdMapped: %8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "FilePmdMapped:  %8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Shared_Hugetlb: %8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Private_Hugetlb:%8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Swap:           %8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "SwapPss:        %8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "Locked:         %8llu kB\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "THPeligible:    %8llu\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "ProtectionKey:  %8llu\n", 0ULL) != 0 ||
+                vfs_proc_append(buf, buf_len, &pos, "VmFlags: %s\n", vmflags) != 0) {
+                return (int)pos;
+            }
+            run_start = addr;
+            run_flags = flags;
         }
     }
     return (int)pos;

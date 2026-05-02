@@ -9,6 +9,7 @@
 #include <linux/capability.h>
 #include <linux/magic.h>
 #include <linux/mount.h>
+#include <linux/sched.h>
 #include <linux/stat.h>
 #include <linux/xattr.h>
 #include <asm/unistd.h>
@@ -41,6 +42,7 @@ extern int umount(const char *target);
 extern int umount2(const char *target, int flags);
 extern int mount_setattr(int dirfd, const char *pathname, unsigned int flags,
                          struct mount_attr *attr, size_t size);
+extern int clone_impl(uint64_t flags);
 extern int mkdir_impl(const char *pathname, linux_mode_t mode);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 
@@ -53,6 +55,7 @@ extern int fcntl_impl(int fd, int cmd, ...);
 extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
+extern long pread_impl(int fd, void *buf, size_t count, linux_off_t offset);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
@@ -78,6 +81,15 @@ extern int capget(cap_user_header_t header, cap_user_data_t data);
 extern int capset(cap_user_header_t header, const cap_user_data_t data);
 extern int statfs(const char *path, struct statfs *buf);
 extern int fstatfs(int fd, struct statfs *buf);
+
+static void vfs_contract_release_lookup_child(struct task_struct *parent, struct task_struct *child) {
+    if (!child) {
+        return;
+    }
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    free_task(child);
+}
 extern int vfs_umount_lazy(const char *target);
 extern int vfs_umount_expire(const char *target);
 extern int vfs_reap_detached_mount_refs(void);
@@ -1931,6 +1943,122 @@ out:
     unlink_impl(alias);
     unlink_impl(path);
     return result;
+}
+
+int vfs_contract_proc_fd_marks_open_unlinked_file_deleted(void) {
+    const char path[] = "/tmp/vfs-open-unlinked-procfd";
+    char proc_path[64];
+    char target[512];
+    char byte = 0;
+    int fd = -1;
+    long ret;
+    int result = -1;
+
+    unlink_impl(path);
+    fd = open_impl(path, O_CREAT | O_RDWR | O_TRUNC, 0600);
+    if (fd < 0) {
+        return -1;
+    }
+    if (write_impl(fd, "live", 4) != 4 ||
+        vfs_contract_proc_fd_path(fd, proc_path, sizeof(proc_path)) != 0) {
+        goto out;
+    }
+    if (unlink_impl(path) != 0) {
+        goto out;
+    }
+    if (open_impl(path, O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = EBUSY;
+        goto out;
+    }
+    if (pread_impl(fd, &byte, 1, 0) != 1 || byte != 'l') {
+        errno = ENODATA;
+        goto out;
+    }
+    ret = readlink_impl(proc_path, target, sizeof(target) - 1);
+    if (ret < 0) {
+        goto out;
+    }
+    target[ret] = '\0';
+    if (!vfs_contract_content_contains(target, path) ||
+        !vfs_contract_content_contains(target, " (deleted)")) {
+        errno = ENOMSG;
+        goto out;
+    }
+    result = 0;
+
+out:
+    if (fd >= 0) {
+        close_impl(fd);
+    }
+    unlink_impl(path);
+    return result;
+}
+
+int vfs_contract_clone_newns_shared_propagation_stays_inside_child_namespace(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct task_struct *saved = NULL;
+    int pid;
+    int ret = -1;
+
+    if (!parent || !parent->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-a", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-b", 0700)) != 0) {
+        goto out_cleanup;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-child-source/file", "child-ns") != 0) {
+        goto out_cleanup;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-a", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-b", NULL, MS_BIND | MS_SHARED, NULL) != 0) {
+        goto out_cleanup;
+    }
+
+    pid = clone_impl(CLONE_NEWNS);
+    if (pid < 0) {
+        goto out_cleanup;
+    }
+    child = task_lookup(pid);
+    if (!child) {
+        errno = ESRCH;
+        goto out_cleanup;
+    }
+
+    saved = get_current();
+    set_current(child);
+    if (mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-peer-a/child", NULL, MS_BIND, NULL) != 0 ||
+        vfs_contract_read_file_exact("/tmp/vfs-mntns-peer-b/child/file", "child-ns") != 0) {
+        goto out_restore;
+    }
+
+    set_current(parent);
+    if (open_impl("/tmp/vfs-mntns-peer-b/child/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = ENODATA;
+        goto out_restore;
+    }
+    ret = 0;
+
+out_restore:
+    if (child) {
+        set_current(child);
+        umount("/tmp/vfs-mntns-peer-a/child");
+        umount("/tmp/vfs-mntns-peer-b/child");
+    }
+    set_current(saved ? saved : parent);
+out_cleanup:
+    if (child) {
+        vfs_contract_release_lookup_child(parent, child);
+    }
+    vfs_contract_cleanup_mount_namespace_paths();
+    return ret;
 }
 
 int vfs_contract_private_child_unmount_does_not_propagate_to_shared_peer(void) {

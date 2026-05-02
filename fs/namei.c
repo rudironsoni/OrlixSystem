@@ -29,6 +29,7 @@
 #endif
 
 #include "vfs.h"
+#include "fdtable.h"
 #include "../kernel/task.h"
 #include "../kernel/cred_internal.h"
 
@@ -584,6 +585,7 @@ static int unlinkat_impl(int dirfd, const char *pathname, int flags) {
 
     ret = remove_dir ? host_rmdir_impl(translated_path) : host_unlink_impl(translated_path);
     if (ret == 0) {
+        fdtable_mark_path_deleted_impl(resolved_path);
         vfs_forget_path_metadata(resolved_path);
     }
     return ret;

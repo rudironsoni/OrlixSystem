@@ -344,6 +344,7 @@ typedef struct fd_description {
     off_t offset;
     char path[MAX_PATH];
     uint64_t file_identity;
+    bool path_deleted;
     bool is_dir;
     void *synthetic_state;
     synthetic_dev_node_t dev_node;
@@ -424,6 +425,17 @@ static void fdtable_update_file_offsets_for_desc(fd_description_t *desc, linux_o
         }
     }
     kernel_mutex_unlock(&task_table_lock);
+}
+
+static void fdtable_mark_desc_deleted_if_path_matches(fd_description_t *desc, const char *path) {
+    if (!desc || !path || desc->path[0] == '\0') {
+        return;
+    }
+    fs_mutex_lock(&desc->lock);
+    if (strcmp(desc->path, path) == 0) {
+        desc->path_deleted = true;
+    }
+    fs_mutex_unlock(&desc->lock);
 }
 
 static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
@@ -1022,6 +1034,11 @@ int get_fd_path_impl(fd_entry_t *entry, char *path, size_t path_len) {
 uint64_t get_fd_file_identity_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     return fd_entry && fd_entry->desc ? fd_entry->desc->file_identity : 0;
+}
+
+bool get_fd_path_deleted_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    return fd_entry && fd_entry->desc ? fd_entry->desc->path_deleted : false;
 }
 
 void set_fd_flags_impl(fd_entry_t *entry, int flags) {
@@ -1630,6 +1647,39 @@ bool fdtable_has_open_path_under_impl(const char *root) {
     return found;
 }
 
+void fdtable_mark_path_deleted_impl(const char *path) {
+    if (!path) {
+        return;
+    }
+    file_init_impl();
+    fs_mutex_lock(&fd_table_lock);
+    for (int fd = 0; fd < NR_OPEN_DEFAULT; fd++) {
+        if (fd_table[fd].used) {
+            fdtable_mark_desc_deleted_if_path_matches(fd_table[fd].desc, path);
+        }
+    }
+    fs_mutex_unlock(&fd_table_lock);
+
+    kernel_mutex_lock(&task_table_lock);
+    for (int i = 0; i < TASK_MAX_TASKS; i++) {
+        struct task_struct *task = task_table[i];
+        while (task) {
+            if (task->files) {
+                fs_mutex_lock(&task->files->lock);
+                for (size_t fd = 0; fd < task->files->max_fds; fd++) {
+                    struct file *file = task->files->fd[fd];
+                    if (file) {
+                        fdtable_mark_desc_deleted_if_path_matches((fd_description_t *)file->private_data, path);
+                    }
+                }
+                fs_mutex_unlock(&task->files->lock);
+            }
+            task = task->hash_next;
+        }
+    }
+    kernel_mutex_unlock(&task_table_lock);
+}
+
 bool fdtable_task_is_used_impl(struct task_struct *task, int fd) {
     bool used;
 
@@ -1645,7 +1695,10 @@ bool fdtable_task_is_used_impl(struct task_struct *task, int fd) {
 
 int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size_t path_len) {
     struct file *file;
+    fd_description_t *desc;
     size_t len;
+    size_t suffix_len = 0;
+    const char deleted_suffix[] = " (deleted)";
 
     if (!path || path_len == 0) {
         errno = EINVAL;
@@ -1658,6 +1711,7 @@ int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size
 
     fs_mutex_lock(&task->files->lock);
     file = task->files->fd[fd];
+    desc = file ? (fd_description_t *)file->private_data : NULL;
     if (!file || file->path[0] == '\0') {
         fs_mutex_unlock(&task->files->lock);
         errno = EBADF;
@@ -1665,12 +1719,18 @@ int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size
     }
 
     len = strlen(file->path);
-    if (len >= path_len) {
+    if (desc && desc->path_deleted) {
+        suffix_len = sizeof(deleted_suffix) - 1;
+    }
+    if (len + suffix_len >= path_len) {
         fs_mutex_unlock(&task->files->lock);
         errno = ENAMETOOLONG;
         return -1;
     }
     memcpy(path, file->path, len + 1);
+    if (suffix_len != 0) {
+        memcpy(path + len, deleted_suffix, suffix_len + 1);
+    }
     fs_mutex_unlock(&task->files->lock);
     return 0;
 }

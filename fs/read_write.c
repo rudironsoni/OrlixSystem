@@ -96,7 +96,7 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         synthetic_proc_file_t proc_file = get_fd_synthetic_proc_file_impl(entry);
         int fd_num = get_fd_proc_file_fd_num_impl(entry);
         int target_pid = get_fd_proc_file_target_pid_impl(entry);
-        char content[8192];
+        char content[32768];
         int content_len = -EINVAL;
 
         switch (proc_file) {
@@ -403,7 +403,7 @@ ssize_t pread_impl(int fd, void *buf, size_t count, linux_off_t offset) {
         int fd_num = get_fd_proc_file_fd_num_impl(entry);
         int target_pid = get_fd_proc_file_target_pid_impl(entry);
         linux_off_t saved_offset = get_fd_offset_impl(entry);
-        char content[8192];
+        char content[32768];
         int content_len = synthetic_proc_file_content(proc_file, fd_num, target_pid, content, sizeof(content));
 
         if (content_len < 0) {
