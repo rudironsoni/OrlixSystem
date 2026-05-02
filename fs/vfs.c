@@ -55,6 +55,7 @@ struct vfs_mount_entry {
     char target[MAX_PATH];
     char fstype[32];
     unsigned long flags;
+    unsigned long propagation;
 };
 
 struct vfs_mount_namespace {
@@ -140,6 +141,18 @@ static struct vfs_mount_namespace *vfs_task_mount_namespace(void) {
     }
 
     return task->fs->mnt_ns;
+}
+
+static unsigned long vfs_mount_propagation_flags(void) {
+    return MS_SHARED | MS_PRIVATE | MS_SLAVE | MS_UNBINDABLE;
+}
+
+static unsigned long vfs_mount_selected_propagation(unsigned long flags) {
+    unsigned long propagation = flags & vfs_mount_propagation_flags();
+    if ((propagation & (propagation - 1UL)) != 0) {
+        return (unsigned long)-1;
+    }
+    return propagation;
 }
 
 struct vfs_route_entry {
@@ -1329,7 +1342,8 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     struct linux_stat target_stat;
     int ret;
     int slot = -1;
-    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY;
+    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY | vfs_mount_propagation_flags();
+    unsigned long propagation = vfs_mount_selected_propagation(flags);
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
     bool remount = (flags & MS_REMOUNT) != 0;
 
@@ -1340,6 +1354,9 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         return -ENOENT;
     }
     if ((flags & ~supported_flags) != 0) {
+        return -EINVAL;
+    }
+    if (propagation == (unsigned long)-1) {
         return -EINVAL;
     }
     if (!remount && (flags & MS_BIND) == 0) {
@@ -1371,6 +1388,9 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         for (size_t i = 0; i < MAX_MOUNTS; i++) {
             if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
                 mnt_ns->entries[i].flags = (mnt_ns->entries[i].flags & ~MS_RDONLY) | (flags & MS_RDONLY) | MS_BIND;
+                if (propagation != 0) {
+                    mnt_ns->entries[i].propagation = propagation;
+                }
                 fs_mutex_unlock(&mnt_ns->lock);
                 return 0;
             }
@@ -1433,6 +1453,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         memcpy(mnt_ns->entries[slot].fstype, "none", sizeof("none"));
     }
     mnt_ns->entries[slot].flags = flags;
+    mnt_ns->entries[slot].propagation = propagation;
     fs_mutex_unlock(&mnt_ns->lock);
 
     return 0;
@@ -2317,6 +2338,26 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
 static struct task_struct *vfs_task_for_proc_pid(int32_t pid);
 static void vfs_put_proc_task(struct task_struct *task);
 
+bool vfs_proc_fd_exists_for_path(const char *vpath, int fd_num) {
+    struct task_struct *task;
+    bool exists;
+
+    if (fd_num < 0 || fd_num >= NR_OPEN_DEFAULT) {
+        return false;
+    }
+
+    task = vfs_task_for_proc_pid(vfs_proc_target_pid_for_path(vpath));
+    if (!task) {
+        return false;
+    }
+    exists = fdtable_task_is_used_impl(task, fd_num);
+    if (!exists && task == get_current()) {
+        exists = fdtable_is_used_impl(fd_num);
+    }
+    vfs_put_proc_task(task);
+    return exists;
+}
+
 int vfs_proc_self_fd_link_target(const char *vpath, char *target, size_t target_len) {
     int fd_num;
 
@@ -2331,6 +2372,7 @@ int vfs_proc_task_fd_link_target(int32_t pid, int fd_num, char *target, size_t t
     struct task_struct *task;
     void *entry;
     int ret;
+    bool is_current_task;
 
     if (!target || target_len == 0) {
         return -EINVAL;
@@ -2344,13 +2386,22 @@ int vfs_proc_task_fd_link_target(int32_t pid, int fd_num, char *target, size_t t
     if (!task) {
         return -ESRCH;
     }
-    vfs_put_proc_task(task);
 
-    if (!fdtable_is_used_impl((int)fd_num)) {
+    is_current_task = task == get_current();
+    ret = fdtable_task_fd_path_impl(task, fd_num, target, target_len);
+    vfs_put_proc_task(task);
+    if (ret == 0) {
+        return 0;
+    }
+    if (!is_current_task) {
         return -ENOENT;
     }
 
-    entry = get_fd_entry_impl((int)fd_num);
+    if (!fdtable_is_used_impl(fd_num)) {
+        return -ENOENT;
+    }
+
+    entry = get_fd_entry_impl(fd_num);
     if (!entry) {
         return -ENOENT;
     }
@@ -2511,16 +2562,13 @@ int vfs_proc_self_ns_link_target(const char *vpath, char *target, size_t target_
     return 0;
 }
 
-int vfs_proc_self_cmdline_content(char *buf, size_t buf_len) {
-    struct task_struct *task;
+static int vfs_proc_cmdline_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
     size_t pos = 0;
     int i;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
     }
-
-    task = get_current();
     if (!task) {
         return -ESRCH;
     }
@@ -2575,15 +2623,29 @@ int vfs_proc_self_cmdline_content(char *buf, size_t buf_len) {
     return (int)pos;
 }
 
-int vfs_proc_self_environ_content(char *buf, size_t buf_len) {
-    struct task_struct *task;
+int vfs_proc_task_cmdline_content(int32_t pid, char *buf, size_t buf_len) {
+    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    int ret;
+
+    if (!task) {
+        return -ESRCH;
+    }
+    ret = vfs_proc_cmdline_content_for_task(task, buf, buf_len);
+    vfs_put_proc_task(task);
+    return ret;
+}
+
+int vfs_proc_self_cmdline_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_cmdline_content(task ? task->pid : -1, buf, buf_len);
+}
+
+static int vfs_proc_environ_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
     size_t pos = 0;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
     }
-
-    task = get_current();
     if (!task) {
         return -ESRCH;
     }
@@ -2613,15 +2675,29 @@ int vfs_proc_self_environ_content(char *buf, size_t buf_len) {
     return (int)pos;
 }
 
-int vfs_proc_self_comm_content(char *buf, size_t buf_len) {
-    struct task_struct *task;
+int vfs_proc_task_environ_content(int32_t pid, char *buf, size_t buf_len) {
+    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    int ret;
+
+    if (!task) {
+        return -ESRCH;
+    }
+    ret = vfs_proc_environ_content_for_task(task, buf, buf_len);
+    vfs_put_proc_task(task);
+    return ret;
+}
+
+int vfs_proc_self_environ_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_environ_content(task ? task->pid : -1, buf, buf_len);
+}
+
+static int vfs_proc_comm_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
     size_t comm_len;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
     }
-
-    task = get_current();
     if (!task) {
         return -ESRCH;
     }
@@ -2640,6 +2716,23 @@ int vfs_proc_self_comm_content(char *buf, size_t buf_len) {
     buf[comm_len] = '\n';
     buf[comm_len + 1] = '\0';
     return (int)(comm_len + 1);
+}
+
+int vfs_proc_task_comm_content(int32_t pid, char *buf, size_t buf_len) {
+    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    int ret;
+
+    if (!task) {
+        return -ESRCH;
+    }
+    ret = vfs_proc_comm_content_for_task(task, buf, buf_len);
+    vfs_put_proc_task(task);
+    return ret;
+}
+
+int vfs_proc_self_comm_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_comm_content(task ? task->pid : -1, buf, buf_len);
 }
 
 int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
@@ -2930,6 +3023,7 @@ int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_
     int fd_flags;
     int ret;
     size_t pos;
+    bool is_current_task;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
@@ -2942,6 +3036,15 @@ int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_
     task = vfs_task_for_proc_pid(pid);
     if (!task) {
         return -ESRCH;
+    }
+    is_current_task = task == get_current();
+    if (!is_current_task) {
+        ret = fdtable_task_fdinfo_content_impl(task, fd_num, buf, buf_len);
+        vfs_put_proc_task(task);
+        if (ret >= 0) {
+            return ret;
+        }
+        return -ENOENT;
     }
     vfs_put_proc_task(task);
 
@@ -3008,6 +3111,26 @@ static int vfs_proc_append(char *buf, size_t buf_len, size_t *pos, const char *f
     return 0;
 }
 
+static int vfs_proc_append_mount_optional_fields(struct vfs_mount_namespace *mnt_ns,
+                                                 const struct vfs_mount_entry *entry,
+                                                 char *buf, size_t buf_len, size_t *pos) {
+    if (!entry || entry->propagation == 0 || entry->propagation == MS_PRIVATE) {
+        return 0;
+    }
+    if (entry->propagation == MS_SHARED) {
+        return vfs_proc_append(buf, buf_len, pos, " shared:%llu",
+                               (unsigned long long)mnt_ns->ns_id);
+    }
+    if (entry->propagation == MS_SLAVE) {
+        return vfs_proc_append(buf, buf_len, pos, " master:%llu",
+                               (unsigned long long)mnt_ns->ns_id);
+    }
+    if (entry->propagation == MS_UNBINDABLE) {
+        return vfs_proc_append(buf, buf_len, pos, " unbindable");
+    }
+    return 0;
+}
+
 static int vfs_proc_mountinfo_content_for_namespace(struct vfs_mount_namespace *mnt_ns, char *buf, size_t buf_len) {
     size_t pos = 0;
     int mount_id = 2;
@@ -3034,8 +3157,10 @@ static int vfs_proc_mountinfo_content_for_namespace(struct vfs_mount_namespace *
 
         const char *mode = (entry->flags & MS_RDONLY) ? "ro" : "rw";
         const char *fstype = entry->fstype[0] ? entry->fstype : "none";
-        if (vfs_proc_append(buf, buf_len, &pos, "%d 1 0:%d / %s %s,relatime - %s %s %s,bind\n",
-                            mount_id, mount_id, entry->target, mode,
+        if (vfs_proc_append(buf, buf_len, &pos, "%d 1 0:%d / %s %s,relatime",
+                            mount_id, mount_id, entry->target, mode) != 0 ||
+            vfs_proc_append_mount_optional_fields(mnt_ns, entry, buf, buf_len, &pos) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, " - %s %s %s,bind\n",
                             fstype, entry->source, mode) != 0) {
             break;
         }
@@ -3505,13 +3630,11 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
             statbuf->st_blocks = 0;
             return 0;
         } else if (proc_class == PROC_SELF_FDINFO_FILE) {
-            const char *fd_str = resolved_virtual + 18;
-            char *endptr;
-            long fd_num = strtol(fd_str, &endptr, 10);
-            if (*endptr != '\0' || fd_num < 0 || fd_num >= NR_OPEN_DEFAULT) {
+            int fd_num = vfs_proc_fd_num_for_path(resolved_virtual, "/fdinfo/");
+            if (fd_num < 0) {
                 return -ENOENT;
             }
-            if (!fdtable_is_used_impl((int)fd_num)) {
+            if (!vfs_proc_fd_exists_for_path(resolved_virtual, fd_num)) {
                 return -ENOENT;
             }
             memset(statbuf, 0, sizeof(*statbuf));

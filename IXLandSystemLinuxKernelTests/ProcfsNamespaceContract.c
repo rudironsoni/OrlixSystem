@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "IXLandSystemLinuxKernelTests/ProcfsNamespaceContract.h"
@@ -24,8 +25,17 @@ extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
+extern ssize_t getdents64(int fd, void *dirp, size_t count);
 extern void cred_reset_to_defaults(void);
 extern void set_current_cred(struct cred *cred);
+
+struct linux_dirent64 {
+    uint64_t d_ino;
+    int64_t d_off;
+    unsigned short d_reclen;
+    unsigned char d_type;
+    char d_name[];
+};
 
 static void reset_procfs_namespace_state(void) {
     cred_reset_to_defaults();
@@ -37,6 +47,24 @@ static void reset_procfs_namespace_state(void) {
 
 static bool contains(const char *haystack, const char *needle) {
     return strstr(haystack, needle) != NULL;
+}
+
+static bool contains_bytes(const char *haystack, size_t haystack_len, const char *needle) {
+    size_t needle_len;
+
+    if (!haystack || !needle) {
+        return false;
+    }
+    needle_len = strlen(needle);
+    if (needle_len == 0 || needle_len > haystack_len) {
+        return false;
+    }
+    for (size_t i = 0; i + needle_len <= haystack_len; i++) {
+        if (memcmp(haystack + i, needle, needle_len) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static int read_file_content(const char *path, char *buf, size_t buf_len) {
@@ -60,6 +88,25 @@ static int read_file_content(const char *path, char *buf, size_t buf_len) {
     }
     buf[nread] = '\0';
     return 0;
+}
+
+static long read_file_bytes(const char *path, char *buf, size_t buf_len) {
+    int fd;
+    long nread;
+
+    if (!buf || buf_len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    memset(buf, 0, buf_len);
+    nread = read_impl(fd, buf, buf_len);
+    close_impl(fd);
+    return nread;
 }
 
 static int read_link_content(const char *path, char *buf, size_t buf_len) {
@@ -119,6 +166,22 @@ static void proc_pid_file_path(char *buf, size_t buf_len, int pid, const char *l
     if (leaf && len + strlen(leaf) + 1 < buf_len) {
         memcpy(buf + len, leaf, strlen(leaf) + 1);
     }
+}
+
+static bool procfs_dirents_contain_name(char *buf, long nread, const char *name) {
+    long offset = 0;
+
+    while (offset < nread) {
+        struct linux_dirent64 *entry = (struct linux_dirent64 *)(buf + offset);
+        if (entry->d_reclen == 0) {
+            return false;
+        }
+        if (strcmp(entry->d_name, name) == 0) {
+            return true;
+        }
+        offset += entry->d_reclen;
+    }
+    return false;
 }
 
 static void release_lookup_child(struct task_struct *parent, struct task_struct *child) {
@@ -457,13 +520,13 @@ int procfs_namespace_contract_proc_pid_fd_and_fdinfo_paths_are_target_aware(void
         return -1;
     }
 
-    child = task_create_child_impl(parent);
-    if (!child) {
+    fd = open_impl("/dev/null", O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0) {
         return -1;
     }
 
-    fd = open_impl("/dev/null", O_RDONLY | O_CLOEXEC, 0);
-    if (fd < 0) {
+    child = task_create_child_impl(parent);
+    if (!child) {
         goto out;
     }
 
@@ -502,6 +565,154 @@ out:
     if (fd >= 0) {
         close_impl(fd);
     }
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_proc_pid_fd_dir_lists_target_inherited_fds_after_parent_close(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    int inherited_fd = -1;
+    int inherited_fd_num = -1;
+    int dir_fd = -1;
+    char path[96] = {0};
+    char fd_name[16] = {0};
+    char dirents[1024];
+    long nread;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    inherited_fd = open_impl("/dev/null", O_RDONLY | O_CLOEXEC, 0);
+    if (inherited_fd < 0) {
+        return -1;
+    }
+    inherited_fd_num = inherited_fd;
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+
+    if (close_impl(inherited_fd) != 0) {
+        goto out;
+    }
+    inherited_fd = -1;
+
+    proc_pid_file_path(path, sizeof(path), child->pid, "/fd/");
+    append_positive_decimal(path, sizeof(path), inherited_fd_num);
+    if (read_link_content(path, dirents, sizeof(dirents)) != 0 ||
+        strcmp(dirents, "/dev/null") != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/fd");
+    dir_fd = open_impl(path, O_RDONLY | O_DIRECTORY, 0);
+    if (dir_fd < 0) {
+        goto out;
+    }
+    memset(dirents, 0, sizeof(dirents));
+    nread = getdents64(dir_fd, dirents, sizeof(dirents));
+    if (nread <= 0) {
+        goto out;
+    }
+    append_positive_decimal(fd_name, sizeof(fd_name), inherited_fd_num);
+    if (!procfs_dirents_contain_name(dirents, nread, fd_name)) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (dir_fd >= 0) {
+        close_impl(dir_fd);
+    }
+    if (inherited_fd >= 0) {
+        close_impl(inherited_fd);
+    }
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_task(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    char *argv[] = {"target-prog", "target-arg", NULL};
+    char *envp[] = {"TARGET_ENV=1", NULL};
+    char path[96] = {0};
+    char content[512];
+    long nread;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    saved = get_current();
+    set_current(child);
+    memset(child->comm, 0, sizeof(child->comm));
+    memcpy(child->comm, "target-comm", 12);
+    if (task_record_exec_strings_impl(argv, envp) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    proc_pid_file_path(path, sizeof(path), child->pid, "/cmdline");
+    nread = read_file_bytes(path, content, sizeof(content));
+    if (nread <= 0 ||
+        !contains_bytes(content, (size_t)nread, "target-prog") ||
+        !contains_bytes(content, (size_t)nread, "target-arg")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/environ");
+    nread = read_file_bytes(path, content, sizeof(content));
+    if (nread <= 0 ||
+        !contains_bytes(content, (size_t)nread, "TARGET_ENV=1")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/comm");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "target-comm\n")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
     if (child) {
         task_unlink_child_impl(parent, child);
         free_task(child);

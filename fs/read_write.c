@@ -101,13 +101,13 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
 
         switch (proc_file) {
         case SYNTHETIC_PROC_FILE_CMDLINE:
-            content_len = vfs_proc_self_cmdline_content(content, sizeof(content));
+            content_len = vfs_proc_task_cmdline_content(target_pid, content, sizeof(content));
             break;
         case SYNTHETIC_PROC_FILE_ENVIRON:
-            content_len = vfs_proc_self_environ_content(content, sizeof(content));
+            content_len = vfs_proc_task_environ_content(target_pid, content, sizeof(content));
             break;
         case SYNTHETIC_PROC_FILE_COMM:
-            content_len = vfs_proc_self_comm_content(content, sizeof(content));
+            content_len = vfs_proc_task_comm_content(target_pid, content, sizeof(content));
             break;
         case SYNTHETIC_PROC_FILE_STAT:
             content_len = vfs_proc_task_stat_content(target_pid, content, sizeof(content));
@@ -305,11 +305,11 @@ static int synthetic_proc_file_content(synthetic_proc_file_t proc_file, int fd_n
                                         char *content, size_t content_size) {
     switch (proc_file) {
     case SYNTHETIC_PROC_FILE_CMDLINE:
-        return vfs_proc_self_cmdline_content(content, content_size);
+        return vfs_proc_task_cmdline_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_ENVIRON:
-        return vfs_proc_self_environ_content(content, content_size);
+        return vfs_proc_task_environ_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_COMM:
-        return vfs_proc_self_comm_content(content, content_size);
+        return vfs_proc_task_comm_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_STAT:
         return vfs_proc_task_stat_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_STATM:

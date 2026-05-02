@@ -249,9 +249,13 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
 
     if (dir_class == SYNTHETIC_DIR_PROC_SELF_FD || dir_class == SYNTHETIC_DIR_PROC_SELF_FDINFO) {
         int scan_fd = (cursor >= 2) ? ((int)cursor - 2) : 0;
+        char proc_dir_path[MAX_PATH];
+        bool has_proc_dir_path = get_fd_path_impl(entry, proc_dir_path, sizeof(proc_dir_path)) == 0;
 
         for (; scan_fd < NR_OPEN_DEFAULT; scan_fd++) {
-            if (!fdtable_is_used_impl(scan_fd)) {
+            bool fd_exists = has_proc_dir_path ? vfs_proc_fd_exists_for_path(proc_dir_path, scan_fd)
+                                               : fdtable_is_used_impl(scan_fd);
+            if (!fd_exists) {
                 continue;
             }
 

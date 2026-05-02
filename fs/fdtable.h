@@ -20,6 +20,7 @@ extern "C" {
 
 struct file;
 struct files_struct;
+struct task_struct;
 
 struct file {
     int fd;
@@ -27,6 +28,7 @@ struct file {
     unsigned int flags;
     unsigned int fd_flags;
     linux_off_t pos;
+    char path[MAX_PATH];
     void *private_data;
     atomic_int refs;
 };
@@ -175,6 +177,11 @@ int get_fd_proc_file_fd_num_impl(void *entry);
 int get_fd_proc_file_target_pid_impl(void *entry);
 
 bool fdtable_is_used_impl(int fd);
+bool fdtable_task_is_used_impl(struct task_struct *task, int fd);
+int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size_t path_len);
+int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, char *buf, size_t buf_len);
+void fdtable_sync_current_task_fd_impl(int fd);
+void fdtable_sync_current_task_from_static_impl(void);
 
 /* Close implementation using static fd table */
 int close_impl(int fd);

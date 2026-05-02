@@ -19,6 +19,7 @@
 #include "eventpoll.h"
 #include "pipe.h"
 #include "pty.h"
+#include "../kernel/task.h"
 
 struct files_struct *alloc_files(size_t max_fds) {
     if (max_fds == 0) {
@@ -333,6 +334,55 @@ typedef struct fd_description {
 static fd_entry_t fd_table[NR_OPEN_DEFAULT];
 static fs_mutex_t fd_table_lock = FS_MUTEX_INITIALIZER;
 static atomic_int fd_table_initialized = 0;
+
+static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
+    struct task_struct *task = get_current();
+    struct file *file;
+
+    if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
+        return;
+    }
+
+    fs_mutex_lock(&task->files->lock);
+    file = task->files->fd[fd];
+    if (!file) {
+        file = alloc_file();
+        if (!file) {
+            fs_mutex_unlock(&task->files->lock);
+            return;
+        }
+        task->files->fd[fd] = file;
+    }
+    file->fd = fd;
+    file->real_fd = entry && entry->desc ? entry->desc->fd : -1;
+    file->flags = entry && entry->desc ? (unsigned int)entry->desc->flags : 0;
+    file->fd_flags = entry ? (unsigned int)entry->fd_flags : 0;
+    file->pos = entry && entry->desc ? (linux_off_t)entry->desc->offset : 0;
+    if (entry && entry->desc) {
+        strncpy(file->path, entry->desc->path, sizeof(file->path) - 1);
+        file->path[sizeof(file->path) - 1] = '\0';
+    } else {
+        file->path[0] = '\0';
+    }
+    fs_mutex_unlock(&task->files->lock);
+}
+
+static void fdtable_remove_task_file(int fd) {
+    struct task_struct *task = get_current();
+    struct file *file;
+
+    if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
+        return;
+    }
+
+    fs_mutex_lock(&task->files->lock);
+    file = task->files->fd[fd];
+    task->files->fd[fd] = NULL;
+    fs_mutex_unlock(&task->files->lock);
+    if (file) {
+        free_file(file);
+    }
+}
 
 static fd_description_t *alloc_fd_description(int real_fd, int flags, linux_mode_t mode, const char *path) {
     fd_description_t *desc = calloc(1, sizeof(fd_description_t));
@@ -684,6 +734,7 @@ void free_fd_impl(int fd) {
         fd_table[fd].used = false;
         fs_mutex_unlock(&fd_table_lock);
         release_fd_description(desc);
+        fdtable_remove_task_file(fd);
         return;
     }
     fs_mutex_unlock(&fd_table_lock);
@@ -840,6 +891,7 @@ void init_fd_entry_with_identity_impl(int fd, int real_fd, int flags, linux_mode
     fs_mutex_lock(&entry->lock);
     entry->desc = alloc_fd_description_with_identity(real_fd, flags, mode, path, file_identity);
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -875,6 +927,7 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
             fd_table[i].used = true;
             fd_table[i].desc = desc;
             fd_table[i].fd_flags = cloexec ? FD_CLOEXEC : 0;
+            fdtable_sync_task_file_locked(i, &fd_table[i]);
             newfd = i;
             break;
         }
@@ -914,6 +967,7 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
     fd_table[newfd].used = true;
     fd_table[newfd].desc = old_desc;
     fd_table[newfd].fd_flags = cloexec ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(newfd, &fd_table[newfd]);
     fs_mutex_unlock(&fd_table_lock);
 
     release_fd_description(new_desc);
@@ -936,6 +990,7 @@ int close_impl(int fd) {
 
 int close_on_exec_impl(void) {
     fd_description_t *descs_to_release[NR_OPEN_DEFAULT];
+    int fds_to_remove[NR_OPEN_DEFAULT];
     int release_count = 0;
     int closed = 0;
 
@@ -947,6 +1002,7 @@ int close_on_exec_impl(void) {
         }
 
         descs_to_release[release_count++] = fd_table[fd].desc;
+        fds_to_remove[closed] = fd;
         fd_table[fd].desc = NULL;
         fd_table[fd].fd_flags = 0;
         fd_table[fd].used = false;
@@ -956,6 +1012,9 @@ int close_on_exec_impl(void) {
 
     for (int i = 0; i < release_count; i++) {
         release_fd_description(descs_to_release[i]);
+    }
+    for (int i = 0; i < closed; i++) {
+        fdtable_remove_task_file(fds_to_remove[i]);
     }
 
     return closed;
@@ -967,6 +1026,7 @@ void init_synthetic_fd_entry_impl(int fd, int flags, linux_mode_t mode, const ch
     fs_mutex_lock(&entry->lock);
     entry->desc = alloc_synthetic_subdir_fd_description(flags, mode, path, SYNTHETIC_DIR_ROOT);
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -976,6 +1036,7 @@ void init_synthetic_dev_fd_entry_impl(int fd, int flags, linux_mode_t mode, cons
     fs_mutex_lock(&entry->lock);
     entry->desc = alloc_synthetic_dev_fd_description(flags, mode, path, dev_node);
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -986,6 +1047,7 @@ void init_synthetic_pty_fd_entry_impl(int fd, int flags, linux_mode_t mode, cons
     fs_mutex_lock(&entry->lock);
     entry->desc = alloc_synthetic_pty_fd_description(flags, mode, path, pty_index, is_master);
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -999,6 +1061,7 @@ int init_pipe_fd_entry_impl(int fd, int flags, struct pipe_endpoint *endpoint) {
         return -1;
     }
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
     return 0;
 }
@@ -1013,6 +1076,7 @@ int init_epoll_fd_entry_impl(int fd, int flags, struct epoll_instance *instance)
         return -1;
     }
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
     return 0;
 }
@@ -1068,6 +1132,7 @@ void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, linux_mode_t mode
     fs_mutex_lock(&entry->lock);
     entry->desc = alloc_synthetic_proc_file_fd_description(flags, mode, path, proc_file);
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -1080,6 +1145,7 @@ void init_synthetic_proc_file_fd_entry_for_pid_impl(int fd, int flags, linux_mod
         entry->desc->proc_file_target_pid = target_pid;
     }
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -1092,6 +1158,7 @@ void init_synthetic_proc_file_fd_entry_with_fdnum_impl(int fd, int flags, linux_
         entry->desc->proc_file_fd_num = fd_num;
     }
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -1105,6 +1172,7 @@ void init_synthetic_proc_file_fd_entry_with_fdnum_for_pid_impl(int fd, int flags
         entry->desc->proc_file_target_pid = target_pid;
     }
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -1134,6 +1202,7 @@ void init_synthetic_subdir_fd_entry_impl(int fd, int flags, linux_mode_t mode, c
     fs_mutex_lock(&entry->lock);
     entry->desc = alloc_synthetic_subdir_fd_description(flags, mode, path, dir_class);
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
     fs_mutex_unlock(&entry->lock);
 }
 
@@ -1154,4 +1223,122 @@ bool fdtable_is_used_impl(int fd) {
     bool used = fd_table[fd].used;
     fs_mutex_unlock(&fd_table_lock);
     return used;
+}
+
+bool fdtable_task_is_used_impl(struct task_struct *task, int fd) {
+    bool used;
+
+    if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
+        return false;
+    }
+
+    fs_mutex_lock(&task->files->lock);
+    used = task->files->fd[fd] != NULL;
+    fs_mutex_unlock(&task->files->lock);
+    return used;
+}
+
+int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size_t path_len) {
+    struct file *file;
+    size_t len;
+
+    if (!path || path_len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
+        errno = EBADF;
+        return -1;
+    }
+
+    fs_mutex_lock(&task->files->lock);
+    file = task->files->fd[fd];
+    if (!file || file->path[0] == '\0') {
+        fs_mutex_unlock(&task->files->lock);
+        errno = EBADF;
+        return -1;
+    }
+
+    len = strlen(file->path);
+    if (len >= path_len) {
+        fs_mutex_unlock(&task->files->lock);
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    memcpy(path, file->path, len + 1);
+    fs_mutex_unlock(&task->files->lock);
+    return 0;
+}
+
+int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, char *buf, size_t buf_len) {
+    struct file *file;
+    linux_off_t pos;
+    unsigned int flags;
+    unsigned int fd_flags;
+    int ret;
+
+    if (!buf || buf_len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
+        errno = EBADF;
+        return -1;
+    }
+
+    fs_mutex_lock(&task->files->lock);
+    file = task->files->fd[fd];
+    if (!file) {
+        fs_mutex_unlock(&task->files->lock);
+        errno = EBADF;
+        return -1;
+    }
+    pos = file->pos;
+    flags = file->flags;
+    fd_flags = file->fd_flags;
+    fs_mutex_unlock(&task->files->lock);
+
+    if (fd_flags & FD_CLOEXEC) {
+        flags |= O_CLOEXEC;
+    }
+
+    ret = snprintf(buf, buf_len, "pos:\t%lld\nflags:\t0%o\n", (long long)pos, flags);
+    if (ret < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if ((size_t)ret >= buf_len) {
+        return (int)(buf_len - 1);
+    }
+    return ret;
+}
+
+void fdtable_sync_current_task_fd_impl(int fd) {
+    if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
+        return;
+    }
+
+    file_init_impl();
+    fs_mutex_lock(&fd_table_lock);
+    if (fd_table[fd].used) {
+        fdtable_sync_task_file_locked(fd, &fd_table[fd]);
+    }
+    fs_mutex_unlock(&fd_table_lock);
+}
+
+void fdtable_sync_current_task_from_static_impl(void) {
+    struct task_struct *task = get_current();
+
+    if (!task || !task->files) {
+        return;
+    }
+
+    file_init_impl();
+    fs_mutex_lock(&fd_table_lock);
+    for (int fd = 0; fd < NR_OPEN_DEFAULT; fd++) {
+        if (fd_table[fd].used) {
+            fdtable_sync_task_file_locked(fd, &fd_table[fd]);
+        }
+    }
+    fs_mutex_unlock(&fd_table_lock);
 }

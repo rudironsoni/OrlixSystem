@@ -924,6 +924,7 @@ int task_init(void) {
     if (atomic_load(&task_initialized) && init_task) {
         if (!current_task) {
             current_task = init_task;
+            fdtable_sync_current_task_from_static_impl();
         }
         return 0;
     }
@@ -969,6 +970,7 @@ int task_init(void) {
         }
 
         current_task = init_task;
+        fdtable_sync_current_task_from_static_impl();
         atomic_store(&task_initialized, true);
         return 0;
     }

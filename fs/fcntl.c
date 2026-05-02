@@ -92,6 +92,7 @@ int fcntl_impl(int fd, int cmd, ...) {
         }
         set_fd_descriptor_flags_impl(entry, (arg & FD_CLOEXEC) ? FD_CLOEXEC : 0);
         put_fd_entry_impl(entry);
+        fdtable_sync_current_task_fd_impl(fd);
         return 0;
     case F_GETFL:
         if (fcntl_get_entry_or_badf(fd, &entry) != 0) {
@@ -112,6 +113,7 @@ int fcntl_impl(int fd, int cmd, ...) {
         new_flags = (current_flags & ~mutable_mask) | (arg & mutable_mask);
         set_fd_flags_impl(entry, new_flags);
         put_fd_entry_impl(entry);
+        fdtable_sync_current_task_fd_impl(fd);
         return 0;
     }
     default:

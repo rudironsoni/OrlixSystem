@@ -1278,6 +1278,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"/proc/self/mountinfo should use Linux-shaped root/source/mount option fields, errno %d", errno);
 }
 
+- (void)testProcSelfMountinfoReportsSharedPropagation {
+    extern int vfs_contract_proc_self_mountinfo_reports_shared_propagation(void);
+    XCTAssertEqual(vfs_contract_proc_self_mountinfo_reports_shared_propagation(), 0,
+                   @"/proc/self/mountinfo should report shared propagation metadata, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,

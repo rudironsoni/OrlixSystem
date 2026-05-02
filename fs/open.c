@@ -71,7 +71,7 @@ static int try_open_proc_self_file(const char *resolved_path, int flags, mode_t 
             errno = ENOENT;
             return -1;
         }
-        if (!fdtable_is_used_impl(fd_num)) {
+        if (!vfs_proc_fd_exists_for_path(resolved_path, fd_num)) {
             errno = ENOENT;
             return -1;
         }
