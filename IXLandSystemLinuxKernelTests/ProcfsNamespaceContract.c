@@ -20,6 +20,7 @@ extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern void cred_reset_to_defaults(void);
+extern void set_current_cred(struct cred *cred);
 
 static void reset_procfs_namespace_state(void) {
     cred_reset_to_defaults();
@@ -255,4 +256,103 @@ int procfs_namespace_contract_pid_namespace_status_reports_nspid(void) {
     release_lookup_child(parent, child);
     reset_procfs_namespace_state();
     return ret;
+}
+
+int procfs_namespace_contract_proc_pid_status_reports_target_credentials(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    struct cred *parent_cred = NULL;
+    struct cred *child_cred = NULL;
+    char path[64] = {0};
+    char content[512];
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    parent_cred = dup_cred(get_current_cred());
+    child_cred = dup_cred(get_current_cred());
+    if (!parent_cred || !child_cred) {
+        errno = ENOMEM;
+        goto out;
+    }
+    if (cred_setuid(child_cred, 1000) != 0) {
+        errno = EPERM;
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    set_current_cred(child_cred);
+    put_cred(child_cred);
+    child_cred = NULL;
+    set_current(parent);
+    set_current_cred(parent_cred);
+    put_cred(parent_cred);
+    parent_cred = NULL;
+
+    proc_pid_status_path(path, sizeof(path), child->pid);
+    if (read_file_content(path, content, sizeof(content)) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    if (!contains(content, "Uid:\t1000\t1000\t1000\t1000\n")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (parent_cred) {
+        put_cred(parent_cred);
+    }
+    if (child_cred) {
+        put_cred(child_cred);
+    }
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_root_files_are_readable(void) {
+    char content[1024];
+
+    reset_procfs_namespace_state();
+
+    if (read_file_content("/proc/filesystems", content, sizeof(content)) != 0 ||
+        !contains(content, "proc\n") ||
+        !contains(content, "tmpfs\n")) {
+        errno = ENODATA;
+        return -1;
+    }
+    if (read_file_content("/proc/meminfo", content, sizeof(content)) != 0 ||
+        !contains(content, "MemTotal:") ||
+        !contains(content, "MemAvailable:")) {
+        errno = ENODATA;
+        return -1;
+    }
+    if (read_file_content("/proc/cpuinfo", content, sizeof(content)) != 0 ||
+        !contains(content, "processor") ||
+        !contains(content, "AArch64")) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    return 0;
 }

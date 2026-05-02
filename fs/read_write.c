@@ -130,6 +130,15 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         case SYNTHETIC_PROC_FILE_FDINFO:
             content_len = vfs_proc_self_fdinfo_content(fd_num, content, sizeof(content));
             break;
+        case SYNTHETIC_PROC_FILE_FILESYSTEMS:
+            content_len = vfs_proc_filesystems_content(content, sizeof(content));
+            break;
+        case SYNTHETIC_PROC_FILE_MEMINFO:
+            content_len = vfs_proc_meminfo_content(content, sizeof(content));
+            break;
+        case SYNTHETIC_PROC_FILE_CPUINFO:
+            content_len = vfs_proc_cpuinfo_content(content, sizeof(content));
+            break;
         default:
             content_len = -EINVAL;
             break;
@@ -315,6 +324,12 @@ static int synthetic_proc_file_content(synthetic_proc_file_t proc_file, int fd_n
         return vfs_proc_self_mounts_content(content, content_size);
     case SYNTHETIC_PROC_FILE_FDINFO:
         return vfs_proc_self_fdinfo_content(fd_num, content, content_size);
+    case SYNTHETIC_PROC_FILE_FILESYSTEMS:
+        return vfs_proc_filesystems_content(content, content_size);
+    case SYNTHETIC_PROC_FILE_MEMINFO:
+        return vfs_proc_meminfo_content(content, content_size);
+    case SYNTHETIC_PROC_FILE_CPUINFO:
+        return vfs_proc_cpuinfo_content(content, content_size);
     default:
         return -EINVAL;
     }

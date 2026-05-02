@@ -7,10 +7,13 @@
 
 #include <linux/fcntl.h>
 #include <linux/capability.h>
+#include <linux/magic.h>
 #include <linux/mount.h>
 #include <linux/stat.h>
+#include <asm/statfs.h>
 
 #include <errno.h>
+#include <string.h>
 
 #include "fs/vfs.h"
 #include "kernel/cred_internal.h"
@@ -61,6 +64,8 @@ extern int chown(const char *pathname, uid_t owner, gid_t group);
 extern int fchown(int fd, uid_t owner, gid_t group);
 extern int capget(cap_user_header_t header, cap_user_data_t data);
 extern int capset(cap_user_header_t header, const cap_user_data_t data);
+extern int statfs(const char *path, struct statfs *buf);
+extern int fstatfs(int fd, struct statfs *buf);
 
 static int vfs_contract_ignore_exists(int result) {
     if (result == 0 || errno == EEXIST) {
@@ -2348,5 +2353,36 @@ out:
     close_impl(fd);
     cred_reset_to_defaults();
     unlink_impl("/tmp/vfs-cred-no-dac-cap-file");
+    return ret;
+}
+
+int vfs_contract_statfs_reports_virtual_proc_and_tmpfs(void) {
+    struct statfs st;
+    int fd = -1;
+    int ret = -1;
+
+    memset(&st, 0, sizeof(st));
+    if (statfs("/proc", &st) != 0 || st.f_type != PROC_SUPER_MAGIC || st.f_bsize != 4096) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    memset(&st, 0, sizeof(st));
+    if (statfs("/tmp", &st) != 0 || st.f_type != TMPFS_MAGIC || st.f_bsize != 4096) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    fd = open_impl("/proc/self/status", O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    memset(&st, 0, sizeof(st));
+    if (fstatfs(fd, &st) == 0 && st.f_type == PROC_SUPER_MAGIC) {
+        ret = 0;
+    } else {
+        errno = ENODATA;
+    }
+    close_impl(fd);
     return ret;
 }

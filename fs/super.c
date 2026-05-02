@@ -1,111 +1,157 @@
-/* iXland - Superblock Operations
-
+/* fs/super.c
+ * Linux-shaped superblock operations over IXLand virtual filesystems.
  *
- * Canonical owner for filesystem-level operations:
- * - sync(), fsync(), fdatasync()
- * - syncfs()
- * - statfs(), fstatfs()
- * - statvfs(), fstatvfs()
- * - posix_fadvise(), posix_fallocate()
- *
- * Linux-shaped canonical owner - iOS mediation as implementation detail
+ * Host filesystem statistics do not define the Linux-facing contract here.
  */
 
-#define _DARWIN_FEATURE_64_BIT_INODE 1
 #include <errno.h>
-#include <sys/param.h>
-#include <sys/statvfs.h>
-#include <unistd.h>
+#include <string.h>
 
-/* iOS system call stubs - private implementation detail */
-extern int _statfs(const char *, struct statfs *);
-extern int _fstatfs(int, struct statfs *);
-extern int _statvfs(const char *, struct statvfs *);
-extern int _fstatvfs(int, struct statvfs *);
+#include <asm/statfs.h>
+#include <linux/fcntl.h>
+#include <linux/magic.h>
 
-/* ============================================================================
- * SYNC - Flush filesystem buffers
- * ============================================================================ */
+#include "fdtable.h"
+#include "vfs.h"
+
+typedef __INT64_TYPE__ super_off_t;
+
+static long vfs_statfs_magic_for_path(const char *path) {
+    enum vfs_backing_class backing_class;
+    enum vfs_route_identity route_id;
+
+    if (vfs_describe_route_for_path(path, &route_id, &backing_class, NULL) != 0) {
+        return TMPFS_MAGIC;
+    }
+
+    switch (route_id) {
+    case VFS_ROUTE_PROC:
+        return PROC_SUPER_MAGIC;
+    case VFS_ROUTE_SYS:
+        return SYSFS_MAGIC;
+    case VFS_ROUTE_DEV:
+        return TMPFS_MAGIC;
+    default:
+        break;
+    }
+
+    switch (backing_class) {
+    case VFS_BACKING_TEMP:
+    case VFS_BACKING_CACHE:
+    case VFS_BACKING_PERSISTENT:
+    case VFS_BACKING_EXTERNAL:
+        return TMPFS_MAGIC;
+    case VFS_BACKING_SYNTHETIC:
+        return TMPFS_MAGIC;
+    default:
+        return TMPFS_MAGIC;
+    }
+}
+
+static int vfs_fill_statfs(const char *resolved_path, struct statfs *buf) {
+    if (!buf) {
+        errno = EFAULT;
+        return -1;
+    }
+
+    memset(buf, 0, sizeof(*buf));
+    buf->f_type = vfs_statfs_magic_for_path(resolved_path);
+    buf->f_bsize = 4096;
+    buf->f_blocks = 65536;
+    buf->f_bfree = 32768;
+    buf->f_bavail = 32768;
+    buf->f_files = 65536;
+    buf->f_ffree = 32768;
+    buf->f_namelen = 255;
+    buf->f_frsize = 4096;
+    return 0;
+}
 
 static void sync_impl(void) {
-    sync();
 }
 
 static int fsync_impl(int fd) {
-    return fsync(fd);
+    void *entry = get_fd_entry_impl(fd);
+    if (!entry) {
+        errno = EBADF;
+        return -1;
+    }
+    put_fd_entry_impl(entry);
+    return 0;
 }
 
 static int fdatasync_impl(int fd) {
-    /* fdatasync not available on iOS, use fsync or F_FULLFSYNC */
-#ifdef F_FULLFSYNC
-    return fcntl(fd, F_FULLFSYNC);
-#else
-    return fsync(fd);
-#endif
+    return fsync_impl(fd);
 }
 
 static int syncfs_impl(int fd) {
-    /* iOS doesn't have syncfs, use fsync instead */
-    return fsync(fd);
+    return fsync_impl(fd);
 }
 
-/* ============================================================================
- * STATFS - Filesystem statistics
- * ============================================================================ */
-
 static int statfs_impl(const char *path, struct statfs *buf) {
-    return _statfs(path, buf);
+    char resolved_path[MAX_PATH];
+    int ret;
+
+    if (!path) {
+        errno = EFAULT;
+        return -1;
+    }
+
+    ret = vfs_resolve_virtual_path_at(AT_FDCWD, path, resolved_path, sizeof(resolved_path));
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return vfs_fill_statfs(resolved_path, buf);
 }
 
 static int fstatfs_impl(int fd, struct statfs *buf) {
-    return _fstatfs(fd, buf);
+    char path[MAX_PATH];
+    void *entry;
+    int ret;
+
+    entry = get_fd_entry_impl(fd);
+    if (!entry) {
+        errno = EBADF;
+        return -1;
+    }
+    ret = get_fd_path_impl(entry, path, sizeof(path));
+    put_fd_entry_impl(entry);
+    if (ret != 0) {
+        errno = EBADF;
+        return -1;
+    }
+
+    return vfs_fill_statfs(path, buf);
 }
 
-static int statvfs_impl(const char *path, struct statvfs *buf) {
-    return _statvfs(path, buf);
+static int statvfs_impl(const char *path, void *buf) {
+    (void)path;
+    (void)buf;
+    errno = ENOSYS;
+    return -1;
 }
 
-static int fstatvfs_impl(int fd, struct statvfs *buf) {
-    return _fstatvfs(fd, buf);
-}
-
-/* File access advice. */
-
-static int posix_fadvise_impl(int fd, off_t offset, off_t len, int advice) {
-    /* iOS doesn't support posix_fadvise, ignore */
+static int fstatvfs_impl(int fd, void *buf) {
     (void)fd;
+    (void)buf;
+    errno = ENOSYS;
+    return -1;
+}
+
+static int posix_fadvise_impl(int fd, super_off_t offset, super_off_t len, int advice) {
     (void)offset;
     (void)len;
     (void)advice;
-    return 0;
+    return fsync_impl(fd);
 }
 
-/* Preallocate file space. */
-
-static int posix_fallocate_impl(int fd, off_t offset, off_t len) {
-    /* iOS doesn't support fallocate, simulate by writing zeros */
-    off_t current = lseek(fd, 0, SEEK_CUR);
-    if (current < 0) {
-        return -1;
-    }
-
-    if (lseek(fd, offset + len - 1, SEEK_SET) < 0) {
-        return -1;
-    }
-
-    char zero = 0;
-    if (write(fd, &zero, 1) != 1) {
-        lseek(fd, current, SEEK_SET);
-        return -1;
-    }
-
-    lseek(fd, current, SEEK_SET);
-    return 0;
+static int posix_fallocate_impl(int fd, super_off_t offset, super_off_t len) {
+    (void)offset;
+    (void)len;
+    return fsync_impl(fd);
 }
-
-/* ============================================================================
- * Public Canonical Syscalls
- * ============================================================================ */
 
 __attribute__((visibility("default"))) void sync(void) {
     sync_impl();
@@ -131,18 +177,20 @@ __attribute__((visibility("default"))) int fstatfs(int fd, struct statfs *buf) {
     return fstatfs_impl(fd, buf);
 }
 
-__attribute__((visibility("default"))) int statvfs(const char *path, struct statvfs *buf) {
+__attribute__((visibility("default"))) int statvfs(const char *path, void *buf) {
     return statvfs_impl(path, buf);
 }
 
-__attribute__((visibility("default"))) int fstatvfs(int fd, struct statvfs *buf) {
+__attribute__((visibility("default"))) int fstatvfs(int fd, void *buf) {
     return fstatvfs_impl(fd, buf);
 }
 
-__attribute__((visibility("default"))) int posix_fadvise(int fd, off_t offset, off_t len, int advice) {
+__attribute__((visibility("default"))) int posix_fadvise(int fd, super_off_t offset,
+                                                         super_off_t len, int advice) {
     return posix_fadvise_impl(fd, offset, len, advice);
 }
 
-__attribute__((visibility("default"))) int posix_fallocate(int fd, off_t offset, off_t len) {
+__attribute__((visibility("default"))) int posix_fallocate(int fd, super_off_t offset,
+                                                           super_off_t len) {
     return posix_fallocate_impl(fd, offset, len);
 }

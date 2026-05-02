@@ -8,6 +8,7 @@
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
+#include "cred_internal.h"
 #include "signal.h"
 #include "task.h"
 #include "uts.h"
@@ -190,6 +191,15 @@ pid_t fork_impl(void) {
     if (parent->uts_ns) {
         uts_put(child->uts_ns);
         child->uts_ns = uts_get(parent->uts_ns);
+    }
+    if (parent->cred) {
+        put_cred(child->cred);
+        child->cred = dup_cred(parent->cred);
+        if (!child->cred) {
+            free_task(child);
+            errno = ENOMEM;
+            return -1;
+        }
     }
 
     /* Copy parent's filesystem context */
@@ -523,6 +533,15 @@ int vfork_impl(void) {
     if (parent->uts_ns) {
         uts_put(child->uts_ns);
         child->uts_ns = uts_get(parent->uts_ns);
+    }
+    if (parent->cred) {
+        put_cred(child->cred);
+        child->cred = dup_cred(parent->cred);
+        if (!child->cred) {
+            free_task(child);
+            errno = ENOMEM;
+            return -1;
+        }
     }
 
     /* Copy parent's filesystem context */

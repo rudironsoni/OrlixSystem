@@ -739,19 +739,19 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     XCTAssertTrue(stat_mode_is_directory(st.st_mode), @"public lstat should return directory for /sys");
 }
 
-- (void)testSyntheticChildStatFails {
+- (void)testSyntheticChildStatHandlesSupportedProcFilesAndRejectsUnsupportedSys {
     struct linux_stat st;
     extern int vfs_contract_fstatat_synthetic_child_nofollow(void);
 
-    XCTAssertEqual(vfs_fstatat(AT_FDCWD, "/proc/meminfo", &st, 0), -ENOENT,
-                   @"synthetic child vfs_fstatat should reject through descriptor policy");
+    XCTAssertEqual(vfs_fstatat(AT_FDCWD, "/proc/meminfo", &st, 0), 0,
+                   @"/proc/meminfo should be a supported procfs file");
+    XCTAssertTrue(stat_mode_is_regular(st.st_mode), @"/proc/meminfo should stat as a regular file");
     XCTAssertEqual(vfs_contract_fstatat_synthetic_child_nofollow(), -ENOENT,
                    @"synthetic child vfs_fstatat with Linux AT_SYMLINK_NOFOLLOW should reject through descriptor policy");
 
     errno = 0;
-    XCTAssertEqual(stat_impl("/proc/meminfo", &st), -1,
-                   @"IXLand stat should reject unsupported synthetic child paths");
-    XCTAssertEqual(errno, ENOENT, @"IXLand stat should set ENOENT for unsupported synthetic child paths");
+    XCTAssertEqual(stat_impl("/proc/meminfo", &st), 0,
+                   @"IXLand stat should support /proc/meminfo");
 
     errno = 0;
     XCTAssertEqual(lstat_impl("/sys/kernel", &st), -1,
@@ -772,14 +772,13 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"public access should succeed for synthetic root");
 }
 
-- (void)testSyntheticChildAccessFails {
-    XCTAssertEqual(vfs_faccessat(AT_FDCWD, "/proc/meminfo", F_OK, 0), -ENOENT,
-                   @"synthetic child vfs_faccessat should reject through descriptor policy");
+- (void)testSyntheticChildAccessHandlesSupportedProcFiles {
+    XCTAssertEqual(vfs_faccessat(AT_FDCWD, "/proc/meminfo", F_OK, 0), 0,
+                   @"/proc/meminfo should be visible through vfs_faccessat");
 
     errno = 0;
-    XCTAssertEqual(access("/proc/meminfo", F_OK), -1,
-                   @"public access should reject unsupported synthetic child routes");
-    XCTAssertEqual(errno, ENOENT, @"public access should set ENOENT for unsupported synthetic child routes");
+    XCTAssertEqual(access("/proc/meminfo", F_OK), 0,
+                   @"public access should support /proc/meminfo");
 }
 
 - (void)testSyntheticRootOpenDirectorySucceedsAndChildOpenFails {
@@ -799,11 +798,11 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     if (dev_fd >= 0) close(dev_fd);
 }
 
-- (void)testSyntheticChildOpenFails {
+- (void)testSyntheticChildOpenHandlesSupportedProcFilesAndRejectsUnsupportedSys {
     errno = 0;
-    XCTAssertEqual(open("/proc/meminfo", O_RDONLY), -1,
-                   @"public open should reject unsupported synthetic child routes");
-    XCTAssertEqual(errno, ENOTSUP, @"public open should set ENOTSUP for unsupported synthetic child routes");
+    int meminfo_fd = open("/proc/meminfo", O_RDONLY);
+    XCTAssertTrue(meminfo_fd >= 0, @"public open should support /proc/meminfo");
+    if (meminfo_fd >= 0) close(meminfo_fd);
 
     errno = 0;
     XCTAssertEqual(openat(AT_FDCWD, "/sys/kernel", O_RDONLY), -1,
@@ -1469,6 +1468,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     extern int vfs_contract_root_without_dac_caps_cannot_read_private_file(void);
     XCTAssertEqual(vfs_contract_root_without_dac_caps_cannot_read_private_file(), 0,
                    @"clearing virtual DAC capabilities should make root obey file mode permissions, errno %d", errno);
+}
+
+- (void)testStatfsReportsVirtualProcAndTmpfs {
+    extern int vfs_contract_statfs_reports_virtual_proc_and_tmpfs(void);
+    XCTAssertEqual(vfs_contract_statfs_reports_virtual_proc_and_tmpfs(), 0,
+                   @"statfs/fstatfs should report IXLand virtual filesystem state, errno %d", errno);
 }
 
 /* ============================================================================

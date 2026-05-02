@@ -300,6 +300,9 @@ enum proc_self_path_class {
     PROC_SELF_STATUS_FILE,
     PROC_SELF_MOUNTINFO_FILE,
     PROC_SELF_MOUNTS_FILE,
+    PROC_ROOT_FILESYSTEMS_FILE,
+    PROC_ROOT_MEMINFO_FILE,
+    PROC_ROOT_CPUINFO_FILE,
     PROC_SELF_NS_DIR,
     PROC_SELF_NS_LINK
 };
@@ -325,6 +328,9 @@ int vfs_proc_self_status_content(char *buf, size_t buf_len);
 int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len);
 int vfs_proc_self_mountinfo_content(char *buf, size_t buf_len);
 int vfs_proc_self_mounts_content(char *buf, size_t buf_len);
+int vfs_proc_filesystems_content(char *buf, size_t buf_len);
+int vfs_proc_meminfo_content(char *buf, size_t buf_len);
+int vfs_proc_cpuinfo_content(char *buf, size_t buf_len);
 int vfs_check_open_permission(const char *resolved_vpath, const char *translated_path, int flags);
 int vfs_check_parent_mutation_permission(const char *resolved_vpath);
 void vfs_record_created_path(const char *resolved_vpath, linux_mode_t mode);

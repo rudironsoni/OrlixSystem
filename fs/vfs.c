@@ -2212,6 +2212,16 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
         return PROC_SELF_NONE;
     }
 
+    if (strcmp(vpath, "/proc/filesystems") == 0) {
+        return PROC_ROOT_FILESYSTEMS_FILE;
+    }
+    if (strcmp(vpath, "/proc/meminfo") == 0) {
+        return PROC_ROOT_MEMINFO_FILE;
+    }
+    if (strcmp(vpath, "/proc/cpuinfo") == 0) {
+        return PROC_ROOT_CPUINFO_FILE;
+    }
+
     suffix = vfs_proc_current_task_suffix(vpath, mapped, sizeof(mapped));
     if (!suffix) {
         return PROC_SELF_NONE;
@@ -2966,6 +2976,70 @@ int vfs_proc_self_mounts_content(char *buf, size_t buf_len) {
     return (int)pos;
 }
 
+int vfs_proc_filesystems_content(char *buf, size_t buf_len) {
+    size_t pos = 0;
+
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+    if (vfs_proc_append(buf, buf_len, &pos,
+                        "nodev\tsysfs\n"
+                        "nodev\tproc\n"
+                        "nodev\tdevtmpfs\n"
+                        "nodev\tdevpts\n"
+                        "nodev\ttmpfs\n"
+                        "nodev\tixland-root\n") != 0) {
+        return (int)pos;
+    }
+    return (int)pos;
+}
+
+int vfs_proc_meminfo_content(char *buf, size_t buf_len) {
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+    int ret = snprintf(buf, buf_len,
+                       "MemTotal:         262144 kB\n"
+                       "MemFree:          131072 kB\n"
+                       "MemAvailable:     196608 kB\n"
+                       "Buffers:               0 kB\n"
+                       "Cached:            65536 kB\n"
+                       "SwapCached:            0 kB\n"
+                       "Active:                0 kB\n"
+                       "Inactive:              0 kB\n"
+                       "SwapTotal:             0 kB\n"
+                       "SwapFree:              0 kB\n");
+    if (ret < 0) {
+        return -EINVAL;
+    }
+    if ((size_t)ret >= buf_len) {
+        return (int)(buf_len - 1);
+    }
+    return ret;
+}
+
+int vfs_proc_cpuinfo_content(char *buf, size_t buf_len) {
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+    int ret = snprintf(buf, buf_len,
+                       "processor\t: 0\n"
+                       "BogoMIPS\t: 0.00\n"
+                       "Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics\n"
+                       "CPU implementer\t: 0x00\n"
+                       "CPU architecture: AArch64\n"
+                       "CPU variant\t: 0x0\n"
+                       "CPU part\t: 0x000\n"
+                       "CPU revision\t: 0\n");
+    if (ret < 0) {
+        return -EINVAL;
+    }
+    if ((size_t)ret >= buf_len) {
+        return (int)(buf_len - 1);
+    }
+    return ret;
+}
+
 int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
     struct task_struct *task;
     struct cred *cred;
@@ -2982,7 +3056,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         return -ESRCH;
     }
 
-    cred = get_current_cred();
+    cred = task->cred ? task->cred : get_current_cred();
     if (!cred) {
         return -ESRCH;
     }
@@ -3255,7 +3329,8 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
                    proc_class == PROC_SELF_STAT_FILE || proc_class == PROC_SELF_STATM_FILE ||
                    proc_class == PROC_SELF_MAPS_FILE ||
                    proc_class == PROC_SELF_STATUS_FILE || proc_class == PROC_SELF_MOUNTINFO_FILE ||
-                   proc_class == PROC_SELF_MOUNTS_FILE) {
+                   proc_class == PROC_SELF_MOUNTS_FILE || proc_class == PROC_ROOT_FILESYSTEMS_FILE ||
+                   proc_class == PROC_ROOT_MEMINFO_FILE || proc_class == PROC_ROOT_CPUINFO_FILE) {
             memset(statbuf, 0, sizeof(*statbuf));
             statbuf->st_mode = S_IFREG | 0444;
             statbuf->st_nlink = 1;

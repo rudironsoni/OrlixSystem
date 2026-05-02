@@ -142,6 +142,30 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
         }
     }
 
+    if (dir_class == SYNTHETIC_DIR_PROC) {
+        static const struct {
+            const char *name;
+            unsigned char dtype;
+        } entries[] = {
+            {"self", DT_LNK},
+            {"filesystems", DT_REG},
+            {"meminfo", DT_REG},
+            {"cpuinfo", DT_REG},
+        };
+        size_t num_entries = sizeof(entries) / sizeof(entries[0]);
+        size_t idx = (size_t)(cursor - 2);
+
+        while (idx < num_entries) {
+            rc = append_linux_dirent64(dirp, count, &written, 1, (int64_t)(idx + 3),
+                                       entries[idx].dtype, entries[idx].name);
+            if (rc == 0) {
+                break;
+            }
+            idx++;
+            cursor++;
+        }
+    }
+
     if (dir_class == SYNTHETIC_DIR_PROC_SELF_NS) {
         static const struct {
             const char *name;

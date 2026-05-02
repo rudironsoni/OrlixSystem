@@ -40,4 +40,12 @@
     XCTAssertEqual(procfs_namespace_contract_pid_namespace_status_reports_nspid(), 0, @"errno %d", errno);
 }
 
+- (void)testProcPidStatusReportsTargetCredentials {
+    XCTAssertEqual(procfs_namespace_contract_proc_pid_status_reports_target_credentials(), 0, @"errno %d", errno);
+}
+
+- (void)testRootProcFilesAreReadable {
+    XCTAssertEqual(procfs_namespace_contract_root_files_are_readable(), 0, @"errno %d", errno);
+}
+
 @end

@@ -22,6 +22,7 @@
 #include <linux/stat.h>
 
 #include "cred_internal.h"
+#include "task.h"
 
 /* ============================================================================
  * VIRTUAL CREDENTIAL SUBSYSTEM
@@ -201,6 +202,8 @@ int cred_init(void) {
 
 /* Reset global credentials to IXLand defaults - for testing */
 void cred_reset_to_defaults(void) {
+    struct task_struct *task;
+
     /* Reset global init cred to defaults */
     global_init_cred.uid = KERNEL_DEFAULT_UID;
     global_init_cred.gid = KERNEL_DEFAULT_GID;
@@ -218,9 +221,20 @@ void cred_reset_to_defaults(void) {
     
     /* Reset current_cred pointer to point to global_init_cred */
     current_cred = &global_init_cred;
+    task = get_current();
+    if (task && task->cred != &global_init_cred) {
+        put_cred(task->cred);
+        get_cred(&global_init_cred);
+        task->cred = &global_init_cred;
+    }
 }
 
 struct cred *get_current_cred(void) {
+    struct task_struct *task = get_current();
+    if (task && task->cred) {
+        current_cred = task->cred;
+        return task->cred;
+    }
     if (!current_cred) {
         /* Fallback to global init cred for early boot/standalone */
         current_cred = &global_init_cred;
@@ -229,6 +243,14 @@ struct cred *get_current_cred(void) {
 }
 
 void set_current_cred(struct cred *cred) {
+    struct task_struct *task = get_current();
+    if (task && task->cred != cred) {
+        if (cred) {
+            get_cred(cred);
+        }
+        put_cred(task->cred);
+        task->cred = cred;
+    }
     current_cred = cred;
 }
 

@@ -85,6 +85,9 @@ struct task_struct *get_current(void) {
 
 void set_current(struct task_struct *task) {
     current_task = task;
+    if (task && task->cred) {
+        set_current_cred(task->cred);
+    }
 }
 
 static void task_clear_exec_strings(struct task_struct *task) {
@@ -615,6 +618,16 @@ struct task_struct *alloc_task(void) {
     kernel_cond_init(&task->wait_cond);
     kernel_mutex_init(&task->wait_lock);
     task->uts_ns = uts_get_initial_namespace();
+    task->cred = alloc_cred();
+    if (!task->cred) {
+        uts_put(task->uts_ns);
+        kernel_cond_destroy(&task->wait_cond);
+        kernel_mutex_destroy(&task->wait_lock);
+        kernel_mutex_destroy(&task->lock);
+        free_pid(task->pid);
+        free(task);
+        return NULL;
+    }
 
     /* Store start time as nanoseconds - use simple counter for now
      * Real implementation would use kernel_clock_gettime from time subsystem */
@@ -665,6 +678,15 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
     if (parent->uts_ns) {
         uts_put(child->uts_ns);
         child->uts_ns = uts_get(parent->uts_ns);
+    }
+    if (parent->cred) {
+        put_cred(child->cred);
+        child->cred = dup_cred(parent->cred);
+        if (!child->cred) {
+            free_task(child);
+            errno = ENOMEM;
+            return NULL;
+        }
     }
 
     if (parent->fs) {
@@ -858,6 +880,8 @@ void free_task(struct task_struct *task) {
         free(task->fs);
     if (task->signal)
         free_signal_struct(task->signal);
+    if (task->cred)
+        put_cred(task->cred);
     if (task->tty)
         atomic_fetch_sub(&task->tty->refs, 1);
     if (task->mm)

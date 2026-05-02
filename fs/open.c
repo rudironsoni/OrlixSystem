@@ -33,6 +33,12 @@ static synthetic_proc_file_t proc_self_file_for_class(proc_self_path_class_t pro
         return SYNTHETIC_PROC_FILE_MOUNTINFO;
     case PROC_SELF_MOUNTS_FILE:
         return SYNTHETIC_PROC_FILE_MOUNTS;
+    case PROC_ROOT_FILESYSTEMS_FILE:
+        return SYNTHETIC_PROC_FILE_FILESYSTEMS;
+    case PROC_ROOT_MEMINFO_FILE:
+        return SYNTHETIC_PROC_FILE_MEMINFO;
+    case PROC_ROOT_CPUINFO_FILE:
+        return SYNTHETIC_PROC_FILE_CPUINFO;
     default:
         return SYNTHETIC_PROC_FILE_NONE;
     }
@@ -116,7 +122,8 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
         if (fd < 0) {
             return -1;
         }
-        init_synthetic_fd_entry_impl(fd, flags, mode, resolved_path);
+        synthetic_dir_class_t dir_class = strcmp(resolved_path, "/proc") == 0 ? SYNTHETIC_DIR_PROC : SYNTHETIC_DIR_ROOT;
+        init_synthetic_subdir_fd_entry_impl(fd, flags, mode, resolved_path, dir_class);
         return fd;
     }
 
@@ -281,7 +288,8 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
         if (fd < 0) {
             return -1;
         }
-        init_synthetic_fd_entry_impl(fd, flags, mode, resolved_path);
+        synthetic_dir_class_t dir_class = strcmp(resolved_path, "/proc") == 0 ? SYNTHETIC_DIR_PROC : SYNTHETIC_DIR_ROOT;
+        init_synthetic_subdir_fd_entry_impl(fd, flags, mode, resolved_path, dir_class);
         return fd;
     }
 

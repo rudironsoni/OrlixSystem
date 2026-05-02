@@ -11,6 +11,8 @@ int procfs_namespace_contract_unshare_newuts_changes_uts_link(void);
 int procfs_namespace_contract_unshare_newns_changes_mnt_link(void);
 int procfs_namespace_contract_proc_pid_status_aliases_current_task(void);
 int procfs_namespace_contract_pid_namespace_status_reports_nspid(void);
+int procfs_namespace_contract_proc_pid_status_reports_target_credentials(void);
+int procfs_namespace_contract_root_files_are_readable(void);
 
 #ifdef __cplusplus
 }

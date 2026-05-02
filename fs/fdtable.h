@@ -104,6 +104,7 @@ void init_host_dirfd_entry_impl(int fd, int real_fd, linux_mode_t mode, const ch
 enum synthetic_dir_class {
     SYNTHETIC_DIR_GENERIC = 0,
     SYNTHETIC_DIR_ROOT,
+    SYNTHETIC_DIR_PROC,
     SYNTHETIC_DIR_DEV,
     SYNTHETIC_DIR_DEV_PTS,
     SYNTHETIC_DIR_PROC_SELF,
@@ -156,7 +157,10 @@ enum synthetic_proc_file {
     SYNTHETIC_PROC_FILE_STATUS,
     SYNTHETIC_PROC_FILE_MOUNTINFO,
     SYNTHETIC_PROC_FILE_MOUNTS,
-    SYNTHETIC_PROC_FILE_FDINFO
+    SYNTHETIC_PROC_FILE_FDINFO,
+    SYNTHETIC_PROC_FILE_FILESYSTEMS,
+    SYNTHETIC_PROC_FILE_MEMINFO,
+    SYNTHETIC_PROC_FILE_CPUINFO
 };
 
 typedef enum synthetic_proc_file synthetic_proc_file_t;
