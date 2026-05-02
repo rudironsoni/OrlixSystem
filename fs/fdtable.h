@@ -72,6 +72,8 @@ struct fd_entry {
 	fd_description_t *desc;
 	int fd_flags;
 	bool used;
+    bool task_local;
+    int task_fd;
     fs_mutex_t lock;
 };
 typedef struct fd_entry fd_entry_t;
@@ -156,6 +158,7 @@ enum synthetic_proc_file {
     SYNTHETIC_PROC_FILE_STAT,
     SYNTHETIC_PROC_FILE_STATM,
     SYNTHETIC_PROC_FILE_MAPS,
+    SYNTHETIC_PROC_FILE_SMAPS,
     SYNTHETIC_PROC_FILE_STATUS,
     SYNTHETIC_PROC_FILE_MOUNTINFO,
     SYNTHETIC_PROC_FILE_MOUNTS,

@@ -197,14 +197,33 @@ static void vfs_contract_cleanup_mount_paths(void) {
 }
 
 static void vfs_contract_cleanup_mount_namespace_paths(void) {
+    umount("/tmp/vfs-mntns-peer-a/child/grand");
+    umount("/tmp/vfs-mntns-peer-b/child/grand");
+    umount("/tmp/vfs-mntns-peer-a/child");
+    umount("/tmp/vfs-mntns-peer-b/child");
+    umount("/tmp/vfs-mntns-peer-a");
+    umount("/tmp/vfs-mntns-peer-b");
     umount("/tmp/vfs-mntns-target");
+    unlink_impl("/tmp/vfs-mntns-grandchild-source/file");
     unlink_impl("/tmp/vfs-mntns-parent-source/file");
     unlink_impl("/tmp/vfs-mntns-parent-source/newfile");
     unlink_impl("/tmp/vfs-mntns-child-source/file");
+    unlink_impl("/tmp/vfs-mntns-peer-a/child/grand/file");
+    unlink_impl("/tmp/vfs-mntns-peer-b/child/grand/file");
     unlink_impl("/tmp/vfs-mntns-target/file");
     unlink_impl("/tmp/vfs-mntns-target/newfile");
+    rmdir_impl("/tmp/vfs-mntns-parent-source/child/grand");
+    rmdir_impl("/tmp/vfs-mntns-parent-source/child");
+    rmdir_impl("/tmp/vfs-mntns-child-source/grand");
+    rmdir_impl("/tmp/vfs-mntns-peer-a/child/grand");
+    rmdir_impl("/tmp/vfs-mntns-peer-a/child");
+    rmdir_impl("/tmp/vfs-mntns-peer-b/child/grand");
+    rmdir_impl("/tmp/vfs-mntns-peer-b/child");
+    rmdir_impl("/tmp/vfs-mntns-peer-a");
+    rmdir_impl("/tmp/vfs-mntns-peer-b");
     rmdir_impl("/tmp/vfs-mntns-parent-source");
     rmdir_impl("/tmp/vfs-mntns-child-source");
+    rmdir_impl("/tmp/vfs-mntns-grandchild-source");
     rmdir_impl("/tmp/vfs-mntns-target");
 }
 
@@ -1349,6 +1368,141 @@ int vfs_contract_shared_mount_propagates_child_bind_to_peer(void) {
         goto out;
     }
     if (vfs_contract_read_file_exact("/tmp/vfs-mntns-peer-b/child/file", "propagated") != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+static int vfs_contract_mountinfo_shared_id_for_target(const char *content, const char *target, unsigned long long *id_out) {
+    const char *line = content;
+    size_t target_len;
+
+    if (!content || !target || !id_out) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    target_len = __builtin_strlen(target);
+    while (*line) {
+        const char *next = __builtin_strchr(line, '\n');
+        const char *end = next ? next : line + __builtin_strlen(line);
+        const char *scan = line;
+
+        while (scan < end) {
+            if ((size_t)(end - scan) >= target_len &&
+                __builtin_memcmp(scan, target, target_len) == 0 &&
+                (scan == line || scan[-1] == ' ') &&
+                (scan + target_len == end || scan[target_len] == ' ')) {
+                const char *shared = line;
+                while (shared < end) {
+                    static const char prefix[] = " shared:";
+                    if ((size_t)(end - shared) > sizeof(prefix) - 1 &&
+                        __builtin_memcmp(shared, prefix, sizeof(prefix) - 1) == 0) {
+                        unsigned long long id = 0;
+                        const char *digit = shared + sizeof(prefix) - 1;
+                        if (digit >= end || *digit < '0' || *digit > '9') {
+                            errno = EPROTO;
+                            return -1;
+                        }
+                        while (digit < end && *digit >= '0' && *digit <= '9') {
+                            id = (id * 10ULL) + (unsigned long long)(*digit - '0');
+                            digit++;
+                        }
+                        *id_out = id;
+                        return 0;
+                    }
+                    shared++;
+                }
+                errno = ENODATA;
+                return -1;
+            }
+            scan++;
+        }
+        if (!next) {
+            break;
+        }
+        line = next + 1;
+    }
+
+    errno = ENOENT;
+    return -1;
+}
+
+int vfs_contract_shared_mountinfo_uses_peer_group_ids(void) {
+    char content[4096];
+    unsigned long long peer_a = 0;
+    unsigned long long peer_b = 0;
+    unsigned long long child_a = 0;
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-a", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-b", 0700)) != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-a", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-b", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-peer-a/child", NULL, MS_BIND | MS_SHARED, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_proc_file("/proc/self/mountinfo", content, sizeof(content)) != 0 ||
+        vfs_contract_mountinfo_shared_id_for_target(content, "/tmp/vfs-mntns-peer-a", &peer_a) != 0 ||
+        vfs_contract_mountinfo_shared_id_for_target(content, "/tmp/vfs-mntns-peer-b", &peer_b) != 0 ||
+        vfs_contract_mountinfo_shared_id_for_target(content, "/tmp/vfs-mntns-peer-a/child", &child_a) != 0) {
+        goto out;
+    }
+    if (peer_a == 0 || peer_a != peer_b || child_a == peer_a) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_shared_mount_propagates_nested_child_bind_to_peer(void) {
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source/grand", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-grandchild-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-a", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-b", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-mntns-grandchild-source/file", "nested") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-a", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-b", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-peer-a/child", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-grandchild-source", "/tmp/vfs-mntns-peer-a/child/grand", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-peer-b/child/grand/file", "nested") != 0) {
         errno = ENODATA;
         goto out;
     }

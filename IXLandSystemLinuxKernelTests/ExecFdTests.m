@@ -92,7 +92,7 @@ extern int exec_fd_contract_close_on_exec_does_not_mutate_status_flags_on_surviv
 }
 
 - (void)testCloseOnExecDoesNotMutateStatusFlagsOnSurvivors {
-    XCTAssertEqual(exec_fd_contract_close_on_exec_does_not_mutate_status_flags_on_survivors(), 0);
+    XCTAssertEqual(exec_fd_contract_close_on_exec_does_not_mutate_status_flags_on_survivors(), 0, @"errno %d", errno);
 }
 
 @end

@@ -21,6 +21,8 @@
 #include "pty.h"
 #include "../kernel/task.h"
 
+static void retain_fd_description(struct fd_description *desc);
+static void release_fd_description(struct fd_description *desc);
 static struct file *copy_file_descriptor(struct file *file);
 
 struct files_struct *alloc_files(size_t max_fds) {
@@ -104,6 +106,7 @@ void free_file(struct file *file) {
     if (!file)
         return;
     if (atomic_fetch_sub(&file->refs, 1) == 1) {
+        release_fd_description((fd_description_t *)file->private_data);
         free(file);
     }
 }
@@ -134,6 +137,7 @@ static struct file *copy_file_descriptor(struct file *file) {
     copy->pos = file->pos;
     memcpy(copy->path, file->path, sizeof(copy->path));
     copy->private_data = file->private_data;
+    retain_fd_description((fd_description_t *)copy->private_data);
     return copy;
 }
 
@@ -358,6 +362,7 @@ typedef struct fd_description {
 static fd_entry_t fd_table[NR_OPEN_DEFAULT];
 static fs_mutex_t fd_table_lock = FS_MUTEX_INITIALIZER;
 static atomic_int fd_table_initialized = 0;
+static __thread fd_entry_t fd_task_local_entry;
 
 static bool fdtable_task_has_file(struct task_struct *task, int fd) {
     bool used;
@@ -394,9 +399,35 @@ static bool fdtable_any_task_uses_fd(int fd) {
     return used;
 }
 
+static void fdtable_update_file_offsets_for_desc(fd_description_t *desc, linux_off_t offset) {
+    if (!desc) {
+        return;
+    }
+
+    kernel_mutex_lock(&task_table_lock);
+    for (int i = 0; i < TASK_MAX_TASKS; i++) {
+        struct task_struct *task = task_table[i];
+        while (task) {
+            if (task->files) {
+                fs_mutex_lock(&task->files->lock);
+                for (size_t fd = 0; fd < task->files->max_fds; fd++) {
+                    struct file *file = task->files->fd[fd];
+                    if (file && (fd_description_t *)file->private_data == desc) {
+                        file->pos = offset;
+                    }
+                }
+                fs_mutex_unlock(&task->files->lock);
+            }
+            task = task->hash_next;
+        }
+    }
+    kernel_mutex_unlock(&task_table_lock);
+}
+
 static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
     struct task_struct *task = get_current();
     struct file *file;
+    fd_description_t *new_desc = entry ? entry->desc : NULL;
 
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
         return;
@@ -412,14 +443,18 @@ static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
         }
         task->files->fd[fd] = file;
     }
+    if ((fd_description_t *)file->private_data != new_desc) {
+        release_fd_description((fd_description_t *)file->private_data);
+        retain_fd_description(new_desc);
+        file->private_data = new_desc;
+    }
     file->fd = fd;
-    file->real_fd = entry && entry->desc ? entry->desc->fd : -1;
-    file->flags = entry && entry->desc ? (unsigned int)entry->desc->flags : 0;
+    file->real_fd = new_desc ? new_desc->fd : -1;
+    file->flags = new_desc ? (unsigned int)new_desc->flags : 0;
     file->fd_flags = entry ? (unsigned int)entry->fd_flags : 0;
-    file->pos = entry && entry->desc ? (linux_off_t)entry->desc->offset : 0;
-    file->private_data = entry ? entry->desc : NULL;
-    if (entry && entry->desc) {
-        strncpy(file->path, entry->desc->path, sizeof(file->path) - 1);
+    file->pos = new_desc ? (linux_off_t)new_desc->offset : 0;
+    if (new_desc) {
+        strncpy(file->path, new_desc->path, sizeof(file->path) - 1);
         file->path[sizeof(file->path) - 1] = '\0';
     } else {
         file->path[0] = '\0';
@@ -766,6 +801,15 @@ int alloc_fd_impl(void) {
     fs_mutex_lock(&fd_table_lock);
 
     for (int i = 3; i < NR_OPEN_DEFAULT; i++) {
+        if (fd_table[i].used && !fdtable_any_task_uses_fd(i)) {
+            fd_description_t *desc = fd_table[i].desc;
+            fd_table[i].desc = NULL;
+            fd_table[i].fd_flags = 0;
+            fd_table[i].used = false;
+            fs_mutex_unlock(&fd_table_lock);
+            release_fd_description(desc);
+            fs_mutex_lock(&fd_table_lock);
+        }
         if (!fd_table[i].used) {
             fd_table[i].used = true;
             fd_table[i].desc = NULL;
@@ -802,6 +846,8 @@ void free_fd_impl(int fd) {
 
 fd_entry_t *get_fd_entry_impl(int fd) {
     struct task_struct *task;
+    struct file *file;
+    fd_description_t *task_desc;
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
         errno = EBADF;
@@ -810,9 +856,28 @@ fd_entry_t *get_fd_entry_impl(int fd) {
 
     file_init_impl();
     task = get_current();
-    if (task && task->files && !fdtable_task_has_file(task, fd)) {
-        errno = EBADF;
-        return NULL;
+    if (task && task->files) {
+        fs_mutex_lock(&task->files->lock);
+        if ((size_t)fd >= task->files->max_fds || !task->files->fd[fd]) {
+            fs_mutex_unlock(&task->files->lock);
+            errno = EBADF;
+            return NULL;
+        }
+        file = task->files->fd[fd];
+        task_desc = (fd_description_t *)file->private_data;
+        if (!task_desc) {
+            fs_mutex_unlock(&task->files->lock);
+            errno = EBADF;
+            return NULL;
+        }
+        memset(&fd_task_local_entry, 0, sizeof(fd_task_local_entry));
+        fd_task_local_entry.desc = task_desc;
+        fd_task_local_entry.fd_flags = (int)file->fd_flags;
+        fd_task_local_entry.used = true;
+        fd_task_local_entry.task_local = true;
+        fd_task_local_entry.task_fd = fd;
+        fs_mutex_unlock(&task->files->lock);
+        return &fd_task_local_entry;
     }
 
     int ret = fs_mutex_lock(&fd_table_lock);
@@ -851,8 +916,12 @@ void put_fd_entry_impl(void *entry) {
     if (entry) {
         fd_entry_t *fd_entry = (fd_entry_t *)entry;
         fd_description_t *desc = fd_entry->desc;
-        fs_mutex_unlock(&fd_entry->lock);
-        release_fd_description(desc);
+        if (!fd_entry->task_local) {
+            fs_mutex_unlock(&fd_entry->lock);
+        }
+        if (!fd_entry->task_local) {
+            release_fd_description(desc);
+        }
     }
 }
 
@@ -912,16 +981,43 @@ void set_fd_flags_impl(fd_entry_t *entry, int flags) {
 void set_fd_descriptor_flags_impl(fd_entry_t *entry, int flags) {
     if (entry) {
         entry->fd_flags = flags;
+        if (entry->task_local) {
+            struct task_struct *task = get_current();
+            if (task && task->files && entry->task_fd >= 0 &&
+                (size_t)entry->task_fd < task->files->max_fds) {
+                fs_mutex_lock(&task->files->lock);
+                if (task->files->fd[entry->task_fd]) {
+                    task->files->fd[entry->task_fd]->fd_flags = (unsigned int)flags;
+                }
+                fs_mutex_unlock(&task->files->lock);
+            }
+        }
     }
 }
 
 off_t get_fd_offset_impl(fd_entry_t *entry) {
+    if (entry && entry->task_local) {
+        struct task_struct *task = get_current();
+        linux_off_t pos = -1;
+        if (task && task->files && entry->task_fd >= 0 &&
+            (size_t)entry->task_fd < task->files->max_fds) {
+            fs_mutex_lock(&task->files->lock);
+            if (task->files->fd[entry->task_fd]) {
+                pos = task->files->fd[entry->task_fd]->pos;
+            }
+            fs_mutex_unlock(&task->files->lock);
+        }
+        return pos;
+    }
     return (entry && entry->desc) ? entry->desc->offset : -1;
 }
 
 void set_fd_offset_impl(fd_entry_t *entry, off_t offset) {
     if (entry && entry->desc) {
         entry->desc->offset = offset;
+        if (entry->task_local) {
+            fdtable_update_file_offsets_for_desc(entry->desc, offset);
+        }
     }
 }
 
@@ -968,6 +1064,7 @@ void init_host_dirfd_entry_impl(int fd, int real_fd, linux_mode_t mode, const ch
 
 int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     int newfd;
+    struct task_struct *task;
     file_init_impl();
     fd_entry_t *old_entry;
     fd_description_t *desc;
@@ -975,6 +1072,55 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     if (minfd < 0 || minfd >= NR_OPEN_DEFAULT) {
         errno = EINVAL;
         return -1;
+    }
+
+    task = get_current();
+    if (task && task->files) {
+        struct file *old_file;
+        struct file *new_file;
+
+        if (oldfd < 0 || oldfd >= NR_OPEN_DEFAULT || (size_t)oldfd >= task->files->max_fds) {
+            errno = EBADF;
+            return -1;
+        }
+
+        fs_mutex_lock(&task->files->lock);
+        old_file = task->files->fd[oldfd];
+        if (!old_file || !old_file->private_data) {
+            fs_mutex_unlock(&task->files->lock);
+            errno = EBADF;
+            return -1;
+        }
+        newfd = -1;
+        for (int i = minfd; (size_t)i < task->files->max_fds; i++) {
+            if (!task->files->fd[i]) {
+                newfd = i;
+                break;
+            }
+        }
+        if (newfd < 0) {
+            fs_mutex_unlock(&task->files->lock);
+            errno = EMFILE;
+            return -1;
+        }
+        new_file = alloc_file();
+        if (!new_file) {
+            fs_mutex_unlock(&task->files->lock);
+            errno = ENOMEM;
+            return -1;
+        }
+        desc = (fd_description_t *)old_file->private_data;
+        retain_fd_description(desc);
+        new_file->fd = newfd;
+        new_file->real_fd = old_file->real_fd;
+        new_file->flags = old_file->flags;
+        new_file->fd_flags = cloexec ? FD_CLOEXEC : 0;
+        new_file->pos = (linux_off_t)desc->offset;
+        memcpy(new_file->path, old_file->path, sizeof(new_file->path));
+        new_file->private_data = desc;
+        task->files->fd[newfd] = new_file;
+        fs_mutex_unlock(&task->files->lock);
+        return newfd;
     }
 
     fs_mutex_lock(&fd_table_lock);
@@ -1012,12 +1158,52 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
 
 int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
     fd_description_t *old_desc;
+    struct task_struct *task;
     file_init_impl();
     fd_description_t *new_desc;
 
     if (newfd < 0 || newfd >= NR_OPEN_DEFAULT || oldfd < 0 || oldfd >= NR_OPEN_DEFAULT) {
         errno = EBADF;
         return -1;
+    }
+
+    task = get_current();
+    if (task && task->files) {
+        struct file *old_file;
+        struct file *new_file;
+        struct file *replaced_file = NULL;
+
+        if ((size_t)oldfd >= task->files->max_fds || (size_t)newfd >= task->files->max_fds) {
+            errno = EBADF;
+            return -1;
+        }
+        fs_mutex_lock(&task->files->lock);
+        old_file = task->files->fd[oldfd];
+        if (!old_file || !old_file->private_data) {
+            fs_mutex_unlock(&task->files->lock);
+            errno = EBADF;
+            return -1;
+        }
+        new_file = alloc_file();
+        if (!new_file) {
+            fs_mutex_unlock(&task->files->lock);
+            errno = ENOMEM;
+            return -1;
+        }
+        old_desc = (fd_description_t *)old_file->private_data;
+        retain_fd_description(old_desc);
+        new_file->fd = newfd;
+        new_file->real_fd = old_file->real_fd;
+        new_file->flags = old_file->flags;
+        new_file->fd_flags = cloexec ? FD_CLOEXEC : 0;
+        new_file->pos = (linux_off_t)old_desc->offset;
+        memcpy(new_file->path, old_file->path, sizeof(new_file->path));
+        new_file->private_data = old_desc;
+        replaced_file = task->files->fd[newfd];
+        task->files->fd[newfd] = new_file;
+        fs_mutex_unlock(&task->files->lock);
+        free_file(replaced_file);
+        return newfd;
     }
 
     fs_mutex_lock(&fd_table_lock);
@@ -1050,7 +1236,7 @@ int close_impl(int fd) {
         return -1;
     }
     task = get_current();
-    if (task && task->files && task != init_task) {
+    if (task && task->files) {
         if (free_fd(task->files, fd) != 0) {
             return -1;
         }
@@ -1072,8 +1258,31 @@ int close_on_exec_impl(void) {
     int fds_to_remove[NR_OPEN_DEFAULT];
     int release_count = 0;
     int closed = 0;
+    struct task_struct *task;
 
     file_init_impl();
+    task = get_current();
+    if (task && task->files) {
+        int closed_fds[NR_OPEN_DEFAULT];
+
+        fs_mutex_lock(&task->files->lock);
+        for (int fd = 0; fd < NR_OPEN_DEFAULT && (size_t)fd < task->files->max_fds; fd++) {
+            if (task->files->fd[fd] && (task->files->fd[fd]->fd_flags & FD_CLOEXEC)) {
+                struct file *file = task->files->fd[fd];
+                task->files->fd[fd] = NULL;
+                closed_fds[closed++] = fd;
+                free_file(file);
+            }
+        }
+        fs_mutex_unlock(&task->files->lock);
+        for (int i = 0; i < closed; i++) {
+            if (!fdtable_any_task_uses_fd(closed_fds[i])) {
+                free_fd_impl(closed_fds[i]);
+            }
+        }
+        return closed;
+    }
+
     fs_mutex_lock(&fd_table_lock);
     for (int fd = 0; fd < NR_OPEN_DEFAULT; fd++) {
         if (!fd_table[fd].used || (fd_table[fd].fd_flags & FD_CLOEXEC) == 0) {
@@ -1394,7 +1603,26 @@ int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, char *buf
 }
 
 void fdtable_sync_current_task_fd_impl(int fd) {
+    struct task_struct *task = get_current();
+    struct file *file;
+    fd_description_t *desc;
+
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
+        return;
+    }
+
+    if (task && task->files && (size_t)fd < task->files->max_fds) {
+        fs_mutex_lock(&task->files->lock);
+        file = task->files->fd[fd];
+        desc = file ? (fd_description_t *)file->private_data : NULL;
+        if (file && desc) {
+            file->real_fd = desc->fd;
+            file->flags = (unsigned int)desc->flags;
+            file->pos = (linux_off_t)desc->offset;
+            strncpy(file->path, desc->path, sizeof(file->path) - 1);
+            file->path[sizeof(file->path) - 1] = '\0';
+        }
+        fs_mutex_unlock(&task->files->lock);
         return;
     }
 

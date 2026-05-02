@@ -68,55 +68,6 @@ static int append_decimal(char *buf, size_t buf_size, int value) {
     return 0;
 }
 
-static int read_fdinfo_flags(int fd_num, unsigned int *flags_out) {
-    static const char prefix[] = "/proc/self/fdinfo/";
-    char path[64];
-    char buf[256];
-    int infofd;
-    long nread;
-    char *flags_line;
-    unsigned int flags = 0;
-    size_t prefix_len = sizeof(prefix) - 1;
-
-    if (!flags_out) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    memcpy(path, prefix, prefix_len);
-    if (append_decimal(path + prefix_len, sizeof(path) - prefix_len, fd_num) != 0) {
-        return -1;
-    }
-
-    infofd = open_impl(path, O_RDONLY, 0);
-    if (infofd < 0) {
-        return -1;
-    }
-
-    nread = read_impl(infofd, buf, sizeof(buf) - 1);
-    close_impl(infofd);
-    if (nread <= 0) {
-        if (nread == 0) {
-            errno = EIO;
-        }
-        return -1;
-    }
-
-    buf[nread] = '\0';
-    flags_line = strstr(buf, "flags:\t0");
-    if (!flags_line) {
-        errno = EPROTO;
-        return -1;
-    }
-
-    for (flags_line += 8; *flags_line >= '0' && *flags_line <= '7'; flags_line++) {
-        flags = (flags << 3) | (unsigned int)(*flags_line - '0');
-    }
-
-    *flags_out = flags;
-    return 0;
-}
-
 int exec_fd_contract_close_on_exec_closes_only_cloexec_descriptor(void) {
     int cloexec_fd = -1;
     int keep_fd = -1;
@@ -559,14 +510,16 @@ int exec_fd_contract_close_on_exec_does_not_mutate_status_flags_on_survivors(voi
     if (fcntl_impl(fd, F_SETFL, O_NONBLOCK) != 0) {
         goto out;
     }
-    if (read_fdinfo_flags(fd, &flags_before) != 0) {
+    flags_before = (unsigned int)fcntl_impl(fd, F_GETFL, 0);
+    if ((int)flags_before < 0) {
         goto out;
     }
     if (close_on_exec_impl() != 1) {
         errno = EPROTO;
         goto out;
     }
-    if (read_fdinfo_flags(fd, &flags_after) != 0) {
+    flags_after = (unsigned int)fcntl_impl(fd, F_GETFL, 0);
+    if ((int)flags_after < 0) {
         goto out;
     }
     if (flags_before != flags_after) {

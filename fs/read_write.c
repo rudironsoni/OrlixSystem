@@ -118,6 +118,9 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         case SYNTHETIC_PROC_FILE_MAPS:
             content_len = vfs_proc_task_maps_content(target_pid, content, sizeof(content));
             break;
+        case SYNTHETIC_PROC_FILE_SMAPS:
+            content_len = vfs_proc_task_smaps_content(target_pid, content, sizeof(content));
+            break;
         case SYNTHETIC_PROC_FILE_STATUS:
             content_len = vfs_proc_task_status_content(target_pid, content, sizeof(content));
             break;
@@ -333,6 +336,8 @@ static int synthetic_proc_file_content(synthetic_proc_file_t proc_file, int fd_n
         return vfs_proc_task_statm_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_MAPS:
         return vfs_proc_task_maps_content(target_pid, content, content_size);
+    case SYNTHETIC_PROC_FILE_SMAPS:
+        return vfs_proc_task_smaps_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_STATUS:
         return vfs_proc_task_status_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_MOUNTINFO:
@@ -397,22 +402,26 @@ ssize_t pread_impl(int fd, void *buf, size_t count, linux_off_t offset) {
         synthetic_proc_file_t proc_file = get_fd_synthetic_proc_file_impl(entry);
         int fd_num = get_fd_proc_file_fd_num_impl(entry);
         int target_pid = get_fd_proc_file_target_pid_impl(entry);
+        linux_off_t saved_offset = get_fd_offset_impl(entry);
         char content[8192];
         int content_len = synthetic_proc_file_content(proc_file, fd_num, target_pid, content, sizeof(content));
 
         if (content_len < 0) {
+            set_fd_offset_impl((fd_entry_t *)entry, saved_offset);
             put_fd_entry_impl(entry);
             errno = -content_len;
             return -1;
         }
 
         if (offset < 0) {
+            set_fd_offset_impl((fd_entry_t *)entry, saved_offset);
             put_fd_entry_impl(entry);
             errno = EINVAL;
             return -1;
         }
 
         if ((linux_off_t)offset >= content_len) {
+            set_fd_offset_impl((fd_entry_t *)entry, saved_offset);
             put_fd_entry_impl(entry);
             return 0;
         }
@@ -420,6 +429,7 @@ ssize_t pread_impl(int fd, void *buf, size_t count, linux_off_t offset) {
         size_t available = (size_t)content_len - (size_t)offset;
         size_t to_copy = (count < available) ? count : available;
         memcpy(buf, content + offset, to_copy);
+        set_fd_offset_impl((fd_entry_t *)entry, saved_offset);
         put_fd_entry_impl(entry);
         return (ssize_t)to_copy;
     }

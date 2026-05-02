@@ -58,6 +58,8 @@ struct vfs_mount_entry {
     char fstype[32];
     unsigned long flags;
     unsigned long propagation;
+    uint64_t peer_group_id;
+    uint64_t master_group_id;
 };
 
 struct vfs_mount_namespace {
@@ -83,6 +85,7 @@ static struct vfs_metadata_entry vfs_metadata_table[VFS_METADATA_MAX];
 static fs_mutex_t vfs_metadata_lock = FS_MUTEX_INITIALIZER;
 static linux_atomic_int vfs_next_mount_ns_id = 1;
 static linux_atomic_int vfs_next_file_identity = 1;
+static linux_atomic_int vfs_next_mount_peer_group_id = 1;
 
 static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
     struct vfs_mount_namespace *mnt_ns = calloc(1, sizeof(struct vfs_mount_namespace));
@@ -184,7 +187,53 @@ static int vfs_mount_copy_entry(struct vfs_mount_entry *entry, const char *sourc
     }
     entry->flags = flags;
     entry->propagation = propagation;
+    entry->peer_group_id = 0;
+    entry->master_group_id = 0;
     return 0;
+}
+
+static uint64_t vfs_mount_next_peer_group_id(void) {
+    return (uint64_t)atomic_fetch_add(&vfs_next_mount_peer_group_id, 1);
+}
+
+static uint64_t vfs_mount_existing_peer_group_locked(struct vfs_mount_namespace *mnt_ns,
+                                                     const struct vfs_mount_entry *entry) {
+    if (!mnt_ns || !entry) {
+        return 0;
+    }
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        const struct vfs_mount_entry *peer = &mnt_ns->entries[i];
+        if (peer == entry || !peer->active || peer->propagation != MS_SHARED ||
+            peer->peer_group_id == 0 || strcmp(peer->source, entry->source) != 0) {
+            continue;
+        }
+        return peer->peer_group_id;
+    }
+    return 0;
+}
+
+static void vfs_mount_assign_propagation_ids_locked(struct vfs_mount_namespace *mnt_ns,
+                                                    struct vfs_mount_entry *entry) {
+    if (!mnt_ns || !entry) {
+        return;
+    }
+    if (entry->propagation == MS_SHARED) {
+        if (entry->peer_group_id == 0) {
+            entry->peer_group_id = vfs_mount_existing_peer_group_locked(mnt_ns, entry);
+            if (entry->peer_group_id == 0) {
+                entry->peer_group_id = vfs_mount_next_peer_group_id();
+            }
+        }
+        entry->master_group_id = 0;
+        return;
+    }
+    if (entry->propagation == MS_SLAVE) {
+        entry->master_group_id = entry->master_group_id ? entry->master_group_id : mnt_ns->ns_id;
+        entry->peer_group_id = 0;
+        return;
+    }
+    entry->peer_group_id = 0;
+    entry->master_group_id = 0;
 }
 
 static int vfs_mount_find_free_slot_locked(struct vfs_mount_namespace *mnt_ns) {
@@ -265,6 +314,9 @@ static int vfs_mount_propagate_shared_child_locked(struct vfs_mount_namespace *m
         if (ret != 0) {
             return ret;
         }
+        mnt_ns->entries[slot].peer_group_id = mounted->peer_group_id;
+        mnt_ns->entries[slot].master_group_id = mounted->master_group_id;
+        vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[slot]);
     }
     return 0;
 }
@@ -1440,6 +1492,7 @@ void vfs_deinit(void) {
     /* Reset VFS initialization state for cold boot/reboot */
     vfs_backing_initialized = 0;
     vfs_etc_bootstrapped = 0;
+    atomic_store(&vfs_next_mount_peer_group_id, 1);
     fs_mutex_lock(&vfs_metadata_lock);
     memset(vfs_metadata_table, 0, sizeof(vfs_metadata_table));
     fs_mutex_unlock(&vfs_metadata_lock);
@@ -1504,6 +1557,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
                 mnt_ns->entries[i].flags = (mnt_ns->entries[i].flags & ~MS_RDONLY) | (flags & MS_RDONLY) | MS_BIND;
                 if (propagation != 0) {
                     mnt_ns->entries[i].propagation = propagation;
+                    vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[i]);
                 }
                 fs_mutex_unlock(&mnt_ns->lock);
                 return 0;
@@ -1559,6 +1613,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         fs_mutex_unlock(&mnt_ns->lock);
         return ret;
     }
+    vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[slot]);
     ret = vfs_mount_propagate_shared_child_locked(mnt_ns, slot);
     if (ret != 0) {
         memset(&mnt_ns->entries[slot], 0, sizeof(mnt_ns->entries[slot]));
@@ -2426,6 +2481,9 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
     if (strcmp(suffix, "/maps") == 0) {
         return PROC_SELF_MAPS_FILE;
     }
+    if (strcmp(suffix, "/smaps") == 0) {
+        return PROC_SELF_SMAPS_FILE;
+    }
     if (strcmp(suffix, "/status") == 0) {
         return PROC_SELF_STATUS_FILE;
     }
@@ -3121,6 +3179,92 @@ int vfs_proc_self_maps_content(char *buf, size_t buf_len) {
     return vfs_proc_task_maps_content(task ? task->pid : -1, buf, buf_len);
 }
 
+static uint64_t vfs_vma_dirty_page_count(const struct task_vma *vma) {
+    uint64_t dirty = 0;
+
+    if (!vma || !vma->dirty_pages) {
+        return 0;
+    }
+    for (uint64_t page = 0; page < vma->page_count; page++) {
+        if (vma->dirty_pages[page]) {
+            dirty++;
+        }
+    }
+    return dirty;
+}
+
+static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
+    size_t pos = 0;
+
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+    if (!task || !task->mm) {
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < task->mm->vma_count; i++) {
+        const struct task_vma *vma = &task->mm->vmas[i];
+        char perms[5];
+        char path[MAX_PATH];
+        uint64_t size_kb = vma->page_count * 4ULL;
+        uint64_t dirty_kb = vfs_vma_dirty_page_count(vma) * 4ULL;
+        uint64_t shared_clean_kb = vma->shared ? (size_kb > dirty_kb ? size_kb - dirty_kb : 0) : 0;
+        uint64_t private_clean_kb = vma->shared ? 0 : (size_kb > dirty_kb ? size_kb - dirty_kb : 0);
+        uint64_t shared_dirty_kb = vma->shared ? dirty_kb : 0;
+        uint64_t private_dirty_kb = vma->shared ? 0 : dirty_kb;
+
+        vfs_maps_permissions(task_vma_page_flags_impl(vma, vma->start), vma->shared, perms);
+        if (vfs_maps_path_for_vma(vma, path, sizeof(path)) != 0 || path[0] == '\0') {
+            const char *kind = vfs_maps_kind_name(vma);
+            size_t kind_len = strlen(kind);
+            if (kind_len >= sizeof(path)) {
+                kind_len = sizeof(path) - 1;
+            }
+            memcpy(path, kind, kind_len);
+            path[kind_len] = '\0';
+        }
+
+        if (vfs_proc_append(buf, buf_len, &pos,
+                            "%012llx-%012llx %s %08llx 00:00 0%s%s\n",
+                            (unsigned long long)vma->start,
+                            (unsigned long long)vma->end,
+                            perms,
+                            (unsigned long long)vma->backing_offset,
+                            path[0] ? " " : "",
+                            path) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Size:           %8llu kB\n", (unsigned long long)size_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "KernelPageSize: %8llu kB\n", 4ULL) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "MMUPageSize:    %8llu kB\n", 4ULL) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Rss:            %8llu kB\n", (unsigned long long)size_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Pss:            %8llu kB\n", (unsigned long long)size_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Shared_Clean:   %8llu kB\n", (unsigned long long)shared_clean_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Shared_Dirty:   %8llu kB\n", (unsigned long long)shared_dirty_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Private_Clean:  %8llu kB\n", (unsigned long long)private_clean_kb) != 0 ||
+            vfs_proc_append(buf, buf_len, &pos, "Private_Dirty:  %8llu kB\n", (unsigned long long)private_dirty_kb) != 0) {
+            return (int)pos;
+        }
+    }
+    return (int)pos;
+}
+
+int vfs_proc_task_smaps_content(int32_t pid, char *buf, size_t buf_len) {
+    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    int ret;
+
+    if (!task) {
+        return -ESRCH;
+    }
+    ret = vfs_proc_task_smaps_content_for_task(task, buf, buf_len);
+    vfs_put_proc_task(task);
+    return ret;
+}
+
+int vfs_proc_self_smaps_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_smaps_content(task ? task->pid : -1, buf, buf_len);
+}
+
 int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len) {
     struct task_struct *task = get_current();
     return vfs_proc_task_fdinfo_content(task ? task->pid : -1, fd_num, buf, buf_len);
@@ -3230,11 +3374,11 @@ static int vfs_proc_append_mount_optional_fields(struct vfs_mount_namespace *mnt
     }
     if (entry->propagation == MS_SHARED) {
         return vfs_proc_append(buf, buf_len, pos, " shared:%llu",
-                               (unsigned long long)mnt_ns->ns_id);
+                               (unsigned long long)entry->peer_group_id);
     }
     if (entry->propagation == MS_SLAVE) {
         return vfs_proc_append(buf, buf_len, pos, " master:%llu",
-                               (unsigned long long)mnt_ns->ns_id);
+                               (unsigned long long)entry->master_group_id);
     }
     if (entry->propagation == MS_UNBINDABLE) {
         return vfs_proc_append(buf, buf_len, pos, " unbindable");
@@ -3727,7 +3871,7 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
         } else if (proc_class == PROC_SELF_CMDLINE_FILE || proc_class == PROC_SELF_ENVIRON_FILE ||
                    proc_class == PROC_SELF_COMM_FILE ||
                    proc_class == PROC_SELF_STAT_FILE || proc_class == PROC_SELF_STATM_FILE ||
-                   proc_class == PROC_SELF_MAPS_FILE ||
+                   proc_class == PROC_SELF_MAPS_FILE || proc_class == PROC_SELF_SMAPS_FILE ||
                    proc_class == PROC_SELF_STATUS_FILE || proc_class == PROC_SELF_MOUNTINFO_FILE ||
                    proc_class == PROC_SELF_MOUNTS_FILE || proc_class == PROC_ROOT_FILESYSTEMS_FILE ||
                    proc_class == PROC_ROOT_MEMINFO_FILE || proc_class == PROC_ROOT_CPUINFO_FILE) {

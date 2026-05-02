@@ -23,6 +23,7 @@ extern int fcntl_contract_setfl_does_not_set_close_on_exec(void);
 extern int fcntl_contract_setfl_append_affects_duplicated_fd_status(void);
 extern int fcntl_contract_proc_self_fdinfo_reflects_close_on_exec_per_descriptor(void);
 extern int fcntl_contract_proc_self_fdinfo_reflects_nonblock_after_setfl(void);
+extern int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void);
 
 @interface FcntlTests : XCTestCase
 @end
@@ -118,11 +119,15 @@ extern int fcntl_contract_proc_self_fdinfo_reflects_nonblock_after_setfl(void);
 }
 
 - (void)testProcSelfFdinfoReflectsCloseOnExecPerDescriptor {
-    XCTAssertEqual(fcntl_contract_proc_self_fdinfo_reflects_close_on_exec_per_descriptor(), 0);
+    XCTAssertEqual(fcntl_contract_proc_self_fdinfo_reflects_close_on_exec_per_descriptor(), 0, @"errno %d", errno);
 }
 
 - (void)testProcSelfFdinfoReflectsNonblockAfterSetfl {
-    XCTAssertEqual(fcntl_contract_proc_self_fdinfo_reflects_nonblock_after_setfl(), 0);
+    XCTAssertEqual(fcntl_contract_proc_self_fdinfo_reflects_nonblock_after_setfl(), 0, @"errno %d", errno);
+}
+
+- (void)testChildDup2DoesNotReplaceParentDescriptor {
+    XCTAssertEqual(fcntl_contract_child_dup2_does_not_replace_parent_descriptor(), 0, @"errno %d", errno);
 }
 
 @end

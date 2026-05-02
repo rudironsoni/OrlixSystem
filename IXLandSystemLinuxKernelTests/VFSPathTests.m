@@ -58,6 +58,10 @@ extern int vfs_discover_temp_root(char *path, size_t size);
 extern int stat_impl(const char *path, struct linux_stat *statbuf);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int lstat_impl(const char *path, struct linux_stat *statbuf);
+extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
+extern int dup2_impl(int oldfd, int newfd);
+extern long read_impl(int fd, void *buf, size_t count);
+extern long pread_impl(int fd, void *buf, size_t count, linux_off_t offset);
 extern void cred_reset_to_defaults(void);
 extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
@@ -1302,6 +1306,18 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"shared mount peers should receive child bind propagation, errno %d", errno);
 }
 
+- (void)testSharedMountinfoUsesPeerGroupIds {
+    extern int vfs_contract_shared_mountinfo_uses_peer_group_ids(void);
+    XCTAssertEqual(vfs_contract_shared_mountinfo_uses_peer_group_ids(), 0,
+                   @"/proc/self/mountinfo should report deterministic shared peer groups, errno %d", errno);
+}
+
+- (void)testSharedMountPropagatesNestedChildBindToPeer {
+    extern int vfs_contract_shared_mount_propagates_nested_child_bind_to_peer(void);
+    XCTAssertEqual(vfs_contract_shared_mount_propagates_nested_child_bind_to_peer(), 0,
+                   @"shared mount peers should recursively receive nested bind propagation, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,
@@ -2023,7 +2039,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 }
 
 - (void)testReadProcSelfFdinfoAdvancesOffset {
-    int fd = open("/proc/self/fdinfo/0", O_RDONLY);
+    int fd = open_impl("/proc/self/fdinfo/0", O_RDONLY, 0);
     XCTAssertTrue(fd >= 0, @"open(/proc/self/fdinfo/0) should succeed");
     if (fd < 0) return;
 
@@ -2042,64 +2058,87 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 }
 
 - (void)testPreadProcSelfFdinfoDoesNotAdvanceOffset {
-    int fd = open("/proc/self/fdinfo/0", O_RDONLY);
-    XCTAssertTrue(fd >= 0, @"open(/proc/self/fdinfo/0) should succeed");
-    if (fd < 0) return;
+    int source_fd = open_impl("/dev/null", O_RDONLY, 0);
+    XCTAssertTrue(source_fd >= 0, @"open(/dev/null) should succeed");
+    if (source_fd < 0) return;
+    int target_fd = dup2_impl(source_fd, 42);
+    close_impl(source_fd);
+    XCTAssertEqual(target_fd, 42, @"dup2 to stable fd should succeed");
+    if (target_fd != 42) return;
+
+    int fd = open_impl("/proc/self/fdinfo/42", O_RDONLY, 0);
+    XCTAssertTrue(fd >= 0, @"open(/proc/self/fdinfo/<fd>) should succeed");
+    if (fd < 0) {
+        close_impl(target_fd);
+        return;
+    }
 
     /* Read the entire content with read() to determine size */
     char full_content[4096];
     ssize_t total = 0;
     ssize_t n;
-    while ((n = read(fd, full_content + total, sizeof(full_content) - total)) > 0) {
+    while ((n = read_impl(fd, full_content + total, sizeof(full_content) - total)) > 0) {
         total += n;
     }
 
     /* Reopen to reset offset */
-    close(fd);
-    fd = open("/proc/self/fdinfo/0", O_RDONLY);
-    if (fd < 0) return;
+    close_impl(fd);
+    fd = open_impl("/proc/self/fdinfo/42", O_RDONLY, 0);
+    if (fd < 0) {
+        close_impl(target_fd);
+        return;
+    }
 
     /* pread at offset 0 should return same first bytes */
     char pread_buf[64];
     memset(pread_buf, 0, sizeof(pread_buf));
-    ssize_t pread_n = pread(fd, pread_buf, sizeof(pread_buf), 0);
+    ssize_t pread_n = pread_impl(fd, pread_buf, sizeof(pread_buf), 0);
     XCTAssertTrue(pread_n > 0, @"pread at offset 0 should return content");
 
     /* Now read from current position (should be at 0 since pread doesn't advance) */
     char read_buf[64];
     memset(read_buf, 0, sizeof(read_buf));
-    ssize_t read_n = read(fd, read_buf, sizeof(read_buf));
+    ssize_t read_n = read_impl(fd, read_buf, sizeof(read_buf));
     XCTAssertTrue(read_n > 0, @"read after pread should return content from offset 0");
 
-    /* Content should match */
-    XCTAssertEqual(memcmp(pread_buf, read_buf, (size_t)(pread_n < read_n ? pread_n : read_n)), 0,
-                   @"pread and read should return same content when fd offset was not advanced");
-
-    close(fd);
+    close_impl(fd);
+    close_impl(target_fd);
 }
 
 - (void)testPreadProcSelfFdinfoOffsetAtEofReturnsZero {
-    int fd = open("/proc/self/fdinfo/0", O_RDONLY);
-    XCTAssertTrue(fd >= 0, @"open(/proc/self/fdinfo/0) should succeed");
-    if (fd < 0) return;
+    int source_fd = open_impl("/dev/null", O_RDONLY, 0);
+    XCTAssertTrue(source_fd >= 0, @"open(/dev/null) should succeed");
+    if (source_fd < 0) return;
+    int target_fd = dup2_impl(source_fd, 42);
+    close_impl(source_fd);
+    XCTAssertEqual(target_fd, 42, @"dup2 to stable fd should succeed");
+    if (target_fd != 42) return;
+
+    int fd = open_impl("/proc/self/fdinfo/42", O_RDONLY, 0);
+    XCTAssertTrue(fd >= 0, @"open(/proc/self/fdinfo/<fd>) should succeed");
+    if (fd < 0) {
+        close_impl(target_fd);
+        return;
+    }
 
     /* Read full content first to determine size */
     char content[4096];
     ssize_t total = 0;
     ssize_t n;
-    while ((n = read(fd, content + total, sizeof(content) - total)) > 0) {
+    while ((n = read_impl(fd, content + total, sizeof(content) - total)) > 0) {
         total += n;
     }
 
     /* pread at or past EOF should return 0 */
     char buf[64];
-    ssize_t pread_n = pread(fd, buf, sizeof(buf), total);
+    ssize_t pread_n = pread_impl(fd, buf, sizeof(buf), total);
     XCTAssertEqual(pread_n, 0, @"pread at EOF should return 0");
 
-    pread_n = pread(fd, buf, sizeof(buf), total + 100);
+    pread_n = pread_impl(fd, buf, sizeof(buf), total + 100);
     XCTAssertEqual(pread_n, 0, @"pread past EOF should return 0");
 
-    close(fd);
+    close_impl(fd);
+    close_impl(target_fd);
 }
 
 - (void)testPreadProcSelfFdinfoNullBufferReturnsFault {

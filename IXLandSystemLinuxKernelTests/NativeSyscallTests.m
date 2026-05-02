@@ -112,6 +112,10 @@
     XCTAssertEqual(native_syscall_contract_proc_vm_accounting_reports_mapped_pages(), 0, @"errno %d", errno);
 }
 
+- (void)testProcSelfSmapsReportsVmaAccounting {
+    XCTAssertEqual(native_syscall_contract_proc_self_smaps_reports_vma_accounting(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesProcessStartupSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
 }

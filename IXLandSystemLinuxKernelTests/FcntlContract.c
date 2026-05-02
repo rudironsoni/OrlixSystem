@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "fs/fdtable.h"
+#include "kernel/task.h"
 
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int dup_impl(int oldfd);
@@ -13,6 +14,7 @@ extern int dup2_impl(int oldfd, int newfd);
 extern int dup3_impl(int oldfd, int newfd, int flags);
 extern int fcntl_impl(int fd, int cmd, ...);
 extern long read_impl(int fd, void *buf, size_t count);
+extern long pread_impl(int fd, void *buf, size_t count, linux_off_t offset);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern linux_off_t lseek_impl(int fd, linux_off_t offset, int whence);
 
@@ -87,7 +89,7 @@ static int read_fdinfo_flags(int fd_num, unsigned int *flags_out) {
         return -1;
     }
 
-    nread = read_impl(infofd, buf, sizeof(buf) - 1);
+    nread = pread_impl(infofd, buf, sizeof(buf) - 1, 0);
     close_impl(infofd);
     if (nread <= 0) {
         if (nread == 0) {
@@ -693,11 +695,11 @@ int fcntl_contract_proc_self_fdinfo_reflects_close_on_exec_per_descriptor(void) 
     }
 
     if ((original_info_flags & O_CLOEXEC) != 0) {
-        errno = EPROTO;
+        errno = ERANGE;
         goto out;
     }
     if ((dup_info_flags & O_CLOEXEC) == 0) {
-        errno = EPROTO;
+        errno = ENODATA;
         goto out;
     }
 
@@ -740,15 +742,15 @@ int fcntl_contract_proc_self_fdinfo_reflects_nonblock_after_setfl(void) {
     }
 
     if ((original_info_flags & O_NONBLOCK) == 0 || (dup_info_flags & O_NONBLOCK) == 0) {
-        errno = EPROTO;
+        errno = ENODATA;
         goto out;
     }
     if ((original_info_flags & O_CLOEXEC) != 0) {
-        errno = EPROTO;
+        errno = ERANGE;
         goto out;
     }
     if ((dup_info_flags & O_CLOEXEC) == 0) {
-        errno = EPROTO;
+        errno = ENOMSG;
         goto out;
     }
 
@@ -757,5 +759,64 @@ int fcntl_contract_proc_self_fdinfo_reflects_nonblock_after_setfl(void) {
 out:
     close_if_open(dupfd);
     close_if_open(fd);
+    return result;
+}
+
+int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    int parent_fd = -1;
+    int child_source = -1;
+    int result = -1;
+    char byte = 0;
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    parent_fd = open_impl("/dev/zero", O_RDONLY, 0);
+    if (parent_fd < 0) {
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    child_source = open_impl("/dev/null", O_RDONLY, 0);
+    if (child_source < 0) {
+        set_current(saved);
+        goto out;
+    }
+    if (dup2_impl(child_source, parent_fd) != parent_fd) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    if (read_impl(parent_fd, &byte, 1) != 1 || byte != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    saved = get_current();
+    if (child) {
+        set_current(child);
+        close_if_open(child_source);
+        close_if_open(parent_fd);
+        set_current(saved);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    close_if_open(parent_fd);
     return result;
 }
