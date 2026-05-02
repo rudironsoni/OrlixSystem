@@ -1374,6 +1374,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         uint8_t *dirty_pages = calloc((size_t)new_pages, sizeof(*dirty_pages));
         void *new_image = NULL;
         struct vm_private_page **private_pages = NULL;
+        struct vm_shared_mapping **shared_pages = NULL;
 
         if (!page_flags || !dirty_pages) {
             free(page_flags);
@@ -1416,6 +1417,31 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                     return (void *)-1;
                 }
             }
+        } else if (vma->shared_pages && vma->backing_fd >= 0) {
+            shared_pages = calloc((size_t)new_pages, sizeof(*shared_pages));
+            if (!shared_pages) {
+                free(page_flags);
+                free(dirty_pages);
+                errno = ENOMEM;
+                return (void *)-1;
+            }
+            memcpy(shared_pages, vma->shared_pages, (size_t)old_pages * sizeof(*shared_pages));
+            for (uint64_t i = old_pages; i < new_pages; i++) {
+                uint64_t page_offset = vma->backing_offset + i * TASK_VMA_PAGE_SIZE;
+                struct vm_shared_mapping **page =
+                    mm_shared_pages_get_or_create(vma->backing_fd, page_offset, 1);
+                if (!page) {
+                    for (uint64_t j = old_pages; j < i; j++) {
+                        mm_shared_mapping_put(shared_pages[j]);
+                    }
+                    free(shared_pages);
+                    free(page_flags);
+                    free(dirty_pages);
+                    return (void *)-1;
+                }
+                shared_pages[i] = page[0];
+                free(page);
+            }
         } else {
             free(page_flags);
             free(dirty_pages);
@@ -1429,6 +1455,10 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         if (private_pages) {
             free(vma->private_pages);
             vma->private_pages = private_pages;
+        } else if (shared_pages) {
+            free(vma->shared_pages);
+            vma->shared_pages = shared_pages;
+            vma->image = shared_pages[0] ? shared_pages[0]->image : NULL;
         } else {
             free(vma->image);
             vma->image = new_image;

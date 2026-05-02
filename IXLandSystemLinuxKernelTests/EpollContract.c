@@ -1,4 +1,5 @@
 #include <asm/ioctls.h>
+#include <asm/unistd.h>
 #include <linux/eventpoll.h>
 #include <linux/fcntl.h>
 #include <linux/poll.h>
@@ -17,6 +18,7 @@
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
+#include "runtime/syscall.h"
 
 extern int ixland_test_ioctl(int fd, unsigned long request, ...);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
@@ -452,4 +454,47 @@ int epoll_contract_fdinfo_reports_flags(void) {
 out:
     close_if_open(epfd);
     return ret;
+}
+
+int epoll_contract_syscall_surface_wait_pipe_readable(void) {
+    int fds[2] = {-1, -1};
+    int epfd = -1;
+    struct epoll_event event;
+    long ret;
+    int result = -1;
+
+    if (pipe_impl(fds) != 0) {
+        return errno;
+    }
+    epfd = (int)syscall_dispatch_impl(__NR_epoll_create1, 0, 0, 0, 0, 0, 0);
+    if (epfd < 0) {
+        result = -epfd;
+        goto out;
+    }
+    memset(&event, 0, sizeof(event));
+    event.events = EPOLLIN;
+    event.data = 0x5a;
+    ret = syscall_dispatch_impl(__NR_epoll_ctl, epfd, EPOLL_CTL_ADD, fds[0],
+                                (long)(uintptr_t)&event, 0, 0);
+    if (ret != 0) {
+        result = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    if (write_impl(fds[1], "e", 1) != 1) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    memset(&event, 0, sizeof(event));
+    ret = syscall_dispatch_impl(__NR_epoll_pwait, epfd, (long)(uintptr_t)&event, 1, 0, 0, 0);
+    if (ret != 1 || (event.events & EPOLLIN) == 0 || event.data != 0x5a) {
+        result = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    close_if_open(epfd);
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return result;
 }

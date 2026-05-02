@@ -16,5 +16,6 @@ int readiness_contract_select_pipe_write_reports_writable(void);
 int readiness_contract_select_timeout_returns_zero(void);
 int readiness_contract_select_signal_interrupt_returns_intr(void);
 int readiness_contract_select_pty_read_wakes_on_peer_write(void);
+int readiness_contract_pselect6_pipe_uses_shared_readiness_engine(void);
 
 #endif

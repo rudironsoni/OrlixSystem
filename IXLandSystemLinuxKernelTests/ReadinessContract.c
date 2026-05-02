@@ -1,6 +1,8 @@
 #include <asm/ioctls.h>
+#include <asm/unistd.h>
 #include <linux/fcntl.h>
 #include <linux/poll.h>
+#include <linux/time_types.h>
 
 #ifdef SIGUSR1
 #undef SIGUSR1
@@ -19,6 +21,7 @@
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
+#include "runtime/syscall.h"
 
 extern int ixland_test_ioctl(int fd, unsigned long request, ...);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
@@ -440,4 +443,35 @@ out:
 
 int readiness_contract_select_pty_read_wakes_on_peer_write(void) {
     return run_pty_wake_case(1, 1);
+}
+
+int readiness_contract_pselect6_pipe_uses_shared_readiness_engine(void) {
+    int fds[2] = {-1, -1};
+    fd_set readfds;
+    struct __kernel_timespec timeout;
+    long ret;
+    int result = -1;
+
+    if (pipe_impl(fds) != 0) {
+        return errno;
+    }
+    if (write_impl(fds[1], "p", 1) != 1) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    FD_ZERO(&readfds);
+    FD_SET(fds[0], &readfds);
+    memset(&timeout, 0, sizeof(timeout));
+    ret = syscall_dispatch_impl(__NR_pselect6, fds[0] + 1, (long)(uintptr_t)&readfds,
+                                0, 0, (long)(uintptr_t)&timeout, 0);
+    if (ret != 1 || !FD_ISSET(fds[0], &readfds)) {
+        result = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    result = 0;
+
+out:
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return result;
 }

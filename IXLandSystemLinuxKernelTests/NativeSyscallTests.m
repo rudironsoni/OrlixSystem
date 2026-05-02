@@ -56,6 +56,10 @@
     XCTAssertEqual(native_syscall_contract_maps_shared_file_and_syncs(), 0, @"errno %d", errno);
 }
 
+- (void)testMremapExtendsSharedMappingWriteback {
+    XCTAssertEqual(native_syscall_contract_mremap_extends_shared_mapping_writeback(), 0, @"errno %d", errno);
+}
+
 - (void)testMsyncPreservesCleanSharedPages {
     XCTAssertEqual(native_syscall_contract_msync_preserves_clean_shared_pages(), 0, @"errno %d", errno);
 }
@@ -114,6 +118,10 @@
 
 - (void)testRtSigreturnRestoresFrameContextRecord {
     XCTAssertEqual(signal_syscall_contract_rt_sigreturn_restores_frame_context_record(), 0, @"errno %d", errno);
+}
+
+- (void)testSignalFrameContainsLinuxUcontext {
+    XCTAssertEqual(signal_syscall_contract_frame_contains_linux_ucontext(), 0, @"errno %d", errno);
 }
 
 - (void)testRegistersNativeArtifactDescriptor {

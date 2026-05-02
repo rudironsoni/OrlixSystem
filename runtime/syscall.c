@@ -166,9 +166,12 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/poll.h>
+#include <sys/select.h>
+#include <sys/time.h>
 #include <time.h>
 
 #include "../fs/fdtable.h"
+#include "../fs/eventpoll.h"
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
@@ -322,6 +325,60 @@ static int ppoll_timeout_ms(const struct __kernel_timespec *timeout) {
     return (int)ms;
 }
 
+struct syscall_sigmask_arg {
+    const uint64_t *ss;
+    size_t ss_len;
+};
+
+static int syscall_timespec_to_timeval(const struct __kernel_timespec *timeout, struct timeval *timeval) {
+    if (!timeout || !timeval) {
+        return 0;
+    }
+    if (timeout->tv_sec < 0 || timeout->tv_nsec < 0 || timeout->tv_nsec >= 1000000000L) {
+        errno = EINVAL;
+        return -1;
+    }
+    timeval->tv_sec = timeout->tv_sec;
+    timeval->tv_usec = (int)((timeout->tv_nsec + 999L) / 1000L);
+    if (timeval->tv_usec >= 1000000L) {
+        timeval->tv_sec++;
+        timeval->tv_usec -= 1000000L;
+    }
+    return 0;
+}
+
+static int syscall_apply_temporary_sigmask(const struct syscall_sigmask_arg *arg,
+                                           struct signal_mask_bits *old_mask,
+                                           int *changed) {
+    struct signal_mask_bits new_mask;
+
+    *changed = 0;
+    if (!arg) {
+        return 0;
+    }
+    if (!arg->ss) {
+        return 0;
+    }
+    if (arg->ss_len != sizeof(uint64_t)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (syscall_copy_sigset_to_mask(arg->ss, arg->ss_len, &new_mask) != 0) {
+        return -1;
+    }
+    if (do_sigsetmask(&new_mask, old_mask) != 0) {
+        return -1;
+    }
+    *changed = 1;
+    return 0;
+}
+
+static void syscall_restore_sigmask(const struct signal_mask_bits *old_mask, int changed) {
+    if (changed) {
+        do_sigsetmask(old_mask, NULL);
+    }
+}
+
 long syscall_dispatch_impl(long number,
                            long arg0,
                            long arg1,
@@ -329,9 +386,6 @@ long syscall_dispatch_impl(long number,
                            long arg3,
                            long arg4,
                            long arg5) {
-    (void)arg4;
-    (void)arg5;
-
     switch (number) {
     case __NR_read:
         return syscall_result((long)read_impl((int)arg0, (void *)(uintptr_t)arg1, (size_t)arg2));
@@ -481,6 +535,51 @@ long syscall_dispatch_impl(long number,
             return -(long)errno;
         }
         return syscall_result((long)poll_impl((struct pollfd *)(uintptr_t)arg0, (nfds_t)arg1, timeout_ms));
+    }
+    case __NR_pselect6: {
+        struct timeval timeout_value;
+        struct timeval *timeout_ptr = NULL;
+        const struct syscall_sigmask_arg *sigmask_arg = (const struct syscall_sigmask_arg *)(uintptr_t)arg5;
+        struct signal_mask_bits old_mask;
+        int mask_changed = 0;
+        int ret;
+
+        if (arg4) {
+            if (syscall_timespec_to_timeval((const struct __kernel_timespec *)(uintptr_t)arg4,
+                                            &timeout_value) != 0) {
+                return -(long)errno;
+            }
+            timeout_ptr = &timeout_value;
+        }
+        if (syscall_apply_temporary_sigmask(sigmask_arg, &old_mask, &mask_changed) != 0) {
+            return -(long)errno;
+        }
+        ret = select_impl((int)arg0, (fd_set *)(uintptr_t)arg1, (fd_set *)(uintptr_t)arg2,
+                          (fd_set *)(uintptr_t)arg3, timeout_ptr);
+        syscall_restore_sigmask(&old_mask, mask_changed);
+        return syscall_result((long)ret);
+    }
+    case __NR_epoll_create1:
+        return syscall_result((long)epoll_create1_impl((int)arg0));
+    case __NR_epoll_ctl:
+        return syscall_result((long)epoll_ctl_impl((int)arg0, (int)arg1, (int)arg2,
+                                                   (struct epoll_event *)(uintptr_t)arg3));
+    case __NR_epoll_pwait: {
+        const struct syscall_sigmask_arg sigmask_arg = {
+            .ss = (const uint64_t *)(uintptr_t)arg4,
+            .ss_len = (size_t)arg5,
+        };
+        struct signal_mask_bits old_mask;
+        int mask_changed = 0;
+        int ret;
+
+        if (syscall_apply_temporary_sigmask(arg4 ? &sigmask_arg : NULL, &old_mask, &mask_changed) != 0) {
+            return -(long)errno;
+        }
+        ret = epoll_pwait_impl((int)arg0, (struct epoll_event *)(uintptr_t)arg1,
+                               (int)arg2, (int)arg3);
+        syscall_restore_sigmask(&old_mask, mask_changed);
+        return syscall_result((long)ret);
     }
     case __NR_readlinkat:
         return syscall_result((long)readlinkat((int)arg0, (const char *)(uintptr_t)arg1,

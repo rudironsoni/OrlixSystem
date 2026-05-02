@@ -132,14 +132,37 @@
 #ifdef SIG_ERR
 #undef SIG_ERR
 #endif
+#include <linux/types.h>
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 #include <asm-generic/signal-defs.h>
+typedef struct {
+    unsigned long sig[1];
+} k_sigset_frame;
+typedef struct {
+    void *ss_sp;
+    int ss_flags;
+    size_t ss_size;
+} k_stack_frame;
+#ifdef __unused
+#undef __unused
+#endif
+#define sigset_t k_sigset_frame
+#define stack_t k_stack_frame
+#include <asm/sigcontext.h>
+#include <asm/ucontext.h>
+#undef stack_t
+#undef sigset_t
 
 #include "signal.h"
 #include "task.h"
 #include "wait_queue.h"
+
+enum {
+    frame_record_words = 12,
+    frame_ucontext_offset = 128,
+};
 
 struct signal_struct *alloc_signal_struct(void) {
     struct signal_struct *sig = calloc(1, sizeof(struct signal_struct));
@@ -495,6 +518,10 @@ int do_sigprocmask(int how, const struct signal_mask_bits *set,
 	return 0;
 }
 
+int do_sigsetmask(const struct signal_mask_bits *set, struct signal_mask_bits *oldset) {
+    return do_sigprocmask(SIG_SETMASK, set, oldset);
+}
+
 int do_sigpending(struct signal_mask_bits *set) {
     if (!set) {
         errno = EFAULT;
@@ -699,7 +726,9 @@ int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altsta
 int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t return_pc,
                               uint64_t current_sp, uint64_t *frame_sp_out) {
     uint64_t frame_sp;
-    uint64_t frame_record[12];
+    uint64_t frame_record[frame_record_words];
+    struct ucontext context;
+    size_t frame_size = frame_ucontext_offset + sizeof(context);
     const struct signal_action_slot *action;
 
     if (!task || !task->signal || !task->mm || sig < 1 || sig > KERNEL_SIG_NUM || !frame_sp_out) {
@@ -714,11 +743,13 @@ int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t re
         frame_sp &= ~15ULL;
         task->signal->altstack.ss_flags |= 1;
     }
-    if (frame_sp < 256) {
+    if (frame_sp < frame_size) {
         errno = EFAULT;
         return -1;
     }
-    frame_sp -= 256;
+    frame_sp -= frame_size;
+    frame_sp &= ~15ULL;
+    memset(frame_record, 0, sizeof(frame_record));
     frame_record[0] = (uint64_t)sig;
     frame_record[1] = return_pc;
     frame_record[2] = (uint64_t)(uintptr_t)action->handler;
@@ -730,9 +761,22 @@ int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t re
     frame_record[8] = current_sp;
     frame_record[9] = frame_sp;
     frame_record[10] = task->signal->blocked.sig[0];
-    frame_record[11] = sizeof(frame_record);
+    frame_record[11] = frame_size;
     if (task_write_virtual_memory_impl(task, frame_sp, frame_record, sizeof(frame_record)) !=
         (long)sizeof(frame_record)) {
+        return -1;
+    }
+    memset(&context, 0, sizeof(context));
+    context.uc_flags = 1;
+    context.uc_link = NULL;
+    context.uc_stack.ss_sp = task->signal->altstack.ss_sp;
+    context.uc_stack.ss_size = task->signal->altstack.ss_size;
+    context.uc_stack.ss_flags = task->signal->altstack.ss_flags;
+    context.uc_sigmask.sig[0] = task->signal->blocked.sig[0];
+    context.uc_mcontext.sp = current_sp;
+    context.uc_mcontext.pc = return_pc;
+    if (task_write_virtual_memory_impl(task, frame_sp + frame_ucontext_offset,
+                                       &context, sizeof(context)) != (long)sizeof(context)) {
         return -1;
     }
     task->mm->signal_frame_sp = frame_sp;
@@ -746,7 +790,7 @@ int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t re
     task->mm->signal_frame_altstack_size = (uint64_t)task->signal->altstack.ss_size;
     task->mm->signal_frame_altstack_flags = (uint64_t)(uint32_t)task->signal->altstack.ss_flags;
     task->mm->signal_frame_current_sp = current_sp;
-    task->mm->signal_frame_size = sizeof(frame_record);
+    task->mm->signal_frame_size = frame_size;
     task->mm->signal_frame_ucontext_flags = 1;
     *frame_sp_out = frame_sp;
     return 0;

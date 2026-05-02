@@ -134,6 +134,7 @@ int do_sigaction(int32_t sig, const struct signal_action_slot *act,
                  struct signal_action_slot *oldact);
 int do_sigprocmask(int how, const struct signal_mask_bits *set,
                    struct signal_mask_bits *oldset);
+int do_sigsetmask(const struct signal_mask_bits *set, struct signal_mask_bits *oldset);
 int do_sigpending(struct signal_mask_bits *set);
 sighandler_t do_signal(int32_t signum, sighandler_t handler);
 int do_raise(int32_t sig);
