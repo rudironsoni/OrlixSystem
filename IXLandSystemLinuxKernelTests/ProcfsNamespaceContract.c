@@ -1,4 +1,5 @@
 #include <linux/fcntl.h>
+#include <linux/mount.h>
 #include <linux/sched.h>
 #include <linux/stat.h>
 
@@ -15,6 +16,10 @@
 
 extern int clone_impl(uint64_t flags);
 extern int unshare_impl(uint64_t flags);
+extern int mkdir_impl(const char *pathname, linux_mode_t mode);
+extern int mount(const char *source, const char *target, const char *filesystemtype,
+                 unsigned long mountflags, const void *data);
+extern int umount(const char *target);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
@@ -426,6 +431,144 @@ int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void)
 
 out:
     if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_proc_pid_fd_and_fdinfo_paths_are_target_aware(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    int fd = -1;
+    char path[96] = {0};
+    char link_target[MAX_PATH];
+    char content[512];
+    long nread;
+    int info_fd = -1;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    fd = open_impl("/dev/null", O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0) {
+        goto out;
+    }
+
+    proc_pid_file_path(path, sizeof(path), child->pid, "/fd/");
+    append_positive_decimal(path, sizeof(path), fd);
+    if (read_link_content(path, link_target, sizeof(link_target)) != 0 ||
+        strcmp(link_target, "/dev/null") != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/fdinfo/");
+    append_positive_decimal(path, sizeof(path), fd);
+    info_fd = open_impl(path, O_RDONLY, 0);
+    if (info_fd < 0) {
+        goto out;
+    }
+    memset(content, 0, sizeof(content));
+    nread = read_impl(info_fd, content, sizeof(content) - 1);
+    if (nread <= 0) {
+        goto out;
+    }
+    content[nread] = '\0';
+    if (!contains(content, "flags:\t")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (info_fd >= 0) {
+        close_impl(info_fd);
+    }
+    if (fd >= 0) {
+        close_impl(fd);
+    }
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_proc_pid_mountinfo_uses_target_mount_namespace(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    char path[96] = {0};
+    char content[4096];
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    if (fs_unshare_mount_namespace(child->fs) != 0) {
+        goto out;
+    }
+    if (mkdir_impl("/tmp/proc-pid-mnt-source", 0700) != 0 && errno != EEXIST) {
+        goto out;
+    }
+    if (mkdir_impl("/tmp/proc-pid-mnt-target", 0700) != 0 && errno != EEXIST) {
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    if (mount("/tmp/proc-pid-mnt-source", "/tmp/proc-pid-mnt-target", NULL, MS_BIND, NULL) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    proc_pid_file_path(path, sizeof(path), child->pid, "/mountinfo");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "/tmp/proc-pid-mnt-source") ||
+        !contains(content, "/tmp/proc-pid-mnt-target")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    if (read_file_content("/proc/self/mountinfo", content, sizeof(content)) != 0 ||
+        contains(content, "/tmp/proc-pid-mnt-source")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (child) {
+        saved = get_current();
+        set_current(child);
+        umount("/tmp/proc-pid-mnt-target");
+        set_current(saved);
         task_unlink_child_impl(parent, child);
         free_task(child);
     }

@@ -1095,6 +1095,19 @@ void init_synthetic_proc_file_fd_entry_with_fdnum_impl(int fd, int flags, linux_
     fs_mutex_unlock(&entry->lock);
 }
 
+void init_synthetic_proc_file_fd_entry_with_fdnum_for_pid_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num, int target_pid) {
+    file_init_impl();
+    fd_entry_t *entry = &fd_table[fd];
+    fs_mutex_lock(&entry->lock);
+    entry->desc = alloc_synthetic_proc_file_fd_description(flags, mode, path, proc_file);
+    if (entry->desc) {
+        entry->desc->proc_file_fd_num = fd_num;
+        entry->desc->proc_file_target_pid = target_pid;
+    }
+    entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fs_mutex_unlock(&entry->lock);
+}
+
 bool get_fd_is_synthetic_proc_file_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     return fd_entry->desc && fd_entry->desc->type == FD_TYPE_SYNTHETIC_PROC_FILE;

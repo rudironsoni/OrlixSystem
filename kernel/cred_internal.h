@@ -40,6 +40,8 @@ struct cred {
     uint32_t egid;          /* Effective group ID */
     uint32_t suid;          /* Saved user ID */
     uint32_t sgid;          /* Saved group ID */
+    uint32_t fsuid;         /* Filesystem user ID */
+    uint32_t fsgid;         /* Filesystem group ID */
     gid_t *groups;          /* Supplementary group IDs */
     size_t group_count;     /* Number of supplementary groups */
     bool no_new_privs;      /* Blocks exec-time privilege gains */
@@ -177,6 +179,22 @@ int setresuid_impl(uid_t ruid, uid_t euid, uid_t suid);
 
 /* Set real/effective/saved GID - virtual implementation */
 int setresgid_impl(gid_t rgid, gid_t egid, gid_t sgid);
+
+/* Set real/effective UID - virtual implementation */
+int setreuid_impl(uid_t ruid, uid_t euid);
+
+/* Set real/effective GID - virtual implementation */
+int setregid_impl(gid_t rgid, gid_t egid);
+
+/* Get real/effective/saved UID - virtual implementation */
+int getresuid_impl(uid_t *ruid, uid_t *euid, uid_t *suid);
+
+/* Get real/effective/saved GID - virtual implementation */
+int getresgid_impl(gid_t *rgid, gid_t *egid, gid_t *sgid);
+
+/* Set filesystem UID/GID - virtual implementation */
+uid_t setfsuid_impl(uid_t fsuid);
+gid_t setfsgid_impl(gid_t fsgid);
 
 /* Get supplementary groups - virtual implementation */
 int getgroups_impl(int size, gid_t list[]);

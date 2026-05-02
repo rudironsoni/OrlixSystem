@@ -65,15 +65,13 @@ static int try_open_proc_self_file(const char *resolved_path, int flags, mode_t 
     }
 
     if (proc_class == PROC_SELF_FDINFO_FILE) {
-        const char *fd_str = resolved_path + 18;
-        char *endptr;
-        long fd_num = strtol(fd_str, &endptr, 10);
+        int fd_num = vfs_proc_fd_num_for_path(resolved_path, "/fdinfo/");
 
-        if (*endptr != '\0' || fd_num < 0 || fd_num >= NR_OPEN_DEFAULT) {
+        if (fd_num < 0) {
             errno = ENOENT;
             return -1;
         }
-        if (!fdtable_is_used_impl((int)fd_num)) {
+        if (!fdtable_is_used_impl(fd_num)) {
             errno = ENOENT;
             return -1;
         }
@@ -82,8 +80,9 @@ static int try_open_proc_self_file(const char *resolved_path, int flags, mode_t 
         if (fd < 0) {
             return -1;
         }
-        init_synthetic_proc_file_fd_entry_with_fdnum_impl(fd, flags, mode, resolved_path,
-                                                          SYNTHETIC_PROC_FILE_FDINFO, (int)fd_num);
+        init_synthetic_proc_file_fd_entry_with_fdnum_for_pid_impl(fd, flags, mode, resolved_path,
+                                                                  SYNTHETIC_PROC_FILE_FDINFO, fd_num,
+                                                                  vfs_proc_target_pid_for_path(resolved_path));
         *out_fd = fd;
         return 1;
     }

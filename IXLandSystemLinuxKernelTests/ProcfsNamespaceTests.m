@@ -52,6 +52,14 @@
     XCTAssertEqual(procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(), 0, @"errno %d", errno);
 }
 
+- (void)testProcPidFdAndFdinfoPathsAreTargetAware {
+    XCTAssertEqual(procfs_namespace_contract_proc_pid_fd_and_fdinfo_paths_are_target_aware(), 0, @"errno %d", errno);
+}
+
+- (void)testProcPidMountinfoUsesTargetMountNamespace {
+    XCTAssertEqual(procfs_namespace_contract_proc_pid_mountinfo_uses_target_mount_namespace(), 0, @"errno %d", errno);
+}
+
 - (void)testRootProcFilesAreReadable {
     XCTAssertEqual(procfs_namespace_contract_root_files_are_readable(), 0, @"errno %d", errno);
 }

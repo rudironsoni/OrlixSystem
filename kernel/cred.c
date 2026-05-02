@@ -38,6 +38,8 @@
 #define KERNEL_DEFAULT_EGID     0       /* Virtual effective root */
 #define KERNEL_DEFAULT_SUID     0       /* Virtual saved root */
 #define KERNEL_DEFAULT_SGID     0       /* Virtual saved root */
+#define KERNEL_DEFAULT_FSUID    0       /* Virtual filesystem root */
+#define KERNEL_DEFAULT_FSGID    0       /* Virtual filesystem root */
 
 static uint64_t cred_full_cap_mask(void) {
     return (CAP_LAST_CAP >= 63) ? UINT64_MAX : ((1ULL << (CAP_LAST_CAP + 1)) - 1ULL);
@@ -102,6 +104,8 @@ static struct cred global_init_cred = {
     .egid = KERNEL_DEFAULT_EGID,
     .suid = KERNEL_DEFAULT_SUID,
     .sgid = KERNEL_DEFAULT_SGID,
+    .fsuid = KERNEL_DEFAULT_FSUID,
+    .fsgid = KERNEL_DEFAULT_FSGID,
     .groups = NULL,
     .group_count = 0,
     .no_new_privs = false,
@@ -149,6 +153,8 @@ struct cred *dup_cred(const struct cred *cred) {
         new->egid = cred->egid;
         new->suid = cred->suid;
         new->sgid = cred->sgid;
+        new->fsuid = cred->fsuid;
+        new->fsgid = cred->fsgid;
         if (cred->group_count > 0) {
             new->groups = calloc(cred->group_count, sizeof(gid_t));
             if (!new->groups) {
@@ -180,6 +186,8 @@ void cred_init_defaults(struct cred *cred) {
     cred->egid = KERNEL_DEFAULT_EGID;
     cred->suid = KERNEL_DEFAULT_SUID;
     cred->sgid = KERNEL_DEFAULT_SGID;
+    cred->fsuid = KERNEL_DEFAULT_FSUID;
+    cred->fsgid = KERNEL_DEFAULT_FSGID;
     cred->groups = NULL;
     cred->group_count = 0;
     cred->no_new_privs = false;
@@ -211,6 +219,8 @@ void cred_reset_to_defaults(void) {
     global_init_cred.egid = KERNEL_DEFAULT_EGID;
     global_init_cred.suid = KERNEL_DEFAULT_SUID;
     global_init_cred.sgid = KERNEL_DEFAULT_SGID;
+    global_init_cred.fsuid = KERNEL_DEFAULT_FSUID;
+    global_init_cred.fsgid = KERNEL_DEFAULT_FSGID;
     free(global_init_cred.groups);
     global_init_cred.groups = NULL;
     global_init_cred.group_count = 0;
@@ -325,13 +335,16 @@ int cred_setuid(struct cred *cred, uint32_t uid) {
         cred->suid = uid;
         cred->uid = uid;
         cred->euid = uid;
+        cred->fsuid = uid;
         cred_apply_uid_cap_fixup(cred);
     } else if (uid == cred->uid) {
         /* Setting to real UID: revert effective to real */
         cred->euid = uid;
+        cred->fsuid = uid;
     } else if (uid == cred->suid) {
         /* Setting to saved UID: restore effective to saved */
         cred->euid = uid;
+        cred->fsuid = uid;
     } else if (uid == cred->euid) {
         /* Setting to effective UID: no change */
     } else {
@@ -358,12 +371,15 @@ int cred_setgid(struct cred *cred, uint32_t gid) {
         cred->sgid = gid;
         cred->gid = gid;
         cred->egid = gid;
+        cred->fsgid = gid;
     } else if (gid == cred->gid) {
         /* Setting to real GID: revert effective to real */
         cred->egid = gid;
+        cred->fsgid = gid;
     } else if (gid == cred->sgid) {
         /* Setting to saved GID: restore effective to saved */
         cred->egid = gid;
+        cred->fsgid = gid;
     } else if (gid == cred->egid) {
         /* Setting to effective GID: no change */
     } else {
@@ -386,6 +402,7 @@ int cred_seteuid(struct cred *cred, uint32_t euid) {
     }
 
     cred->euid = euid;
+    cred->fsuid = euid;
     cred_apply_uid_cap_fixup(cred);
     return 0;
 }
@@ -402,6 +419,7 @@ int cred_setegid(struct cred *cred, uint32_t egid) {
     }
 
     cred->egid = egid;
+    cred->fsgid = egid;
     return 0;
 }
 
@@ -429,6 +447,7 @@ int cred_setreuid(struct cred *cred, uint32_t ruid, uint32_t euid) {
             cred->suid = cred->euid;
         }
         cred->euid = euid;
+        cred->fsuid = euid;
     }
     cred_apply_uid_cap_fixup(cred);
 
@@ -457,6 +476,7 @@ int cred_setregid(struct cred *cred, uint32_t rgid, uint32_t egid) {
             cred->sgid = cred->egid;
         }
         cred->egid = egid;
+        cred->fsgid = egid;
     }
 
     return 0;
@@ -489,6 +509,7 @@ int cred_setresuid(struct cred *cred, uint32_t ruid, uint32_t euid, uint32_t sui
     }
     if (euid != (uint32_t)-1) {
         cred->euid = euid;
+        cred->fsuid = euid;
     }
     if (suid != (uint32_t)-1) {
         cred->suid = suid;
@@ -520,6 +541,7 @@ int cred_setresgid(struct cred *cred, uint32_t rgid, uint32_t egid, uint32_t sgi
     }
     if (egid != (uint32_t)-1) {
         cred->egid = egid;
+        cred->fsgid = egid;
     }
     if (sgid != (uint32_t)-1) {
         cred->sgid = sgid;
@@ -532,7 +554,7 @@ bool cred_has_group(const struct cred *cred, gid_t gid) {
     if (!cred) {
         return false;
     }
-    if (cred->egid == gid) {
+    if (cred->fsgid == gid || cred->egid == gid) {
         return true;
     }
     for (size_t i = 0; i < cred->group_count; i++) {
@@ -584,9 +606,11 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
 
     if (!cred->no_new_privs && (mode & S_ISUID) != 0) {
         cred->euid = file_uid;
+        cred->fsuid = file_uid;
     }
     if (!cred->no_new_privs && (mode & S_ISGID) != 0) {
         cred->egid = file_gid;
+        cred->fsgid = file_gid;
     }
 
     cred->suid = cred->euid;
@@ -718,6 +742,84 @@ int setresgid_impl(gid_t rgid, gid_t egid, gid_t sgid) {
         return -1;
     }
     return 0;
+}
+
+int setreuid_impl(uid_t ruid, uid_t euid) {
+    struct cred *cred = get_current_cred();
+    int ret = cred_setreuid(cred, (uint32_t)ruid, (uint32_t)euid);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+int setregid_impl(gid_t rgid, gid_t egid) {
+    struct cred *cred = get_current_cred();
+    int ret = cred_setregid(cred, (uint32_t)rgid, (uint32_t)egid);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+int getresuid_impl(uid_t *ruid, uid_t *euid, uid_t *suid) {
+    struct cred *cred = get_current_cred();
+
+    if (!ruid || !euid || !suid) {
+        errno = EFAULT;
+        return -1;
+    }
+    *ruid = (uid_t)cred->uid;
+    *euid = (uid_t)cred->euid;
+    *suid = (uid_t)cred->suid;
+    return 0;
+}
+
+int getresgid_impl(gid_t *rgid, gid_t *egid, gid_t *sgid) {
+    struct cred *cred = get_current_cred();
+
+    if (!rgid || !egid || !sgid) {
+        errno = EFAULT;
+        return -1;
+    }
+    *rgid = (gid_t)cred->gid;
+    *egid = (gid_t)cred->egid;
+    *sgid = (gid_t)cred->sgid;
+    return 0;
+}
+
+uid_t setfsuid_impl(uid_t fsuid) {
+    struct cred *cred = get_current_cred();
+    uid_t old;
+
+    if (!cred) {
+        return (uid_t)-1;
+    }
+    old = (uid_t)cred->fsuid;
+    if (cred_has_cap(cred, CAP_SETUID) ||
+        fsuid == cred->uid || fsuid == cred->euid ||
+        fsuid == cred->suid || fsuid == cred->fsuid) {
+        cred->fsuid = (uint32_t)fsuid;
+    }
+    return old;
+}
+
+gid_t setfsgid_impl(gid_t fsgid) {
+    struct cred *cred = get_current_cred();
+    gid_t old;
+
+    if (!cred) {
+        return (gid_t)-1;
+    }
+    old = (gid_t)cred->fsgid;
+    if (cred_has_cap(cred, CAP_SETGID) ||
+        fsgid == cred->gid || fsgid == cred->egid ||
+        fsgid == cred->sgid || fsgid == cred->fsgid) {
+        cred->fsgid = (uint32_t)fsgid;
+    }
+    return old;
 }
 
 int getgroups_impl(int size, gid_t list[]) {
@@ -1039,6 +1141,30 @@ __attribute__((visibility("default"))) int setresuid(uid_t ruid, uid_t euid, uid
 
 __attribute__((visibility("default"))) int setresgid(gid_t rgid, gid_t egid, gid_t sgid) {
     return setresgid_impl(rgid, egid, sgid);
+}
+
+__attribute__((visibility("default"))) int setreuid(uid_t ruid, uid_t euid) {
+    return setreuid_impl(ruid, euid);
+}
+
+__attribute__((visibility("default"))) int setregid(gid_t rgid, gid_t egid) {
+    return setregid_impl(rgid, egid);
+}
+
+__attribute__((visibility("default"))) int getresuid(uid_t *ruid, uid_t *euid, uid_t *suid) {
+    return getresuid_impl(ruid, euid, suid);
+}
+
+__attribute__((visibility("default"))) int getresgid(gid_t *rgid, gid_t *egid, gid_t *sgid) {
+    return getresgid_impl(rgid, egid, sgid);
+}
+
+__attribute__((visibility("default"))) uid_t setfsuid(uid_t fsuid) {
+    return setfsuid_impl(fsuid);
+}
+
+__attribute__((visibility("default"))) gid_t setfsgid(gid_t fsgid) {
+    return setfsgid_impl(fsgid);
 }
 
 __attribute__((visibility("default"))) int getgroups(int size, gid_t list[]) {

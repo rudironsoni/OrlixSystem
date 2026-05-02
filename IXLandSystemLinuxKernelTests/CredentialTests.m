@@ -26,6 +26,12 @@ extern int seteuid_impl(uid_t euid);
 extern int setegid_impl(gid_t egid);
 extern int setresuid_impl(uid_t ruid, uid_t euid, uid_t suid);
 extern int setresgid_impl(gid_t rgid, gid_t egid, gid_t sgid);
+extern int setreuid_impl(uid_t ruid, uid_t euid);
+extern int setregid_impl(gid_t rgid, gid_t egid);
+extern int getresuid_impl(uid_t *ruid, uid_t *euid, uid_t *suid);
+extern int getresgid_impl(gid_t *rgid, gid_t *egid, gid_t *sgid);
+extern uid_t setfsuid_impl(uid_t fsuid);
+extern gid_t setfsgid_impl(gid_t fsgid);
 extern int getgroups_impl(int size, gid_t list[]);
 extern int setgroups_impl(int size, const gid_t *list);
 extern void cred_reset_to_defaults(void);
@@ -172,6 +178,46 @@ extern void cred_reset_to_defaults(void);
     XCTAssertEqual(getegid_impl(), 2001u, @"effective gid should update");
 }
 
+- (void)testGetresuidImplReportsRealEffectiveAndSavedUid {
+    uid_t ruid = 0;
+    uid_t euid = 0;
+    uid_t suid = 0;
+
+    XCTAssertEqual(setresuid_impl(1000, 1001, 1002), 0, @"root should set all uid slots");
+    XCTAssertEqual(getresuid_impl(&ruid, &euid, &suid), 0, @"getresuid should copy all uid slots");
+    XCTAssertEqual(ruid, 1000u);
+    XCTAssertEqual(euid, 1001u);
+    XCTAssertEqual(suid, 1002u);
+}
+
+- (void)testGetresgidImplReportsRealEffectiveAndSavedGid {
+    gid_t rgid = 0;
+    gid_t egid = 0;
+    gid_t sgid = 0;
+
+    XCTAssertEqual(setresgid_impl(2000, 2001, 2002), 0, @"root should set all gid slots");
+    XCTAssertEqual(getresgid_impl(&rgid, &egid, &sgid), 0, @"getresgid should copy all gid slots");
+    XCTAssertEqual(rgid, 2000u);
+    XCTAssertEqual(egid, 2001u);
+    XCTAssertEqual(sgid, 2002u);
+}
+
+- (void)testSetreuidAndSetregidImplUpdateRealAndEffectiveIds {
+    XCTAssertEqual(setregid_impl(4000, 4001), 0, @"root should set real and effective gid");
+    XCTAssertEqual(setreuid_impl(3000, 3001), 0, @"root should set real and effective uid");
+    XCTAssertEqual(getuid_impl(), 3000u);
+    XCTAssertEqual(geteuid_impl(), 3001u);
+    XCTAssertEqual(getgid_impl(), 4000u);
+    XCTAssertEqual(getegid_impl(), 4001u);
+}
+
+- (void)testSetfsuidAndSetfsgidReturnPreviousIds {
+    XCTAssertEqual(setfsuid_impl(5000), 0u, @"setfsuid should return previous fsuid");
+    XCTAssertEqual(setfsgid_impl(6000), 0u, @"setfsgid should return previous fsgid");
+    XCTAssertEqual(setfsuid_impl(5001), 5000u, @"setfsuid should return previous fsuid");
+    XCTAssertEqual(setfsgid_impl(6001), 6000u, @"setfsgid should return previous fsgid");
+}
+
 /* ============================================================================
  * VIRTUAL CREDENTIAL PERSISTENCE TESTS
  * ============================================================================ */
@@ -236,6 +282,8 @@ extern void cred_reset_to_defaults(void);
     XCTAssertEqual(cred->egid, 0u, @"Default cred EGID should be 0 (virtual root)");
     XCTAssertEqual(cred->suid, 0u, @"Default cred SUID should be 0");
     XCTAssertEqual(cred->sgid, 0u, @"Default cred SGID should be 0");
+    XCTAssertEqual(cred->fsuid, 0u, @"Default cred FSUID should be 0");
+    XCTAssertEqual(cred->fsgid, 0u, @"Default cred FSGID should be 0");
     XCTAssertEqual(cred->group_count, (size_t)0, @"Default cred should have no supplementary groups");
     XCTAssertFalse(cred->no_new_privs, @"Default cred should allow exec privilege transitions");
     XCTAssertEqual(cred->securebits, 0u, @"Default cred should have no securebits set");
