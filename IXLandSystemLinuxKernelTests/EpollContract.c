@@ -10,6 +10,7 @@
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
+#include <asm-generic/signal-defs.h>
 
 #include <errno.h>
 #include <stddef.h>
@@ -141,6 +142,16 @@ struct epoll_thread_case {
     struct task_struct *task;
 };
 
+struct epoll_mask_case {
+    int epfd;
+    kernel_mutex_t lock;
+    kernel_cond_t cond;
+    int started;
+    int done;
+    int result;
+    struct task_struct *task;
+};
+
 static void case_init(struct epoll_thread_case *ctx, int epfd) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->epfd = epfd;
@@ -185,6 +196,78 @@ static int case_wait_done(struct epoll_thread_case *ctx) {
     result = ctx->result;
     kernel_mutex_unlock(&ctx->lock);
     return result;
+}
+
+static void epoll_mask_case_init(struct epoll_mask_case *ctx, int epfd, struct task_struct *task) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->epfd = epfd;
+    ctx->task = task;
+    kernel_mutex_init(&ctx->lock);
+    kernel_cond_init(&ctx->cond);
+}
+
+static void epoll_mask_case_destroy(struct epoll_mask_case *ctx) {
+    kernel_cond_destroy(&ctx->cond);
+    kernel_mutex_destroy(&ctx->lock);
+}
+
+static void epoll_mask_case_mark_started(struct epoll_mask_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->started = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void epoll_mask_case_mark_done(struct epoll_mask_case *ctx, int result) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->result = result;
+    ctx->done = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void epoll_mask_case_wait_started(struct epoll_mask_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->started) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static int epoll_mask_case_wait_done(struct epoll_mask_case *ctx) {
+    int result;
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->done) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    result = ctx->result;
+    kernel_mutex_unlock(&ctx->lock);
+    return result;
+}
+
+static void *epoll_pwait_mask_thread(void *arg) {
+    struct epoll_mask_case *ctx = arg;
+    struct epoll_event event;
+    uint64_t sigmask = 1ULL << (SIGUSR1 - 1);
+    uint64_t queried = 0;
+    long ret;
+
+    set_current(ctx->task);
+    epoll_mask_case_mark_started(ctx);
+    ret = syscall_dispatch_impl(__NR_epoll_pwait, ctx->epfd, (long)(uintptr_t)&event, 1,
+                                -1, (long)(uintptr_t)&sigmask, sizeof(sigmask));
+    if (ret != 1 || (event.events & EPOLLIN) == 0) {
+        epoll_mask_case_mark_done(ctx, ret < 0 ? (int)-ret : EIO);
+        return NULL;
+    }
+    ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK, 0,
+                                (long)(uintptr_t)&queried, sizeof(queried), 0, 0);
+    if (ret != 0 || (queried & sigmask) != 0) {
+        epoll_mask_case_mark_done(ctx, ret < 0 ? (int)-ret : EBUSY);
+        return NULL;
+    }
+    epoll_mask_case_mark_done(ctx, 0);
+    return NULL;
 }
 
 static void *epoll_wait_thread(void *arg) {
@@ -493,6 +576,97 @@ int epoll_contract_syscall_surface_wait_pipe_readable(void) {
     result = 0;
 
 out:
+    close_if_open(epfd);
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return result;
+}
+
+int epoll_contract_pwait_mask_blocks_signal_until_pipe_ready(void) {
+    int fds[2] = {-1, -1};
+    int epfd = -1;
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct epoll_mask_case ctx;
+    kernel_thread_t thread;
+    int result = -1;
+
+    epfd = epoll_create1_impl(0);
+    if (epfd < 0 || pipe_impl(fds) != 0) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    if (add_pipe_read(epfd, fds[0], 1) != 0) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        result = errno ? errno : ENOMEM;
+        goto out;
+    }
+    epoll_mask_case_init(&ctx, epfd, child);
+    if (kernel_thread_create(&thread, NULL, epoll_pwait_mask_thread, &ctx) != 0) {
+        result = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    kernel_thread_detach(thread);
+    epoll_mask_case_wait_started(&ctx);
+    if (signal_generate_task(child, SIGUSR1) != 0 || write_impl(fds[1], "s", 1) != 1) {
+        result = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    result = epoll_mask_case_wait_done(&ctx);
+
+out_destroy:
+    epoll_mask_case_destroy(&ctx);
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+out:
+    close_if_open(epfd);
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return result;
+}
+
+int epoll_contract_fdinfo_reports_watched_descriptor(void) {
+    int fds[2] = {-1, -1};
+    int epfd = -1;
+    int infofd = -1;
+    char path[64];
+    char buf[512];
+    long nread;
+    int result = -1;
+
+    epfd = epoll_create1_impl(0);
+    if (epfd < 0 || pipe_impl(fds) != 0) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    if (add_pipe_read(epfd, fds[0], 0x66) != 0 ||
+        path_for_fd("/proc/self/fdinfo/", epfd, path, sizeof(path)) != 0) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    infofd = open_impl(path, O_RDONLY, 0);
+    if (infofd < 0) {
+        result = errno ? errno : ENOENT;
+        goto out;
+    }
+    nread = read_impl(infofd, buf, sizeof(buf) - 1);
+    if (nread <= 0) {
+        result = errno ? errno : ENODATA;
+        goto out;
+    }
+    buf[nread] = '\0';
+    if (!strstr(buf, "tfd:") || !strstr(buf, "events:")) {
+        result = ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    close_if_open(infofd);
     close_if_open(epfd);
     close_if_open(fds[0]);
     close_if_open(fds[1]);

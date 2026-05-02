@@ -45,5 +45,7 @@
 - (void)testEpollFdAppearsInProcSelfFd { XCTAssertEqual(epoll_contract_fd_appears_in_proc_self_fd(), 0, @"errno %d", errno); }
 - (void)testEpollFdinfoReportsFlags { XCTAssertEqual(epoll_contract_fdinfo_reports_flags(), 0, @"errno %d", errno); }
 - (void)testEpollSyscallSurfaceWaitPipeReadable { XCTAssertEqual(epoll_contract_syscall_surface_wait_pipe_readable(), 0, @"errno %d", errno); }
+- (void)testEpollPwaitMaskBlocksSignalUntilPipeReady { XCTAssertEqual(epoll_contract_pwait_mask_blocks_signal_until_pipe_ready(), 0, @"errno %d", errno); }
+- (void)testEpollFdinfoReportsWatchedDescriptor { XCTAssertEqual(epoll_contract_fdinfo_reports_watched_descriptor(), 0, @"errno %d", errno); }
 
 @end

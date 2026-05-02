@@ -832,6 +832,60 @@ out:
     return result;
 }
 
+int native_syscall_contract_unlinked_shared_mapping_syncs_through_open_fd(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-unlinked-shared-map";
+    char page[4096];
+    char verify = 0;
+    void *mapped;
+    int fd = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(page, 'U', sizeof(page));
+    unlink_impl(path);
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)page, sizeof(page), 0, 0, 0);
+    if (ret != (long)sizeof(page)) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(page),
+                                                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    if (unlink_impl(path) != 0 ||
+        task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, "Z", 1) != 1 ||
+        syscall_dispatch_impl(__NR_msync, (long)(uintptr_t)mapped, sizeof(page), MS_SYNC, 0, 0, 0) != 0) {
+        errno = errno ? errno : EIO;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_pread64, fd, (long)(uintptr_t)&verify, 1, 0, 0, 0);
+    if (ret != 1 || verify != 'Z') {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out_mapped;
+    }
+    result = 0;
+
+out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, sizeof(page), 0, 0, 0, 0);
+out:
+    close_if_open(fd);
+    unlink_impl(path);
+    return result;
+}
+
 int native_syscall_contract_shared_file_mappings_are_coherent(void) {
     struct task_struct *task = get_current();
     const char path[] = "/tmp/native-shared-map-coherent";

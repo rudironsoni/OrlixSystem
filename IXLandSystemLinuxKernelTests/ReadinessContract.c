@@ -10,6 +10,7 @@
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
+#include <asm-generic/signal-defs.h>
 
 #include <errno.h>
 #include <stddef.h>
@@ -103,6 +104,16 @@ struct readiness_thread_case {
     struct task_struct *task;
 };
 
+struct pselect_mask_case {
+    int fd;
+    kernel_mutex_t lock;
+    kernel_cond_t cond;
+    int started;
+    int done;
+    int result;
+    struct task_struct *task;
+};
+
 static void case_init(struct readiness_thread_case *ctx, int fd, int mode) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->fd = fd;
@@ -148,6 +159,84 @@ static int case_wait_done(struct readiness_thread_case *ctx) {
     result = ctx->result;
     kernel_mutex_unlock(&ctx->lock);
     return result;
+}
+
+static void pselect_case_init(struct pselect_mask_case *ctx, int fd, struct task_struct *task) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->fd = fd;
+    ctx->task = task;
+    kernel_mutex_init(&ctx->lock);
+    kernel_cond_init(&ctx->cond);
+}
+
+static void pselect_case_destroy(struct pselect_mask_case *ctx) {
+    kernel_cond_destroy(&ctx->cond);
+    kernel_mutex_destroy(&ctx->lock);
+}
+
+static void pselect_case_mark_started(struct pselect_mask_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->started = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void pselect_case_mark_done(struct pselect_mask_case *ctx, int result) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->result = result;
+    ctx->done = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void pselect_case_wait_started(struct pselect_mask_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->started) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static int pselect_case_wait_done(struct pselect_mask_case *ctx) {
+    int result;
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->done) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    result = ctx->result;
+    kernel_mutex_unlock(&ctx->lock);
+    return result;
+}
+
+static void *pselect_mask_thread(void *arg) {
+    struct pselect_mask_case *ctx = arg;
+    fd_set readfds;
+    uint64_t sigmask = 1ULL << (SIGUSR1 - 1);
+    struct {
+        const uint64_t *ss;
+        size_t ss_len;
+    } mask_arg = {&sigmask, sizeof(sigmask)};
+    uint64_t queried = 0;
+    long ret;
+
+    set_current(ctx->task);
+    FD_ZERO(&readfds);
+    FD_SET(ctx->fd, &readfds);
+    pselect_case_mark_started(ctx);
+    ret = syscall_dispatch_impl(__NR_pselect6, ctx->fd + 1, (long)(uintptr_t)&readfds,
+                                0, 0, 0, (long)(uintptr_t)&mask_arg);
+    if (ret != 1 || !FD_ISSET(ctx->fd, &readfds)) {
+        pselect_case_mark_done(ctx, ret < 0 ? (int)-ret : EIO);
+        return NULL;
+    }
+    ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK, 0,
+                                (long)(uintptr_t)&queried, sizeof(queried), 0, 0);
+    if (ret != 0 || (queried & sigmask) != 0) {
+        pselect_case_mark_done(ctx, ret < 0 ? (int)-ret : EBUSY);
+        return NULL;
+    }
+    pselect_case_mark_done(ctx, 0);
+    return NULL;
 }
 
 static void *poll_thread(void *arg) {
@@ -473,5 +562,75 @@ int readiness_contract_pselect6_pipe_uses_shared_readiness_engine(void) {
 out:
     close_if_open(fds[0]);
     close_if_open(fds[1]);
+    return result;
+}
+
+int readiness_contract_pselect6_mask_blocks_signal_until_pipe_ready_and_restores(void) {
+    int fds[2] = {-1, -1};
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct pselect_mask_case ctx;
+    kernel_thread_t thread;
+    int result = -1;
+
+    if (pipe_impl(fds) != 0) {
+        return errno;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        result = errno ? errno : ENOMEM;
+        goto out;
+    }
+    pselect_case_init(&ctx, fds[0], child);
+    if (kernel_thread_create(&thread, NULL, pselect_mask_thread, &ctx) != 0) {
+        result = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    kernel_thread_detach(thread);
+    pselect_case_wait_started(&ctx);
+    if (signal_generate_task(child, SIGUSR1) != 0 || write_impl(fds[1], "m", 1) != 1) {
+        result = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    result = pselect_case_wait_done(&ctx);
+
+out_destroy:
+    pselect_case_destroy(&ctx);
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+out:
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return result;
+}
+
+int readiness_contract_proc_and_dev_fds_report_readiness(void) {
+    int procfd = -1;
+    int nullfd = -1;
+    struct pollfd pfds[2];
+    int result = -1;
+
+    procfd = open_impl("/proc/self/status", O_RDONLY, 0);
+    nullfd = open_impl("/dev/null", O_WRONLY, 0);
+    if (procfd < 0 || nullfd < 0) {
+        result = errno ? errno : ENOENT;
+        goto out;
+    }
+    memset(pfds, 0, sizeof(pfds));
+    pfds[0].fd = procfd;
+    pfds[0].events = POLLIN;
+    pfds[1].fd = nullfd;
+    pfds[1].events = POLLOUT;
+    if (poll_impl(pfds, 2, 0) != 2 ||
+        (pfds[0].revents & POLLIN) == 0 ||
+        (pfds[1].revents & POLLOUT) == 0) {
+        result = errno ? errno : EIO;
+        goto out;
+    }
+    result = 0;
+
+out:
+    close_if_open(procfd);
+    close_if_open(nullfd);
     return result;
 }

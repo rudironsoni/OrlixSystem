@@ -6,6 +6,7 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -96,6 +97,35 @@ static int epoll_copy_ready(struct epoll_instance *instance, struct epoll_event 
     fs_mutex_unlock(&instance->lock);
 
     return ready;
+}
+
+int epoll_fdinfo_content_impl(struct epoll_instance *instance, char *buf, size_t buf_len, size_t *pos) {
+    int ret = 0;
+
+    if (!instance || !buf || !pos || *pos >= buf_len) {
+        return -EINVAL;
+    }
+
+    fs_mutex_lock(&instance->lock);
+    for (epitem_t *item = instance->items; item; item = item->next) {
+        int written = snprintf(buf + *pos, buf_len - *pos,
+                               "tfd:\t%d events:\t%08x data:\t%llx\n",
+                               item->fd,
+                               (unsigned int)item->event.events,
+                               (unsigned long long)item->event.data);
+        if (written < 0) {
+            ret = -EINVAL;
+            break;
+        }
+        if ((size_t)written >= buf_len - *pos) {
+            *pos = buf_len - 1;
+            ret = -ENOSPC;
+            break;
+        }
+        *pos += (size_t)written;
+    }
+    fs_mutex_unlock(&instance->lock);
+    return ret;
 }
 
 int epoll_create1_impl(int flags) {

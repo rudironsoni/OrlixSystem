@@ -18,6 +18,7 @@
 #include "internal/ios/fs/path_discovery_host.h"
 
 #include "fdtable.h"
+#include "eventpoll.h"
 #include "pty.h"
 #include "../kernel/task.h"
 #include "../kernel/cred_internal.h"
@@ -2578,6 +2579,7 @@ int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len) {
     int flags;
     int fd_flags;
     int ret;
+    size_t pos;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
@@ -2595,6 +2597,8 @@ int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len) {
     offset = get_fd_offset_impl(entry);
     flags = get_fd_flags_impl(entry);
     fd_flags = get_fd_descriptor_flags_impl(entry);
+    bool is_epoll = get_fd_is_epoll_impl(entry);
+    struct epoll_instance *epoll_instance = is_epoll ? get_fd_epoll_instance_impl(entry) : NULL;
     put_fd_entry_impl(entry);
 
     if (fd_flags & FD_CLOEXEC) {
@@ -2609,7 +2613,17 @@ int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len) {
     if ((size_t)ret >= buf_len) {
         return (int)(buf_len - 1);
     }
-    return ret;
+    pos = (size_t)ret;
+    if (is_epoll) {
+        int epoll_ret = epoll_fdinfo_content_impl(epoll_instance, buf, buf_len, &pos);
+        if (epoll_ret != 0 && epoll_ret != -ENOSPC) {
+            return epoll_ret;
+        }
+        if (epoll_ret == -ENOSPC) {
+            return (int)pos;
+        }
+    }
+    return (int)pos;
 }
 
 static int vfs_proc_append(char *buf, size_t buf_len, size_t *pos, const char *fmt, ...) {

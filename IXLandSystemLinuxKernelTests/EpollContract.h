@@ -16,5 +16,7 @@ int epoll_contract_wait_pty_readable_after_peer_write(void);
 int epoll_contract_fd_appears_in_proc_self_fd(void);
 int epoll_contract_fdinfo_reports_flags(void);
 int epoll_contract_syscall_surface_wait_pipe_readable(void);
+int epoll_contract_pwait_mask_blocks_signal_until_pipe_ready(void);
+int epoll_contract_fdinfo_reports_watched_descriptor(void);
 
 #endif
