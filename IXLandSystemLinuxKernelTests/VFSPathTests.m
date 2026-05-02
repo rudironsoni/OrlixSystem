@@ -1372,6 +1372,18 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"move_mount should attach an open_tree clone fd into the virtual mount namespace, errno %d", errno);
 }
 
+- (void)testOpenTreeCloneNestedMountTopologyAttachesRecursively {
+    extern int vfs_contract_open_tree_clone_nested_mount_topology_attaches_recursively(void);
+    XCTAssertEqual(vfs_contract_open_tree_clone_nested_mount_topology_attaches_recursively(), 0,
+                   @"open_tree clone should preserve nested mount topology when attached, errno %d", errno);
+}
+
+- (void)testSharedMountMovePropagatesToPeer {
+    extern int vfs_contract_shared_mount_move_propagates_to_peer(void);
+    XCTAssertEqual(vfs_contract_shared_mount_move_propagates_to_peer(), 0,
+                   @"move_mount should propagate moved shared child mounts to peer mount trees, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,

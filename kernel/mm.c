@@ -1220,6 +1220,15 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
         struct task_vma *vma = task_find_vma_mutable_impl(task, map_addr);
         if (vma) {
             vma->backing_fd = fd;
+            {
+                void *entry = get_fd_entry_impl(fd);
+                if (entry) {
+                    if (get_fd_path_impl(entry, vma->backing_path, sizeof(vma->backing_path)) != 0) {
+                        vma->backing_path[0] = '\0';
+                    }
+                    put_fd_entry_impl(entry);
+                }
+            }
             vma->backing_offset = (uint64_t)offset;
             vma->shared = (flags & MAP_SHARED) != 0;
             vma->shared_mapping = shared_mapping;

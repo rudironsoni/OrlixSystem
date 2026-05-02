@@ -123,6 +123,9 @@ int kernel_cond_wait(kernel_cond_t *cond, kernel_mutex_t *mutex) {
 }
 
 int kernel_cond_timedwait_ms(kernel_cond_t *cond, kernel_mutex_t *mutex, int timeout_ms) {
+    const int host_pthread_timedout = 60;
+    int ret;
+
     if (!cond || !mutex || timeout_ms < 0) {
         return -EINVAL;
     }
@@ -147,7 +150,11 @@ int kernel_cond_timedwait_ms(kernel_cond_t *cond, kernel_mutex_t *mutex, int tim
 
     pthread_cond_t *pcond = (pthread_cond_t *)cond->_storage;
     pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->_storage;
-    return pthread_cond_timedwait(pcond, pmutex, &deadline);
+    ret = pthread_cond_timedwait(pcond, pmutex, &deadline);
+    if (ret == host_pthread_timedout) {
+        return KERNEL_COND_WAIT_TIMED_OUT;
+    }
+    return ret;
 }
 
 int kernel_cond_broadcast(kernel_cond_t *cond) {

@@ -10,6 +10,8 @@ extern int exec_syscall_contract_rejects_empty_path_without_transition(void);
 extern int exec_syscall_contract_missing_path_preserves_state_and_cloexec_fds(void);
 extern int exec_syscall_contract_native_success_applies_transition_and_returns_entry_status(void);
 extern int exec_syscall_contract_native_exec_records_proc_cmdline_and_environ(void);
+extern int exec_syscall_contract_native_execve_applies_setuid_setgid_saved_ids(void);
+extern int exec_syscall_contract_native_execve_no_new_privs_blocks_setid_saved_ids(void);
 extern int exec_syscall_contract_oversized_argv_returns_e2big_without_transition(void);
 extern int exec_syscall_contract_script_uses_virtual_path_and_native_interpreter(void);
 extern int exec_syscall_contract_script_exec_records_interpreter_proc_cmdline(void);
@@ -37,6 +39,8 @@ extern int exec_syscall_contract_elf_dynamic_relocation_metadata_is_discovered(v
 extern int exec_syscall_contract_aarch64_exec_context_uses_exec_handoff(void);
 extern int exec_syscall_contract_aarch64_relocations_apply_relative_globdat_and_jumpslot(void);
 extern int exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(void);
+extern int exec_syscall_contract_mmap_private_file_write_marks_private_dirty_and_preserves_file(void);
+extern int exec_syscall_contract_shared_file_truncate_faults_with_sigbus_bus_adrerr(void);
 extern int exec_syscall_contract_aarch64_exec_context_runs_nop_until_brk(void);
 extern int exec_syscall_contract_elf_missing_interp_returns_enoent_without_transition(void);
 extern int exec_syscall_contract_elf_invalid_interp_returns_enoexec_without_transition(void);
@@ -86,6 +90,14 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testNativeExecRecordsProcCmdlineAndEnviron {
     XCTAssertEqual(exec_syscall_contract_native_exec_records_proc_cmdline_and_environ(), 0, @"errno %d", errno);
+}
+
+- (void)testNativeExecveAppliesSetuidSetgidSavedIds {
+    XCTAssertEqual(exec_syscall_contract_native_execve_applies_setuid_setgid_saved_ids(), 0, @"errno %d", errno);
+}
+
+- (void)testNativeExecveNoNewPrivsBlocksSetidSavedIds {
+    XCTAssertEqual(exec_syscall_contract_native_execve_no_new_privs_blocks_setid_saved_ids(), 0, @"errno %d", errno);
 }
 
 - (void)testOversizedArgvReturnsE2bigWithoutTransition {
@@ -194,6 +206,14 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testMmapMprotectAndMunmapUpdateVmas {
     XCTAssertEqual(exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(), 0, @"errno %d", errno);
+}
+
+- (void)testMmapPrivateFileWriteMarksPrivateDirtyAndPreservesFile {
+    XCTAssertEqual(exec_syscall_contract_mmap_private_file_write_marks_private_dirty_and_preserves_file(), 0, @"errno %d", errno);
+}
+
+- (void)testSharedFileTruncateFaultsWithSigbusBusAdrerr {
+    XCTAssertEqual(exec_syscall_contract_shared_file_truncate_faults_with_sigbus_bus_adrerr(), 0, @"errno %d", errno);
 }
 
 - (void)testAarch64ExecContextRunsNopUntilBrk {

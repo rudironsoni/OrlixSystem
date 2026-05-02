@@ -20,6 +20,8 @@ extern "C" {
 #define KERNEL_ONCE_STORAGE_SIZE 64
 #define KERNEL_SIGSET_STORAGE_SIZE 128
 
+#define KERNEL_COND_WAIT_TIMED_OUT 1
+
 typedef struct kernel_mutex {
     char _storage[KERNEL_MUTEX_STORAGE_SIZE];
     int _initialized;

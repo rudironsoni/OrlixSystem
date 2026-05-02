@@ -128,7 +128,7 @@ int wait_queue_wait_locked_interruptible_timeout(struct wait_queue_head *queue, 
     ret = kernel_cond_timedwait_ms(wait_queue_cond_ptr(queue), wait_queue_lock_ptr(queue), timeout_ms);
     wait_queue_detach_task(queue, task);
 
-    if (ret == ETIMEDOUT) {
+    if (ret == KERNEL_COND_WAIT_TIMED_OUT) {
         return -ETIMEDOUT;
     }
     if (ret != 0) {

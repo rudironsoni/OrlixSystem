@@ -69,8 +69,11 @@ int futex_contract_wait_timeout_returns_timedout(void) {
     struct timespec timeout = {0, 1000000};
 
     errno = 0;
-    if (futex(&word, FUTEX_WAIT_PRIVATE, 0, &timeout, NULL, 0) != -1 || errno != ETIMEDOUT) {
+    if (futex(&word, FUTEX_WAIT_PRIVATE, 0, &timeout, NULL, 0) != -1) {
         errno = EPROTO;
+        return -1;
+    }
+    if (errno != ETIMEDOUT) {
         return -1;
     }
     return 0;

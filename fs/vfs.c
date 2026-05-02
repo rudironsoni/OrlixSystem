@@ -506,6 +506,145 @@ static int vfs_mount_move_tree_locked(struct vfs_mount_namespace *mnt_ns,
     return 0;
 }
 
+struct vfs_mount_move_plan {
+    char old_target[MAX_PATH];
+    char new_target[MAX_PATH];
+};
+
+static int vfs_mount_plan_shared_move_locked(struct vfs_mount_namespace *mnt_ns,
+                                             const char *old_target,
+                                             const char *new_target,
+                                             struct vfs_mount_move_plan *plans,
+                                             size_t max_plans,
+                                             size_t *plan_count) {
+    struct vfs_mount_entry *parent = NULL;
+    size_t parent_len = 0;
+    const char *old_suffix;
+    const char *new_suffix;
+
+    if (!mnt_ns || !old_target || !new_target || !plans || !plan_count || *plan_count >= max_plans) {
+        return -EINVAL;
+    }
+
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        struct vfs_mount_entry *entry = &mnt_ns->entries[i];
+        size_t entry_len;
+
+        if (!entry->active || entry->propagation != MS_SHARED ||
+            !vfs_path_matches_prefix(old_target, entry->target) ||
+            strcmp(old_target, entry->target) == 0 ||
+            !vfs_path_matches_prefix(new_target, entry->target)) {
+            continue;
+        }
+        entry_len = strlen(entry->target);
+        if (!parent || entry_len > parent_len) {
+            parent = entry;
+            parent_len = entry_len;
+        }
+    }
+
+    if (!parent) {
+        return 0;
+    }
+
+    old_suffix = old_target + parent_len;
+    new_suffix = new_target + parent_len;
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        struct vfs_mount_entry *peer = &mnt_ns->entries[i];
+        char peer_old[MAX_PATH];
+        char peer_new[MAX_PATH];
+        int ret;
+        bool shared_peer = false;
+        bool slave_peer = false;
+        bool has_peer_old = false;
+
+        if (!peer->active || peer == parent) {
+            continue;
+        }
+        shared_peer = peer->propagation == MS_SHARED &&
+                      strcmp(peer->source, parent->source) == 0;
+        slave_peer = peer->propagation == MS_SLAVE &&
+                     parent->peer_group_id != 0 &&
+                     peer->master_group_id == parent->peer_group_id;
+        if (!shared_peer && !slave_peer) {
+            continue;
+        }
+
+        ret = snprintf(peer_old, sizeof(peer_old), "%s%s", peer->target, old_suffix);
+        if (ret < 0 || (size_t)ret >= sizeof(peer_old)) {
+            return -ENAMETOOLONG;
+        }
+        ret = snprintf(peer_new, sizeof(peer_new), "%s%s", peer->target, new_suffix);
+        if (ret < 0 || (size_t)ret >= sizeof(peer_new)) {
+            return -ENAMETOOLONG;
+        }
+
+        for (size_t scan = 0; scan < MAX_MOUNTS; scan++) {
+            if (mnt_ns->entries[scan].active && strcmp(mnt_ns->entries[scan].target, peer_old) == 0) {
+                has_peer_old = true;
+                break;
+            }
+        }
+        if (!has_peer_old) {
+            continue;
+        }
+        if (*plan_count >= max_plans) {
+            return -ENOSPC;
+        }
+        ret = vfs_copy_string(peer_old, plans[*plan_count].old_target, sizeof(plans[*plan_count].old_target));
+        if (ret == 0) {
+            ret = vfs_copy_string(peer_new, plans[*plan_count].new_target, sizeof(plans[*plan_count].new_target));
+        }
+        if (ret != 0) {
+            return ret;
+        }
+        (*plan_count)++;
+    }
+
+    return 0;
+}
+
+static int vfs_mount_move_tree_with_propagation_locked(struct vfs_mount_namespace *mnt_ns,
+                                                       const char *old_target,
+                                                       const char *new_target) {
+    struct vfs_mount_move_plan plans[MAX_MOUNTS];
+    size_t plan_count = 1;
+    int ret;
+
+    if (!mnt_ns || !old_target || !new_target || strcmp(old_target, new_target) == 0) {
+        return -EINVAL;
+    }
+    ret = vfs_copy_string(old_target, plans[0].old_target, sizeof(plans[0].old_target));
+    if (ret == 0) {
+        ret = vfs_copy_string(new_target, plans[0].new_target, sizeof(plans[0].new_target));
+    }
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_mount_plan_shared_move_locked(mnt_ns, old_target, new_target,
+                                            plans, MAX_MOUNTS, &plan_count);
+    if (ret != 0) {
+        return ret;
+    }
+
+    for (size_t i = 0; i < plan_count; i++) {
+        for (size_t j = 0; j < MAX_MOUNTS; j++) {
+            if (mnt_ns->entries[j].active &&
+                strcmp(mnt_ns->entries[j].target, plans[i].new_target) == 0) {
+                return -EBUSY;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < plan_count; i++) {
+        ret = vfs_mount_move_tree_locked(mnt_ns, plans[i].old_target, plans[i].new_target);
+        if (ret != 0) {
+            return ret;
+        }
+    }
+    return 0;
+}
+
 struct vfs_route_entry {
     enum vfs_route_identity route_id;
     const char *linux_prefix;
@@ -1708,7 +1847,7 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
         return ret;
     }
     fs_mutex_lock(&mnt_ns->lock);
-    ret = vfs_mount_move_tree_locked(mnt_ns, resolved_from, resolved_target);
+    ret = vfs_mount_move_tree_with_propagation_locked(mnt_ns, resolved_from, resolved_target);
     fs_mutex_unlock(&mnt_ns->lock);
     return ret;
 }
@@ -2317,7 +2456,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
             return -errno;
         }
         fs_mutex_lock(&mnt_ns->lock);
-        ret = vfs_mount_move_tree_locked(mnt_ns, resolved_source, resolved_target);
+        ret = vfs_mount_move_tree_with_propagation_locked(mnt_ns, resolved_source, resolved_target);
         fs_mutex_unlock(&mnt_ns->lock);
         return ret;
     }
@@ -3848,6 +3987,9 @@ static int vfs_maps_path_for_vma(const struct task_vma *vma, char *path, size_t 
     path[0] = '\0';
     if (vma->kind != TASK_VMA_FILE || vma->backing_fd < 0) {
         return 0;
+    }
+    if (vma->backing_path[0] != '\0') {
+        return vfs_copy_string(vma->backing_path, path, path_len);
     }
     entry = get_fd_entry_impl(vma->backing_fd);
     if (!entry) {

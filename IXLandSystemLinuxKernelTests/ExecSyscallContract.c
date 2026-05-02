@@ -2,6 +2,8 @@
 #include <linux/elf.h>
 #include <linux/auxvec.h>
 #include <linux/mman.h>
+#include <linux/prctl.h>
+#include <linux/stat.h>
 #include <asm-generic/siginfo.h>
 #include <asm-generic/resource.h>
 
@@ -22,6 +24,7 @@
 #include "fs/vfs.h"
 #include "kernel/cred_internal.h"
 #include "kernel/mm.h"
+#include "kernel/signal.h"
 #include "kernel/task.h"
 #include "runtime/aarch64/exec_context.h"
 #include "runtime/aarch64/elf_reloc.h"
@@ -32,9 +35,17 @@ extern int fexecve(int fd, char *const argv[], char *const envp[]);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern long read_impl(int fd, void *buf, size_t count);
+extern ssize_t pread_impl(int fd, void *buf, size_t count, linux_off_t offset);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int unlink_impl(const char *pathname);
 extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
+extern int chmod(const char *pathname, linux_mode_t mode);
+extern int chown(const char *pathname, linux_uid_t owner, linux_gid_t group);
+extern int setuid_impl(uid_t uid);
+extern int setgid_impl(gid_t gid);
+extern int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);
+extern int ftruncate_impl(int fd, linux_off_t length);
+extern bool signal_is_pending(const struct task_struct *task, int32_t sig);
 
 static int close_if_open(int fd) {
     if (fd >= 0 && fdtable_is_used_impl(fd)) {
@@ -73,6 +84,28 @@ static int read_proc_file(const char *path, char *buf, size_t buf_len, ssize_t *
     return 0;
 }
 
+static int write_file_exact(const char *path, const char *content) {
+    int fd;
+    size_t len;
+
+    if (!path || !content) {
+        errno = EINVAL;
+        return -1;
+    }
+    fd = open_impl(path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        return -1;
+    }
+    len = strlen(content);
+    if (write_impl(fd, content, len) != (long)len) {
+        int saved_errno = errno;
+        close_impl(fd);
+        errno = saved_errno;
+        return -1;
+    }
+    return close_impl(fd);
+}
+
 static int expect_nul_vector(const char *buf, ssize_t len, const char *const expected[]) {
     size_t pos = 0;
 
@@ -99,6 +132,13 @@ static int expect_nul_vector(const char *buf, ssize_t len, const char *const exp
         return -1;
     }
     return 0;
+}
+
+static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+    if (!task || !task->signal || sig <= 0 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
 static int find_auxv_value(const struct task_struct *task, uint64_t type, uint64_t *out_value) {
@@ -1046,6 +1086,100 @@ int exec_syscall_contract_native_exec_records_proc_cmdline_and_environ(void) {
 
 out:
     native_registry_clear();
+    return result;
+}
+
+static int expect_current_ids(uint32_t uid, uint32_t euid, uint32_t suid,
+                              uint32_t gid, uint32_t egid, uint32_t sgid) {
+    struct cred *cred = get_current_cred();
+
+    if (!cred) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (cred->uid != uid || cred->euid != euid || cred->suid != suid ||
+        cred->fsuid != euid ||
+        cred->gid != gid || cred->egid != egid || cred->sgid != sgid ||
+        cred->fsgid != egid) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
+int exec_syscall_contract_native_execve_applies_setuid_setgid_saved_ids(void) {
+    char *argv[] = {"cred-native", NULL};
+    char *envp[] = {NULL};
+    const char *path = "/tmp/exec-native-cred-file";
+    int status;
+    int result = -1;
+
+    cred_reset_to_defaults();
+    native_registry_clear();
+    unlink_impl(path);
+    if (native_register(path, native_exec_status) != 0 ||
+        write_file_exact(path, "native") != 0 ||
+        chown(path, 2000, 3000) != 0 ||
+        chmod(path, S_ISUID | S_ISGID | 0755) != 0 ||
+        setgid_impl(1000) != 0 ||
+        setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    status = execve(path, argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (expect_current_ids(1000, 2000, 2000, 1000, 3000, 3000) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl(path);
+    cred_reset_to_defaults();
+    return result;
+}
+
+int exec_syscall_contract_native_execve_no_new_privs_blocks_setid_saved_ids(void) {
+    char *argv[] = {"cred-nnp-native", NULL};
+    char *envp[] = {NULL};
+    const char *path = "/tmp/exec-native-nnp-cred-file";
+    int status;
+    int result = -1;
+
+    cred_reset_to_defaults();
+    native_registry_clear();
+    unlink_impl(path);
+    if (native_register(path, native_exec_status) != 0 ||
+        write_file_exact(path, "native") != 0 ||
+        chown(path, 2000, 3000) != 0 ||
+        chmod(path, S_ISUID | S_ISGID | 0755) != 0 ||
+        prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+        setgid_impl(1000) != 0 ||
+        setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    status = execve(path, argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (expect_current_ids(1000, 1000, 1000, 1000, 1000, 1000) != 0 ||
+        prctl_impl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl(path);
+    cred_reset_to_defaults();
     return result;
 }
 
@@ -2526,6 +2660,128 @@ int exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(void) {
 
 out:
     munmap_impl(addr, TASK_VMA_PAGE_SIZE * 2);
+    return result;
+}
+
+int exec_syscall_contract_mmap_private_file_write_marks_private_dirty_and_preserves_file(void) {
+    struct task_struct *task = get_current();
+    const char *path = "/tmp/exec-mm-private-cow-file";
+    unsigned char page[TASK_VMA_PAGE_SIZE];
+    unsigned char file_bytes[4] = {0};
+    unsigned char patch[] = {'W', 'X', 'Y', 'Z'};
+    char smaps[8192];
+    ssize_t smaps_len = 0;
+    void *addr = (void *)-1;
+    int fd = -1;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(page, 'a', sizeof(page));
+    page[0] = 'a';
+    page[1] = 'b';
+    page[2] = 'c';
+    page[3] = 'd';
+
+    unlink_impl(path);
+    fd = open_impl(path, O_CREAT | O_RDWR | O_TRUNC, 0644);
+    if (fd < 0 || write_impl(fd, page, sizeof(page)) != (long)sizeof(page)) {
+        goto out;
+    }
+
+    addr = mmap_impl(NULL, sizeof(page), PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if (addr == (void *)-1) {
+        goto out;
+    }
+    if (task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)addr, patch, sizeof(patch)) !=
+        (long)sizeof(patch)) {
+        goto out;
+    }
+    if (pread_impl(fd, file_bytes, sizeof(file_bytes), 0) != (ssize_t)sizeof(file_bytes) ||
+        memcmp(file_bytes, "abcd", sizeof(file_bytes)) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (read_proc_file("/proc/self/smaps", smaps, sizeof(smaps) - 1, &smaps_len) != 0) {
+        goto out;
+    }
+    smaps[smaps_len] = '\0';
+    if (!strstr(smaps, path)) {
+        errno = ENOENT;
+        goto out;
+    }
+    if (!strstr(smaps, "Private_Dirty:         4 kB")) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (!strstr(smaps, "VmFlags:") ||
+        !strstr(smaps, "wr")) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    if (addr != (void *)-1) {
+        munmap_impl(addr, sizeof(page));
+    }
+    close_if_open(fd);
+    unlink_impl(path);
+    return result;
+}
+
+int exec_syscall_contract_shared_file_truncate_faults_with_sigbus_bus_adrerr(void) {
+    struct task_struct *task = get_current();
+    const char *path = "/tmp/exec-mm-shared-truncate-file";
+    unsigned char page[TASK_VMA_PAGE_SIZE];
+    unsigned char byte = 0;
+    void *addr = (void *)-1;
+    int fd = -1;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(page, 's', sizeof(page));
+
+    unlink_impl(path);
+    fd = open_impl(path, O_CREAT | O_RDWR | O_TRUNC, 0644);
+    if (fd < 0 ||
+        write_impl(fd, page, sizeof(page)) != (long)sizeof(page) ||
+        write_impl(fd, page, sizeof(page)) != (long)sizeof(page)) {
+        goto out;
+    }
+    addr = mmap_impl(NULL, sizeof(page) * 2, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (addr == (void *)-1) {
+        goto out;
+    }
+    if (ftruncate_impl(fd, 0) != 0) {
+        goto out;
+    }
+    errno = 0;
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)addr, &byte, 1) != -1 ||
+        errno != EFAULT ||
+        !signal_is_pending(task, SIGBUS) ||
+        task->last_fault_signal != SIGBUS ||
+        task->last_fault_code != BUS_ADRERR ||
+        task->last_fault_addr != (uint64_t)(uintptr_t)addr) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    clear_pending_signal(task, SIGBUS);
+    if (addr != (void *)-1) {
+        munmap_impl(addr, sizeof(page) * 2);
+    }
+    close_if_open(fd);
+    unlink_impl(path);
     return result;
 }
 
