@@ -3348,7 +3348,14 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     return 0;
 }
 
-int vfs_umount(const char *target) {
+enum vfs_umount_operation {
+    VFS_UMOUNT_NORMAL,
+    VFS_UMOUNT_EXPIRE,
+    VFS_UMOUNT_DETACH,
+    VFS_UMOUNT_FORCE,
+};
+
+static int vfs_umount_with_operation(const char *target, enum vfs_umount_operation operation) {
     char resolved_target[MAX_PATH];
     int ret;
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
@@ -3374,97 +3381,25 @@ int vfs_umount(const char *target) {
     fs_mutex_lock(&mnt_ns->lock);
     for (size_t i = 0; i < MAX_MOUNTS; i++) {
         if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
-            if (fdtable_has_open_path_under_impl(resolved_target) ||
-                vfs_any_task_fs_pins_mount_tree(resolved_target)) {
+            bool pinned = fdtable_has_open_path_under_impl(resolved_target) ||
+                          vfs_any_task_fs_pins_mount_tree(resolved_target);
+
+            if (operation == VFS_UMOUNT_NORMAL && pinned) {
                 fs_mutex_unlock(&mnt_ns->lock);
                 return -EBUSY;
             }
-            vfs_umount_propagate_tree_locked(mnt_ns, resolved_target);
-            vfs_umount_remove_tree_locked(mnt_ns, resolved_target);
-            fs_mutex_unlock(&mnt_ns->lock);
-            return 0;
-        }
-    }
-    fs_mutex_unlock(&mnt_ns->lock);
 
-    return -EINVAL;
-}
-
-int vfs_umount_expire(const char *target) {
-    char resolved_target[MAX_PATH];
-    int ret;
-    struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
-
-    if (!target) {
-        return -EFAULT;
-    }
-    if (target[0] == '\0') {
-        return -ENOENT;
-    }
-    if (!mnt_ns) {
-        return -ESRCH;
-    }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
-        return -EPERM;
-    }
-
-    ret = vfs_resolve_virtual_path_at(AT_FDCWD, target, resolved_target, sizeof(resolved_target));
-    if (ret != 0) {
-        return ret;
-    }
-
-    fs_mutex_lock(&mnt_ns->lock);
-    for (size_t i = 0; i < MAX_MOUNTS; i++) {
-        if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
-            if (fdtable_has_open_path_under_impl(resolved_target) ||
-                vfs_any_task_fs_pins_mount_tree(resolved_target)) {
+            if (operation == VFS_UMOUNT_EXPIRE && pinned) {
                 fs_mutex_unlock(&mnt_ns->lock);
                 return -EBUSY;
             }
-            if (!mnt_ns->entries[i].expiry_candidate) {
+            if (operation == VFS_UMOUNT_EXPIRE && !mnt_ns->entries[i].expiry_candidate) {
                 mnt_ns->entries[i].expiry_candidate = true;
                 fs_mutex_unlock(&mnt_ns->lock);
                 return -EAGAIN;
             }
-            vfs_umount_propagate_tree_locked(mnt_ns, resolved_target);
-            vfs_umount_remove_tree_locked(mnt_ns, resolved_target);
-            fs_mutex_unlock(&mnt_ns->lock);
-            return 0;
-        }
-    }
-    fs_mutex_unlock(&mnt_ns->lock);
 
-    return -EINVAL;
-}
-
-int vfs_umount_lazy(const char *target) {
-    char resolved_target[MAX_PATH];
-    int ret;
-    struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
-
-    if (!target) {
-        return -EFAULT;
-    }
-    if (target[0] == '\0') {
-        return -ENOENT;
-    }
-    if (!mnt_ns) {
-        return -ESRCH;
-    }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
-        return -EPERM;
-    }
-
-    ret = vfs_resolve_virtual_path_at(AT_FDCWD, target, resolved_target, sizeof(resolved_target));
-    if (ret != 0) {
-        return ret;
-    }
-
-    fs_mutex_lock(&mnt_ns->lock);
-    for (size_t i = 0; i < MAX_MOUNTS; i++) {
-        if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
-            if (fdtable_has_open_path_under_impl(resolved_target) ||
-                vfs_any_task_fs_pins_mount_tree(resolved_target)) {
+            if ((operation == VFS_UMOUNT_DETACH || operation == VFS_UMOUNT_FORCE) && pinned) {
                 ret = vfs_detached_mount_record(resolved_target);
                 if (ret != 0) {
                     fs_mutex_unlock(&mnt_ns->lock);
@@ -3480,6 +3415,22 @@ int vfs_umount_lazy(const char *target) {
     fs_mutex_unlock(&mnt_ns->lock);
 
     return -EINVAL;
+}
+
+int vfs_umount(const char *target) {
+    return vfs_umount_with_operation(target, VFS_UMOUNT_NORMAL);
+}
+
+int vfs_umount_expire(const char *target) {
+    return vfs_umount_with_operation(target, VFS_UMOUNT_EXPIRE);
+}
+
+int vfs_umount_lazy(const char *target) {
+    return vfs_umount_with_operation(target, VFS_UMOUNT_DETACH);
+}
+
+int vfs_umount_force(const char *target) {
+    return vfs_umount_with_operation(target, VFS_UMOUNT_FORCE);
 }
 
 int vfs_open(const char *path, int flags, linux_mode_t mode, int *target_fd) {

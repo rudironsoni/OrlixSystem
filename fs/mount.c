@@ -24,6 +24,7 @@ extern int vfs_mount(const char *source, const char *target,
 extern int vfs_umount(const char *target);
 extern int vfs_umount_lazy(const char *target);
 extern int vfs_umount_expire(const char *target);
+extern int vfs_umount_force(const char *target);
 extern int vfs_mount_setattr(int dirfd, const char *pathname, unsigned int flags,
                              const struct mount_attr *attr, size_t size);
 extern int vfs_open_tree(int dirfd, const char *pathname, unsigned int flags);
@@ -152,6 +153,8 @@ static int umount2_impl(const char *target, int flags) {
         ret = vfs_umount_lazy(target);
     } else if ((flags & MNT_EXPIRE) != 0) {
         ret = vfs_umount_expire(target);
+    } else if ((flags & MNT_FORCE) != 0) {
+        ret = vfs_umount_force(target);
     } else {
         ret = vfs_umount(target);
     }

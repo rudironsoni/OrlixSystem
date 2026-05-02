@@ -1492,6 +1492,24 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"umount2 MNT_DETACH should detach busy mount from virtual namespace, errno %d", errno);
 }
 
+- (void)testUmount2RejectsUnusedLinuxUmountFlag {
+    extern int vfs_contract_umount2_rejects_unused_linux_umount_flag(void);
+    XCTAssertEqual(vfs_contract_umount2_rejects_unused_linux_umount_flag(), 0,
+                   @"umount2 should reject the Linux UMOUNT_UNUSED flag and leave the mount visible, errno %d", errno);
+}
+
+- (void)testUmount2ForceDetachesBusyMountAndReapsAfterPinRelease {
+    extern int vfs_contract_umount2_force_detaches_busy_mount_and_reaps_after_pin_release(void);
+    XCTAssertEqual(vfs_contract_umount2_force_detaches_busy_mount_and_reaps_after_pin_release(), 0,
+                   @"umount2 MNT_FORCE should detach busy virtual mounts and reap after pins release, errno %d", errno);
+}
+
+- (void)testForceUmountPropagatesSharedSlaveSubtreeTeardown {
+    extern int vfs_contract_force_umount_propagates_shared_slave_subtree_teardown(void);
+    XCTAssertEqual(vfs_contract_force_umount_propagates_shared_slave_subtree_teardown(), 0,
+                   @"MNT_FORCE subtree teardown should propagate across shared peers and slave receivers, errno %d", errno);
+}
+
 - (void)testUmount2ExpireRequiresMarkThenUnmount {
     extern int vfs_contract_umount2_expire_requires_mark_then_unmount(void);
     XCTAssertEqual(vfs_contract_umount2_expire_requires_mark_then_unmount(), 0,

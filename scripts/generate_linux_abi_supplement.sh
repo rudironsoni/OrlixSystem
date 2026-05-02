@@ -21,12 +21,13 @@ fi
 mkdir -p "$out_dir"
 
 awk '
-    /^#define[[:space:]]+(MNT_FORCE|MNT_DETACH|MNT_EXPIRE|UMOUNT_NOFOLLOW)[[:space:]]+/ {
+    /^#define[[:space:]]+(MNT_FORCE|MNT_DETACH|MNT_EXPIRE|UMOUNT_NOFOLLOW|UMOUNT_UNUSED)[[:space:]]+/ {
         print
         seen[$2] = 1
     }
     END {
-        if (!seen["MNT_FORCE"] || !seen["MNT_DETACH"] || !seen["MNT_EXPIRE"] || !seen["UMOUNT_NOFOLLOW"]) {
+        if (!seen["MNT_FORCE"] || !seen["MNT_DETACH"] || !seen["MNT_EXPIRE"] ||
+            !seen["UMOUNT_NOFOLLOW"] || !seen["UMOUNT_UNUSED"]) {
             exit 1
         }
     }
