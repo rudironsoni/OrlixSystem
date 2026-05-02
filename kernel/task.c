@@ -11,7 +11,6 @@
 #include "../fs/vfs.h"
 
 #include <errno.h>
-#include <setjmp.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -57,6 +56,17 @@
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
+
+#ifdef SEGV_MAPERR
+#undef SEGV_MAPERR
+#endif
+#ifdef SEGV_ACCERR
+#undef SEGV_ACCERR
+#endif
+enum {
+    SEGV_MAPERR = 1,
+    SEGV_ACCERR = 2,
+};
 
 static __thread struct task_struct *current_task = NULL;
 struct task_struct *init_task = NULL;
@@ -253,6 +263,16 @@ int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64
         cursor = segment_end;
     }
     return 0;
+}
+
+void task_note_memory_fault_impl(struct task_struct *task, uint64_t addr, int32_t code) {
+    if (!task) {
+        return;
+    }
+    task->last_fault_signal = SIGSEGV;
+    task->last_fault_code = code;
+    task->last_fault_addr = addr;
+    (void)signal_generate_task_info(task, SIGSEGV, code, addr);
 }
 
 void task_clear_vmas_impl(struct mm_struct *mm) {
@@ -474,6 +494,8 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
             }
         }
         if (copied < 0) {
+            task_note_memory_fault_impl(task, addr + total,
+                                        errno == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
             return total > 0 ? (long)total : -1;
         }
         if (copied == 0) {
@@ -481,6 +503,7 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
                 return (long)total;
             }
             errno = EFAULT;
+            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             return -1;
         }
         total += (size_t)copied;
@@ -526,6 +549,8 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
             }
         }
         if (copied < 0) {
+            task_note_memory_fault_impl(task, addr + total,
+                                        errno == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
             return total > 0 ? (long)total : -1;
         }
         if (copied == 0) {
@@ -533,6 +558,7 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
                 return (long)total;
             }
             errno = EFAULT;
+            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             return -1;
         }
         total += (size_t)copied;

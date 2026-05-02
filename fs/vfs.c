@@ -2144,6 +2144,18 @@ static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_pa
         return vpath + 10;
     }
 
+    if (strncmp(vpath, "/proc/", 6) == 0 && vpath[6] >= '0' && vpath[6] <= '9') {
+        char *endptr;
+        long pid = strtol(vpath + 6, &endptr, 10);
+        if (pid > 0 && (*endptr == '\0' || *endptr == '/')) {
+            struct task_struct *target = task_lookup((int32_t)pid);
+            if (target) {
+                free_task(target);
+                return endptr;
+            }
+        }
+    }
+
     task = get_current();
     if (!task) {
         return NULL;
@@ -2164,6 +2176,32 @@ static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_pa
         return NULL;
     }
     return self_path + 10;
+}
+
+int vfs_proc_target_pid_for_path(const char *vpath) {
+    struct task_struct *task;
+
+    if (!vpath) {
+        return -1;
+    }
+    if (strncmp(vpath, "/proc/self", 10) == 0 &&
+        (vpath[10] == '\0' || vpath[10] == '/')) {
+        task = get_current();
+        return task ? task->pid : -1;
+    }
+    if (strncmp(vpath, "/proc/", 6) == 0 && vpath[6] >= '0' && vpath[6] <= '9') {
+        char *endptr;
+        long pid = strtol(vpath + 6, &endptr, 10);
+        if (pid > 0 && (*endptr == '\0' || *endptr == '/')) {
+            struct task_struct *target = task_lookup((int32_t)pid);
+            if (target) {
+                int target_pid = target->pid;
+                free_task(target);
+                return target_pid;
+            }
+        }
+    }
+    return -1;
 }
 
 proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
@@ -2560,14 +2598,80 @@ int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
     return ret;
 }
 
-int vfs_proc_self_statm_content(char *buf, size_t buf_len) {
+struct vfs_vm_accounting {
+    uint64_t size_pages;
+    uint64_t resident_pages;
+    uint64_t shared_pages;
+    uint64_t text_pages;
+    uint64_t data_pages;
+    uint64_t dirty_pages;
+};
+
+static void vfs_vm_account_task(const struct task_struct *task, struct vfs_vm_accounting *acct) {
+    memset(acct, 0, sizeof(*acct));
+    if (!task || !task->mm) {
+        return;
+    }
+    for (uint32_t i = 0; i < task->mm->vma_count; i++) {
+        const struct task_vma *vma = &task->mm->vmas[i];
+        uint64_t pages = vma->page_count;
+        acct->size_pages += pages;
+        acct->resident_pages += pages;
+        if (vma->shared) {
+            acct->shared_pages += pages;
+        }
+        if (vma->kind == TASK_VMA_EXEC || vma->kind == TASK_VMA_INTERP) {
+            acct->text_pages += pages;
+        } else {
+            acct->data_pages += pages;
+        }
+        if (vma->dirty_pages) {
+            for (uint64_t page = 0; page < pages; page++) {
+                if (vma->dirty_pages[page]) {
+                    acct->dirty_pages++;
+                }
+            }
+        }
+    }
+}
+
+static struct task_struct *vfs_task_for_proc_pid(int32_t pid) {
+    struct task_struct *current;
+
+    current = get_current();
+    if (pid <= 0 || (current && current->pid == pid)) {
+        return current;
+    }
+    return task_lookup(pid);
+}
+
+static void vfs_put_proc_task(struct task_struct *task) {
+    if (task && task != get_current()) {
+        free_task(task);
+    }
+}
+
+int vfs_proc_task_statm_content(int32_t pid, char *buf, size_t buf_len) {
+    struct task_struct *task;
+    struct vfs_vm_accounting acct;
     int ret;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
     }
 
-    ret = snprintf(buf, buf_len, "0 0 0 0 0 0 0\n");
+    task = vfs_task_for_proc_pid(pid);
+    if (!task) {
+        return -ESRCH;
+    }
+    vfs_vm_account_task(task, &acct);
+    ret = snprintf(buf, buf_len, "%llu %llu %llu %llu 0 %llu 0\n",
+                   (unsigned long long)acct.size_pages,
+                   (unsigned long long)acct.resident_pages,
+                   (unsigned long long)acct.shared_pages,
+                   (unsigned long long)acct.text_pages,
+                   (unsigned long long)acct.data_pages);
+    vfs_put_proc_task(task);
 
     if (ret < 0) {
         return -EINVAL;
@@ -2576,6 +2680,11 @@ int vfs_proc_self_statm_content(char *buf, size_t buf_len) {
         return (int)(buf_len - 1);
     }
     return ret;
+}
+
+int vfs_proc_self_statm_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_statm_content(task ? task->pid : -1, buf, buf_len);
 }
 
 static void vfs_maps_permissions(uint32_t flags, int shared, char perms[5]) {
@@ -2620,14 +2729,12 @@ static int vfs_maps_path_for_vma(const struct task_vma *vma, char *path, size_t 
     return ret == 0 ? 0 : -ENOENT;
 }
 
-int vfs_proc_self_maps_content(char *buf, size_t buf_len) {
-    struct task_struct *task;
+static int vfs_proc_task_maps_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
     size_t pos = 0;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
     }
-    task = get_current();
     if (!task || !task->mm) {
         return 0;
     }
@@ -2684,6 +2791,23 @@ int vfs_proc_self_maps_content(char *buf, size_t buf_len) {
         }
     }
     return (int)pos;
+}
+
+int vfs_proc_task_maps_content(int32_t pid, char *buf, size_t buf_len) {
+    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    int ret;
+
+    if (!task) {
+        return -ESRCH;
+    }
+    ret = vfs_proc_task_maps_content_for_task(task, buf, buf_len);
+    vfs_put_proc_task(task);
+    return ret;
+}
+
+int vfs_proc_self_maps_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_maps_content(task ? task->pid : -1, buf, buf_len);
 }
 
 int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len) {
@@ -2842,9 +2966,10 @@ int vfs_proc_self_mounts_content(char *buf, size_t buf_len) {
     return (int)pos;
 }
 
-int vfs_proc_self_status_content(char *buf, size_t buf_len) {
+int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
     struct task_struct *task;
     struct cred *cred;
+    struct vfs_vm_accounting acct;
     int ret;
     char state_char;
 
@@ -2852,7 +2977,7 @@ int vfs_proc_self_status_content(char *buf, size_t buf_len) {
         return -EINVAL;
     }
 
-    task = get_current();
+    task = vfs_task_for_proc_pid(pid);
     if (!task) {
         return -ESRCH;
     }
@@ -2882,6 +3007,7 @@ int vfs_proc_self_status_content(char *buf, size_t buf_len) {
             state_char = 'R';
             break;
     }
+    vfs_vm_account_task(task, &acct);
 
     ret = snprintf(buf, buf_len,
         "Name:\t%s\n"
@@ -2895,7 +3021,13 @@ int vfs_proc_self_status_content(char *buf, size_t buf_len) {
         "NStgid:\t%d\n"
         "NSpid:\t%d\n"
         "NSpgid:\t%d\n"
-        "NSsid:\t%d\n",
+        "NSsid:\t%d\n"
+        "VmSize:\t%llu kB\n"
+        "VmRSS:\t%llu kB\n"
+        "RssAnon:\t%llu kB\n"
+        "RssFile:\t%llu kB\n"
+        "VmData:\t%llu kB\n"
+        "VmDirty:\t%llu kB\n",
         task->comm,
         state_char,
         task->tgid,
@@ -2906,8 +3038,15 @@ int vfs_proc_self_status_content(char *buf, size_t buf_len) {
         task->ns_pid,
         task->ns_pid,
         task->pgid,
-        task->sid
+        task->sid,
+        (unsigned long long)(acct.size_pages * 4ULL),
+        (unsigned long long)(acct.resident_pages * 4ULL),
+        (unsigned long long)((acct.resident_pages - acct.shared_pages) * 4ULL),
+        (unsigned long long)(acct.shared_pages * 4ULL),
+        (unsigned long long)(acct.data_pages * 4ULL),
+        (unsigned long long)(acct.dirty_pages * 4ULL)
     );
+    vfs_put_proc_task(task);
 
     if (ret < 0) {
         return -EINVAL;
@@ -2916,6 +3055,11 @@ int vfs_proc_self_status_content(char *buf, size_t buf_len) {
         return (int)(buf_len - 1);
     }
     return ret;
+}
+
+int vfs_proc_self_status_content(char *buf, size_t buf_len) {
+    struct task_struct *task = get_current();
+    return vfs_proc_task_status_content(task ? task->pid : -1, buf, buf_len);
 }
 
 int vfs_access(const char *pathname, int mode) {

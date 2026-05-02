@@ -7,6 +7,7 @@
 #include <linux/mman.h>
 #include <linux/stat.h>
 #include <linux/time_types.h>
+#include <asm-generic/siginfo.h>
 
 #include <errno.h>
 #include <stddef.h>
@@ -44,6 +45,7 @@
 
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
+#include "kernel/signal.h"
 #include "kernel/task.h"
 
 extern int link_impl(const char *oldpath, const char *newpath);
@@ -1646,5 +1648,213 @@ out:
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
     }
     close_if_open(fd);
+    return result;
+}
+
+static int append_decimal_value(char *buf, size_t buf_len, size_t *pos, int value) {
+    char digits[16];
+    int count = 0;
+
+    if (!buf || !pos || value < 0 || *pos >= buf_len) {
+        errno = EINVAL;
+        return -1;
+    }
+    do {
+        digits[count++] = (char)('0' + (value % 10));
+        value /= 10;
+    } while (value > 0 && count < (int)sizeof(digits));
+    if (value > 0 || *pos + (size_t)count + 1 > buf_len) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    for (int i = count - 1; i >= 0; i--) {
+        buf[(*pos)++] = digits[i];
+    }
+    buf[*pos] = '\0';
+    return 0;
+}
+
+static int proc_path_for_pid(char *buf, size_t buf_len, int pid, const char *suffix) {
+    size_t pos = 0;
+    const char prefix[] = "/proc/";
+    size_t prefix_len = sizeof(prefix) - 1;
+    size_t suffix_len;
+
+    if (!buf || !suffix || buf_len <= prefix_len) {
+        errno = EINVAL;
+        return -1;
+    }
+    memcpy(buf, prefix, prefix_len);
+    pos = prefix_len;
+    if (append_decimal_value(buf, buf_len, &pos, pid) != 0) {
+        return -1;
+    }
+    suffix_len = strlen(suffix);
+    if (pos + suffix_len + 1 > buf_len) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    memcpy(buf + pos, suffix, suffix_len + 1);
+    return 0;
+}
+
+static int read_file_into_buffer(const char *path, char *buf, size_t buf_len) {
+    int fd;
+    long nread;
+
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    nread = read_impl(fd, buf, buf_len - 1);
+    close_if_open(fd);
+    if (nread <= 0) {
+        errno = errno ? errno : ENODATA;
+        return -1;
+    }
+    buf[nread] = '\0';
+    return 0;
+}
+
+static int latest_signal_info_matches(struct task_struct *task, int signo, int code, uint64_t addr) {
+    struct signal_queue_entry *entry;
+
+    if (!task || !task->signal) {
+        return 0;
+    }
+
+    entry = task->signal->queue.tail;
+    return entry &&
+           entry->sig == signo &&
+           entry->si_signo == signo &&
+           entry->si_code == code &&
+           entry->fault_addr == addr;
+}
+
+int native_syscall_contract_virtual_memory_faults_queue_sigsegv_codes(void) {
+    struct task_struct *task = get_current();
+    void *mapped;
+    char byte = 0;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    if (syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)mapped, 4096,
+                              PROT_READ, 0, 0, 0) != 0 ||
+        task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, "x", 1) != -1 ||
+        errno != EACCES ||
+        !signal_is_pending(task, SIGSEGV) ||
+        task->last_fault_signal != SIGSEGV ||
+        task->last_fault_code != SEGV_ACCERR ||
+        task->last_fault_addr != (uint64_t)(uintptr_t)mapped ||
+        !latest_signal_info_matches(task, SIGSEGV, SEGV_ACCERR, (uint64_t)(uintptr_t)mapped)) {
+        result = errno ? errno : EPROTO;
+        goto out;
+    }
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped + 8192, &byte, 1) != -1 ||
+        errno != EFAULT ||
+        !signal_is_pending(task, SIGSEGV) ||
+        task->last_fault_signal != SIGSEGV ||
+        task->last_fault_code != SEGV_MAPERR ||
+        task->last_fault_addr != (uint64_t)(uintptr_t)mapped + 8192 ||
+        !latest_signal_info_matches(task, SIGSEGV, SEGV_MAPERR, (uint64_t)(uintptr_t)mapped + 8192)) {
+        result = errno ? errno : EPROTO;
+        goto out;
+    }
+    result = 0;
+
+out:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    return result;
+}
+
+int native_syscall_contract_proc_pid_maps_and_status_reflect_child_task(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    void *mapped = (void *)-1;
+    char path[64];
+    char content[2048];
+    int result = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return errno ? errno : ENOMEM;
+    }
+    set_current(child);
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    set_current(parent);
+    if ((long)(uintptr_t)mapped < 0) {
+        result = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+
+    if (proc_path_for_pid(path, sizeof(path), child->pid, "/status") != 0 ||
+        read_file_into_buffer(path, content, sizeof(content)) != 0 ||
+        !strstr(content, "Pid:\t") ||
+        !strstr(content, "VmSize:\t")) {
+        result = errno ? errno : ENODATA;
+        goto out;
+    }
+    if (proc_path_for_pid(path, sizeof(path), child->pid, "/maps") != 0 ||
+        read_file_into_buffer(path, content, sizeof(content)) != 0 ||
+        !strstr(content, "[anon]")) {
+        result = errno ? errno : ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    set_current(child);
+    if ((long)(uintptr_t)mapped >= 0) {
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    }
+    set_current(parent);
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    return result;
+}
+
+int native_syscall_contract_proc_vm_accounting_reports_mapped_pages(void) {
+    void *mapped = (void *)-1;
+    char statm[256];
+    char status[1024];
+    int result = -1;
+
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 8192,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    if (read_file_into_buffer("/proc/self/statm", statm, sizeof(statm)) != 0 ||
+        statm[0] == '0' ||
+        read_file_into_buffer("/proc/self/status", status, sizeof(status)) != 0 ||
+        !strstr(status, "VmSize:\t") ||
+        !strstr(status, "VmRSS:\t") ||
+        !strstr(status, "RssAnon:\t") ||
+        strstr(status, "VmSize:\t0 kB")) {
+        result = errno ? errno : ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 8192, 0, 0, 0, 0);
     return result;
 }

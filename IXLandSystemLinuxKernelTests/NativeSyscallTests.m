@@ -100,6 +100,18 @@
     XCTAssertEqual(native_syscall_contract_dev_zero_mmap_is_virtual_zero_memory(), 0, @"errno %d", errno);
 }
 
+- (void)testVirtualMemoryFaultsQueueSigsegvCodes {
+    XCTAssertEqual(native_syscall_contract_virtual_memory_faults_queue_sigsegv_codes(), 0, @"errno %d", errno);
+}
+
+- (void)testProcPidMapsAndStatusReflectChildTask {
+    XCTAssertEqual(native_syscall_contract_proc_pid_maps_and_status_reflect_child_task(), 0, @"errno %d", errno);
+}
+
+- (void)testProcVmAccountingReportsMappedPages {
+    XCTAssertEqual(native_syscall_contract_proc_vm_accounting_reports_mapped_pages(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesProcessStartupSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
 }

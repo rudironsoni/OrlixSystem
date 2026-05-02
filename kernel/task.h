@@ -293,6 +293,9 @@ struct task_struct {
     uint64_t clear_child_tid;
     uint64_t robust_list_head;
     uint64_t robust_list_len;
+    int32_t last_fault_signal;
+    int32_t last_fault_code;
+    uint64_t last_fault_addr;
 
     /* Virtual process hierarchy relationships */
     struct task_struct *parent;
@@ -361,6 +364,7 @@ const struct task_vma *task_find_vma_impl(struct task_struct *task, uint64_t add
 struct task_vma *task_find_vma_mutable_impl(struct task_struct *task, uint64_t addr);
 uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
 int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64_t size, uint32_t flags);
+void task_note_memory_fault_impl(struct task_struct *task, uint64_t addr, int32_t code);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task);
 void task_clear_vmas_impl(struct mm_struct *mm);
 struct mm_struct *task_mm_get_impl(struct mm_struct *mm);

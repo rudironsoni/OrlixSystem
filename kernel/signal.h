@@ -49,6 +49,7 @@ struct signal_queue_entry {
     int32_t si_signo;
     int32_t si_errno;
     int32_t si_code;
+    uint64_t fault_addr;
     struct signal_queue_entry *next;
 };
 
@@ -118,6 +119,7 @@ void signal_wake_task(struct task_struct *task, bool group_wide);
 
 /* Internal signal generation */
 int signal_generate_task(struct task_struct *target, int32_t sig);
+int signal_generate_task_info(struct task_struct *target, int32_t sig, int32_t code, uint64_t addr);
 int signal_generate_pgrp(int32_t pgid, int32_t sig);
 
 /* Check if signal is blocked */

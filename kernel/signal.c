@@ -228,9 +228,78 @@ struct signal_struct *dup_signal_struct(struct signal_struct *parent) {
     return child;
 }
 
-static void apply_signal_to_task(struct task_struct *task, int32_t sig) {
-    if (!task || !task->signal)
+static int signal_queue_append(struct signal_struct *signal, int32_t sig, int32_t code, uint64_t addr) {
+    struct signal_queue_entry *entry;
+
+    if (!signal) {
+        return -EINVAL;
+    }
+
+    entry = calloc(1, sizeof(*entry));
+    if (!entry) {
+        return -ENOMEM;
+    }
+
+    entry->sig = sig;
+    entry->si_signo = sig;
+    entry->si_errno = 0;
+    entry->si_code = code;
+    entry->fault_addr = addr;
+
+    kernel_mutex_lock(&signal->queue.lock);
+    if (signal->queue.tail) {
+        signal->queue.tail->next = entry;
+    } else {
+        signal->queue.head = entry;
+    }
+    signal->queue.tail = entry;
+    signal->queue.count++;
+    kernel_mutex_unlock(&signal->queue.lock);
+
+    return 0;
+}
+
+static void signal_queue_remove_first(struct signal_struct *signal, int32_t sig) {
+    struct signal_queue_entry *prev = NULL;
+    struct signal_queue_entry *entry;
+
+    if (!signal) {
         return;
+    }
+
+    kernel_mutex_lock(&signal->queue.lock);
+    entry = signal->queue.head;
+    while (entry) {
+        struct signal_queue_entry *next = entry->next;
+        if (entry->sig == sig) {
+            if (prev) {
+                prev->next = next;
+            } else {
+                signal->queue.head = next;
+            }
+            if (signal->queue.tail == entry) {
+                signal->queue.tail = prev;
+            }
+            signal->queue.count--;
+            free(entry);
+            break;
+        }
+        prev = entry;
+        entry = next;
+    }
+    kernel_mutex_unlock(&signal->queue.lock);
+}
+
+static int apply_signal_to_task(struct task_struct *task, int32_t sig, int32_t code, uint64_t addr) {
+    int queued;
+
+    if (!task || !task->signal)
+        return -EINVAL;
+
+    queued = signal_queue_append(task->signal, sig, code, addr);
+    if (queued != 0) {
+        return queued;
+    }
 
     /* Mark signal as pending - use 0-based indexing (sig - 1) */
     int idx = (sig - 1) / 64;
@@ -251,9 +320,16 @@ static void apply_signal_to_task(struct task_struct *task, int32_t sig) {
     }
 
     signal_wake_task(task, false);
+    return 0;
 }
 
 int signal_generate_task(struct task_struct *target, int32_t sig) {
+    return signal_generate_task_info(target, sig, 0, 0);
+}
+
+int signal_generate_task_info(struct task_struct *target, int32_t sig, int32_t code, uint64_t addr) {
+    int result;
+
     if (!target || sig < 1 || sig > KERNEL_SIG_NUM)
         return -EINVAL;
 
@@ -263,10 +339,10 @@ int signal_generate_task(struct task_struct *target, int32_t sig) {
     }
 
     kernel_mutex_lock(&target->lock);
-    apply_signal_to_task(target, sig);
+    result = apply_signal_to_task(target, sig, code, addr);
     kernel_mutex_unlock(&target->lock);
 
-    return 0;
+    return result;
 }
 
 int signal_generate_pgrp(int32_t pgid, int32_t sig) {
@@ -291,8 +367,13 @@ int signal_generate_pgrp(int32_t pgid, int32_t sig) {
                 found = 1;
                 atomic_fetch_add(&task->refs, 1);
                 kernel_mutex_lock(&task->lock);
-                apply_signal_to_task(task, sig);
+                int result = apply_signal_to_task(task, sig, 0, 0);
                 kernel_mutex_unlock(&task->lock);
+                if (result != 0) {
+                    free_task(task);
+                    kernel_mutex_unlock(&task_table_lock);
+                    return result;
+                }
                 free_task(task);
             }
             task = task->hash_next;
@@ -339,6 +420,7 @@ int signal_dequeue(struct task_struct *task, struct signal_mask_bits *mask, int3
             *sig = i;
             /* Clear pending bit */
             task->signal->pending.sig[idx] &= ~(1ULL << bit);
+            signal_queue_remove_first(task->signal, i);
             return 1; /* Return 1 to indicate signal found */
         }
     }

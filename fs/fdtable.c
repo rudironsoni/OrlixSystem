@@ -319,6 +319,7 @@ typedef struct fd_description {
     synthetic_dev_node_t dev_node;
     synthetic_proc_file_t proc_file;
     int proc_file_fd_num;
+    int proc_file_target_pid;
     unsigned int pty_index;
     bool pty_is_master;
     struct pipe_endpoint *pipe_endpoint;
@@ -351,6 +352,7 @@ static fd_description_t *alloc_fd_description(int real_fd, int flags, linux_mode
     desc->dev_node = SYNTHETIC_DEV_NONE;
     desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
     desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
     desc->pty_index = 0;
     desc->pty_is_master = false;
     desc->pipe_endpoint = NULL;
@@ -396,6 +398,7 @@ static fd_description_t *alloc_synthetic_subdir_fd_description(int flags, linux_
     desc->dev_node = SYNTHETIC_DEV_NONE;
     desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
     desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
     desc->pty_index = 0;
     desc->pty_is_master = false;
     desc->pipe_endpoint = NULL;
@@ -430,6 +433,7 @@ static fd_description_t *alloc_synthetic_dev_fd_description(int flags, linux_mod
     desc->dev_node = dev_node;
     desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
     desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
     desc->pty_index = 0;
     desc->pty_is_master = false;
     desc->pipe_endpoint = NULL;
@@ -458,6 +462,7 @@ static fd_description_t *alloc_synthetic_proc_file_fd_description(int flags, lin
     desc->dev_node = SYNTHETIC_DEV_NONE;
     desc->proc_file = proc_file;
     desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
     desc->pty_index = 0;
     desc->pty_is_master = false;
     desc->pipe_endpoint = NULL;
@@ -487,6 +492,7 @@ static fd_description_t *alloc_synthetic_pty_fd_description(int flags, linux_mod
     desc->dev_node = SYNTHETIC_DEV_NONE;
     desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
     desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
     desc->pty_index = pty_index;
     desc->pty_is_master = is_master;
     desc->pipe_endpoint = NULL;
@@ -528,6 +534,7 @@ static fd_description_t *alloc_pipe_fd_description(int flags, struct pipe_endpoi
     desc->dev_node = SYNTHETIC_DEV_NONE;
     desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
     desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
     desc->pty_index = 0;
     desc->pty_is_master = false;
     desc->pipe_endpoint = endpoint;
@@ -561,6 +568,7 @@ static fd_description_t *alloc_epoll_fd_description(int flags, struct epoll_inst
     desc->dev_node = SYNTHETIC_DEV_NONE;
     desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
     desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
     desc->pty_index = 0;
     desc->pty_is_master = false;
     desc->pipe_endpoint = NULL;
@@ -1063,6 +1071,18 @@ void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, linux_mode_t mode
     fs_mutex_unlock(&entry->lock);
 }
 
+void init_synthetic_proc_file_fd_entry_for_pid_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int target_pid) {
+    file_init_impl();
+    fd_entry_t *entry = &fd_table[fd];
+    fs_mutex_lock(&entry->lock);
+    entry->desc = alloc_synthetic_proc_file_fd_description(flags, mode, path, proc_file);
+    if (entry->desc) {
+        entry->desc->proc_file_target_pid = target_pid;
+    }
+    entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fs_mutex_unlock(&entry->lock);
+}
+
 void init_synthetic_proc_file_fd_entry_with_fdnum_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
@@ -1088,6 +1108,11 @@ synthetic_proc_file_t get_fd_synthetic_proc_file_impl(void *entry) {
 int get_fd_proc_file_fd_num_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     return fd_entry->desc ? fd_entry->desc->proc_file_fd_num : -1;
+}
+
+int get_fd_proc_file_target_pid_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    return fd_entry->desc ? fd_entry->desc->proc_file_target_pid : -1;
 }
 
 void init_synthetic_subdir_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_dir_class_t dir_class) {

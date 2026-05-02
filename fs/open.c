@@ -86,7 +86,8 @@ static int try_open_proc_self_file(const char *resolved_path, int flags, mode_t 
     if (fd < 0) {
         return -1;
     }
-    init_synthetic_proc_file_fd_entry_impl(fd, flags, mode, resolved_path, proc_file);
+    init_synthetic_proc_file_fd_entry_for_pid_impl(fd, flags, mode, resolved_path,
+                                                   proc_file, vfs_proc_target_pid_for_path(resolved_path));
     *out_fd = fd;
     return 1;
 }
