@@ -367,6 +367,7 @@ struct task_vma *task_find_vma_mutable_impl(struct task_struct *task, uint64_t a
 uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
 int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64_t size, uint32_t flags);
 void task_note_memory_fault_impl(struct task_struct *task, uint64_t addr, int32_t code);
+void task_note_memory_signal_fault_impl(struct task_struct *task, int32_t signo, int32_t code, uint64_t addr);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task);
 void task_clear_vmas_impl(struct mm_struct *mm);
 struct mm_struct *task_mm_get_impl(struct mm_struct *mm);

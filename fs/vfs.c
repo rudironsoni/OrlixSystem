@@ -229,7 +229,12 @@ static void vfs_mount_assign_propagation_ids_locked(struct vfs_mount_namespace *
         return;
     }
     if (entry->propagation == MS_SLAVE) {
-        entry->master_group_id = entry->master_group_id ? entry->master_group_id : mnt_ns->ns_id;
+        if (entry->master_group_id == 0) {
+            entry->master_group_id = vfs_mount_existing_peer_group_locked(mnt_ns, entry);
+            if (entry->master_group_id == 0) {
+                entry->master_group_id = mnt_ns->ns_id;
+            }
+        }
         entry->peer_group_id = 0;
         return;
     }
@@ -285,8 +290,13 @@ static int vfs_mount_propagate_shared_child_locked(struct vfs_mount_namespace *m
         int slot;
         int ret;
 
-        if (!peer->active || peer == parent || peer->propagation != MS_SHARED ||
-            strcmp(peer->source, parent->source) != 0) {
+        bool shared_peer = peer->propagation == MS_SHARED &&
+                           strcmp(peer->source, parent->source) == 0;
+        bool slave_peer = peer->propagation == MS_SLAVE &&
+                          parent->peer_group_id != 0 &&
+                          peer->master_group_id == parent->peer_group_id;
+
+        if (!peer->active || peer == parent || (!shared_peer && !slave_peer)) {
             continue;
         }
 
@@ -373,8 +383,13 @@ static void vfs_umount_propagate_shared_child_locked(struct vfs_mount_namespace 
         char peer_target[MAX_PATH];
         int ret;
 
-        if (!peer->active || peer == parent || peer->propagation != MS_SHARED ||
-            strcmp(peer->source, parent->source) != 0) {
+        bool shared_peer = peer->propagation == MS_SHARED &&
+                           strcmp(peer->source, parent->source) == 0;
+        bool slave_peer = peer->propagation == MS_SLAVE &&
+                          parent->peer_group_id != 0 &&
+                          peer->master_group_id == parent->peer_group_id;
+
+        if (!peer->active || peer == parent || (!shared_peer && !slave_peer)) {
             continue;
         }
 
@@ -1345,6 +1360,23 @@ static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath) {
     return readonly;
 }
 
+unsigned long vfs_mount_flags_for_path(const char *resolved_vpath) {
+    struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
+    const struct vfs_mount_entry *entry;
+    unsigned long flags = 0;
+
+    if (!resolved_vpath || !mnt_ns) {
+        return 0;
+    }
+
+    fs_mutex_lock(&mnt_ns->lock);
+    entry = vfs_find_mount_for_path_locked(resolved_vpath, mnt_ns);
+    flags = entry ? entry->flags : 0;
+    fs_mutex_unlock(&mnt_ns->lock);
+
+    return flags;
+}
+
 int vfs_describe_route_for_path(const char *vpath, enum vfs_route_identity *route_id,
                                 enum vfs_backing_class *backing_class, bool *reversible) {
     const struct vfs_route_entry *route = vfs_route_for_path(vpath);
@@ -1780,7 +1812,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     struct linux_stat target_stat;
     int ret;
     int slot = -1;
-    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY | MS_REC | MS_MOVE |
+    unsigned long supported_flags = MS_BIND | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_REC | MS_MOVE |
                                     vfs_mount_propagation_flags();
     unsigned long propagation = vfs_mount_selected_propagation(flags);
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();

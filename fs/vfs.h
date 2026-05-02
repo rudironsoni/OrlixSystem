@@ -240,6 +240,7 @@ int vfs_kern_mount(struct file_system_type *type, int flags, const char *dev_nam
 int vfs_mount(const char *source, const char *target, const char *fstype, unsigned long flags,
               const void *data);
 int vfs_umount(const char *target);
+unsigned long vfs_mount_flags_for_path(const char *resolved_vpath);
 int vfs_mount_basic(void);
 
 /* Path lookup and walk */

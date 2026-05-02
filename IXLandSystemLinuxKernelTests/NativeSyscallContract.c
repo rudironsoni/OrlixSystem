@@ -16,6 +16,46 @@
 #include <string.h>
 #include <sys/poll.h>
 
+#ifdef SIGBUS
+#undef SIGBUS
+#endif
+#ifdef SIGSEGV
+#undef SIGSEGV
+#endif
+#ifdef SIGIOT
+#undef SIGIOT
+#endif
+#ifdef SIGUSR1
+#undef SIGUSR1
+#endif
+#ifdef SIGUSR2
+#undef SIGUSR2
+#endif
+#ifdef SIGCHLD
+#undef SIGCHLD
+#endif
+#ifdef SIGCONT
+#undef SIGCONT
+#endif
+#ifdef SIGSTOP
+#undef SIGSTOP
+#endif
+#ifdef SIGTSTP
+#undef SIGTSTP
+#endif
+#ifdef SIGURG
+#undef SIGURG
+#endif
+#ifdef SIGIO
+#undef SIGIO
+#endif
+#ifdef SIGSYS
+#undef SIGSYS
+#endif
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
+
 #ifdef SIG_BLOCK
 #undef SIG_BLOCK
 #endif
@@ -66,6 +106,8 @@ struct native_syscall_dirent64 {
 };
 
 static int init_entry_seen;
+
+static int latest_signal_info_matches(struct task_struct *task, int signo, int code, uint64_t addr);
 
 static int close_if_open(int fd) {
     if (fd >= 0 && fdtable_is_used_impl(fd)) {
@@ -1310,6 +1352,66 @@ int native_syscall_contract_ftruncate_updates_shared_mapping_fault_policy(void) 
         errno = ENOMSG;
         goto out_mapped;
     }
+    result = 0;
+
+out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, sizeof(page), 0, 0, 0, 0);
+out:
+    close_if_open(fd);
+    unlink_impl(path);
+    return result;
+}
+
+int native_syscall_contract_truncated_file_mapping_fault_queues_sigbus(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-shared-map-sigbus";
+    char page[8192];
+    char byte = 0;
+    void *mapped = (void *)-1;
+    int fd = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(page, 'B', sizeof(page));
+    unlink_impl(path);
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)page, sizeof(page), 0, 0, 0);
+    if (ret != (long)sizeof(page)) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(page),
+                                                      PROT_READ, MAP_SHARED, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    if (syscall_dispatch_impl(__NR_ftruncate, fd, 4096, 0, 0, 0, 0) != 0) {
+        goto out_mapped;
+    }
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped + 4096, &byte, 1) != -1 ||
+        errno != EFAULT) {
+        errno = EFAULT;
+        goto out_mapped;
+    }
+    if (!signal_is_pending(task, SIGBUS) ||
+        task->last_fault_signal != SIGBUS ||
+        task->last_fault_code != BUS_ADRERR ||
+        task->last_fault_addr != (uint64_t)(uintptr_t)mapped + 4096 ||
+        !latest_signal_info_matches(task, SIGBUS, BUS_ADRERR, (uint64_t)(uintptr_t)mapped + 4096)) {
+        errno = EPROTO;
+        goto out_mapped;
+    }
+
     result = 0;
 
 out_mapped:

@@ -18,7 +18,9 @@
 
 #include <linux/fcntl.h>
 #include <linux/elf.h>
+#include <linux/mount.h>
 #include <linux/sched.h>
+#include <linux/stat.h>
 
 #ifdef SIGCHLD
 #undef SIGCHLD
@@ -63,9 +65,13 @@
 #ifdef SEGV_ACCERR
 #undef SEGV_ACCERR
 #endif
+#ifdef BUS_ADRERR
+#undef BUS_ADRERR
+#endif
 enum {
     SEGV_MAPERR = 1,
     SEGV_ACCERR = 2,
+    BUS_ADRERR = 2,
 };
 
 static __thread struct task_struct *current_task = NULL;
@@ -269,13 +275,17 @@ int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64
 }
 
 void task_note_memory_fault_impl(struct task_struct *task, uint64_t addr, int32_t code) {
+    task_note_memory_signal_fault_impl(task, SIGSEGV, code, addr);
+}
+
+void task_note_memory_signal_fault_impl(struct task_struct *task, int32_t signo, int32_t code, uint64_t addr) {
     if (!task) {
         return;
     }
-    task->last_fault_signal = SIGSEGV;
+    task->last_fault_signal = signo;
     task->last_fault_code = code;
     task->last_fault_addr = addr;
-    (void)signal_generate_task_info(task, SIGSEGV, code, addr);
+    (void)signal_generate_task_info(task, signo, code, addr);
 }
 
 void task_clear_vmas_impl(struct mm_struct *mm) {
@@ -502,8 +512,13 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
             }
         }
         if (copied < 0) {
-            task_note_memory_fault_impl(task, addr + total,
-                                        errno == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
+            if (errno == ENXIO) {
+                errno = EFAULT;
+                task_note_memory_signal_fault_impl(task, SIGBUS, BUS_ADRERR, addr + total);
+            } else {
+                task_note_memory_fault_impl(task, addr + total,
+                                            errno == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
+            }
             return total > 0 ? (long)total : -1;
         }
         if (copied == 0) {
@@ -557,8 +572,13 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
             }
         }
         if (copied < 0) {
-            task_note_memory_fault_impl(task, addr + total,
-                                        errno == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
+            if (errno == ENXIO) {
+                errno = EFAULT;
+                task_note_memory_signal_fault_impl(task, SIGBUS, BUS_ADRERR, addr + total);
+            } else {
+                task_note_memory_fault_impl(task, addr + total,
+                                            errno == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
+            }
             return total > 0 ? (long)total : -1;
         }
         if (copied == 0) {
@@ -1260,7 +1280,11 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
     }
 
     if (vfs_fstatat(AT_FDCWD, normalized_path, &st, 0) == 0) {
-        cred_apply_exec_metadata(get_current_cred(), st.st_uid, st.st_gid, st.st_mode);
+        uint32_t exec_mode = st.st_mode;
+        if ((vfs_mount_flags_for_path(normalized_path) & MS_NOSUID) != 0) {
+            exec_mode &= ~(uint32_t)(S_ISUID | S_ISGID);
+        }
+        cred_apply_exec_metadata(get_current_cred(), st.st_uid, st.st_gid, exec_mode);
     }
 
     closed = close_on_exec_impl();

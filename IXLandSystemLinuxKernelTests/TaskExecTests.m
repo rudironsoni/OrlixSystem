@@ -21,6 +21,7 @@ extern int task_exec_contract_no_new_privs_is_irreversible(void);
 extern int task_exec_contract_keepcaps_preserves_permitted_caps_after_setuid(void);
 extern int task_exec_contract_securebits_keepcaps_lock_is_enforced(void);
 extern int task_exec_contract_ambient_capability_survives_plain_exec(void);
+extern int task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(void);
 extern int task_exec_contract_ambient_raise_requires_inheritable_cap(void);
 extern int task_exec_contract_securebits_block_ambient_raise(void);
 
@@ -107,6 +108,10 @@ extern int task_exec_contract_securebits_block_ambient_raise(void);
 
 - (void)testAmbientCapabilitySurvivesPlainExec {
     XCTAssertEqual(task_exec_contract_ambient_capability_survives_plain_exec(), 0, @"errno %d", errno);
+}
+
+- (void)testNosuidMountBlocksSetuidExecGain {
+    XCTAssertEqual(task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(), 0, @"errno %d", errno);
 }
 
 - (void)testAmbientRaiseRequiresInheritableCap {

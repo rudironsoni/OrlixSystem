@@ -613,6 +613,10 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
         cred->fsgid = file_gid;
     }
 
+    if (privileged_exec) {
+        cred->cap_ambient = 0;
+    }
+
     cred->suid = cred->euid;
     cred->sgid = cred->egid;
 

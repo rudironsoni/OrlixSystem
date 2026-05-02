@@ -400,7 +400,7 @@ static long long mm_shared_file_remaining(const struct task_vma *vma, size_t off
             mm_file_size_notes[i].file_identity == identity) {
             file_offset = vma->backing_offset + (uint64_t)offset;
             if (file_offset >= mm_file_size_notes[i].size) {
-                errno = EFAULT;
+                errno = ENXIO;
                 return -1;
             }
             return (long long)(mm_file_size_notes[i].size - file_offset);

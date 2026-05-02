@@ -1324,6 +1324,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"shared mount peers should receive nested unmount propagation, errno %d", errno);
 }
 
+- (void)testSlaveMountReceivesNestedChildFromSharedMaster {
+    extern int vfs_contract_slave_mount_receives_nested_child_from_shared_master(void);
+    XCTAssertEqual(vfs_contract_slave_mount_receives_nested_child_from_shared_master(), 0,
+                   @"slave mounts should receive nested propagation from their shared master, errno %d", errno);
+}
+
 - (void)testMountinfoReportsNestedParentMountId {
     extern int vfs_contract_mountinfo_reports_nested_parent_mount_id(void);
     XCTAssertEqual(vfs_contract_mountinfo_reports_nested_parent_mount_id(), 0,

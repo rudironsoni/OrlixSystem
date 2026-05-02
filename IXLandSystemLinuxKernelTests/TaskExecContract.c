@@ -1,5 +1,6 @@
 #include <linux/capability.h>
 #include <linux/fcntl.h>
+#include <linux/mount.h>
 #include <linux/prctl.h>
 #include <linux/securebits.h>
 #include <linux/stat.h>
@@ -18,8 +19,13 @@ extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int fcntl_impl(int fd, int cmd, ...);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int unlink_impl(const char *pathname);
+extern int rmdir_impl(const char *pathname);
+extern int mkdir_impl(const char *pathname, linux_mode_t mode);
 extern int chmod(const char *pathname, linux_mode_t mode);
 extern int chown(const char *pathname, uid_t owner, gid_t group);
+extern int mount(const char *source, const char *target, const char *filesystemtype,
+                 unsigned long mountflags, const void *data);
+extern int umount(const char *target);
 extern uid_t getuid_impl(void);
 extern uid_t geteuid_impl(void);
 extern int setuid_impl(uid_t uid);
@@ -608,6 +614,53 @@ out:
     close_if_open(fd);
     cred_reset_to_defaults();
     unlink_impl("/tmp/task-exec-ambient-file");
+    return ret;
+}
+
+int task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(void) {
+    struct cred *cred;
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    umount("/tmp/task-exec-nosuid-target");
+    unlink_impl("/tmp/task-exec-nosuid-source/suid-file");
+    rmdir_impl("/tmp/task-exec-nosuid-source");
+    rmdir_impl("/tmp/task-exec-nosuid-target");
+
+    if (mkdir_impl("/tmp/task-exec-nosuid-source", 0700) != 0 ||
+        mkdir_impl("/tmp/task-exec-nosuid-target", 0700) != 0) {
+        goto out;
+    }
+    fd = open_impl("/tmp/task-exec-nosuid-source/suid-file", O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+    if (chown("/tmp/task-exec-nosuid-source/suid-file", 2000, 3000) != 0 ||
+        chmod("/tmp/task-exec-nosuid-source/suid-file", S_ISUID | 0755) != 0 ||
+        mount("/tmp/task-exec-nosuid-source", "/tmp/task-exec-nosuid-target", NULL,
+              MS_BIND | MS_NOSUID, NULL) != 0 ||
+        setuid_impl(1000) != 0 ||
+        task_exec_transition_impl("/tmp/task-exec-nosuid-target/suid-file", "nosuid-file") != 0) {
+        goto out;
+    }
+    cred = get_current_cred();
+    if (!cred || cred->uid != 1000 || cred->euid != 1000 || cred->suid != 1000) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    cred_reset_to_defaults();
+    umount("/tmp/task-exec-nosuid-target");
+    unlink_impl("/tmp/task-exec-nosuid-source/suid-file");
+    rmdir_impl("/tmp/task-exec-nosuid-source");
+    rmdir_impl("/tmp/task-exec-nosuid-target");
     return ret;
 }
 
