@@ -11,17 +11,39 @@
 #include <errno.h>
 #include <string.h>
 
+#include <linux/fcntl.h>
 #include <linux/mount.h>
+#include <linux/stat.h>
+#include <linux/umount.h>
+
+#include "vfs.h"
 
 extern int vfs_mount(const char *source, const char *target,
                       const char *fstype, unsigned long flags,
                       const void *data);
 extern int vfs_umount(const char *target);
+extern int vfs_umount_lazy(const char *target);
+extern int vfs_umount_expire(const char *target);
 extern int vfs_mount_setattr(int dirfd, const char *pathname, unsigned int flags,
                              const struct mount_attr *attr, size_t size);
 extern int vfs_open_tree(int dirfd, const char *pathname, unsigned int flags);
 extern int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
                           const char *to_pathname, unsigned int flags);
+
+static int umount_target_is_symlink(const char *target, int *is_symlink) {
+    struct linux_stat st;
+    int ret;
+
+    if (!target || !is_symlink) {
+        return -EFAULT;
+    }
+    ret = vfs_fstatat(AT_FDCWD, target, &st, AT_SYMLINK_NOFOLLOW);
+    if (ret < 0) {
+        return ret;
+    }
+    *is_symlink = ((st.st_mode & S_IFMT) == S_IFLNK) ? 1 : 0;
+    return 0;
+}
 
 /* ============================================================================
  * MOUNT - Virtual mount in IXLand namespace
@@ -92,12 +114,52 @@ static int umount_impl(const char *target) {
  * ============================================================================ */
 
 static int umount2_impl(const char *target, int flags) {
-    if (flags != 0) {
+    if (!target) {
+        errno = EFAULT;
+        return -1;
+    }
+
+    if (target[0] == '\0') {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if ((flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW)) != 0) {
         errno = EINVAL;
         return -1;
     }
 
-    return umount_impl(target);
+    if ((flags & MNT_EXPIRE) != 0 && (flags & (MNT_FORCE | MNT_DETACH)) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if ((flags & UMOUNT_NOFOLLOW) != 0) {
+        int is_symlink = 0;
+        int follow_ret = umount_target_is_symlink(target, &is_symlink);
+        if (follow_ret < 0) {
+            errno = -follow_ret;
+            return -1;
+        }
+        if (is_symlink) {
+            errno = EINVAL;
+            return -1;
+        }
+    }
+
+    int ret;
+    if ((flags & MNT_DETACH) != 0) {
+        ret = vfs_umount_lazy(target);
+    } else if ((flags & MNT_EXPIRE) != 0) {
+        ret = vfs_umount_expire(target);
+    } else {
+        ret = vfs_umount(target);
+    }
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
 }
 
 /* ============================================================================

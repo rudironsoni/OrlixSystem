@@ -1486,6 +1486,30 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"mount namespace teardown should account active mounts and detached refs, errno %d", errno);
 }
 
+- (void)testUmount2DetachDetachesBusyMountFromNamespace {
+    extern int vfs_contract_umount2_detach_detaches_busy_mount_from_namespace(void);
+    XCTAssertEqual(vfs_contract_umount2_detach_detaches_busy_mount_from_namespace(), 0,
+                   @"umount2 MNT_DETACH should detach busy mount from virtual namespace, errno %d", errno);
+}
+
+- (void)testUmount2ExpireRequiresMarkThenUnmount {
+    extern int vfs_contract_umount2_expire_requires_mark_then_unmount(void);
+    XCTAssertEqual(vfs_contract_umount2_expire_requires_mark_then_unmount(), 0,
+                   @"umount2 MNT_EXPIRE should mark then unmount on second call, errno %d", errno);
+}
+
+- (void)testUmount2RejectsExpireWithDetach {
+    extern int vfs_contract_umount2_rejects_expire_with_detach(void);
+    XCTAssertEqual(vfs_contract_umount2_rejects_expire_with_detach(), 0,
+                   @"umount2 should reject MNT_EXPIRE combined with MNT_DETACH, errno %d", errno);
+}
+
+- (void)testUmount2NofollowRejectsSymlinkTarget {
+    extern int vfs_contract_umount2_nofollow_rejects_symlink_target(void);
+    XCTAssertEqual(vfs_contract_umount2_nofollow_rejects_symlink_target(), 0,
+                   @"umount2 UMOUNT_NOFOLLOW should reject symlink mount targets, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,

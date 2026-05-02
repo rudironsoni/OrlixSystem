@@ -8,6 +8,9 @@ settings:
     LINUX_UAPI_VENDOR_ROOT: $(SRCROOT)/third_party/linux-uapi
     LINUX_UAPI_ROOT: $(LINUX_UAPI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)
     LINUX_UAPI_INCLUDE_ROOT: $(LINUX_UAPI_ROOT)/include
+    LINUX_ABI_VENDOR_ROOT: $(SRCROOT)/third_party/linux-abi
+    LINUX_ABI_ROOT: $(LINUX_ABI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)
+    LINUX_ABI_INCLUDE_ROOT: $(LINUX_ABI_ROOT)/include
 targets:
   IXLandSystem:
     type: library.static
@@ -55,6 +58,8 @@ targets:
       group: fs
     - path: fs/mount.c
       group: fs
+      compilerFlags:
+      - -I$(LINUX_ABI_INCLUDE_ROOT)
     - path: fs/namei.c
       group: fs
     - path: fs/open.c
@@ -223,6 +228,7 @@ targets:
     - IXLandSystemLinuxKernelTests/LinuxUAPITestSupport.h
     - path: IXLandSystemLinuxKernelTests/VFSAtContract.c
       compilerFlags:
+      - -I$(LINUX_ABI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
     - path: IXLandSystemLinuxKernelTests/FcntlContract.c

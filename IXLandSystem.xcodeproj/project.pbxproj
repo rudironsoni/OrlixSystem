@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		03546A15F1A189A7F8418CFD /* mount.c in Sources */ = {isa = PBXBuildFile; fileRef = C741BE27F9BDB9CD9023EF4F /* mount.c */; };
+		03546A15F1A189A7F8418CFD /* mount.c in Sources */ = {isa = PBXBuildFile; fileRef = C741BE27F9BDB9CD9023EF4F /* mount.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_ABI_INCLUDE_ROOT)"; }; };
 		03A76FCCC01827AE23273C39 /* RootfsBootstrapTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 84669BD046B2E072890F45A9 /* RootfsBootstrapTests.m */; };
 		0B59B8C18B35C87BE0659D6D /* ReadinessTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 3ED2A30FC6E7984CB380A319 /* ReadinessTests.m */; };
 		0BF178D86A3C666E8174EFB1 /* exit.c in Sources */ = {isa = PBXBuildFile; fileRef = 5885A2D3F39790AAC62634D5 /* exit.c */; };
@@ -26,7 +26,7 @@
 		23CAFD7E106AACF3B7AA17F4 /* NativeSyscallContract.c in Sources */ = {isa = PBXBuildFile; fileRef = F74A8BBE86DA74ECDE3970D0 /* NativeSyscallContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		23F96E17A5FB5F9FF02C47D1 /* ioctl.c in Sources */ = {isa = PBXBuildFile; fileRef = 43308FAA8FF808B4BF22777C /* ioctl.c */; };
 		29E1C2D21F213D5B2A063AFF /* ixland_observability.c in Sources */ = {isa = PBXBuildFile; fileRef = 666A5EE8B497170CF5C3223A /* ixland_observability.c */; };
-		2A87FD94AED672D2C4945B04 /* VFSAtContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E1CD35402A585DF342760586 /* VFSAtContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
+		2A87FD94AED672D2C4945B04 /* VFSAtContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E1CD35402A585DF342760586 /* VFSAtContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_ABI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		2D265352D0E476750492B1BF /* poll.c in Sources */ = {isa = PBXBuildFile; fileRef = 88D453F467952833E1FD3D0D /* poll.c */; };
 		3655BF1DA2D2D3DA3FAF986A /* time.c in Sources */ = {isa = PBXBuildFile; fileRef = F5240B1F3DC3BDF0ED535D3B /* time.c */; };
 		3DEC101077E32C26F85507A0 /* TaskGroupTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 767A8483185FE320714CA54E /* TaskGroupTests.m */; };
@@ -849,6 +849,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LINUX_ABI_INCLUDE_ROOT = "$(LINUX_ABI_ROOT)/include";
+				LINUX_ABI_ROOT = "$(LINUX_ABI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
+				LINUX_ABI_VENDOR_ROOT = "$(SRCROOT)/third_party/linux-abi";
 				LINUX_UAPI_ARCH = arm64;
 				LINUX_UAPI_INCLUDE_ROOT = "$(LINUX_UAPI_ROOT)/include";
 				LINUX_UAPI_ROOT = "$(LINUX_UAPI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
@@ -1042,6 +1045,9 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				LINUX_ABI_INCLUDE_ROOT = "$(LINUX_ABI_ROOT)/include";
+				LINUX_ABI_ROOT = "$(LINUX_ABI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
+				LINUX_ABI_VENDOR_ROOT = "$(SRCROOT)/third_party/linux-abi";
 				LINUX_UAPI_ARCH = arm64;
 				LINUX_UAPI_INCLUDE_ROOT = "$(LINUX_UAPI_ROOT)/include";
 				LINUX_UAPI_ROOT = "$(LINUX_UAPI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
