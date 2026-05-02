@@ -1468,6 +1468,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"move_mount should propagate moved shared child mounts to peer mount trees, errno %d", errno);
 }
 
+- (void)testRecursiveUmountPropagatesNestedSharedSubtree {
+    extern int vfs_contract_recursive_umount_propagates_nested_shared_subtree(void);
+    XCTAssertEqual(vfs_contract_recursive_umount_propagates_nested_shared_subtree(), 0,
+                   @"recursive unmount should propagate nested shared subtree removal, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,

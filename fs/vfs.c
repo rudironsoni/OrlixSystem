@@ -4631,6 +4631,25 @@ int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
     return vfs_proc_task_stat_content(task ? task->pid : -1, buf, buf_len);
 }
 
+static const char *vfs_proc_task_state_name(enum task_state state) {
+    switch (state) {
+    case TASK_RUNNING:
+        return "running";
+    case TASK_INTERRUPTIBLE:
+        return "sleeping";
+    case TASK_UNINTERRUPTIBLE:
+        return "disk sleep";
+    case TASK_STOPPED:
+        return "stopped";
+    case TASK_ZOMBIE:
+        return "zombie";
+    case TASK_DEAD:
+        return "dead";
+    default:
+        return "running";
+    }
+}
+
 struct vfs_vm_accounting {
     uint64_t size_pages;
     uint64_t resident_pages;
@@ -4677,6 +4696,34 @@ static struct task_struct *vfs_task_for_proc_pid(int32_t pid) {
         return current;
     }
     return task_lookup(pid);
+}
+
+static unsigned long long vfs_proc_fdinfo_mount_id_for_path(struct fs_struct *fs, const char *path) {
+    struct vfs_mount_namespace *mnt_ns;
+    const struct vfs_mount_entry *entry;
+    uint64_t id = 1;
+
+    if (!path || path[0] != '/') {
+        return 1;
+    }
+
+    mnt_ns = fs ? fs->mnt_ns : vfs_task_mount_namespace();
+    if (!mnt_ns) {
+        return 1;
+    }
+
+    fs_mutex_lock(&mnt_ns->lock);
+    entry = vfs_find_mount_for_path_locked(path, mnt_ns);
+    if (entry) {
+        for (size_t i = 0; i < MAX_MOUNTS; i++) {
+            if (&mnt_ns->entries[i] == entry) {
+                id = vfs_mount_id_for_index_locked(mnt_ns, i);
+                break;
+            }
+        }
+    }
+    fs_mutex_unlock(&mnt_ns->lock);
+    return id == 0 ? 1 : id;
 }
 
 static void vfs_put_proc_task(struct task_struct *task) {
@@ -5068,6 +5115,7 @@ int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len) {
 int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_len) {
     struct task_struct *task;
     void *entry;
+    char path[MAX_PATH];
     off_t offset;
     int flags;
     int fd_flags;
@@ -5089,7 +5137,12 @@ int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_
     }
     is_current_task = task == get_current();
     if (!is_current_task) {
-        ret = fdtable_task_fdinfo_content_impl(task, fd_num, buf, buf_len);
+        unsigned long long mnt_id = 1;
+
+        if (fdtable_task_fd_path_impl(task, fd_num, path, sizeof(path)) == 0) {
+            mnt_id = vfs_proc_fdinfo_mount_id_for_path(task->fs, path);
+        }
+        ret = fdtable_task_fdinfo_content_impl(task, fd_num, mnt_id, buf, buf_len);
         vfs_put_proc_task(task);
         if (ret >= 0) {
             return ret;
@@ -5103,6 +5156,9 @@ int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_
         return -ENOENT;
     }
 
+    if (get_fd_path_impl(entry, path, sizeof(path)) != 0) {
+        path[0] = '\0';
+    }
     offset = get_fd_offset_impl(entry);
     flags = get_fd_flags_impl(entry);
     fd_flags = get_fd_descriptor_flags_impl(entry);
@@ -5114,7 +5170,9 @@ int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_
         flags |= O_CLOEXEC;
     }
 
-    ret = snprintf(buf, buf_len, "pos:\t%lld\nflags:\t0%o\n", (long long)offset, flags);
+    ret = snprintf(buf, buf_len, "pos:\t%lld\nflags:\t0%o\nmnt_id:\t%llu\n",
+                   (long long)offset, flags,
+                   vfs_proc_fdinfo_mount_id_for_path(get_current() ? get_current()->fs : NULL, path));
 
     if (ret < 0) {
         return -EINVAL;
@@ -5424,7 +5482,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
 
     if (vfs_proc_append(buf, buf_len, &pos,
         "Name:\t%s\n"
-        "State:\t%c (running)\n"
+        "State:\t%c (%s)\n"
         "Tgid:\t%d\n"
         "Pid:\t%d\n"
         "PPid:\t%d\n"
@@ -5434,6 +5492,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         "Groups:\t",
         task->comm,
         state_char,
+        vfs_proc_task_state_name(atomic_load(&task->state)),
         task->tgid,
         task->pid,
         task->ppid,

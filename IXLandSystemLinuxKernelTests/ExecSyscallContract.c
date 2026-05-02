@@ -3,6 +3,7 @@
 #include <linux/auxvec.h>
 #include <linux/capability.h>
 #include <linux/mman.h>
+#include <linux/mount.h>
 #include <linux/prctl.h>
 #include <linux/stat.h>
 #include <linux/xattr.h>
@@ -45,6 +46,11 @@ extern int unlink_impl(const char *pathname);
 extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
 extern int chmod(const char *pathname, linux_mode_t mode);
 extern int chown(const char *pathname, linux_uid_t owner, linux_gid_t group);
+extern int mkdir_impl(const char *pathname, linux_mode_t mode);
+extern int rmdir_impl(const char *pathname);
+extern int mount(const char *source, const char *target, const char *filesystemtype,
+                 unsigned long mountflags, const void *data);
+extern int umount(const char *target);
 extern int setuid_impl(uid_t uid);
 extern int setgid_impl(gid_t gid);
 extern int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);
@@ -1341,6 +1347,79 @@ out:
     native_registry_clear();
     unlink_impl(path);
     cred_reset_to_defaults();
+    return result;
+}
+
+int exec_syscall_contract_native_execve_nosuid_mount_blocks_setid_and_file_caps(void) {
+    char *argv[] = {"nosuid-native", NULL};
+    char *envp[] = {NULL};
+    const char *source_dir = "/tmp/exec-nosuid-source";
+    const char *target_dir = "/tmp/exec-nosuid-target";
+    const char *source_path = "/tmp/exec-nosuid-source/bin";
+    const char *target_path = "/tmp/exec-nosuid-target/bin";
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    uint64_t cap_mask = 1ULL << CAP_NET_BIND_SERVICE;
+    int mounted = 0;
+    int status;
+    int result = -1;
+
+    cred_reset_to_defaults();
+    native_registry_clear();
+    umount(target_dir);
+    unlink_impl(source_path);
+    rmdir_impl(source_dir);
+    rmdir_impl(target_dir);
+
+    if ((mkdir_impl(source_dir, 0700) != 0 && errno != EEXIST) ||
+        (mkdir_impl(target_dir, 0700) != 0 && errno != EEXIST) ||
+        native_register(target_path, native_exec_status) != 0 ||
+        write_file_exact(source_path, "native") != 0 ||
+        chown(source_path, 2000, 3000) != 0 ||
+        chmod(source_path, S_ISUID | S_ISGID | 0755) != 0 ||
+        vfs_set_file_capabilities(source_path, cap_mask, 0, true) != 0 ||
+        mount(source_dir, target_dir, NULL, MS_BIND | MS_NOSUID, NULL) != 0) {
+        goto out;
+    }
+    mounted = 1;
+    if (setgid_impl(1000) != 0 || setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    status = execve(target_path, argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+    memset(data, 0, sizeof(data));
+    if (capget_impl(&header, data) != 0) {
+        goto out;
+    }
+    if (expect_current_ids(1000, 1000, 1000, 1000, 1000, 1000) != 0 ||
+        (data[0].permitted & (1U << CAP_NET_BIND_SERVICE)) != 0 ||
+        (data[0].effective & (1U << CAP_NET_BIND_SERVICE)) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        native_registry_clear();
+        cred_reset_to_defaults();
+        if (mounted) {
+            umount(target_dir);
+        }
+        unlink_impl(source_path);
+        rmdir_impl(source_dir);
+        rmdir_impl(target_dir);
+        errno = saved_errno;
+    }
     return result;
 }
 

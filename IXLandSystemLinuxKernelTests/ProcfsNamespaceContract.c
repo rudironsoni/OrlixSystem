@@ -76,6 +76,29 @@ static bool contains_bytes(const char *haystack, size_t haystack_len, const char
     return false;
 }
 
+static int append_decimal_value(char *buf, size_t buf_len, size_t *pos, int value) {
+    char digits[16];
+    int count = 0;
+
+    if (!buf || !pos || value < 0 || *pos >= buf_len) {
+        errno = EINVAL;
+        return -1;
+    }
+    do {
+        digits[count++] = (char)('0' + (value % 10));
+        value /= 10;
+    } while (value > 0 && count < (int)sizeof(digits));
+    if (value > 0 || *pos + (size_t)count + 1 > buf_len) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    for (int i = count - 1; i >= 0; i--) {
+        buf[(*pos)++] = digits[i];
+    }
+    buf[*pos] = '\0';
+    return 0;
+}
+
 static int read_file_content(const char *path, char *buf, size_t buf_len) {
     int fd;
     long nread;
@@ -1037,6 +1060,103 @@ out:
         set_current(child);
         if (mapping != (void *)-1) {
             munmap_impl(mapping, TASK_VMA_PAGE_SIZE);
+        }
+        set_current(saved);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_proc_pid_status_stat_and_fdinfo_have_linux_fields(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    char path[96] = {0};
+    char content[2048];
+    int child_fd = -1;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    saved = get_current();
+    set_current(child);
+    memset(child->comm, 0, sizeof(child->comm));
+    memcpy(child->comm, "proc-fields", 12);
+    child_fd = open_impl("/proc/self/status", O_RDONLY, 0);
+    set_current(saved);
+    if (child_fd < 0) {
+        goto out;
+    }
+
+    task_mark_stopped_by_signal(child, SIGSTOP);
+    proc_pid_file_path(path, sizeof(path), child->pid, "/status");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "Name:\tproc-fields\n") ||
+        !contains(content, "State:\tT (stopped)\n") ||
+        !contains(content, "Tgid:\t") ||
+        !contains(content, "Uid:\t") ||
+        !contains(content, "Gid:\t") ||
+        !contains(content, "NoNewPrivs:\t0\n")) {
+        errno = ENODATA;
+        goto out;
+    }
+    proc_pid_file_path(path, sizeof(path), child->pid, "/stat");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "(proc-fields)") ||
+        !contains(content, " T ")) {
+        errno = ENOMSG;
+        goto out;
+    }
+    {
+        size_t path_pos;
+
+        proc_pid_file_path(path, sizeof(path), child->pid, "/fdinfo/");
+        path_pos = strlen(path);
+        if (append_decimal_value(path, sizeof(path), &path_pos, child_fd) != 0) {
+            goto out;
+        }
+    }
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "pos:\t") ||
+        !contains(content, "flags:\t") ||
+        !contains(content, "mnt_id:\t")) {
+        errno = ENOTRECOVERABLE;
+        goto out;
+    }
+
+    task_mark_exited(child, 7);
+    proc_pid_file_path(path, sizeof(path), child->pid, "/status");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "State:\tZ (zombie)\n")) {
+        errno = ECHILD;
+        goto out;
+    }
+    proc_pid_file_path(path, sizeof(path), child->pid, "/stat");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, " Z ")) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (child) {
+        saved = get_current();
+        set_current(child);
+        if (child_fd >= 0) {
+            close_impl(child_fd);
         }
         set_current(saved);
         task_unlink_child_impl(parent, child);

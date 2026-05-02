@@ -1848,7 +1848,8 @@ int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size
     return 0;
 }
 
-int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, char *buf, size_t buf_len) {
+int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned long long mnt_id,
+                                     char *buf, size_t buf_len) {
     struct file *file;
     linux_off_t pos;
     unsigned int flags;
@@ -1881,7 +1882,8 @@ int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, char *buf
         flags |= O_CLOEXEC;
     }
 
-    ret = snprintf(buf, buf_len, "pos:\t%lld\nflags:\t0%o\n", (long long)pos, flags);
+    ret = snprintf(buf, buf_len, "pos:\t%lld\nflags:\t0%o\nmnt_id:\t%llu\n",
+                   (long long)pos, flags, mnt_id);
     if (ret < 0) {
         errno = EINVAL;
         return -1;

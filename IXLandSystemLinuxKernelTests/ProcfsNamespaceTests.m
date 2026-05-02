@@ -80,6 +80,10 @@
     XCTAssertEqual(procfs_namespace_contract_proc_pid_stat_status_and_maps_report_target_task(), 0, @"errno %d", errno);
 }
 
+- (void)testProcPidStatusStatAndFdinfoHaveLinuxFields {
+    XCTAssertEqual(procfs_namespace_contract_proc_pid_status_stat_and_fdinfo_have_linux_fields(), 0, @"errno %d", errno);
+}
+
 - (void)testProcPidMountinfoUsesTargetMountNamespace {
     XCTAssertEqual(procfs_namespace_contract_proc_pid_mountinfo_uses_target_mount_namespace(), 0, @"errno %d", errno);
 }
