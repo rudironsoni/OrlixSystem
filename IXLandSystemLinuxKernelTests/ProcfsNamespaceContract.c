@@ -1,7 +1,11 @@
 #include <linux/fcntl.h>
+#include <linux/mman.h>
 #include <linux/mount.h>
 #include <linux/sched.h>
 #include <linux/stat.h>
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
 
 #include <errno.h>
 #include <stdbool.h>
@@ -12,11 +16,14 @@
 #include "IXLandSystemLinuxKernelTests/ProcfsNamespaceContract.h"
 #include "fs/vfs.h"
 #include "kernel/cred_internal.h"
+#include "kernel/mm.h"
+#include "kernel/signal.h"
 #include "kernel/task.h"
 #include "kernel/uts.h"
 
 extern int clone_impl(uint64_t flags);
 extern int unshare_impl(uint64_t flags);
+extern int fcntl_impl(int fd, int cmd, ...);
 extern int mkdir_impl(const char *pathname, linux_mode_t mode);
 extern int mount(const char *source, const char *target, const char *filesystemtype,
                  unsigned long mountflags, const void *data);
@@ -182,6 +189,36 @@ static bool procfs_dirents_contain_name(char *buf, long nread, const char *name)
         offset += entry->d_reclen;
     }
     return false;
+}
+
+static int procfs_read_fdinfo_flags_for_pid(int pid, int fd_num, unsigned int *flags_out) {
+    char path[96] = {0};
+    char content[512];
+    char *flags_line;
+    unsigned int flags = 0;
+
+    if (!flags_out) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    proc_pid_file_path(path, sizeof(path), pid, "/fdinfo/");
+    append_positive_decimal(path, sizeof(path), fd_num);
+    if (read_file_content(path, content, sizeof(content)) != 0) {
+        return -1;
+    }
+
+    flags_line = strstr(content, "flags:\t0");
+    if (!flags_line) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    for (flags_line += 8; *flags_line >= '0' && *flags_line <= '7'; flags_line++) {
+        flags = (flags << 3) | (unsigned int)(*flags_line - '0');
+    }
+    *flags_out = flags;
+    return 0;
 }
 
 static void release_lookup_child(struct task_struct *parent, struct task_struct *child) {
@@ -651,6 +688,66 @@ out:
     return ret;
 }
 
+int procfs_namespace_contract_fdinfo_flags_are_per_task_descriptor_state(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    int fd = -1;
+    unsigned int parent_flags = 0;
+    unsigned int child_flags = 0;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    fd = open_impl("/dev/null", O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    if (fcntl_impl(fd, F_SETFD, FD_CLOEXEC) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    if (procfs_read_fdinfo_flags_for_pid(child->pid, fd, &child_flags) != 0 ||
+        procfs_read_fdinfo_flags_for_pid(parent->pid, fd, &parent_flags) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    if ((child_flags & O_CLOEXEC) == 0 || (parent_flags & O_CLOEXEC) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    set_current(parent);
+    if (fd >= 0) {
+        close_impl(fd);
+    }
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
 int procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_task(void) {
     struct task_struct *parent;
     struct task_struct *child = NULL;
@@ -714,6 +811,82 @@ int procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_ta
 
 out:
     if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
+int procfs_namespace_contract_proc_pid_stat_status_and_maps_report_target_task(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    void *mapping = (void *)-1;
+    char path[96] = {0};
+    char content[1024];
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    saved = get_current();
+    set_current(child);
+    memset(child->comm, 0, sizeof(child->comm));
+    memcpy(child->comm, "proc-target", 12);
+    task_mark_stopped_by_signal(child, SIGSTOP);
+    mapping = mmap_impl(NULL, TASK_VMA_PAGE_SIZE, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    set_current(saved);
+    if (mapping == (void *)-1) {
+        goto out;
+    }
+
+    proc_pid_file_path(path, sizeof(path), child->pid, "/stat");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "(proc-target)") ||
+        !contains(content, " T ")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/status");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "Name:\tproc-target\n") ||
+        !contains(content, "State:\tT ")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), child->pid, "/maps");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "rw-p") ||
+        !contains(content, "[anon]")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (child) {
+        saved = get_current();
+        set_current(child);
+        if (mapping != (void *)-1) {
+            munmap_impl(mapping, TASK_VMA_PAGE_SIZE);
+        }
+        set_current(saved);
         task_unlink_child_impl(parent, child);
         free_task(child);
     }

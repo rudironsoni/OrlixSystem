@@ -21,6 +21,8 @@
 #include "pty.h"
 #include "../kernel/task.h"
 
+static struct file *copy_file_descriptor(struct file *file);
+
 struct files_struct *alloc_files(size_t max_fds) {
     if (max_fds == 0) {
         errno = EINVAL;
@@ -76,7 +78,7 @@ struct files_struct *dup_files(struct files_struct *parent) {
     fs_mutex_lock(&parent->lock);
     for (size_t i = 0; i < parent->max_fds; i++) {
         if (parent->fd[i]) {
-            child->fd[i] = dup_file(parent->fd[i]);
+            child->fd[i] = copy_file_descriptor(parent->fd[i]);
             if (!child->fd[i]) {
                 fs_mutex_unlock(&parent->lock);
                 free_files(child);
@@ -111,6 +113,28 @@ struct file *dup_file(struct file *file) {
         return NULL;
     atomic_fetch_add(&file->refs, 1);
     return file;
+}
+
+static struct file *copy_file_descriptor(struct file *file) {
+    struct file *copy;
+
+    if (!file) {
+        return NULL;
+    }
+
+    copy = alloc_file();
+    if (!copy) {
+        return NULL;
+    }
+
+    copy->fd = file->fd;
+    copy->real_fd = file->real_fd;
+    copy->flags = file->flags;
+    copy->fd_flags = file->fd_flags;
+    copy->pos = file->pos;
+    memcpy(copy->path, file->path, sizeof(copy->path));
+    copy->private_data = file->private_data;
+    return copy;
 }
 
 int alloc_fd(struct files_struct *files, struct file *file) {

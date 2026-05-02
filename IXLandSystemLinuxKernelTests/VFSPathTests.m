@@ -1284,6 +1284,18 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"/proc/self/mountinfo should report shared propagation metadata, errno %d", errno);
 }
 
+- (void)testProcSelfMountinfoReportsSlavePrivateAndUnbindablePropagation {
+    extern int vfs_contract_proc_self_mountinfo_reports_slave_private_and_unbindable_propagation(void);
+    XCTAssertEqual(vfs_contract_proc_self_mountinfo_reports_slave_private_and_unbindable_propagation(), 0,
+                   @"/proc/self/mountinfo should report Linux-shaped propagation metadata, errno %d", errno);
+}
+
+- (void)testMountRejectsMultiplePropagationFlags {
+    extern int vfs_contract_mount_rejects_multiple_propagation_flags(void);
+    XCTAssertEqual(vfs_contract_mount_rejects_multiple_propagation_flags(), 0,
+                   @"mount should reject multiple propagation flags, errno %d", errno);
+}
+
 - (void)testProcSelfMountsListsBindMount {
     extern int vfs_contract_proc_self_mounts_lists_bind_mount(void);
     XCTAssertEqual(vfs_contract_proc_self_mounts_lists_bind_mount(), 0,

@@ -60,8 +60,16 @@
     XCTAssertEqual(procfs_namespace_contract_proc_pid_fd_dir_lists_target_inherited_fds_after_parent_close(), 0, @"errno %d", errno);
 }
 
+- (void)testFdinfoFlagsArePerTaskDescriptorState {
+    XCTAssertEqual(procfs_namespace_contract_fdinfo_flags_are_per_task_descriptor_state(), 0, @"errno %d", errno);
+}
+
 - (void)testProcPidCmdlineEnvironAndCommReportTargetTask {
     XCTAssertEqual(procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_task(), 0, @"errno %d", errno);
+}
+
+- (void)testProcPidStatStatusAndMapsReportTargetTask {
+    XCTAssertEqual(procfs_namespace_contract_proc_pid_stat_status_and_maps_report_target_task(), 0, @"errno %d", errno);
 }
 
 - (void)testProcPidMountinfoUsesTargetMountNamespace {
