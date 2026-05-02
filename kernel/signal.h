@@ -66,6 +66,7 @@ struct signal_action_slot {
     sighandler_t handler;
     struct signal_mask_bits mask;
     int32_t flags;
+    uint64_t restorer;
 };
 
 /* Signal stack state - private internal */

@@ -699,12 +699,14 @@ int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altsta
 int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t return_pc,
                               uint64_t current_sp, uint64_t *frame_sp_out) {
     uint64_t frame_sp;
-    uint64_t frame_record[2];
+    uint64_t frame_record[8];
+    const struct signal_action_slot *action;
 
     if (!task || !task->signal || !task->mm || sig < 1 || sig > KERNEL_SIG_NUM || !frame_sp_out) {
         errno = EINVAL;
         return -1;
     }
+    action = &task->signal->actions[sig - 1];
     frame_sp = current_sp;
     if ((task->signal->altstack.ss_flags & 2) == 0 && task->signal->altstack.ss_sp &&
         task->signal->altstack.ss_size >= 5120) {
@@ -719,6 +721,12 @@ int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t re
     frame_sp -= 256;
     frame_record[0] = (uint64_t)sig;
     frame_record[1] = return_pc;
+    frame_record[2] = (uint64_t)(uintptr_t)action->handler;
+    frame_record[3] = (uint64_t)(uint32_t)action->flags;
+    frame_record[4] = task->signal->blocked.sig[0];
+    frame_record[5] = (uint64_t)(uintptr_t)task->signal->altstack.ss_sp;
+    frame_record[6] = (uint64_t)task->signal->altstack.ss_size;
+    frame_record[7] = (uint64_t)(uint32_t)task->signal->altstack.ss_flags;
     if (task_write_virtual_memory_impl(task, frame_sp, frame_record, sizeof(frame_record)) !=
         (long)sizeof(frame_record)) {
         return -1;
@@ -726,8 +734,13 @@ int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t re
     task->mm->signal_frame_sp = frame_sp;
     task->mm->signal_frame_signo = (uint64_t)sig;
     task->mm->signal_frame_return_pc = return_pc;
-    task->mm->signal_handler_pc = (uint64_t)(uintptr_t)task->signal->actions[sig - 1].handler;
-    task->mm->signal_frame_flags = (uint64_t)(uint32_t)task->signal->actions[sig - 1].flags;
+    task->mm->signal_handler_pc = (uint64_t)(uintptr_t)action->handler;
+    task->mm->signal_frame_flags = (uint64_t)(uint32_t)action->flags;
+    task->mm->signal_frame_restorer_pc = action->restorer;
+    task->mm->signal_frame_mask = task->signal->blocked.sig[0];
+    task->mm->signal_frame_altstack_sp = (uint64_t)(uintptr_t)task->signal->altstack.ss_sp;
+    task->mm->signal_frame_altstack_size = (uint64_t)task->signal->altstack.ss_size;
+    task->mm->signal_frame_altstack_flags = (uint64_t)(uint32_t)task->signal->altstack.ss_flags;
     *frame_sp_out = frame_sp;
     return 0;
 }

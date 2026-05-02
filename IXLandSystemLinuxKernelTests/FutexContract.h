@@ -13,6 +13,7 @@ int futex_contract_sets_and_gets_robust_list(void);
 int futex_contract_rejects_missing_robust_list_outputs(void);
 int futex_contract_exit_clears_child_tid_and_marks_robust_futex(void);
 int futex_contract_clone_thread_shares_vm_and_thread_group(void);
+int futex_contract_clone3_sets_parent_child_and_clear_tid(void);
 
 #ifdef __cplusplus
 }

@@ -158,6 +158,7 @@
 #include <linux/fcntl.h>
 #include <linux/futex.h>
 #include <linux/mman.h>
+#include <linux/sched.h>
 #include <linux/time_types.h>
 
 #include <errno.h>
@@ -250,6 +251,7 @@ static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *l
     }
     act->handler = (sighandler_t)linux_act->sa_handler;
     act->flags = (int32_t)linux_act->sa_flags;
+    act->restorer = (uint64_t)(uintptr_t)linux_act->sa_restorer;
     act->mask.sig[0] = linux_act->sa_mask.sig[0];
 }
 
@@ -261,6 +263,7 @@ static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
     }
     linux_act->sa_handler = (__sighandler_t)act->handler;
     linux_act->sa_flags = (unsigned long)act->flags;
+    linux_act->sa_restorer = (__sigrestore_t)(uintptr_t)act->restorer;
     linux_act->sa_mask.sig[0] = act->mask.sig[0];
 }
 
@@ -534,6 +537,9 @@ long syscall_dispatch_impl(long number,
     case __NR_wait4:
         return syscall_result((long)wait4_impl((int32_t)arg0, (int *)(uintptr_t)arg1,
                                                (int)arg2, (void *)(uintptr_t)arg3));
+    case __NR_clone3:
+        return syscall_result((long)clone3_impl((const struct clone_args *)(uintptr_t)arg0,
+                                                (size_t)arg1));
     default:
         return -ENOSYS;
     }

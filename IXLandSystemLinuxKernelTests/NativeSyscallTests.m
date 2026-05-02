@@ -52,6 +52,10 @@
     XCTAssertEqual(native_syscall_contract_shared_file_mappings_are_coherent(), 0, @"errno %d", errno);
 }
 
+- (void)testSharedFileMappingsAreCoherentAcrossReopen {
+    XCTAssertEqual(native_syscall_contract_shared_file_mappings_are_coherent_across_reopen(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesProcessStartupSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
 }
@@ -70,6 +74,10 @@
 
 - (void)testSignalFrameRecordsHandlerHandoff {
     XCTAssertEqual(signal_syscall_contract_frame_records_handler_handoff(), 0, @"errno %d", errno);
+}
+
+- (void)testSignalFrameRecordsMaskRestorerAndContext {
+    XCTAssertEqual(signal_syscall_contract_frame_records_mask_restorer_and_context(), 0, @"errno %d", errno);
 }
 
 - (void)testRegistersNativeArtifactDescriptor {

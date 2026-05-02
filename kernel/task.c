@@ -261,7 +261,11 @@ void task_clear_vmas_impl(struct mm_struct *mm) {
     }
     for (uint32_t i = 0; i < mm->vma_count; i++) {
         if (mm->vmas[i].kind == TASK_VMA_ANON || mm->vmas[i].kind == TASK_VMA_FILE) {
-            free(mm->vmas[i].image);
+            if (mm->vmas[i].shared_mapping) {
+                mm_shared_mapping_put_impl(mm->vmas[i].shared_mapping);
+            } else {
+                free(mm->vmas[i].image);
+            }
             mm->vmas[i].image = NULL;
         }
         free(mm->vmas[i].page_flags);

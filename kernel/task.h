@@ -43,6 +43,7 @@ struct task_struct;
 struct signal_struct;
 struct tty_struct;
 struct mm_struct;
+struct vm_shared_mapping;
 struct exec_image;
 struct wait_queue_head;
 struct nsproxy;
@@ -51,6 +52,7 @@ struct cgroup;
 struct seccomp;
 struct cred;
 struct task_rlimit;
+struct clone_args;
 
 enum task_vma_kind {
     TASK_VMA_EXEC = 1,
@@ -73,6 +75,8 @@ struct task_vma {
     int backing_fd;
     uint64_t backing_offset;
     int shared;
+    struct vm_shared_mapping *shared_mapping;
+    uint64_t shared_mapping_offset;
 };
 
 struct task_dynamic_info {
@@ -192,6 +196,11 @@ struct mm_struct {
     uint64_t signal_frame_return_pc;
     uint64_t signal_handler_pc;
     uint64_t signal_frame_flags;
+    uint64_t signal_frame_restorer_pc;
+    uint64_t signal_frame_mask;
+    uint64_t signal_frame_altstack_sp;
+    uint64_t signal_frame_altstack_size;
+    uint64_t signal_frame_altstack_flags;
 };
 
 /* Exec image types - virtual kernel internal */
@@ -350,6 +359,8 @@ const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *t
 void task_clear_vmas_impl(struct mm_struct *mm);
 struct mm_struct *task_mm_get_impl(struct mm_struct *mm);
 void task_mm_put_impl(struct mm_struct *mm);
+void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping);
+void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping);
 
 /* Virtual process identity syscalls (internal helpers) */
 int32_t getpid_impl(void);
@@ -365,6 +376,7 @@ int task_session_has_pgrp_impl(int32_t sid, int32_t pgid);
 int32_t fork_impl(void);
 int32_t vfork_impl(void);
 int32_t clone_impl(uint64_t flags);
+int32_t clone3_impl(const struct clone_args *args, size_t size);
 int unshare_impl(uint64_t flags);
 int task_exec_transition_impl(const char *path, const char *argv0);
 int task_record_exec_strings_impl(char *const argv[], char *const envp[]);

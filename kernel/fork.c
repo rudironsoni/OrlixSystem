@@ -51,7 +51,8 @@ static unsigned long clone_namespace_flags(void) {
 }
 
 static unsigned long clone_supported_flags(void) {
-    return clone_namespace_flags() | CLONE_FS | CLONE_VM | CLONE_SIGHAND | CLONE_THREAD;
+    return clone_namespace_flags() | CLONE_FS | CLONE_VM | CLONE_SIGHAND | CLONE_THREAD |
+           CLONE_PARENT_SETTID | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID;
 }
 
 static int validate_clone_namespace_flags(uint64_t flags) {
@@ -340,6 +341,68 @@ int32_t clone_impl(uint64_t flags) {
     }
 
     return child->pid;
+}
+
+int32_t clone3_impl(const struct clone_args *args, size_t size) {
+    int32_t child_pid;
+    struct task_struct *child;
+
+    if (!args) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (size < CLONE_ARGS_SIZE_VER0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (args->exit_signal > 0xff) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (args->set_tid || args->set_tid_size || args->cgroup || args->pidfd) {
+        errno = ENOSYS;
+        return -1;
+    }
+
+    child_pid = clone_impl(args->flags);
+    if (child_pid < 0) {
+        return -1;
+    }
+    child = task_lookup(child_pid);
+    if (!child) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    if ((args->flags & CLONE_PARENT_SETTID) != 0) {
+        int *parent_tid = (int *)(uintptr_t)args->parent_tid;
+        if (!parent_tid) {
+            free_task(child);
+            errno = EFAULT;
+            return -1;
+        }
+        *parent_tid = child->pid;
+    }
+    if ((args->flags & CLONE_CHILD_SETTID) != 0) {
+        int *child_tid = (int *)(uintptr_t)args->child_tid;
+        if (!child_tid) {
+            free_task(child);
+            errno = EFAULT;
+            return -1;
+        }
+        *child_tid = child->pid;
+    }
+    if ((args->flags & CLONE_CHILD_CLEARTID) != 0) {
+        if (!args->child_tid || !child->mm) {
+            free_task(child);
+            errno = EFAULT;
+            return -1;
+        }
+        child->mm->clear_child_tid = args->child_tid;
+    }
+
+    free_task(child);
+    return child_pid;
 }
 
 int unshare_impl(uint64_t flags) {

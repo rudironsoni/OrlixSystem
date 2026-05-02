@@ -250,3 +250,58 @@ out_child:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
     return result;
 }
+
+int futex_contract_clone3_sets_parent_child_and_clear_tid(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    struct clone_args args;
+    int parent_tid = 0;
+    int child_tid = 0;
+    void *mapped;
+    long ret;
+    int result = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(&args, 0, sizeof(args));
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096, PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    args.flags = CLONE_VM | CLONE_THREAD | CLONE_SIGHAND |
+                 CLONE_PARENT_SETTID | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID;
+    args.parent_tid = (uint64_t)(uintptr_t)&parent_tid;
+    args.child_tid = (uint64_t)(uintptr_t)&child_tid;
+
+    ret = syscall_dispatch_impl(__NR_clone3, (long)(uintptr_t)&args, sizeof(args), 0, 0, 0, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+        return -1;
+    }
+    child = task_lookup((int32_t)ret);
+    if (!child) {
+        errno = ESRCH;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+        return -1;
+    }
+    if (parent_tid != child->pid ||
+        child_tid != child->pid ||
+        !child->mm ||
+        child->mm->clear_child_tid != (uint64_t)(uintptr_t)&child_tid) {
+        errno = EPROTO;
+        goto out_child;
+    }
+    result = 0;
+
+out_child:
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    free_task(child);
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    return result;
+}
