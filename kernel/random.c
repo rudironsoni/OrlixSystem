@@ -8,54 +8,63 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
+#include <linux/fcntl.h>
+#include <linux/random.h>
+
 #include <stddef.h>
 #include <stdint.h>
-#include <unistd.h>
+#include <sys/types.h>
 
-/* iOS system getentropy - private implementation detail */
-extern int _getentropy(void *buf, size_t buflen);
+#include "../fs/vfs.h"
+
+extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
+extern ssize_t read_impl(int fd, void *buf, size_t count);
+extern int close_impl(int fd);
 
 /* ============================================================================
  * GETRANDOM - Linux-compatible random bytes
  * ============================================================================ */
 
-static ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags) {
-    /* Use iOS arc4random_buf for secure random */
-    (void)flags;
+ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags) {
+    ssize_t total = 0;
+    char *p = buf;
+    int fd;
 
     if (!buf) {
         errno = EFAULT;
         return -1;
     }
-
-    /* Use getentropy for small requests */
-    if (buflen <= 256) {
-        return _getentropy(buf, buflen) == 0 ? (ssize_t)buflen : -1;
+    if ((flags & ~(GRND_NONBLOCK | GRND_RANDOM | GRND_INSECURE)) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (buflen == 0) {
+        return 0;
     }
 
-    /* For larger requests, use /dev/urandom */
-    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    fd = open_impl("/dev/urandom", O_RDONLY | O_CLOEXEC, 0);
     if (fd < 0) {
-        errno = EIO;
         return -1;
     }
 
-    ssize_t total = 0;
-    char *p = buf;
     while ((size_t)total < buflen) {
-        ssize_t n = read(fd, p + total, buflen - total);
+        ssize_t n = read_impl(fd, p + total, buflen - (size_t)total);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
             }
-            close(fd);
+            close_impl(fd);
+            return -1;
+        }
+        if (n == 0) {
+            close_impl(fd);
+            errno = EIO;
             return -1;
         }
         total += n;
     }
 
-    close(fd);
+    close_impl(fd);
     return total;
 }
 
@@ -64,7 +73,11 @@ static ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags) {
  * ============================================================================ */
 
 static int getentropy_impl(void *buffer, size_t length) {
-    return _getentropy(buffer, length);
+    if (length > 256) {
+        errno = EIO;
+        return -1;
+    }
+    return getrandom_impl(buffer, length, 0) == (ssize_t)length ? 0 : -1;
 }
 
 /* ============================================================================

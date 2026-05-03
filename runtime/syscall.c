@@ -213,6 +213,13 @@ extern int fchmod_impl(int fd, linux_mode_t mode);
 extern int fchmodat_impl(int dirfd, const char *pathname, linux_mode_t mode, int flags);
 extern int fchown_impl(int fd, linux_uid_t owner, linux_gid_t group);
 extern int fchownat_impl(int dirfd, const char *pathname, linux_uid_t owner, linux_gid_t group, int flags);
+struct statfs;
+extern void sync_impl(void);
+extern int fsync_impl(int fd);
+extern int fdatasync_impl(int fd);
+extern int syncfs_impl(int fd);
+extern int statfs_impl(const char *path, struct statfs *buf);
+extern int fstatfs_impl(int fd, struct statfs *buf);
 extern linux_mode_t umask_impl(linux_mode_t mask);
 extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
@@ -225,7 +232,12 @@ extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
 extern void exit_impl(int status);
 extern int nanosleep_impl(const struct timespec *req, struct timespec *rem);
+extern int gettimeofday_impl(struct timeval *tv, void *tz);
 extern int clock_gettime_impl(clockid_t clk_id, struct timespec *tp);
+extern int interval_timer_set_impl(int which, const struct itimerval *new_value,
+                                   struct itimerval *old_value);
+extern int interval_timer_get_impl(int which, struct itimerval *curr_value);
+extern ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags);
 extern int mount_setattr(int dirfd, const char *pathname, unsigned int flags,
                          struct mount_attr *attr, size_t size);
 extern int open_tree(int dirfd, const char *pathname, unsigned int flags);
@@ -569,6 +581,12 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_fchmodat2:
     case __NR_fchown:
     case __NR_fchownat:
+    case __NR_statfs:
+    case __NR_fstatfs:
+    case __NR_sync:
+    case __NR_fsync:
+    case __NR_fdatasync:
+    case __NR_syncfs:
         return SYSCALL_CAPABILITY_FD;
     case __NR_brk:
     case __NR_mmap:
@@ -649,11 +667,16 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_clock_gettime:
     case __NR_nanosleep:
     case __NR_clock_nanosleep:
+    case __NR_gettimeofday:
+    case __NR_getitimer:
+    case __NR_setitimer:
         return SYSCALL_CAPABILITY_TIME;
     case __NR_prlimit64:
     case __NR_set_robust_list:
     case __NR_get_robust_list:
         return SYSCALL_CAPABILITY_RESOURCE;
+    case __NR_getrandom:
+        return SYSCALL_CAPABILITY_RANDOM;
     default:
         return SYSCALL_CAPABILITY_NONE;
     }
@@ -1030,6 +1053,20 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)fchownat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                   (linux_uid_t)arg2, (linux_gid_t)arg3,
                                                   (int)arg4));
+    case __NR_statfs:
+        return syscall_result((long)statfs_impl((const char *)(uintptr_t)arg0,
+                                                (struct statfs *)(uintptr_t)arg1));
+    case __NR_fstatfs:
+        return syscall_result((long)fstatfs_impl((int)arg0, (struct statfs *)(uintptr_t)arg1));
+    case __NR_sync:
+        sync_impl();
+        return 0;
+    case __NR_fsync:
+        return syscall_result((long)fsync_impl((int)arg0));
+    case __NR_fdatasync:
+        return syscall_result((long)fdatasync_impl((int)arg0));
+    case __NR_syncfs:
+        return syscall_result((long)syncfs_impl((int)arg0));
     case __NR_getpid:
         return (long)getpid_impl();
     case __NR_getppid:
@@ -1225,6 +1262,74 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_clock_nanosleep((clockid_t)arg0, (int)arg1,
                                        (const struct __kernel_timespec *)(uintptr_t)arg2,
                                        (struct __kernel_timespec *)(uintptr_t)arg3);
+    case __NR_gettimeofday: {
+        struct __kernel_old_timeval *linux_tv = (struct __kernel_old_timeval *)(uintptr_t)arg0;
+        struct timeval host_tv;
+        long ret;
+
+        if (!linux_tv) {
+            return -EFAULT;
+        }
+        ret = syscall_result((long)gettimeofday_impl(&host_tv, (void *)(uintptr_t)arg1));
+        if (ret < 0) {
+            return ret;
+        }
+        linux_tv->tv_sec = (__kernel_old_time_t)host_tv.tv_sec;
+        linux_tv->tv_usec = (__kernel_suseconds_t)host_tv.tv_usec;
+        return 0;
+    }
+    case __NR_getitimer: {
+        struct __kernel_old_itimerval *linux_value =
+            (struct __kernel_old_itimerval *)(uintptr_t)arg1;
+        struct itimerval host_value;
+        long ret;
+
+        if (!linux_value) {
+            return -EFAULT;
+        }
+        ret = syscall_result((long)interval_timer_get_impl((int)arg0, &host_value));
+        if (ret < 0) {
+            return ret;
+        }
+        linux_value->it_interval.tv_sec = (__kernel_old_time_t)host_value.it_interval.tv_sec;
+        linux_value->it_interval.tv_usec = (__kernel_suseconds_t)host_value.it_interval.tv_usec;
+        linux_value->it_value.tv_sec = (__kernel_old_time_t)host_value.it_value.tv_sec;
+        linux_value->it_value.tv_usec = (__kernel_suseconds_t)host_value.it_value.tv_usec;
+        return 0;
+    }
+    case __NR_setitimer: {
+        const struct __kernel_old_itimerval *linux_new =
+            (const struct __kernel_old_itimerval *)(uintptr_t)arg1;
+        struct __kernel_old_itimerval *linux_old =
+            (struct __kernel_old_itimerval *)(uintptr_t)arg2;
+        struct itimerval host_new;
+        struct itimerval host_old;
+        const struct itimerval *host_new_ptr = NULL;
+        long ret;
+
+        if (linux_new) {
+            host_new.it_interval.tv_sec = (time_t)linux_new->it_interval.tv_sec;
+            host_new.it_interval.tv_usec = (suseconds_t)linux_new->it_interval.tv_usec;
+            host_new.it_value.tv_sec = (time_t)linux_new->it_value.tv_sec;
+            host_new.it_value.tv_usec = (suseconds_t)linux_new->it_value.tv_usec;
+            host_new_ptr = &host_new;
+        }
+        ret = syscall_result((long)interval_timer_set_impl((int)arg0, host_new_ptr,
+                                                           linux_old ? &host_old : NULL));
+        if (ret < 0) {
+            return ret;
+        }
+        if (linux_old) {
+            linux_old->it_interval.tv_sec = (__kernel_old_time_t)host_old.it_interval.tv_sec;
+            linux_old->it_interval.tv_usec = (__kernel_suseconds_t)host_old.it_interval.tv_usec;
+            linux_old->it_value.tv_sec = (__kernel_old_time_t)host_old.it_value.tv_sec;
+            linux_old->it_value.tv_usec = (__kernel_suseconds_t)host_old.it_value.tv_usec;
+        }
+        return 0;
+    }
+    case __NR_getrandom:
+        return syscall_result((long)getrandom_impl((void *)(uintptr_t)arg0, (size_t)arg1,
+                                                   (unsigned int)arg2));
     case __NR_execve:
         return syscall_result((long)execve((const char *)(uintptr_t)arg0,
                                            (char *const *)(uintptr_t)arg1,

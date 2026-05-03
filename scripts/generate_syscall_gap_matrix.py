@@ -19,6 +19,7 @@ CAPABILITY_LABELS = {
     "SYSCALL_CAPABILITY_XATTR": "implemented:xattr",
     "SYSCALL_CAPABILITY_TIME": "implemented:time",
     "SYSCALL_CAPABILITY_RESOURCE": "implemented:resource",
+    "SYSCALL_CAPABILITY_RANDOM": "implemented:random",
 }
 
 GAP_LABELS = {

@@ -85,10 +85,10 @@ static int vfs_fill_statfs(const char *resolved_path, struct statfs *buf) {
     return 0;
 }
 
-static void sync_impl(void) {
+void sync_impl(void) {
 }
 
-static int fsync_impl(int fd) {
+int fsync_impl(int fd) {
     void *entry = get_fd_entry_impl(fd);
     if (!entry) {
         errno = EBADF;
@@ -98,15 +98,15 @@ static int fsync_impl(int fd) {
     return 0;
 }
 
-static int fdatasync_impl(int fd) {
+int fdatasync_impl(int fd) {
     return fsync_impl(fd);
 }
 
-static int syncfs_impl(int fd) {
+int syncfs_impl(int fd) {
     return fsync_impl(fd);
 }
 
-static int statfs_impl(const char *path, struct statfs *buf) {
+int statfs_impl(const char *path, struct statfs *buf) {
     char resolved_path[MAX_PATH];
     int ret;
 
@@ -124,7 +124,7 @@ static int statfs_impl(const char *path, struct statfs *buf) {
     return vfs_fill_statfs(resolved_path, buf);
 }
 
-static int fstatfs_impl(int fd, struct statfs *buf) {
+int fstatfs_impl(int fd, struct statfs *buf) {
     char path[MAX_PATH];
     void *entry;
     int ret;

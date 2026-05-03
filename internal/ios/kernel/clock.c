@@ -33,7 +33,20 @@ time_t time_impl(time_t *tloc) {
  * ============================================================================ */
 
 int gettimeofday_impl(struct timeval *tv, struct timezone *tz) {
-    return gettimeofday(tv, tz);
+    uint64_t ns;
+
+    if (!tv) {
+        errno = EFAULT;
+        return -1;
+    }
+    ns = clock_gettime_nsec_np(CLOCK_REALTIME);
+    tv->tv_sec = (time_t)(ns / 1000000000ULL);
+    tv->tv_usec = (suseconds_t)((ns % 1000000000ULL) / 1000ULL);
+    if (tz) {
+        tz->tz_minuteswest = 0;
+        tz->tz_dsttime = 0;
+    }
+    return 0;
 }
 
 int settimeofday_impl(const struct timeval *tv, const struct timezone *tz) {

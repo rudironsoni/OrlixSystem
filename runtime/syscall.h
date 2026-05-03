@@ -16,6 +16,7 @@ enum syscall_capability_class {
     SYSCALL_CAPABILITY_XATTR,
     SYSCALL_CAPABILITY_TIME,
     SYSCALL_CAPABILITY_RESOURCE,
+    SYSCALL_CAPABILITY_RANDOM,
 };
 
 enum syscall_gap_priority {

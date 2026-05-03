@@ -271,6 +271,7 @@ targets:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
     - path: IXLandSystemLinuxKernelTests/NativeSyscallContract.c
       compilerFlags:
+      - -I$(LINUX_ABI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
     - IXLandSystemLinuxKernelTests/NativeSyscallContract.h

@@ -23,7 +23,7 @@
 		19D0AB3586C4FFF3682EE601 /* syscall.c in Sources */ = {isa = PBXBuildFile; fileRef = 2B33B8D1CDFE2966D44963A8 /* syscall.c */; };
 		1C5DDE6C6F1D26B8A42FC58D /* PTYSessionContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 6E696362C7EAA577A88F4094 /* PTYSessionContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		2077D735BE58886F9AC9D02F /* wait_queue.c in Sources */ = {isa = PBXBuildFile; fileRef = 5CC6F8213130B4F047FBC195 /* wait_queue.c */; };
-		23CAFD7E106AACF3B7AA17F4 /* NativeSyscallContract.c in Sources */ = {isa = PBXBuildFile; fileRef = F74A8BBE86DA74ECDE3970D0 /* NativeSyscallContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
+		23CAFD7E106AACF3B7AA17F4 /* NativeSyscallContract.c in Sources */ = {isa = PBXBuildFile; fileRef = F74A8BBE86DA74ECDE3970D0 /* NativeSyscallContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_ABI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		23F96E17A5FB5F9FF02C47D1 /* ioctl.c in Sources */ = {isa = PBXBuildFile; fileRef = 43308FAA8FF808B4BF22777C /* ioctl.c */; };
 		29E1C2D21F213D5B2A063AFF /* ixland_observability.c in Sources */ = {isa = PBXBuildFile; fileRef = 666A5EE8B497170CF5C3223A /* ixland_observability.c */; };
 		2A87FD94AED672D2C4945B04 /* VFSAtContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E1CD35402A585DF342760586 /* VFSAtContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_ABI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };

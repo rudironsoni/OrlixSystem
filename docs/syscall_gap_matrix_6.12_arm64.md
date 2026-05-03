@@ -47,8 +47,8 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 40 | `mount` | kernel-owned missing:unclassified | package |
 | 41 | `pivot_root` | implemented:mount | none |
 | 42 | `nfsservctl` | kernel-owned missing:unclassified | package |
-| 43 | `statfs` | kernel-owned missing:unclassified | shell |
-| 44 | `fstatfs` | kernel-owned missing:unclassified | shell |
+| 43 | `statfs` | implemented:fd | none |
+| 44 | `fstatfs` | implemented:fd | none |
 | 45 | `truncate` | kernel-owned missing:unclassified | package |
 | 46 | `ftruncate` | implemented:fd | none |
 | 47 | `fallocate` | kernel-owned missing:unclassified | package |
@@ -85,9 +85,9 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 78 | `readlinkat` | implemented:fd | none |
 | 79 | `newfstatat` | implemented:fd | none |
 | 80 | `fstat` | implemented:fd | none |
-| 81 | `sync` | kernel-owned missing:unclassified | shell |
-| 82 | `fsync` | kernel-owned missing:unclassified | shell |
-| 83 | `fdatasync` | kernel-owned missing:unclassified | shell |
+| 81 | `sync` | implemented:fd | none |
+| 82 | `fsync` | implemented:fd | none |
+| 83 | `fdatasync` | implemented:fd | none |
 | 84 | `sync_file_range` | kernel-owned missing:unclassified | package |
 | 85 | `timerfd_create` | kernel-owned missing:unclassified | shell |
 | 86 | `timerfd_settime` | kernel-owned missing:unclassified | shell |
@@ -106,8 +106,8 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 99 | `set_robust_list` | implemented:resource | none |
 | 100 | `get_robust_list` | implemented:resource | none |
 | 101 | `nanosleep` | implemented:time | none |
-| 102 | `getitimer` | kernel-owned missing:unclassified | shell |
-| 103 | `setitimer` | kernel-owned missing:unclassified | shell |
+| 102 | `getitimer` | implemented:time | none |
+| 103 | `setitimer` | implemented:time | none |
 | 104 | `kexec_load` | kernel-owned missing:unclassified | package |
 | 105 | `init_module` | kernel-owned missing:unclassified | package |
 | 106 | `delete_module` | kernel-owned missing:unclassified | package |
@@ -173,7 +173,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 166 | `umask` | implemented:fd | none |
 | 167 | `prctl` | implemented:process | none |
 | 168 | `getcpu` | kernel-owned missing:unclassified | package |
-| 169 | `gettimeofday` | kernel-owned missing:unclassified | shell |
+| 169 | `gettimeofday` | implemented:time | none |
 | 170 | `settimeofday` | kernel-owned missing:unclassified | package |
 | 171 | `adjtimex` | kernel-owned missing:unclassified | package |
 | 172 | `getpid` | implemented:process | none |
@@ -255,7 +255,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 264 | `name_to_handle_at` | kernel-owned missing:unclassified | package |
 | 265 | `open_by_handle_at` | kernel-owned missing:unclassified | package |
 | 266 | `clock_adjtime` | kernel-owned missing:unclassified | package |
-| 267 | `syncfs` | kernel-owned missing:unclassified | shell |
+| 267 | `syncfs` | implemented:fd | none |
 | 268 | `setns` | kernel-owned missing:unclassified | package |
 | 269 | `sendmmsg` | future backend:virtual-network | network |
 | 270 | `process_vm_readv` | kernel-owned missing:unclassified | package |
@@ -266,7 +266,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 275 | `sched_getattr` | kernel-owned missing:unclassified | package |
 | 276 | `renameat2` | implemented:fd | none |
 | 277 | `seccomp` | kernel-owned missing:unclassified | package |
-| 278 | `getrandom` | kernel-owned missing:unclassified | shell |
+| 278 | `getrandom` | implemented:random | none |
 | 279 | `memfd_create` | kernel-owned missing:unclassified | shell |
 | 280 | `bpf` | kernel-owned missing:unclassified | package |
 | 281 | `execveat` | kernel-owned missing:unclassified | shell |

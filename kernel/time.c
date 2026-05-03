@@ -13,6 +13,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 #include <time.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -85,6 +86,46 @@ int nanosleep_impl(const struct timespec *req, struct timespec *rem) {
     return 0;
 }
 
+int interval_timer_get_impl(int which, struct itimerval *curr_value) {
+    if (which != ITIMER_REAL && which != ITIMER_VIRTUAL && which != ITIMER_PROF) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!curr_value) {
+        errno = EFAULT;
+        return -1;
+    }
+    memset(curr_value, 0, sizeof(*curr_value));
+    return 0;
+}
+
+int interval_timer_set_impl(int which, const struct itimerval *new_value,
+                            struct itimerval *old_value) {
+    if (which != ITIMER_REAL && which != ITIMER_VIRTUAL && which != ITIMER_PROF) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!new_value) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (new_value->it_interval.tv_sec < 0 || new_value->it_value.tv_sec < 0 ||
+        new_value->it_interval.tv_usec < 0 || new_value->it_interval.tv_usec >= 1000000 ||
+        new_value->it_value.tv_usec < 0 || new_value->it_value.tv_usec >= 1000000) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (old_value && interval_timer_get_impl(which, old_value) != 0) {
+        return -1;
+    }
+    if (new_value->it_interval.tv_sec != 0 || new_value->it_interval.tv_usec != 0 ||
+        new_value->it_value.tv_sec != 0 || new_value->it_value.tv_usec != 0) {
+        errno = ENOSYS;
+        return -1;
+    }
+    return 0;
+}
+
 /* ============================================================================
  * PUBLIC SYSCALL WRAPPERS
  * These export the canonical Linux/POSIX interface
@@ -127,11 +168,11 @@ __attribute__((visibility("default"))) int nanosleep(const struct timespec *req,
 }
 
 __attribute__((visibility("default"))) int setitimer(int which, const struct itimerval *new_value, struct itimerval *old_value) {
-    return setitimer_impl(which, new_value, old_value);
+    return interval_timer_set_impl(which, new_value, old_value);
 }
 
 __attribute__((visibility("default"))) int getitimer(int which, struct itimerval *curr_value) {
-    return getitimer_impl(which, curr_value);
+    return interval_timer_get_impl(which, curr_value);
 }
 
 __attribute__((visibility("default"))) unsigned int alarm(unsigned int seconds) {
