@@ -1384,6 +1384,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"CLONE_NEWNS should rebase shared peer group ids inside the cloned mount namespace, errno %d", errno);
 }
 
+- (void)testCloneNewnsRebasesSlaveMasterToChildPeerGroup {
+    extern int vfs_contract_clone_newns_rebases_slave_master_to_child_peer_group(void);
+    XCTAssertEqual(vfs_contract_clone_newns_rebases_slave_master_to_child_peer_group(), 0,
+                   @"CLONE_NEWNS should rebase slave masters to child peer groups, errno %d", errno);
+}
+
 - (void)testUnmountBusyWhenOpenFdPinsMountTree {
     extern int vfs_contract_umount_busy_when_open_fd_pins_mount_tree(void);
     XCTAssertEqual(vfs_contract_umount_busy_when_open_fd_pins_mount_tree(), 0,

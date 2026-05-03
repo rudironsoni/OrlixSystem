@@ -902,6 +902,30 @@ int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long
     struct cred *cred = get_current_cred();
 
     switch (option) {
+    case PR_CAPBSET_READ: {
+        uint64_t bit = cred_cap_bit((int)arg2);
+
+        if (arg3 != 0 || arg4 != 0 || arg5 != 0 || bit == 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        return (cred->cap_bounding & bit) != 0 ? 1 : 0;
+    }
+    case PR_CAPBSET_DROP: {
+        uint64_t bit = cred_cap_bit((int)arg2);
+
+        if (arg3 != 0 || arg4 != 0 || arg5 != 0 || bit == 0) {
+            errno = EINVAL;
+            return -1;
+        }
+        if (!cred_has_cap(cred, CAP_SETPCAP)) {
+            errno = EPERM;
+            return -1;
+        }
+        cred->cap_bounding &= ~bit;
+        cred->cap_ambient &= ~bit;
+        return 0;
+    }
     case PR_CAP_AMBIENT: {
         uint64_t bit = cred_cap_bit((int)arg3);
 

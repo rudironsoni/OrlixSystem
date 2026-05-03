@@ -149,6 +149,10 @@
     XCTAssertEqual(native_syscall_contract_mremap_fixed_rejects_zero_target(), 0, @"errno %d", errno);
 }
 
+- (void)testMremapFixedRejectsOverlappingTarget {
+    XCTAssertEqual(native_syscall_contract_mremap_fixed_rejects_overlapping_target(), 0, @"errno %d", errno);
+}
+
 - (void)testMadviseSplitVmaClearsEachPermissionRun {
     XCTAssertEqual(native_syscall_contract_madvise_split_vma_clears_each_permission_run(), 0, @"errno %d", errno);
 }

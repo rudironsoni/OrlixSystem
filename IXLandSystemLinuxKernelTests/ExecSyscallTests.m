@@ -13,6 +13,7 @@ extern int exec_syscall_contract_native_exec_records_proc_cmdline_and_environ(vo
 extern int exec_syscall_contract_native_execve_applies_setuid_setgid_saved_ids(void);
 extern int exec_syscall_contract_native_execve_no_new_privs_blocks_setid_saved_ids(void);
 extern int exec_syscall_contract_native_execve_applies_file_capability_metadata(void);
+extern int exec_syscall_contract_native_execve_honors_capability_bounding_drop(void);
 extern int exec_syscall_contract_native_execve_no_new_privs_blocks_file_capabilities(void);
 extern int exec_syscall_contract_native_execve_no_new_privs_clears_ambient_on_file_caps(void);
 extern int exec_syscall_contract_native_execve_secure_noroot_blocks_root_cap_gain(void);
@@ -109,6 +110,10 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testNativeExecveAppliesFileCapabilityMetadata {
     XCTAssertEqual(exec_syscall_contract_native_execve_applies_file_capability_metadata(), 0, @"errno %d", errno);
+}
+
+- (void)testNativeExecveHonorsCapabilityBoundingDrop {
+    XCTAssertEqual(exec_syscall_contract_native_execve_honors_capability_bounding_drop(), 0, @"errno %d", errno);
 }
 
 - (void)testNativeExecveNoNewPrivsBlocksFileCapabilities {

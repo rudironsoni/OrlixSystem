@@ -1246,6 +1246,63 @@ out:
     return result;
 }
 
+int exec_syscall_contract_native_execve_honors_capability_bounding_drop(void) {
+    char *argv[] = {"cap-bset-native", NULL};
+    char *envp[] = {NULL};
+    const char *path = "/tmp/exec-native-cap-bset";
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    uint64_t cap_mask = 1ULL << CAP_NET_BIND_SERVICE;
+    int status;
+    int result = -1;
+
+    cred_reset_to_defaults();
+    native_registry_clear();
+    unlink_impl(path);
+    if (native_register(path, native_exec_status) != 0 ||
+        write_file_exact(path, "native") != 0 ||
+        chmod(path, 0755) != 0 ||
+        vfs_set_file_capabilities(path, cap_mask, 0, true) != 0) {
+        goto out;
+    }
+    if (prctl_impl(PR_CAPBSET_READ, CAP_NET_BIND_SERVICE, 0, 0, 0) != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (prctl_impl(PR_CAPBSET_DROP, CAP_NET_BIND_SERVICE, 0, 0, 0) != 0 ||
+        prctl_impl(PR_CAPBSET_READ, CAP_NET_BIND_SERVICE, 0, 0, 0) != 0 ||
+        setgid_impl(1000) != 0 ||
+        setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    status = execve(path, argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+    memset(data, 0, sizeof(data));
+    if (capget_impl(&header, data) != 0) {
+        goto out;
+    }
+    if ((data[0].permitted & (1U << CAP_NET_BIND_SERVICE)) != 0 ||
+        (data[0].effective & (1U << CAP_NET_BIND_SERVICE)) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl(path);
+    cred_reset_to_defaults();
+    return result;
+}
+
 int exec_syscall_contract_native_execve_no_new_privs_blocks_file_capabilities(void) {
     char *argv[] = {"cap-nnp-native", NULL};
     char *envp[] = {NULL};

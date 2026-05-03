@@ -1567,14 +1567,14 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         errno = EINVAL;
         return (void *)-1;
     }
+    if ((flags & MREMAP_FIXED) != 0 &&
+        new_start < old_start + old_len && new_start + new_len > old_start) {
+        errno = EINVAL;
+        return (void *)-1;
+    }
     if ((flags & MREMAP_FIXED) != 0 && old_len == new_len) {
         struct task_vma moved_vma;
 
-        if (new_len > UINT64_MAX - new_start ||
-            (new_start < old_start + old_len && new_start + new_len > old_start)) {
-            errno = EINVAL;
-            return (void *)-1;
-        }
         if (mm_copy_vma_slice((struct task_vma *)found, old_start, old_start + old_len, &moved_vma) != 0) {
             return (void *)-1;
         }
