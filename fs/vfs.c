@@ -2576,6 +2576,15 @@ static uint64_t vfs_mount_parent_id_locked(const struct vfs_mount_namespace *mnt
     return parent_id;
 }
 
+static bool vfs_mount_has_id_locked(const struct vfs_mount_namespace *mnt_ns, uint64_t id) {
+    size_t ignored_index;
+
+    if (id == LSMT_ROOT || id == 1) {
+        return true;
+    }
+    return vfs_mount_for_id_locked(mnt_ns, id, &ignored_index) != NULL;
+}
+
 static int vfs_statmount_store_string(struct statmount *buf, size_t bufsize,
                                       size_t *str_pos, __u32 *offset_out,
                                       const char *value) {
@@ -2951,6 +2960,9 @@ long vfs_listmount(const struct mnt_id_req *req, uint64_t *mnt_ids, size_t nr_mn
                    unsigned int flags) {
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
     uint64_t count = 0;
+    uint64_t parent_id;
+    uint64_t cursor_id;
+    bool cursor_seen;
 
     if (!req || (!mnt_ids && nr_mnt_ids > 0)) {
         return -EFAULT;
@@ -2961,12 +2973,24 @@ long vfs_listmount(const struct mnt_id_req *req, uint64_t *mnt_ids, size_t nr_mn
     if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
         return -EPERM;
     }
-    if (req->size < MNT_ID_REQ_SIZE_VER0 || (flags & ~LISTMOUNT_REVERSE) != 0 ||
-        (req->mnt_id != LSMT_ROOT && req->mnt_id != 1)) {
+    if (req->size < MNT_ID_REQ_SIZE_VER0 || (flags & ~LISTMOUNT_REVERSE) != 0) {
         return -EINVAL;
     }
 
+    parent_id = req->mnt_id == LSMT_ROOT ? 1 : req->mnt_id;
+    cursor_id = req->size >= MNT_ID_REQ_SIZE_VER1 ? req->param : 0;
+    cursor_seen = cursor_id == 0;
+
     fs_mutex_lock(&mnt_ns->lock);
+    if (!vfs_mount_has_id_locked(mnt_ns, parent_id)) {
+        fs_mutex_unlock(&mnt_ns->lock);
+        return -ENOENT;
+    }
+    if (cursor_id != 0 && !vfs_mount_has_id_locked(mnt_ns, cursor_id)) {
+        fs_mutex_unlock(&mnt_ns->lock);
+        return -ENOENT;
+    }
+
     for (size_t scan = 0; scan < MAX_MOUNTS; scan++) {
         size_t i = (flags & LISTMOUNT_REVERSE) != 0 ? (MAX_MOUNTS - 1 - scan) : scan;
         uint64_t id;
@@ -2975,6 +2999,15 @@ long vfs_listmount(const struct mnt_id_req *req, uint64_t *mnt_ids, size_t nr_mn
             continue;
         }
         id = vfs_mount_id_for_index_locked(mnt_ns, i);
+        if (vfs_mount_parent_id_locked(mnt_ns, i) != parent_id) {
+            continue;
+        }
+        if (!cursor_seen) {
+            if (id == cursor_id) {
+                cursor_seen = true;
+            }
+            continue;
+        }
         if (count < nr_mnt_ids) {
             mnt_ids[count] = id;
         }

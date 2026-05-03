@@ -3525,6 +3525,120 @@ out:
     return ret;
 }
 
+int vfs_contract_listmount_walks_mount_subtree_by_parent_id(void) {
+    struct mnt_id_req req;
+    uint64_t ids[4];
+    char content[8192];
+    int target_id = 0;
+    int target_parent_id = 0;
+    int child_id = 0;
+    int child_parent_id = 0;
+    int grand_id = 0;
+    int grand_parent_id = 0;
+    long count;
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child/grand", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source/grand", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-grandchild-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-grandchild-source/file", "listmount") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-target/child", NULL, MS_BIND, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-grandchild-source", "/tmp/vfs-mntns-target/child/grand", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/child/grand/file", "listmount") != 0 ||
+        vfs_contract_read_proc_file("/proc/self/mountinfo", content, sizeof(content)) != 0 ||
+        vfs_contract_mountinfo_ids_for_target(content, "/tmp/vfs-mntns-target",
+                                              &target_id, &target_parent_id) != 0 ||
+        vfs_contract_mountinfo_ids_for_target(content, "/tmp/vfs-mntns-target/child",
+                                              &child_id, &child_parent_id) != 0 ||
+        vfs_contract_mountinfo_ids_for_target(content, "/tmp/vfs-mntns-target/child/grand",
+                                              &grand_id, &grand_parent_id) != 0) {
+        goto out;
+    }
+    if (target_parent_id != 1 || child_parent_id != target_id || grand_parent_id != child_id) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(&req, 0, sizeof(req));
+    memset(ids, 0, sizeof(ids));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = (uint64_t)target_id;
+    count = syscall_dispatch_impl(__NR_listmount, (long)(uintptr_t)&req,
+                                  (long)(uintptr_t)ids,
+                                  sizeof(ids) / sizeof(ids[0]), 0, 0, 0);
+    if (count != 1 || ids[0] != (uint64_t)child_id) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    memset(&req, 0, sizeof(req));
+    memset(ids, 0, sizeof(ids));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = (uint64_t)child_id;
+    count = syscall_dispatch_impl(__NR_listmount, (long)(uintptr_t)&req,
+                                  (long)(uintptr_t)ids,
+                                  sizeof(ids) / sizeof(ids[0]), 0, 0, 0);
+    if (count != 1 || ids[0] != (uint64_t)grand_id) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    memset(&req, 0, sizeof(req));
+    memset(ids, 0, sizeof(ids));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = (uint64_t)target_id;
+    req.param = (uint64_t)child_id;
+    count = syscall_dispatch_impl(__NR_listmount, (long)(uintptr_t)&req,
+                                  (long)(uintptr_t)ids,
+                                  sizeof(ids) / sizeof(ids[0]), 0, 0, 0);
+    if (count != 0) {
+        errno = EALREADY;
+        goto out;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = (uint64_t)grand_id;
+    count = syscall_dispatch_impl(__NR_listmount, (long)(uintptr_t)&req,
+                                  (long)(uintptr_t)ids,
+                                  sizeof(ids) / sizeof(ids[0]), 0, 0, 0);
+    if (count != 0) {
+        errno = ECHILD;
+        goto out;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = (uint64_t)target_id;
+    req.param = (uint64_t)grand_id + 1000000ULL;
+    if (syscall_dispatch_impl(__NR_listmount, (long)(uintptr_t)&req,
+                              (long)(uintptr_t)ids,
+                              sizeof(ids) / sizeof(ids[0]), 0, 0, 0) != -ENOENT) {
+        errno = ESTALE;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_mountinfo_reports_nested_parent_mount_id(void) {
     char content[4096];
     int parent_mount_id = 0;

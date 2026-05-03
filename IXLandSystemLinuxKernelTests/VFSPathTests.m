@@ -1468,6 +1468,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"listmount/statmount should expose slave master propagation metadata, errno %d", errno);
 }
 
+- (void)testListmountWalksMountSubtreeByParentId {
+    extern int vfs_contract_listmount_walks_mount_subtree_by_parent_id(void);
+    XCTAssertEqual(vfs_contract_listmount_walks_mount_subtree_by_parent_id(), 0,
+                   @"listmount should walk immediate mount children by parent mount id, errno %d", errno);
+}
+
 - (void)testMountinfoReportsNestedParentMountId {
     extern int vfs_contract_mountinfo_reports_nested_parent_mount_id(void);
     XCTAssertEqual(vfs_contract_mountinfo_reports_nested_parent_mount_id(), 0,
