@@ -683,11 +683,11 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
             return -1;
         }
         if (task_addr_is_below_stack_guard(task, addr + total)) {
+            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             if (total > 0) {
                 return (long)total;
             }
             errno = EFAULT;
-            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             return -1;
         }
         copied = 0;
@@ -708,11 +708,11 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
             return total > 0 ? (long)total : -1;
         }
         if (copied == 0) {
+            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             if (total > 0) {
                 return (long)total;
             }
             errno = EFAULT;
-            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             return -1;
         }
         total += (size_t)copied;
@@ -752,11 +752,11 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
             }
         }
         if (task_addr_is_below_stack_guard(task, addr + total)) {
+            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             if (total > 0) {
                 return (long)total;
             }
             errno = EFAULT;
-            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             return -1;
         }
         copied = 0;
@@ -782,11 +782,11 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
             return total > 0 ? (long)total : -1;
         }
         if (copied == 0) {
+            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             if (total > 0) {
                 return (long)total;
             }
             errno = EFAULT;
-            task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             return -1;
         }
         total += (size_t)copied;

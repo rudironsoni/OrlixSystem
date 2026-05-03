@@ -169,6 +169,10 @@
     XCTAssertEqual(native_syscall_contract_virtual_memory_faults_queue_sigsegv_codes(), 0, @"errno %d", errno);
 }
 
+- (void)testPartialCopyRecordsFaultAddress {
+    XCTAssertEqual(native_syscall_contract_partial_copy_records_fault_address(), 0, @"errno %d", errno);
+}
+
 - (void)testProcPidMapsAndStatusReflectChildTask {
     XCTAssertEqual(native_syscall_contract_proc_pid_maps_and_status_reflect_child_task(), 0, @"errno %d", errno);
 }

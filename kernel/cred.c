@@ -643,6 +643,9 @@ void cred_apply_exec_file_capabilities(struct cred *cred, uint64_t permitted,
         return;
     }
     if (cred->no_new_privs) {
+        if ((permitted | inheritable) != 0 || effective) {
+            cred->cap_ambient = 0;
+        }
         return;
     }
 

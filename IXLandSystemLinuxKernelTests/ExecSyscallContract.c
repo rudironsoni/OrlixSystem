@@ -1296,6 +1296,46 @@ out:
     return result;
 }
 
+int exec_syscall_contract_native_execve_no_new_privs_clears_ambient_on_file_caps(void) {
+    char *argv[] = {"cap-nnp-ambient-native", NULL};
+    char *envp[] = {NULL};
+    const char *path = "/tmp/exec-native-nnp-ambient-file-cap";
+    uint64_t cap_mask = 1ULL << CAP_NET_BIND_SERVICE;
+    int status;
+    int result = -1;
+
+    cred_reset_to_defaults();
+    native_registry_clear();
+    unlink_impl(path);
+    if (native_register(path, native_exec_status) != 0 ||
+        write_file_exact(path, "native") != 0 ||
+        chmod(path, 0755) != 0 ||
+        vfs_set_file_capabilities(path, cap_mask, 0, true) != 0 ||
+        prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+        goto out;
+    }
+    get_current_cred()->cap_ambient = cap_mask;
+
+    status = execve(path, argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (get_current_cred()->cap_ambient != 0 ||
+        prctl_impl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl(path);
+    cred_reset_to_defaults();
+    return result;
+}
+
 int exec_syscall_contract_native_execve_applies_security_capability_xattr(void) {
     char *argv[] = {"cap-xattr-native", NULL};
     char *envp[] = {NULL};

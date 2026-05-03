@@ -14,6 +14,7 @@ extern int exec_syscall_contract_native_execve_applies_setuid_setgid_saved_ids(v
 extern int exec_syscall_contract_native_execve_no_new_privs_blocks_setid_saved_ids(void);
 extern int exec_syscall_contract_native_execve_applies_file_capability_metadata(void);
 extern int exec_syscall_contract_native_execve_no_new_privs_blocks_file_capabilities(void);
+extern int exec_syscall_contract_native_execve_no_new_privs_clears_ambient_on_file_caps(void);
 extern int exec_syscall_contract_native_execve_applies_security_capability_xattr(void);
 extern int exec_syscall_contract_native_execve_nosuid_mount_blocks_setid_and_file_caps(void);
 extern int exec_syscall_contract_oversized_argv_returns_e2big_without_transition(void);
@@ -111,6 +112,10 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testNativeExecveNoNewPrivsBlocksFileCapabilities {
     XCTAssertEqual(exec_syscall_contract_native_execve_no_new_privs_blocks_file_capabilities(), 0, @"errno %d", errno);
+}
+
+- (void)testNativeExecveNoNewPrivsClearsAmbientOnFileCaps {
+    XCTAssertEqual(exec_syscall_contract_native_execve_no_new_privs_clears_ambient_on_file_caps(), 0, @"errno %d", errno);
 }
 
 - (void)testNativeExecveAppliesSecurityCapabilityXattr {

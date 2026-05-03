@@ -1432,6 +1432,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"mount_setattr AT_RECURSIVE should update the virtual mount subtree, errno %d", errno);
 }
 
+- (void)testRecursiveRemountPrivateMarksChildPrivate {
+    extern int vfs_contract_recursive_remount_private_marks_child_private(void);
+    XCTAssertEqual(vfs_contract_recursive_remount_private_marks_child_private(), 0,
+                   @"MS_REC propagation remount should update the virtual mount subtree, errno %d", errno);
+}
+
 - (void)testListmountStatmountReportsSlaveMaster {
     extern int vfs_contract_listmount_statmount_reports_slave_master(void);
     XCTAssertEqual(vfs_contract_listmount_statmount_reports_slave_master(), 0,

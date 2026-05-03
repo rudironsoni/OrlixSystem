@@ -162,6 +162,7 @@ static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath);
 static int vfs_proc_append(char *buf, size_t buf_len, size_t *pos, const char *fmt, ...);
 static int vfs_copy_string(const char *src, char *dst, size_t dst_len);
 static bool vfs_path_matches_prefix(const char *vpath, const char *prefix);
+static bool vfs_mount_target_matches_tree(const char *target, const char *root);
 static uint64_t vfs_vma_resident_page_count(const struct task_vma *vma);
 static void vfs_detached_mount_drop_namespace_refs(uint64_t mount_ns_id);
 
@@ -442,6 +443,30 @@ static void vfs_mount_assign_propagation_ids_locked(struct vfs_mount_namespace *
     }
     entry->peer_group_id = 0;
     entry->master_group_id = 0;
+}
+
+static void vfs_mount_set_propagation_locked(struct vfs_mount_namespace *mnt_ns,
+                                             struct vfs_mount_entry *entry,
+                                             unsigned long propagation) {
+    if (!mnt_ns || !entry || propagation == 0) {
+        return;
+    }
+    entry->propagation = propagation;
+    vfs_mount_assign_propagation_ids_locked(mnt_ns, entry);
+}
+
+static void vfs_mount_set_tree_propagation_locked(struct vfs_mount_namespace *mnt_ns,
+                                                  const char *target,
+                                                  unsigned long propagation) {
+    if (!mnt_ns || !target || propagation == 0) {
+        return;
+    }
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        if (mnt_ns->entries[i].active &&
+            vfs_mount_target_matches_tree(mnt_ns->entries[i].target, target)) {
+            vfs_mount_set_propagation_locked(mnt_ns, &mnt_ns->entries[i], propagation);
+        }
+    }
 }
 
 static int vfs_mount_find_free_slot_locked(struct vfs_mount_namespace *mnt_ns) {
@@ -3336,8 +3361,11 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
             if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
                 mnt_ns->entries[i].flags = (mnt_ns->entries[i].flags & ~MS_RDONLY) | (flags & MS_RDONLY) | MS_BIND;
                 if (propagation != 0) {
-                    mnt_ns->entries[i].propagation = propagation;
-                    vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[i]);
+                    if ((flags & MS_REC) != 0) {
+                        vfs_mount_set_tree_propagation_locked(mnt_ns, resolved_target, propagation);
+                    } else {
+                        vfs_mount_set_propagation_locked(mnt_ns, &mnt_ns->entries[i], propagation);
+                    }
                 }
                 fs_mutex_unlock(&mnt_ns->lock);
                 return 0;
