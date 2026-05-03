@@ -834,6 +834,62 @@ out:
     return ret;
 }
 
+int task_exec_contract_no_new_privs_setuid_exec_clears_ambient_capability(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-nnp-ambient-suid-file");
+
+    fd = open_impl("/tmp/task-exec-nnp-ambient-suid-file", O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    if (chown("/tmp/task-exec-nnp-ambient-suid-file", 2000, 3000) != 0 ||
+        chmod("/tmp/task-exec-nnp-ambient-suid-file", S_ISUID | 0755) != 0 ||
+        prctl_impl(PR_SET_KEEPCAPS, 1, 0, 0, 0) != 0 ||
+        setuid_impl(1000) != 0 ||
+        capget(&header, data) != 0) {
+        goto out;
+    }
+    data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
+    if (capset(&header, data) != 0 ||
+        prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != 0 ||
+        prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SETUID, 0, 0) != 1 ||
+        prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+        task_exec_transition_impl("/tmp/task-exec-nnp-ambient-suid-file",
+                                  "nnp-ambient-suid-file") != 0) {
+        goto out;
+    }
+    if (prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SETUID, 0, 0) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (capget(&header, data) != 0) {
+        goto out;
+    }
+    if (task_exec_contract_cap_has_effective(data, CAP_SETUID)) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-nnp-ambient-suid-file");
+    return ret;
+}
+
 int task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(void) {
     struct cred *cred;
     int fd = -1;

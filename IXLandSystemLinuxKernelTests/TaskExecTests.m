@@ -25,6 +25,7 @@ extern int task_exec_contract_no_new_privs_blocks_file_capability_exec_gain(void
 extern int task_exec_contract_keepcaps_preserves_permitted_caps_after_setuid(void);
 extern int task_exec_contract_securebits_keepcaps_lock_is_enforced(void);
 extern int task_exec_contract_ambient_capability_survives_plain_exec(void);
+extern int task_exec_contract_no_new_privs_setuid_exec_clears_ambient_capability(void);
 extern int task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(void);
 extern int task_exec_contract_nosuid_mount_blocks_file_capability_exec_gain(void);
 extern int task_exec_contract_noexec_mount_blocks_exec_transition(void);
@@ -131,6 +132,10 @@ extern int task_exec_contract_capability_bounding_drop_blocks_inheritable_and_cl
 
 - (void)testAmbientCapabilitySurvivesPlainExec {
     XCTAssertEqual(task_exec_contract_ambient_capability_survives_plain_exec(), 0, @"errno %d", errno);
+}
+
+- (void)testNoNewPrivsSetuidExecClearsAmbientCapability {
+    XCTAssertEqual(task_exec_contract_no_new_privs_setuid_exec_clears_ambient_capability(), 0, @"errno %d", errno);
 }
 
 - (void)testNosuidMountBlocksSetuidExecGain {

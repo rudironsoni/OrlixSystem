@@ -1057,6 +1057,7 @@ static int vfs_mount_plan_shared_move_locked(struct vfs_mount_namespace *mnt_ns,
                                              size_t max_plans,
                                              size_t *plan_count) {
     struct vfs_mount_entry *parent = NULL;
+    struct vfs_mount_entry *source = NULL;
     size_t parent_len = 0;
     const char *old_suffix;
     const char *new_suffix;
@@ -1069,6 +1070,9 @@ static int vfs_mount_plan_shared_move_locked(struct vfs_mount_namespace *mnt_ns,
         struct vfs_mount_entry *entry = &mnt_ns->entries[i];
         size_t entry_len;
 
+        if (entry->active && strcmp(entry->target, old_target) == 0) {
+            source = entry;
+        }
         if (!entry->active || entry->propagation != MS_SHARED ||
             !vfs_path_matches_prefix(old_target, entry->target) ||
             strcmp(old_target, entry->target) == 0 ||
@@ -1080,6 +1084,13 @@ static int vfs_mount_plan_shared_move_locked(struct vfs_mount_namespace *mnt_ns,
             parent = entry;
             parent_len = entry_len;
         }
+    }
+
+    if (source &&
+        (source->propagation == MS_PRIVATE ||
+         source->propagation == MS_SLAVE ||
+         source->propagation == MS_UNBINDABLE)) {
+        return 0;
     }
 
     if (!parent) {

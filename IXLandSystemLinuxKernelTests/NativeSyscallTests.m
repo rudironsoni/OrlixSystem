@@ -226,6 +226,10 @@
     XCTAssertEqual(native_syscall_contract_prot_none_read_fault_queues_sigsegv_accerr(), 0, @"errno %d", errno);
 }
 
+- (void)testStackGuardWriteGrowsAndBelowGuardFaults {
+    XCTAssertEqual(native_syscall_contract_stack_guard_write_grows_and_below_guard_faults(), 0, @"errno %d", errno);
+}
+
 - (void)testPartialCopyRecordsSigbusFaultAddress {
     XCTAssertEqual(native_syscall_contract_partial_copy_records_sigbus_fault_address(), 0, @"errno %d", errno);
 }

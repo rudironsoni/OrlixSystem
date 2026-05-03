@@ -5,6 +5,7 @@
 #include <linux/fcntl.h>
 #include <linux/futex.h>
 #include <linux/capability.h>
+#include <linux/elf.h>
 #include <linux/mman.h>
 #include <linux/poll.h>
 #include <linux/stat.h>
@@ -4910,6 +4911,94 @@ int native_syscall_contract_prot_none_read_fault_queues_sigsegv_accerr(void) {
 
 out:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    return result;
+}
+
+int native_syscall_contract_stack_guard_write_grows_and_below_guard_faults(void) {
+    struct task_struct *task = get_current();
+    struct mm_struct *old_mm;
+    struct mm_struct *mm = NULL;
+    uint64_t stack_base = 0x700000000000ULL;
+    uint64_t stack_size = 4096;
+    uint64_t guard_addr = stack_base - 1;
+    uint64_t below_guard_addr = stack_base - (3 * 4096);
+    char byte = 0;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    old_mm = task->mm;
+    mm = calloc(1, sizeof(*mm));
+    if (!mm) {
+        errno = ENOMEM;
+        return -1;
+    }
+    atomic_init(&mm->refs, 1);
+    mm->initial_stack_base = stack_base;
+    mm->initial_stack_size = stack_size;
+    mm->initial_stack_image_size = stack_size;
+    mm->initial_stack_image = calloc(1, (size_t)stack_size);
+    if (!mm->initial_stack_image) {
+        errno = ENOMEM;
+        goto out;
+    }
+    mm->vmas[0].start = stack_base - 4096;
+    mm->vmas[0].end = stack_base;
+    mm->vmas[0].flags = PF_R | PF_W;
+    mm->vmas[0].kind = TASK_VMA_GUARD;
+    mm->vmas[0].page_count = 1;
+    mm->vmas[1].start = stack_base;
+    mm->vmas[1].end = stack_base + stack_size;
+    mm->vmas[1].flags = PF_R | PF_W;
+    mm->vmas[1].kind = TASK_VMA_STACK;
+    mm->vmas[1].image = mm->initial_stack_image;
+    mm->vmas[1].image_size = stack_size;
+    mm->vmas[1].page_count = 1;
+    mm->vmas[1].page_flags = calloc(1, sizeof(*mm->vmas[1].page_flags));
+    mm->vmas[1].resident_pages = calloc(1, sizeof(*mm->vmas[1].resident_pages));
+    mm->vmas[1].dirty_pages = calloc(1, sizeof(*mm->vmas[1].dirty_pages));
+    if (!mm->vmas[1].page_flags || !mm->vmas[1].resident_pages || !mm->vmas[1].dirty_pages) {
+        errno = ENOMEM;
+        goto out;
+    }
+    mm->vmas[1].page_flags[0] = PF_R | PF_W;
+    mm->vma_count = 2;
+
+    task->mm = mm;
+    clear_pending_task_signal(task, SIGSEGV);
+    if (task_write_virtual_memory_impl(task, guard_addr, "g", 1) != 1 ||
+        task_read_virtual_memory_impl(task, guard_addr, &byte, 1) != 1 ||
+        byte != 'g' ||
+        task->mm->initial_stack_base != stack_base - 4096 ||
+        task->mm->initial_stack_size != stack_size + 4096 ||
+        task->mm->vmas[0].start != stack_base - 8192 ||
+        task->mm->vmas[0].end != stack_base - 4096 ||
+        task->mm->vmas[1].start != stack_base - 4096 ||
+        task->mm->vmas[1].end != stack_base + stack_size) {
+        result = errno ? errno : EPROTO;
+        goto out;
+    }
+    if (task_write_virtual_memory_impl(task, below_guard_addr, "x", 1) != -1 ||
+        errno != EFAULT ||
+        !signal_is_pending(task, SIGSEGV) ||
+        task->last_fault_signal != SIGSEGV ||
+        task->last_fault_code != SEGV_MAPERR ||
+        task->last_fault_addr != below_guard_addr ||
+        !latest_signal_info_matches(task, SIGSEGV, SEGV_MAPERR, below_guard_addr)) {
+        result = errno ? errno : EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    task->mm = old_mm;
+    if (mm) {
+        task_mm_put_impl(mm);
+    }
     return result;
 }
 

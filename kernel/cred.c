@@ -596,13 +596,15 @@ int cred_setgroups(struct cred *cred, size_t size, const gid_t *list) {
 }
 
 void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid, uint32_t mode) {
-    bool privileged_exec;
+    bool privileged_file;
+    bool gains_privilege;
 
     if (!cred) {
         return;
     }
 
-    privileged_exec = !cred->no_new_privs && ((mode & (S_ISUID | S_ISGID)) != 0);
+    privileged_file = (mode & (S_ISUID | S_ISGID)) != 0;
+    gains_privilege = !cred->no_new_privs && privileged_file;
 
     if (!cred->no_new_privs && (mode & S_ISUID) != 0) {
         cred->euid = file_uid;
@@ -613,7 +615,7 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
         cred->fsgid = file_gid;
     }
 
-    if (privileged_exec) {
+    if (privileged_file) {
         cred->cap_ambient = 0;
     }
 
@@ -625,7 +627,7 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
         cred->cap_permitted = cred->cap_bounding;
         cred->cap_effective = cred->cap_permitted;
     } else if (cred->euid != 0) {
-        if (privileged_exec) {
+        if (gains_privilege) {
             cred_drop_privilege_caps(cred);
         } else {
             cred->cap_permitted |= cred->cap_ambient;
