@@ -11,6 +11,7 @@
 #include "pty.h"
 #include "vfs.h"
 #include "kernel/cgroup.h"
+#include "kernel/task.h"
 
 #define MAX_PATH 4096
 
@@ -166,6 +167,7 @@ static int try_open_cgroupfs(const char *resolved_path, int flags, mode_t mode, 
 int open_impl(const char *pathname, int flags, mode_t mode) {
     char translated_path[MAX_PATH];
     char resolved_path[MAX_PATH];
+    struct task_struct *task;
     int ret;
 
     if (!pathname) {
@@ -182,8 +184,9 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
         }
     }
 
+    task = get_current();
     ret = vfs_resolve_virtual_path_task_follow(pathname, resolved_path, sizeof(resolved_path),
-                                               NULL, (flags & O_NOFOLLOW) == 0);
+                                               task ? task->fs : NULL, (flags & O_NOFOLLOW) == 0);
     if (ret != 0) {
         errno = -ret;
         return -1;

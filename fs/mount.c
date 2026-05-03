@@ -30,6 +30,7 @@ extern int vfs_mount_setattr(int dirfd, const char *pathname, unsigned int flags
 extern int vfs_open_tree(int dirfd, const char *pathname, unsigned int flags);
 extern int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
                           const char *to_pathname, unsigned int flags);
+extern int vfs_pivot_root(const char *new_root, const char *put_old);
 
 static int umount_target_is_symlink(const char *target, int *is_symlink) {
     struct linux_stat st;
@@ -211,6 +212,15 @@ __attribute__((visibility("default"))) int move_mount(int from_dirfd, const char
                                                       int to_dirfd, const char *to_pathname,
                                                       unsigned int flags) {
     int ret = vfs_move_mount(from_dirfd, from_pathname, to_dirfd, to_pathname, flags);
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+    return ret;
+}
+
+__attribute__((visibility("default"))) int pivot_root(const char *new_root, const char *put_old) {
+    int ret = vfs_pivot_root(new_root, put_old);
     if (ret < 0) {
         errno = -ret;
         return -1;

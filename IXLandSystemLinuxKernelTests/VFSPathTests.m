@@ -1240,6 +1240,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"root without CAP_SYS_CHROOT should not chroot, errno %d", errno);
 }
 
+- (void)testPivotRootRebasesAbsolutePathsAndExposesOldRoot {
+    extern int vfs_contract_pivot_root_rebases_absolute_paths_and_exposes_old_root(void);
+    XCTAssertEqual(vfs_contract_pivot_root_rebases_absolute_paths_and_exposes_old_root(), 0,
+                   @"pivot_root should rebase absolute paths and expose the old root, errno %d", errno);
+}
+
 - (void)testFchdirUpdatesVirtualPwd {
     extern int vfs_contract_fchdir_updates_virtual_pwd(void);
     XCTAssertEqual(vfs_contract_fchdir_updates_virtual_pwd(), 0,
@@ -1484,6 +1490,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     extern int vfs_contract_move_mount_attaches_open_tree_clone(void);
     XCTAssertEqual(vfs_contract_move_mount_attaches_open_tree_clone(), 0,
                    @"move_mount should attach an open_tree clone fd into the virtual mount namespace, errno %d", errno);
+}
+
+- (void)testOpenTreeCloneSurvivesSourceUnmountUntilAttached {
+    extern int vfs_contract_open_tree_clone_survives_source_unmount_until_attached(void);
+    XCTAssertEqual(vfs_contract_open_tree_clone_survives_source_unmount_until_attached(), 0,
+                   @"open_tree clone fd should survive source unmount until attached, errno %d", errno);
 }
 
 - (void)testOpenTreeCloneNestedMountTopologyAttachesRecursively {

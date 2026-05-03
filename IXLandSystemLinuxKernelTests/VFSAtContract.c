@@ -41,6 +41,7 @@ extern int mount(const char *source, const char *target, const char *filesystemt
                  unsigned long mountflags, const void *data);
 extern int umount(const char *target);
 extern int umount2(const char *target, int flags);
+extern int pivot_root(const char *new_root, const char *put_old);
 extern int mount_setattr(int dirfd, const char *pathname, unsigned int flags,
                          struct mount_attr *attr, size_t size);
 extern int open_tree(int dirfd, const char *pathname, unsigned int flags);
@@ -326,6 +327,15 @@ static void vfs_contract_cleanup_mount_namespace_paths(void) {
     rmdir_impl("/tmp/vfs-mntns-target");
     rmdir_impl("/tmp/vfs-mntns-source/dir");
     rmdir_impl("/tmp/vfs-mntns-source");
+}
+
+static void vfs_contract_cleanup_pivot_paths(void) {
+    umount("/tmp/vfs-pivot-new/oldroot");
+    umount("/tmp/vfs-pivot-new");
+    unlink_impl("/tmp/vfs-pivot-old-marker");
+    unlink_impl("/tmp/vfs-pivot-new/inside");
+    rmdir_impl("/tmp/vfs-pivot-new/oldroot");
+    rmdir_impl("/tmp/vfs-pivot-new");
 }
 
 /* Contract: vfs_fstatat supports AT_FDCWD */
@@ -1130,6 +1140,59 @@ out:
     cred_reset_to_defaults();
     vfs_contract_restore_fs(task->fs, old_root, old_pwd);
     rmdir_impl("/tmp/vfs-chroot-cred-root");
+    return ret;
+}
+
+int vfs_contract_pivot_root_rebases_absolute_paths_and_exposes_old_root(void) {
+    struct task_struct *task = get_current();
+    char old_root[MAX_PATH];
+    char old_pwd[MAX_PATH];
+    int ret = -1;
+
+    if (!task || !task->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+    __builtin_memcpy(old_root, task->fs->root_path, sizeof(old_root));
+    __builtin_memcpy(old_pwd, task->fs->pwd_path, sizeof(old_pwd));
+
+    fs_set_root(task->fs, "/");
+    fs_set_pwd(task->fs, "/");
+    vfs_contract_cleanup_pivot_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-pivot-new", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-pivot-new/oldroot", 0700)) != 0 ||
+        vfs_contract_write_file("/tmp/vfs-pivot-new/inside", "new-root") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-pivot-old-marker", "old-root") != 0 ||
+        mount("/tmp/vfs-pivot-new", "/tmp/vfs-pivot-new", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    if (pivot_root("/tmp/vfs-pivot-new", "/tmp/vfs-pivot-new/oldroot") != 0) {
+        goto out;
+    }
+    if (__builtin_strcmp(task->fs->root_path, "/tmp/vfs-pivot-new") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/inside", "new-root") != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/oldroot/tmp/vfs-pivot-old-marker", "old-root") != 0) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        fs_set_root(task->fs, "/");
+        fs_set_pwd(task->fs, "/");
+        vfs_contract_cleanup_pivot_paths();
+        fs_set_root(task->fs, old_root);
+        fs_set_pwd(task->fs, old_pwd);
+        errno = saved_errno;
+    }
     return ret;
 }
 
@@ -3610,6 +3673,59 @@ int vfs_contract_move_mount_attaches_open_tree_clone(void) {
     }
     if (vfs_contract_read_file_exact("/tmp/vfs-mntns-peer-a/file", "tree") != 0 ||
         vfs_contract_read_file_exact("/tmp/vfs-mntns-target/file", "tree") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (tree_fd >= 0) {
+            close_impl(tree_fd);
+        }
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int vfs_contract_open_tree_clone_survives_source_unmount_until_attached(void) {
+    int tree_fd = -1;
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-a", 0700)) != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "detached-tree") != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    tree_fd = (int)syscall_dispatch_impl(__NR_open_tree, AT_FDCWD,
+                                         (long)(uintptr_t)"/tmp/vfs-mntns-target",
+                                         OPEN_TREE_CLONE, 0, 0, 0);
+    if (tree_fd < 0) {
+        errno = (int)-tree_fd;
+        goto out;
+    }
+    if (umount("/tmp/vfs-mntns-target") != 0) {
+        goto out;
+    }
+    if (open_impl("/tmp/vfs-mntns-target/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = ENODATA;
+        goto out;
+    }
+    {
+        long move_ret = syscall_dispatch_impl(__NR_move_mount, tree_fd, (long)(uintptr_t)"",
+                                              AT_FDCWD, (long)(uintptr_t)"/tmp/vfs-mntns-peer-a",
+                                              MOVE_MOUNT_F_EMPTY_PATH, 0);
+        if (move_ret != 0) {
+            errno = move_ret < 0 ? (int)-move_ret : EPROTO;
+            goto out;
+        }
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-peer-a/file", "detached-tree") != 0) {
         goto out;
     }
 

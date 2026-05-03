@@ -258,6 +258,7 @@ int vfs_mount_setattr(int dirfd, const char *pathname, unsigned int flags,
 int vfs_open_tree(int dirfd, const char *pathname, unsigned int flags);
 int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
                    const char *to_pathname, unsigned int flags);
+int vfs_pivot_root(const char *new_root, const char *put_old);
 long vfs_listmount(const struct mnt_id_req *req, uint64_t *mnt_ids, size_t nr_mnt_ids,
                    unsigned int flags);
 int vfs_statmount(const struct mnt_id_req *req, struct statmount *buf, size_t bufsize,

@@ -1661,6 +1661,13 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
             errno = ENOMEM;
             return -1;
         }
+        if (vma->kind == TASK_VMA_FILE &&
+            mm_shared_file_remaining(vma, (size_t)(page_index * TASK_VMA_PAGE_SIZE)) < 0 &&
+            errno == ENXIO) {
+            vec[page] = 0U;
+            errno = 0;
+            continue;
+        }
         vec[page] = (!vma->resident_pages || vma->resident_pages[page_index]) ? 1U : 0U;
     }
 

@@ -203,6 +203,7 @@ extern int mount_setattr(int dirfd, const char *pathname, unsigned int flags,
 extern int open_tree(int dirfd, const char *pathname, unsigned int flags);
 extern int move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
                       const char *to_pathname, unsigned int flags);
+extern int pivot_root(const char *new_root, const char *put_old);
 extern int setxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags);
 extern int lsetxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags);
 extern int fsetxattr_impl(int fd, const char *name, const void *value, size_t size, int flags);
@@ -656,6 +657,9 @@ long syscall_dispatch_impl(long number,
         return syscall_result((long)move_mount((int)arg0, (const char *)(uintptr_t)arg1,
                                                (int)arg2, (const char *)(uintptr_t)arg3,
                                                (unsigned int)arg4));
+    case __NR_pivot_root:
+        return syscall_result((long)pivot_root((const char *)(uintptr_t)arg0,
+                                               (const char *)(uintptr_t)arg1));
     case __NR_listmount:
         return syscall_result(vfs_listmount((const struct mnt_id_req *)(uintptr_t)arg0,
                                             (uint64_t *)(uintptr_t)arg1,

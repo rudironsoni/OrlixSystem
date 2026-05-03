@@ -2745,6 +2745,86 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
     return ret;
 }
 
+int vfs_pivot_root(const char *new_root, const char *put_old) {
+    struct task_struct *task = get_current();
+    char resolved_new_root[MAX_PATH];
+    char resolved_put_old[MAX_PATH];
+    char host_new_root[MAX_PATH];
+    char host_put_old[MAX_PATH];
+    char old_pwd[MAX_PATH];
+    struct linux_stat st;
+    int ret;
+
+    if (!new_root || !put_old) {
+        return -EFAULT;
+    }
+    if (new_root[0] == '\0' || put_old[0] == '\0') {
+        return -ENOENT;
+    }
+    if (!task || !task->fs) {
+        return -ESRCH;
+    }
+    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+        return -EPERM;
+    }
+
+    ret = vfs_resolve_virtual_path_at(AT_FDCWD, new_root, resolved_new_root, sizeof(resolved_new_root));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_resolve_virtual_path_at(AT_FDCWD, put_old, resolved_put_old, sizeof(resolved_put_old));
+    if (ret != 0) {
+        return ret;
+    }
+    if (strcmp(resolved_new_root, "/") == 0 ||
+        strcmp(resolved_new_root, resolved_put_old) == 0 ||
+        !vfs_path_matches_prefix(resolved_put_old, resolved_new_root)) {
+        return -EINVAL;
+    }
+
+    ret = vfs_translate_path(resolved_new_root, host_new_root, sizeof(host_new_root));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_translate_path(resolved_put_old, host_put_old, sizeof(host_put_old));
+    if (ret != 0) {
+        return ret;
+    }
+    if (host_stat_impl(host_new_root, &st) != 0) {
+        return -errno;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        return -ENOTDIR;
+    }
+    if (host_stat_impl(host_put_old, &st) != 0) {
+        return -errno;
+    }
+    if (!S_ISDIR(st.st_mode)) {
+        return -ENOTDIR;
+    }
+
+    ret = vfs_mount("/", resolved_put_old, NULL, MS_BIND, NULL);
+    if (ret != 0) {
+        return ret;
+    }
+
+    memcpy(old_pwd, task->fs->pwd_path, sizeof(old_pwd));
+    ret = fs_set_root(task->fs, resolved_new_root);
+    if (ret != 0) {
+        vfs_umount(resolved_put_old);
+        return ret;
+    }
+    if (!vfs_path_matches_prefix(old_pwd, resolved_new_root)) {
+        ret = fs_set_pwd(task->fs, resolved_new_root);
+        if (ret != 0) {
+            fs_set_root(task->fs, "/");
+            vfs_umount(resolved_put_old);
+            return ret;
+        }
+    }
+    return 0;
+}
+
 long vfs_listmount(const struct mnt_id_req *req, uint64_t *mnt_ids, size_t nr_mnt_ids,
                    unsigned int flags) {
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();

@@ -157,6 +157,10 @@
     XCTAssertEqual(native_syscall_contract_mremap_fixed_grow_preserves_shared_file_mapping(), 0, @"errno %d", errno);
 }
 
+- (void)testMovedSharedMappingTruncateUpdatesFaultMincoreAndSmaps {
+    XCTAssertEqual(native_syscall_contract_moved_shared_mapping_truncate_updates_fault_mincore_and_smaps(), 0, @"errno %d", errno);
+}
+
 - (void)testMadviseSplitVmaClearsEachPermissionRun {
     XCTAssertEqual(native_syscall_contract_madvise_split_vma_clears_each_permission_run(), 0, @"errno %d", errno);
 }
