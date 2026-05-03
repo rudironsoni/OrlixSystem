@@ -8,6 +8,7 @@ int readiness_contract_poll_multiple_fds_returns_first_ready_pipe(void);
 int readiness_contract_poll_multiple_fds_wakes_when_second_pipe_becomes_ready(void);
 int readiness_contract_poll_pipe_hup_after_writer_close(void);
 int readiness_contract_poll_pipe_write_end_err_after_reader_close(void);
+int readiness_contract_eventfd2_counter_read_write_and_poll(void);
 int readiness_contract_poll_pty_master_blocks_until_slave_writes(void);
 int readiness_contract_poll_pty_slave_blocks_until_master_writes(void);
 int readiness_contract_poll_pty_hup_after_peer_close(void);

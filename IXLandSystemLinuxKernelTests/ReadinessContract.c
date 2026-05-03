@@ -1,5 +1,6 @@
 #include <asm/ioctls.h>
 #include <asm/unistd.h>
+#include <linux/eventfd.h>
 #include <linux/fcntl.h>
 #include <linux/poll.h>
 #include <linux/time_types.h>
@@ -35,6 +36,87 @@ extern int signal_generate_task(struct task_struct *target, int32_t sig);
 
 static int close_if_open(int fd) {
     return fd >= 0 ? close_impl(fd) : 0;
+}
+
+int readiness_contract_eventfd2_counter_read_write_and_poll(void) {
+    struct pollfd pfd;
+    uint64_t value;
+    int efd = -1;
+    int semfd = -1;
+    long ret;
+
+    efd = (int)syscall_dispatch_impl(__NR_eventfd2, 3, EFD_NONBLOCK | EFD_CLOEXEC, 0, 0, 0, 0);
+    if (efd < 0) {
+        errno = (int)-efd;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_fcntl, efd, F_GETFD, 0, 0, 0, 0);
+    if (ret != FD_CLOEXEC) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    memset(&pfd, 0, sizeof(pfd));
+    pfd.fd = efd;
+    pfd.events = POLLIN | POLLOUT;
+    ret = syscall_dispatch_impl(__NR_ppoll, (long)(uintptr_t)&pfd, 1, 0, 0, 0, 0);
+    if (ret != 1 || (pfd.revents & POLLIN) == 0 || (pfd.revents & POLLOUT) == 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    value = 0;
+    ret = syscall_dispatch_impl(__NR_read, efd, (long)(uintptr_t)&value, sizeof(value), 0, 0, 0);
+    if (ret != (long)sizeof(value) || value != 3) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_read, efd, (long)(uintptr_t)&value, sizeof(value), 0, 0, 0);
+    if (ret != -EAGAIN) {
+        errno = ret < 0 ? (int)-ret : EAGAIN;
+        goto out;
+    }
+
+    value = 5;
+    ret = syscall_dispatch_impl(__NR_write, efd, (long)(uintptr_t)&value, sizeof(value), 0, 0, 0);
+    if (ret != (long)sizeof(value)) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    value = 0;
+    ret = syscall_dispatch_impl(__NR_read, efd, (long)(uintptr_t)&value, sizeof(value), 0, 0, 0);
+    if (ret != (long)sizeof(value) || value != 5) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    semfd = (int)syscall_dispatch_impl(__NR_eventfd2, 2, EFD_NONBLOCK | EFD_SEMAPHORE, 0, 0, 0, 0);
+    if (semfd < 0) {
+        errno = (int)-semfd;
+        goto out;
+    }
+    value = 0;
+    ret = syscall_dispatch_impl(__NR_read, semfd, (long)(uintptr_t)&value, sizeof(value), 0, 0, 0);
+    if (ret != (long)sizeof(value) || value != 1) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    value = 0;
+    ret = syscall_dispatch_impl(__NR_read, semfd, (long)(uintptr_t)&value, sizeof(value), 0, 0, 0);
+    if (ret != (long)sizeof(value) || value != 1) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    close_if_open(efd);
+    close_if_open(semfd);
+    return 0;
+
+out:
+    close_if_open(efd);
+    close_if_open(semfd);
+    return -1;
 }
 
 static int append_decimal(char *buf, size_t buf_size, int value) {

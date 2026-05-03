@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <linux/close_range.h>
+#include <linux/eventfd.h>
 #include <linux/fcntl.h>
 
 #include "sync.h"
@@ -25,6 +26,7 @@
 static void retain_fd_description(struct fd_description *desc);
 static void release_fd_description(struct fd_description *desc);
 static struct file *copy_file_descriptor(struct file *file);
+extern void poll_notify_readiness_impl(void);
 
 struct files_struct *alloc_files(size_t max_fds) {
     if (max_fds == 0) {
@@ -339,7 +341,8 @@ enum fd_type {
     FD_TYPE_SYNTHETIC_PTY, /* Synthetic PTY endpoint */
     FD_TYPE_PIPE, /* Virtual pipe endpoint */
     FD_TYPE_EPOLL, /* Virtual epoll instance */
-    FD_TYPE_MOUNT /* Virtual detached mount tree */
+    FD_TYPE_MOUNT, /* Virtual detached mount tree */
+    FD_TYPE_EVENTFD /* Virtual event counter */
 };
 
 typedef struct synthetic_dir_state {
@@ -371,6 +374,8 @@ typedef struct fd_description {
     struct pipe_endpoint *pipe_endpoint;
     struct epoll_instance *epoll_instance;
     struct vfs_mount_fd mount_fd;
+    uint64_t eventfd_counter;
+    bool eventfd_semaphore;
     atomic_int refs;
     fs_mutex_t lock;
 } fd_description_t;
@@ -803,6 +808,37 @@ static fd_description_t *alloc_epoll_fd_description(int flags, struct epoll_inst
     atomic_init(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     memcpy(desc->path, "anon_inode:[eventpoll]", sizeof("anon_inode:[eventpoll]"));
+    return desc;
+}
+
+static fd_description_t *alloc_eventfd_description(unsigned int initval, int flags) {
+    fd_description_t *desc = calloc(1, sizeof(fd_description_t));
+    if (!desc) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    desc->type = FD_TYPE_EVENTFD;
+    desc->fd = -1;
+    desc->flags = O_RDWR | (flags & O_NONBLOCK);
+    desc->mode = 0;
+    desc->offset = 0;
+    desc->is_dir = false;
+    desc->dev_node = SYNTHETIC_DEV_NONE;
+    desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
+    desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
+    desc->pty_index = 0;
+    desc->pty_is_master = false;
+    desc->pipe_endpoint = NULL;
+    desc->epoll_instance = NULL;
+    memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
+    desc->eventfd_counter = initval;
+    desc->eventfd_semaphore = (flags & EFD_SEMAPHORE) != 0;
+    desc->synthetic_state = NULL;
+    atomic_init(&desc->refs, 1);
+    fs_mutex_init(&desc->lock);
+    memcpy(desc->path, "anon_inode:[eventfd]", sizeof("anon_inode:[eventfd]"));
     return desc;
 }
 
@@ -1558,6 +1594,41 @@ int init_mount_fd_entry_impl(int fd, int flags, const struct vfs_mount_fd *mount
     return 0;
 }
 
+static int init_eventfd_entry_impl(int fd, unsigned int initval, int flags) {
+    file_init_impl();
+    fd_entry_t *entry = &fd_table[fd];
+    fs_mutex_lock(&entry->lock);
+    entry->desc = alloc_eventfd_description(initval, flags);
+    if (!entry->desc) {
+        fs_mutex_unlock(&entry->lock);
+        return -1;
+    }
+    entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
+    fs_mutex_unlock(&entry->lock);
+    return 0;
+}
+
+int eventfd2_impl(unsigned int initval, int flags) {
+    const int allowed_flags = EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE;
+    int fd;
+
+    if ((flags & ~allowed_flags) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    fd = alloc_fd_impl();
+    if (fd < 0) {
+        return -1;
+    }
+    if (init_eventfd_entry_impl(fd, initval, flags) != 0) {
+        free_fd_impl(fd);
+        return -1;
+    }
+    return fd;
+}
+
 bool get_fd_is_synthetic_dev_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     return fd_entry->desc && fd_entry->desc->type == FD_TYPE_SYNTHETIC_DEV;
@@ -1618,6 +1689,119 @@ int get_fd_mount_impl(void *entry, struct vfs_mount_fd *mount_fd) {
 
     memcpy(mount_fd, &fd_entry->desc->mount_fd, sizeof(*mount_fd));
     return 0;
+}
+
+bool get_fd_is_eventfd_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    return fd_entry->desc && fd_entry->desc->type == FD_TYPE_EVENTFD;
+}
+
+long eventfd_read_entry_impl(void *entry, void *buf, size_t count) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    fd_description_t *desc;
+    uint64_t value;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_EVENTFD) {
+        errno = EBADF;
+        return -1;
+    }
+    if (!buf) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (count < sizeof(uint64_t)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    desc = fd_entry->desc;
+    fs_mutex_lock(&desc->lock);
+    if (desc->eventfd_counter == 0) {
+        fs_mutex_unlock(&desc->lock);
+        errno = EAGAIN;
+        return -1;
+    }
+    if (desc->eventfd_semaphore) {
+        value = 1;
+        desc->eventfd_counter--;
+    } else {
+        value = desc->eventfd_counter;
+        desc->eventfd_counter = 0;
+    }
+    fs_mutex_unlock(&desc->lock);
+
+    memcpy(buf, &value, sizeof(value));
+    poll_notify_readiness_impl();
+    return (long)sizeof(value);
+}
+
+long eventfd_write_entry_impl(void *entry, const void *buf, size_t count) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    fd_description_t *desc;
+    uint64_t value;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_EVENTFD) {
+        errno = EBADF;
+        return -1;
+    }
+    if (!buf) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (count < sizeof(uint64_t)) {
+        errno = EINVAL;
+        return -1;
+    }
+    memcpy(&value, buf, sizeof(value));
+    if (value == UINT64_MAX) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    desc = fd_entry->desc;
+    fs_mutex_lock(&desc->lock);
+    if (UINT64_MAX - 1 - desc->eventfd_counter < value) {
+        fs_mutex_unlock(&desc->lock);
+        errno = EAGAIN;
+        return -1;
+    }
+    desc->eventfd_counter += value;
+    fs_mutex_unlock(&desc->lock);
+
+    poll_notify_readiness_impl();
+    return (long)sizeof(value);
+}
+
+bool eventfd_read_ready_entry_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    fd_description_t *desc;
+    bool ready;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_EVENTFD) {
+        return false;
+    }
+
+    desc = fd_entry->desc;
+    fs_mutex_lock(&desc->lock);
+    ready = desc->eventfd_counter > 0;
+    fs_mutex_unlock(&desc->lock);
+    return ready;
+}
+
+bool eventfd_write_ready_entry_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    fd_description_t *desc;
+    bool ready;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_EVENTFD) {
+        return false;
+    }
+
+    desc = fd_entry->desc;
+    fs_mutex_lock(&desc->lock);
+    ready = desc->eventfd_counter < UINT64_MAX - 1;
+    fs_mutex_unlock(&desc->lock);
+    return ready;
 }
 
 void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file) {

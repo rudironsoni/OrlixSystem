@@ -3,6 +3,7 @@
 
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Use Linux-sized types directly */
@@ -160,6 +161,7 @@ void init_synthetic_pty_fd_entry_impl(int fd, int flags, linux_mode_t mode, cons
 int init_pipe_fd_entry_impl(int fd, int flags, struct pipe_endpoint *endpoint);
 int init_epoll_fd_entry_impl(int fd, int flags, struct epoll_instance *instance);
 int init_mount_fd_entry_impl(int fd, int flags, const struct vfs_mount_fd *mount_fd);
+int eventfd2_impl(unsigned int initval, int flags);
 
 bool get_fd_is_synthetic_dev_impl(void *entry);
 synthetic_dev_node_t get_fd_synthetic_dev_node_impl(void *entry);
@@ -172,6 +174,11 @@ bool get_fd_is_epoll_impl(void *entry);
 struct epoll_instance *get_fd_epoll_instance_impl(void *entry);
 bool get_fd_is_mount_impl(void *entry);
 int get_fd_mount_impl(void *entry, struct vfs_mount_fd *mount_fd);
+bool get_fd_is_eventfd_impl(void *entry);
+long eventfd_read_entry_impl(void *entry, void *buf, size_t count);
+long eventfd_write_entry_impl(void *entry, const void *buf, size_t count);
+bool eventfd_read_ready_entry_impl(void *entry);
+bool eventfd_write_ready_entry_impl(void *entry);
 
 enum synthetic_proc_file {
     SYNTHETIC_PROC_FILE_NONE = 0,

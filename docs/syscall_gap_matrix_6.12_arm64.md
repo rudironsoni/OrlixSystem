@@ -23,7 +23,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 16 | `fremovexattr` | implemented:xattr | none |
 | 17 | `getcwd` | implemented:fd | none |
 | 18 | `lookup_dcookie` | kernel-owned missing:unclassified | package |
-| 19 | `eventfd2` | kernel-owned missing:unclassified | shell |
+| 19 | `eventfd2` | implemented:readiness | none |
 | 20 | `epoll_create1` | implemented:readiness | none |
 | 21 | `epoll_ctl` | implemented:readiness | none |
 | 22 | `epoll_pwait` | implemented:readiness | none |
