@@ -289,6 +289,14 @@
     XCTAssertEqual(signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(), 0, @"errno %d", errno);
 }
 
+- (void)testRealtimeSignalQueuePreservesMultiplicityAndOrder {
+    XCTAssertEqual(signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(), 0, @"errno %d", errno);
+}
+
+- (void)testSignalFrameAppliesHandlerMaskNodeferAndResethand {
+    XCTAssertEqual(signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(), 0, @"errno %d", errno);
+}
+
 - (void)testRegistersNativeArtifactDescriptor {
     XCTAssertEqual(native_syscall_contract_registers_native_artifact_descriptor(), 0, @"errno %d", errno);
 }

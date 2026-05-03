@@ -249,6 +249,25 @@ static int signal_queue_append(struct signal_struct *signal, int32_t sig, int32_
     entry->fault_addr = addr;
 
     kernel_mutex_lock(&signal->queue.lock);
+    if (sig < SIGRTMIN) {
+        struct signal_queue_entry *prev = NULL;
+        for (struct signal_queue_entry *cursor = signal->queue.head; cursor; cursor = cursor->next) {
+            if (cursor->sig == sig) {
+                if (prev) {
+                    prev->next = cursor->next;
+                } else {
+                    signal->queue.head = cursor->next;
+                }
+                if (signal->queue.tail == cursor) {
+                    signal->queue.tail = prev;
+                }
+                signal->queue.count--;
+                free(cursor);
+                break;
+            }
+            prev = cursor;
+        }
+    }
     if (signal->queue.tail) {
         signal->queue.tail->next = entry;
     } else {
@@ -261,12 +280,13 @@ static int signal_queue_append(struct signal_struct *signal, int32_t sig, int32_
     return 0;
 }
 
-static void signal_queue_remove_first(struct signal_struct *signal, int32_t sig) {
+static int signal_queue_remove_first(struct signal_struct *signal, int32_t sig) {
     struct signal_queue_entry *prev = NULL;
     struct signal_queue_entry *entry;
+    int remains = 0;
 
     if (!signal) {
-        return;
+        return 0;
     }
 
     kernel_mutex_lock(&signal->queue.lock);
@@ -289,7 +309,14 @@ static void signal_queue_remove_first(struct signal_struct *signal, int32_t sig)
         prev = entry;
         entry = next;
     }
+    for (entry = signal->queue.head; entry; entry = entry->next) {
+        if (entry->sig == sig) {
+            remains = 1;
+            break;
+        }
+    }
     kernel_mutex_unlock(&signal->queue.lock);
+    return remains;
 }
 
 static bool signal_default_action_is_ignore(int32_t sig) {
@@ -520,9 +547,10 @@ int signal_dequeue(struct task_struct *task, struct signal_mask_bits *mask, int3
 
             *sig = i;
             /* Clear pending bit */
-            task->thread_pending_signals &= ~(1ULL << bit);
-            task->signal->shared_pending.sig[idx] &= ~(1ULL << bit);
-            signal_queue_remove_first(task->signal, i);
+            if (!signal_queue_remove_first(task->signal, i)) {
+                task->thread_pending_signals &= ~(1ULL << bit);
+                task->signal->shared_pending.sig[idx] &= ~(1ULL << bit);
+            }
             return 1; /* Return 1 to indicate signal found */
         }
     }
@@ -983,6 +1011,19 @@ int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t re
     task->mm->signal_frame_current_sp = current_sp;
     task->mm->signal_frame_size = frame_size;
     task->mm->signal_frame_ucontext_flags = 1;
+    for (int i = 0; i < KERNEL_SIG_NUM_WORDS; i++) {
+        task->signal->blocked.sig[i] |= action->mask.sig[i];
+    }
+    if ((action->flags & SA_NODEFER) == 0) {
+        task->signal->blocked.sig[(sig - 1) >> 6] |= (1ULL << ((sig - 1) & 63));
+    }
+    if ((action->flags & SA_RESETHAND) != 0 && sig != SIGKILL && sig != SIGSTOP) {
+        task->signal->actions[sig - 1].handler = SIG_DFL;
+        task->signal->actions[sig - 1].flags = 0;
+        task->signal->actions[sig - 1].restorer = 0;
+        memset(&task->signal->actions[sig - 1].mask, 0,
+               sizeof(task->signal->actions[sig - 1].mask));
+    }
     *frame_sp_out = frame_sp;
     return 0;
 }

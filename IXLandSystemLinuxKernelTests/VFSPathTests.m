@@ -1534,6 +1534,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"recursive unmount propagation should update /proc/self/mountinfo, errno %d", errno);
 }
 
+- (void)testStatmountRejectsPropagatedRemovedMountId {
+    extern int vfs_contract_statmount_rejects_propagated_removed_mount_id(void);
+    XCTAssertEqual(vfs_contract_statmount_rejects_propagated_removed_mount_id(), 0,
+                   @"statmount/listmount should reject propagated removed mount ids, errno %d", errno);
+}
+
 - (void)testMountIdsStableAcrossMoveUnmountAndNamespaceClone {
     extern int vfs_contract_mount_ids_stable_across_move_unmount_and_namespace_clone(void);
     XCTAssertEqual(vfs_contract_mount_ids_stable_across_move_unmount_and_namespace_clone(), 0,

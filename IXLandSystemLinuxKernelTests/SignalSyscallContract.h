@@ -14,6 +14,8 @@ int signal_syscall_contract_rt_sigreturn_restores_mask_and_altstack(void);
 int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void);
 int signal_syscall_contract_frame_contains_linux_ucontext(void);
 int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void);
+int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void);
+int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(void);
 
 #ifdef __cplusplus
 }

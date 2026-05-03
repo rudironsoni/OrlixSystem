@@ -15,6 +15,8 @@
 #include "kernel/signal.h"
 #include "kernel/task.h"
 
+extern void free(void *);
+
 static void signal_contract_disable_altstack(void) {
     stack_t disabled;
 
@@ -29,6 +31,66 @@ static void signal_contract_clear_pending(struct task_struct *task, int signo) {
     }
     task->thread_pending_signals &= ~(1ULL << ((signo - 1) & 63));
     task->signal->shared_pending.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
+}
+
+static void signal_contract_clear_queued_signal(struct task_struct *task, int signo) {
+    struct signal_queue_entry *prev = NULL;
+    struct signal_queue_entry *entry;
+
+    if (!task || !task->signal || signo < 1 || signo > KERNEL_SIG_NUM) {
+        return;
+    }
+
+    kernel_mutex_lock(&task->signal->queue.lock);
+    entry = task->signal->queue.head;
+    while (entry) {
+        struct signal_queue_entry *next = entry->next;
+        if (entry->sig == signo) {
+            if (prev) {
+                prev->next = next;
+            } else {
+                task->signal->queue.head = next;
+            }
+            if (task->signal->queue.tail == entry) {
+                task->signal->queue.tail = prev;
+            }
+            task->signal->queue.count--;
+            free(entry);
+        } else {
+            prev = entry;
+        }
+        entry = next;
+    }
+    kernel_mutex_unlock(&task->signal->queue.lock);
+    signal_contract_clear_pending(task, signo);
+}
+
+static int signal_contract_queued_count(struct task_struct *task, int signo) {
+    struct signal_queue_entry *entry;
+    int count = 0;
+
+    if (!task || !task->signal || signo < 1 || signo > KERNEL_SIG_NUM) {
+        return 0;
+    }
+
+    kernel_mutex_lock(&task->signal->queue.lock);
+    for (entry = task->signal->queue.head; entry; entry = entry->next) {
+        if (entry->sig == signo) {
+            count++;
+        }
+    }
+    kernel_mutex_unlock(&task->signal->queue.lock);
+    return count;
+}
+
+static struct signal_mask_bits signal_contract_mask_all_except(int signo) {
+    struct signal_mask_bits mask;
+
+    memset(&mask, 0xff, sizeof(mask));
+    if (signo >= 1 && signo <= KERNEL_SIG_NUM) {
+        mask.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
+    }
+    return mask;
 }
 
 int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void) {
@@ -129,6 +191,7 @@ int signal_syscall_contract_sigaltstack_and_frame_policy(void) {
 int signal_syscall_contract_frame_writes_virtual_record(void) {
     struct task_struct *task = get_current();
     stack_t stack;
+    struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
     uint64_t frame_words[2] = {0, 0};
     void *mapped;
@@ -137,6 +200,7 @@ int signal_syscall_contract_frame_writes_virtual_record(void) {
         errno = ESRCH;
         return -1;
     }
+    old_blocked = task->signal->blocked;
     signal_contract_disable_altstack();
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -155,11 +219,13 @@ int signal_syscall_contract_frame_writes_virtual_record(void) {
         frame_words[0] != SIGTERM ||
         frame_words[1] != 0x5678) {
         errno = EPROTO;
+        task->signal->blocked = old_blocked;
         signal_contract_disable_altstack();
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         return -1;
     }
 
+    task->signal->blocked = old_blocked;
     signal_contract_disable_altstack();
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
     return 0;
@@ -168,7 +234,9 @@ int signal_syscall_contract_frame_writes_virtual_record(void) {
 int signal_syscall_contract_frame_records_handler_handoff(void) {
     struct task_struct *task = get_current();
     struct sigaction act;
+    struct sigaction old_act;
     stack_t stack;
+    struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
     void *mapped;
     long ret;
@@ -177,12 +245,14 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
         errno = ESRCH;
         return -1;
     }
+    old_blocked = task->signal->blocked;
     signal_contract_disable_altstack();
     memset(&act, 0, sizeof(act));
+    memset(&old_act, 0, sizeof(old_act));
     act.sa_handler = (__sighandler_t)(uintptr_t)0x9000;
     act.sa_flags = SA_RESTART | SA_ONSTACK;
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&act,
-                                0, sizeof(act.sa_mask), 0, 0);
+                                (long)(uintptr_t)&old_act, sizeof(act.sa_mask), 0, 0);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         return -1;
@@ -192,6 +262,9 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if ((long)(uintptr_t)mapped < 0) {
         errno = -(int)(long)(uintptr_t)mapped;
+        task->signal->blocked = old_blocked;
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_act,
+                              0, sizeof(old_act.sa_mask), 0, 0);
         return -1;
     }
     memset(&stack, 0, sizeof(stack));
@@ -202,11 +275,17 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
         task->mm->signal_handler_pc != 0x9000 ||
         task->mm->signal_frame_flags != (SA_RESTART | SA_ONSTACK)) {
         errno = EPROTO;
+        task->signal->blocked = old_blocked;
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_act,
+                              0, sizeof(old_act.sa_mask), 0, 0);
         signal_contract_disable_altstack();
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         return -1;
     }
 
+    task->signal->blocked = old_blocked;
+    syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_act,
+                          0, sizeof(old_act.sa_mask), 0, 0);
     signal_contract_disable_altstack();
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
     return 0;
@@ -215,7 +294,9 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
 int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
     struct task_struct *task = get_current();
     struct sigaction act;
+    struct sigaction old_act;
     stack_t stack;
+    struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
     uint64_t frame_words[8] = {0};
     uint64_t block_set = 1ULL << (SIGTERM - 1);
@@ -226,14 +307,16 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
         errno = ESRCH;
         return -1;
     }
+    old_blocked = task->signal->blocked;
     signal_contract_disable_altstack();
     memset(&act, 0, sizeof(act));
+    memset(&old_act, 0, sizeof(old_act));
     act.sa_handler = (__sighandler_t)(uintptr_t)0x9100;
     act.sa_restorer = (__sigrestore_t)(uintptr_t)0x9200;
     act.sa_flags = SA_RESTART | SA_ONSTACK | SA_RESTORER;
     act.sa_mask.sig[0] = 1ULL << (SIGINT - 1);
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&act,
-                                0, sizeof(act.sa_mask), 0, 0);
+                                (long)(uintptr_t)&old_act, sizeof(act.sa_mask), 0, 0);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         return -1;
@@ -242,6 +325,9 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
                                 0, sizeof(block_set), 0, 0);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
+        task->signal->blocked = old_blocked;
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
+                              0, sizeof(old_act.sa_mask), 0, 0);
         return -1;
     }
 
@@ -249,6 +335,9 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if ((long)(uintptr_t)mapped < 0) {
         errno = -(int)(long)(uintptr_t)mapped;
+        task->signal->blocked = old_blocked;
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
+                              0, sizeof(old_act.sa_mask), 0, 0);
         return -1;
     }
     memset(&stack, 0, sizeof(stack));
@@ -269,16 +358,18 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
         task->mm->signal_frame_restorer_pc != 0x9200 ||
         task->mm->signal_frame_mask != block_set) {
         errno = EPROTO;
+        task->signal->blocked = old_blocked;
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
+                              0, sizeof(old_act.sa_mask), 0, 0);
         signal_contract_disable_altstack();
-        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
-                              0, sizeof(block_set), 0, 0);
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         return -1;
     }
 
+    task->signal->blocked = old_blocked;
+    syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
+                          0, sizeof(old_act.sa_mask), 0, 0);
     signal_contract_disable_altstack();
-    syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
-                          0, sizeof(block_set), 0, 0);
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
     return 0;
 }
@@ -439,6 +530,7 @@ int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
 int signal_syscall_contract_frame_contains_linux_ucontext(void) {
     struct task_struct *task = get_current();
     stack_t stack;
+    struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
     uint64_t block_set = 1ULL << (SIGTERM - 1);
     struct ucontext context;
@@ -448,6 +540,7 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
         errno = ESRCH;
         return -1;
     }
+    old_blocked = task->signal->blocked;
     signal_contract_disable_altstack();
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -465,9 +558,8 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
         task_read_virtual_memory_impl(task, frame_sp + 128, &context, sizeof(context)) !=
             (long)sizeof(context)) {
         errno = EPROTO;
+        task->signal->blocked = old_blocked;
         signal_contract_disable_altstack();
-        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
-                              0, sizeof(block_set), 0, 0);
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         return -1;
     }
@@ -481,16 +573,14 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
         context.uc_mcontext.pc != 0x13579bdf ||
         task->mm->signal_frame_size < 128 + sizeof(context)) {
         errno = ENODATA;
+        task->signal->blocked = old_blocked;
         signal_contract_disable_altstack();
-        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
-                              0, sizeof(block_set), 0, 0);
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         return -1;
     }
 
+    task->signal->blocked = old_blocked;
     signal_contract_disable_altstack();
-    syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
-                          0, sizeof(block_set), 0, 0);
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
     return 0;
 }
@@ -558,4 +648,127 @@ int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void)
     syscall_dispatch_impl(__NR_rt_sigaction, SIGTERM, (long)(uintptr_t)&old_term,
                           0, sizeof(old_term.sa_mask), 0, 0);
     return 0;
+}
+
+int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void) {
+    struct task_struct *task = get_current();
+    struct signal_mask_bits old_blocked;
+    struct signal_mask_bits only_realtime;
+    int signo = SIGRTMIN;
+    int dequeued = 0;
+
+    if (!task || !task->signal) {
+        errno = ESRCH;
+        return -1;
+    }
+    old_blocked = task->signal->blocked;
+    only_realtime = signal_contract_mask_all_except(signo);
+    memset(&task->signal->blocked, 0, sizeof(task->signal->blocked));
+    signal_contract_clear_queued_signal(task, signo);
+    signal_contract_clear_queued_signal(task, SIGUSR1);
+
+    if (signal_generate_task_info(task, signo, 100, 0x1000) != 0 ||
+        signal_generate_task_info(task, signo, 101, 0x2000) != 0 ||
+        signal_contract_queued_count(task, signo) != 2 ||
+        signal_dequeue(task, &only_realtime, &dequeued) != 1 ||
+        dequeued != signo ||
+        !signal_is_pending(task, signo) ||
+        signal_contract_queued_count(task, signo) != 1 ||
+        signal_dequeue(task, &only_realtime, &dequeued) != 1 ||
+        dequeued != signo ||
+        signal_is_pending(task, signo) ||
+        signal_contract_queued_count(task, signo) != 0) {
+        errno = EPROTO;
+        signal_contract_clear_queued_signal(task, signo);
+        task->signal->blocked = old_blocked;
+        return -1;
+    }
+
+    if (signal_generate_task(task, SIGUSR1) != 0 ||
+        signal_generate_task(task, SIGUSR1) != 0 ||
+        signal_contract_queued_count(task, SIGUSR1) != 1) {
+        errno = EALREADY;
+        signal_contract_clear_queued_signal(task, SIGUSR1);
+        task->signal->blocked = old_blocked;
+        return -1;
+    }
+    signal_contract_clear_queued_signal(task, SIGUSR1);
+    task->signal->blocked = old_blocked;
+    return 0;
+}
+
+int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(void) {
+    struct task_struct *task = get_current();
+    struct sigaction act;
+    struct sigaction old_usr1;
+    struct sigaction old_usr2;
+    struct signal_mask_bits old_blocked;
+    uint64_t frame_sp = 0;
+    uint64_t block_term = 1ULL << (SIGTERM - 1);
+    uint64_t block_usr1 = 1ULL << (SIGUSR1 - 1);
+    uint64_t block_usr2 = 1ULL << (SIGUSR2 - 1);
+    void *mapped;
+    long ret;
+
+    if (!task || !task->signal) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(&act, 0, sizeof(act));
+    memset(&old_usr1, 0, sizeof(old_usr1));
+    memset(&old_usr2, 0, sizeof(old_usr2));
+    old_blocked = task->signal->blocked;
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+
+    task->signal->blocked.sig[0] = block_term;
+    act.sa_handler = (__sighandler_t)(uintptr_t)0x7100;
+    act.sa_flags = SA_RESETHAND;
+    act.sa_mask.sig[0] = block_usr2;
+    ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&act,
+                                (long)(uintptr_t)&old_usr1, sizeof(act.sa_mask), 0, 0);
+    if (ret != 0 ||
+        signal_prepare_frame_impl(task, SIGUSR1, 0x1111,
+                                  (uint64_t)(uintptr_t)mapped + 16384, &frame_sp) != 0 ||
+        task->mm->signal_frame_mask != block_term ||
+        (task->signal->blocked.sig[0] & block_term) == 0 ||
+        (task->signal->blocked.sig[0] & block_usr1) == 0 ||
+        (task->signal->blocked.sig[0] & block_usr2) == 0 ||
+        task->signal->actions[SIGUSR1 - 1].handler != SIG_DFL) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    task->signal->blocked.sig[0] = 0;
+    memset(&act, 0, sizeof(act));
+    act.sa_handler = (__sighandler_t)(uintptr_t)0x7200;
+    act.sa_flags = SA_NODEFER;
+    ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&act,
+                                (long)(uintptr_t)&old_usr2, sizeof(act.sa_mask), 0, 0);
+    if (ret != 0 ||
+        signal_prepare_frame_impl(task, SIGUSR2, 0x2222,
+                                  (uint64_t)(uintptr_t)mapped + 16384, &frame_sp) != 0 ||
+        (task->signal->blocked.sig[0] & block_usr2) != 0) {
+        errno = ENOTRECOVERABLE;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_usr1,
+                              0, sizeof(old_usr1.sa_mask), 0, 0);
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_usr2,
+                              0, sizeof(old_usr2.sa_mask), 0, 0);
+        task->signal->blocked = old_blocked;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        errno = saved_errno;
+    }
+    return ret == 0 ? 0 : -1;
 }

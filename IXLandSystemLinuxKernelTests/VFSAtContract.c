@@ -4095,6 +4095,95 @@ out:
     return ret;
 }
 
+int vfs_contract_statmount_rejects_propagated_removed_mount_id(void) {
+    struct mnt_id_req req;
+    char statmount_storage[sizeof(struct statmount) + 512];
+    struct statmount *st = (struct statmount *)statmount_storage;
+    uint64_t ids[64];
+    char content[8192];
+    int child_mount_id = 0;
+    int child_parent_id = 0;
+    int ret = -1;
+    long count;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-a", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-b", 0700)) != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-child-source/file", "statmount-removed") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-a", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-b", NULL, MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-peer-a/child", NULL, MS_BIND | MS_SHARED, NULL) != 0) {
+        goto out;
+    }
+    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-peer-b/child/file", "statmount-removed") != 0 ||
+        vfs_contract_read_proc_file("/proc/self/mountinfo", content, sizeof(content)) != 0 ||
+        vfs_contract_mountinfo_ids_for_target(content, "/tmp/vfs-mntns-peer-b/child",
+                                              &child_mount_id, &child_parent_id) != 0) {
+        goto out;
+    }
+
+    memset(&req, 0, sizeof(req));
+    memset(statmount_storage, 0, sizeof(statmount_storage));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = (uint64_t)child_mount_id;
+    req.param = STATMOUNT_MNT_BASIC | STATMOUNT_MNT_POINT;
+    if (syscall_dispatch_impl(__NR_statmount, (long)(uintptr_t)&req,
+                              (long)(uintptr_t)st, sizeof(statmount_storage), 0, 0, 0) != 0 ||
+        st->mnt_point == 0 ||
+        strcmp(vfs_contract_statmount_string(st, st->mnt_point),
+               "/tmp/vfs-mntns-peer-b/child") != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    if (umount2("/tmp/vfs-mntns-peer-a", 0) != 0) {
+        goto out;
+    }
+
+    memset(&req, 0, sizeof(req));
+    memset(statmount_storage, 0, sizeof(statmount_storage));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = (uint64_t)child_mount_id;
+    req.param = STATMOUNT_MNT_BASIC;
+    if (syscall_dispatch_impl(__NR_statmount, (long)(uintptr_t)&req,
+                              (long)(uintptr_t)st, sizeof(statmount_storage), 0, 0, 0) != -ENOENT) {
+        errno = ESTALE;
+        goto out;
+    }
+
+    memset(&req, 0, sizeof(req));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = LSMT_ROOT;
+    count = syscall_dispatch_impl(__NR_listmount, (long)(uintptr_t)&req,
+                                  (long)(uintptr_t)ids,
+                                  sizeof(ids) / sizeof(ids[0]), 0, 0, 0);
+    if (count < 0) {
+        errno = (int)-count;
+        goto out;
+    }
+    for (long i = 0; i < count; i++) {
+        if (ids[i] == (uint64_t)child_mount_id) {
+            errno = EEXIST;
+            goto out;
+        }
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        vfs_contract_cleanup_mount_namespace_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_mount_ids_stable_across_move_unmount_and_namespace_clone(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child = NULL;
