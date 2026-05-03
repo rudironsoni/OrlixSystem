@@ -136,6 +136,10 @@
     XCTAssertEqual(procfs_namespace_contract_proc_pid_mountinfo_uses_target_mount_namespace(), 0, @"errno %d", errno);
 }
 
+- (void)testZombieProcPidMountsKeepTargetMountNamespace {
+    XCTAssertEqual(procfs_namespace_contract_zombie_proc_pid_mounts_keep_target_mount_namespace(), 0, @"errno %d", errno);
+}
+
 - (void)testRootProcFilesAreReadable {
     XCTAssertEqual(procfs_namespace_contract_root_files_are_readable(), 0, @"errno %d", errno);
 }

@@ -311,6 +311,11 @@ static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const
         errno = -ret;
         return -1;
     }
+    ret = vfs_check_sticky_rename_permission(resolved_old, resolved_new);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
 
     if ((flags & AT_RENAME_EXCHANGE) != 0) {
         ret = rename_apply_host_exchange(resolved_old, resolved_new, translated_old, translated_new);

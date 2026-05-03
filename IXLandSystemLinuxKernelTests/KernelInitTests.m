@@ -25,6 +25,7 @@ extern int kernel_init_contract_exec_init_returns_enoent_when_no_candidate_exist
 extern int kernel_init_contract_exec_init_preserves_pid1_identity(void);
 extern int kernel_init_contract_exec_init_updates_proc_self_exe_cmdline_comm(void);
 extern int kernel_init_contract_exec_init_closes_cloexec_only(void);
+extern int kernel_init_contract_pid1_adopts_orphaned_children(void);
 extern int kernel_init_contract_exec_script_init_uses_interpreter(void);
 
 @interface KernelInitTests : XCTestCase
@@ -120,6 +121,10 @@ extern int kernel_init_contract_exec_script_init_uses_interpreter(void);
 
 - (void)testExecInitClosesCloexecOnly {
     XCTAssertEqual(kernel_init_contract_exec_init_closes_cloexec_only(), 0, @"errno %d", errno);
+}
+
+- (void)testPid1AdoptsOrphanedChildren {
+    XCTAssertEqual(kernel_init_contract_pid1_adopts_orphaned_children(), 0, @"errno %d", errno);
 }
 
 - (void)testExecScriptInitUsesInterpreter {

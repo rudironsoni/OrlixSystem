@@ -2209,6 +2209,21 @@ int vfs_check_sticky_unlink_permission(const char *resolved_vpath) {
     return -EPERM;
 }
 
+int vfs_check_sticky_rename_permission(const char *old_resolved_vpath, const char *new_resolved_vpath) {
+    int ret;
+
+    ret = vfs_check_sticky_unlink_permission(old_resolved_vpath);
+    if (ret != 0) {
+        return ret;
+    }
+
+    ret = vfs_check_sticky_unlink_permission(new_resolved_vpath);
+    if (ret == -ENOENT) {
+        return 0;
+    }
+    return ret;
+}
+
 static int vfs_check_search_permission(const char *resolved_vpath) {
     char current[MAX_PATH];
     struct cred *cred = get_current_cred();

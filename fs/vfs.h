@@ -376,6 +376,7 @@ int vfs_proc_cpuinfo_content(char *buf, size_t buf_len);
 int vfs_check_open_permission(const char *resolved_vpath, const char *translated_path, int flags);
 int vfs_check_parent_mutation_permission(const char *resolved_vpath);
 int vfs_check_sticky_unlink_permission(const char *resolved_vpath);
+int vfs_check_sticky_rename_permission(const char *old_resolved_vpath, const char *new_resolved_vpath);
 void vfs_record_created_path(const char *resolved_vpath, linux_mode_t mode);
 uint64_t vfs_file_identity_for_path(const char *resolved_vpath);
 int vfs_set_file_capabilities(const char *path, uint64_t permitted, uint64_t inheritable,

@@ -33,6 +33,7 @@ extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int unlink_impl(const char *pathname);
 extern int kernel_exec_init(const char *preferred_path, char *const argv[], char *const envp[]);
+extern void exit_impl(int status);
 
 struct linux_dirent64 {
     uint64_t d_ino;
@@ -61,6 +62,55 @@ static int buffer_contains(const char *buf, size_t len, const char *needle) {
         }
     }
 
+    return 0;
+}
+
+static int format_proc_pid_path(char *buf, size_t buf_len, int32_t pid, const char *suffix) {
+    const char prefix[] = "/proc/";
+    char digits[16];
+    size_t pos = 0;
+    size_t suffix_pos = 0;
+    int value = pid;
+    int digit_count = 0;
+
+    if (!buf || !suffix || buf_len == 0 || pid <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    while (prefix[pos] != '\0') {
+        if (pos + 1 >= buf_len) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        buf[pos] = prefix[pos];
+        pos++;
+    }
+
+    do {
+        digits[digit_count++] = (char)('0' + (value % 10));
+        value /= 10;
+    } while (value > 0 && digit_count < (int)sizeof(digits));
+
+    if (value > 0) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    while (digit_count > 0) {
+        if (pos + 1 >= buf_len) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        buf[pos++] = digits[--digit_count];
+    }
+    while (suffix[suffix_pos] != '\0') {
+        if (pos + 1 >= buf_len) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        buf[pos++] = suffix[suffix_pos++];
+    }
+    buf[pos] = '\0';
     return 0;
 }
 
@@ -866,6 +916,77 @@ out:
             close_impl(cloexec_fd);
         }
         reset_boot_state();
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int kernel_init_contract_pid1_adopts_orphaned_children(void) {
+    struct task_struct *parent = NULL;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    char status_path[96];
+    char buf[1024];
+    ssize_t nread;
+    int fd = -1;
+    int result = -1;
+
+    saved = get_current();
+    if (!init_task || saved != init_task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    parent = task_create_child_impl(init_task);
+    if (!parent) {
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+
+    set_current(parent);
+    exit_impl(0);
+    set_current(init_task);
+
+    if (child->parent != init_task || child->ppid != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (format_proc_pid_path(status_path, sizeof(status_path), child->pid, "/status") != 0) {
+        goto out;
+    }
+    fd = open_impl(status_path, O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = read_impl(fd, buf, sizeof(buf) - 1);
+    close_impl(fd);
+    fd = -1;
+    if (nread <= 0 || !buffer_contains(buf, (size_t)nread, "PPid:\t1\n")) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        close_impl(fd);
+        set_current(init_task);
+        if (child) {
+            task_unlink_child_impl(init_task, child);
+            task_unlink_child_impl(parent, child);
+            free_task(child);
+        }
+        if (parent) {
+            task_unlink_child_impl(init_task, parent);
+            free_task(parent);
+        }
+        set_current(saved);
         errno = saved_errno;
     }
     return result;
