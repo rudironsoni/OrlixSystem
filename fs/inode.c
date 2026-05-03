@@ -170,7 +170,7 @@ static int fchownat_impl(int dirfd, const char *pathname, linux_uid_t owner, lin
     return 0;
 }
 
-static linux_mode_t umask_impl(linux_mode_t mask) {
+linux_mode_t umask_impl(linux_mode_t mask) {
     struct task_struct *task = get_current();
     linux_mode_t old;
 

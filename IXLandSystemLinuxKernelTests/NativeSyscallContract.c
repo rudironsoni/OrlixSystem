@@ -8,6 +8,7 @@
 #include <linux/elf.h>
 #include <linux/mman.h>
 #include <linux/poll.h>
+#include <linux/prctl.h>
 #include <linux/stat.h>
 #include <linux/time_types.h>
 #include <linux/utsname.h>
@@ -4303,6 +4304,51 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void) {
         errno = ret < 0 ? (int)-ret : ESRCH;
         return -1;
     }
+    ret = syscall_dispatch_impl(__NR_getuid, 0, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_geteuid, 0, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_getgid, 0, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_getegid, 0, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_getpgid, 0, 0, 0, 0, 0, 0);
+    if (ret != task->pgid) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_getsid, 0, 0, 0, 0, 0, 0);
+    if (ret != task->sid) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_setpgid, 0, -1, 0, 0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EINVAL;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_setsid, 0, 0, 0, 0, 0, 0);
+    if (ret != -EPERM) {
+        errno = ret < 0 ? (int)-ret : EPERM;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_prctl, PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
     child_pid = syscall_dispatch_impl(__NR_clone, 0, 0, 0, 0, 0, 0);
     if (child_pid <= 0) {
         errno = child_pid < 0 ? (int)-child_pid : ECHILD;
@@ -4402,6 +4448,7 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     const char *file = "/tmp/native-shell-syscalls/file";
     const char *renamed = "/tmp/native-shell-syscalls/renamed";
     char payload[] = "helloworld";
+    char cwd[128];
     char read_buf[11];
     int fd = -1;
     int dupfd = -1;
@@ -4418,11 +4465,37 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
+    ret = syscall_dispatch_impl(__NR_umask, 0027, 0, 0, 0, 0, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_umask, ret, 0, 0, 0, 0, 0);
+    if (ret != 0027) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_chdir, (long)(uintptr_t)dir, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    memset(cwd, 0, sizeof(cwd));
+    ret = syscall_dispatch_impl(__NR_getcwd, (long)(uintptr_t)cwd, sizeof(cwd), 0, 0, 0, 0);
+    if (ret <= 0 || strcmp(cwd, dir) != 0) {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
 
     fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)file,
                                     O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
     if (fd < 0) {
         errno = (int)-fd;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fchdir, fd, 0, 0, 0, 0, 0);
+    if (ret != -ENOTDIR) {
+        errno = ret < 0 ? (int)-ret : ENOTDIR;
         goto out;
     }
 
@@ -4486,6 +4559,11 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
+    ret = syscall_dispatch_impl(__NR_chdir, (long)(uintptr_t)"/", 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
     ret = syscall_dispatch_impl(__NR_unlinkat, AT_FDCWD, (long)(uintptr_t)dir,
                                 AT_REMOVEDIR, 0, 0, 0);
     if (ret != 0) {
@@ -4496,6 +4574,7 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     return 0;
 
 out:
+    syscall_dispatch_impl(__NR_chdir, (long)(uintptr_t)"/", 0, 0, 0, 0, 0);
     close_if_open(fd);
     close_if_open(dupfd);
     close_if_open(cloexec_fd);
@@ -4670,6 +4749,9 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_unlinkat,
         __NR_renameat,
         __NR_renameat2,
+        __NR_chdir,
+        __NR_fchdir,
+        __NR_umask,
         __NR_newfstatat,
         __NR_fstat,
         __NR_faccessat,
@@ -4679,6 +4761,15 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_getpid,
         __NR_getppid,
         __NR_uname,
+        __NR_getuid,
+        __NR_geteuid,
+        __NR_getgid,
+        __NR_getegid,
+        __NR_getpgid,
+        __NR_getsid,
+        __NR_setpgid,
+        __NR_setsid,
+        __NR_prctl,
         __NR_exit,
         __NR_exit_group,
         __NR_mmap,
@@ -4727,6 +4818,9 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_unlinkat, SYSCALL_CAPABILITY_FD},
         {__NR_renameat, SYSCALL_CAPABILITY_FD},
         {__NR_renameat2, SYSCALL_CAPABILITY_FD},
+        {__NR_chdir, SYSCALL_CAPABILITY_FD},
+        {__NR_fchdir, SYSCALL_CAPABILITY_FD},
+        {__NR_umask, SYSCALL_CAPABILITY_FD},
         {__NR_faccessat, SYSCALL_CAPABILITY_FD},
         {__NR_faccessat2, SYSCALL_CAPABILITY_FD},
         {__NR_statx, SYSCALL_CAPABILITY_FD},
@@ -4734,6 +4828,15 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_gettid, SYSCALL_CAPABILITY_PROCESS},
         {__NR_clone, SYSCALL_CAPABILITY_PROCESS},
         {__NR_uname, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_getuid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_geteuid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_getgid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_getegid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_getpgid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_getsid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_setpgid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_setsid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_prctl, SYSCALL_CAPABILITY_PROCESS},
         {__NR_exit, SYSCALL_CAPABILITY_PROCESS},
         {__NR_exit_group, SYSCALL_CAPABILITY_PROCESS},
         {__NR_execve, SYSCALL_CAPABILITY_PROCESS},

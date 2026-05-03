@@ -179,6 +179,7 @@
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
+#include "../kernel/cred_internal.h"
 #include "../kernel/futex.h"
 #include "../kernel/mm.h"
 #include "../kernel/ptrace.h"
@@ -205,6 +206,9 @@ extern int statx_impl(int dirfd, const char *pathname, int flags, unsigned int m
 extern int ftruncate_impl(int fd, linux_off_t length);
 extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
+extern int chdir_impl(const char *path);
+extern int fchdir_impl(int fd);
+extern linux_mode_t umask_impl(linux_mode_t mask);
 extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 extern int dup_impl(int oldfd);
@@ -551,6 +555,9 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_unlinkat:
     case __NR_renameat:
     case __NR_renameat2:
+    case __NR_chdir:
+    case __NR_fchdir:
+    case __NR_umask:
         return SYSCALL_CAPABILITY_FD;
     case __NR_brk:
     case __NR_mmap:
@@ -573,6 +580,15 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_getpid:
     case __NR_getppid:
     case __NR_uname:
+    case __NR_getuid:
+    case __NR_geteuid:
+    case __NR_getgid:
+    case __NR_getegid:
+    case __NR_getpgid:
+    case __NR_getsid:
+    case __NR_setpgid:
+    case __NR_setsid:
+    case __NR_prctl:
         return SYSCALL_CAPABILITY_PROCESS;
     case __NR_rt_sigaction:
     case __NR_sigaltstack:
@@ -972,12 +988,38 @@ static long syscall_dispatch_inner_impl(long number,
         }
         return (long)strlen(buf) + 1;
     }
+    case __NR_chdir:
+        return syscall_result((long)chdir_impl((const char *)(uintptr_t)arg0));
+    case __NR_fchdir:
+        return syscall_result((long)fchdir_impl((int)arg0));
+    case __NR_umask:
+        return (long)umask_impl((linux_mode_t)arg0);
     case __NR_getpid:
         return (long)getpid_impl();
     case __NR_getppid:
         return (long)getppid_impl();
     case __NR_uname:
         return syscall_result((long)uname_impl((struct new_utsname *)(uintptr_t)arg0));
+    case __NR_getuid:
+        return (long)getuid_impl();
+    case __NR_geteuid:
+        return (long)geteuid_impl();
+    case __NR_getgid:
+        return (long)getgid_impl();
+    case __NR_getegid:
+        return (long)getegid_impl();
+    case __NR_getpgid:
+        return syscall_result((long)getpgid_impl((int32_t)arg0));
+    case __NR_getsid:
+        return syscall_result((long)getsid_impl((int32_t)arg0));
+    case __NR_setpgid:
+        return syscall_result((long)setpgid_impl((int32_t)arg0, (int32_t)arg1));
+    case __NR_setsid:
+        return syscall_result((long)setsid_impl());
+    case __NR_prctl:
+        return syscall_result((long)prctl_impl((int)arg0, (unsigned long)arg1,
+                                               (unsigned long)arg2, (unsigned long)arg3,
+                                               (unsigned long)arg4));
     case __NR_exit:
     case __NR_exit_group:
         exit_impl((int)arg0);
