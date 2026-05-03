@@ -81,6 +81,25 @@ static int read_file_exact(const char *path, const char *expected) {
     return 0;
 }
 
+static int read_file_contains(const char *path, const char *needle) {
+    char buf[256];
+    int fd;
+    long n;
+
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    memset(buf, 0, sizeof(buf));
+    n = read_impl(fd, buf, sizeof(buf) - 1);
+    close_impl(fd);
+    if (n <= 0 || !strstr(buf, needle)) {
+        errno = ENODATA;
+        return -1;
+    }
+    return 0;
+}
+
 static void cleanup_mount_paths(void) {
     umount("/tmp/ns-target");
     unlink_impl("/tmp/ns-parent-source/file");
@@ -565,6 +584,136 @@ out:
             release_lookup_child(parent, user_mnt_child);
         }
         cleanup_mount_paths();
+        reset_namespace_contract_state();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int namespace_contract_proc_uid_gid_maps_are_visible(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    int pid;
+    int ret = -1;
+
+    reset_namespace_contract_state();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (read_file_contains("/proc/self/uid_map", "         0          0 4294967295") != 0 ||
+        read_file_contains("/proc/self/gid_map", "         0          0 4294967295") != 0) {
+        goto out;
+    }
+
+    pid = clone_impl(CLONE_NEWUSER);
+    if (pid < 0) {
+        goto out;
+    }
+    child = lookup_child_from_pid(pid);
+    if (!child) {
+        goto out;
+    }
+    set_current(child);
+    if (read_file_contains("/proc/self/uid_map", "         0          0          1") != 0 ||
+        read_file_contains("/proc/self/gid_map", "         0          0          1") != 0) {
+        set_current(parent);
+        goto out;
+    }
+    set_current(parent);
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        if (child) {
+            release_lookup_child(parent, child);
+        }
+        reset_namespace_contract_state();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int namespace_contract_newuser_caps_are_scoped_to_uts_namespace_owner(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    struct new_utsname uts;
+    struct task_struct *parent = get_current();
+    struct task_struct *user_child = NULL;
+    struct task_struct *user_uts_child = NULL;
+    int pid;
+    int ret = -1;
+
+    reset_namespace_contract_state();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (sethostname_impl("parent-node", 11) != 0 || capget(&header, data) != 0) {
+        goto out;
+    }
+    data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
+    if (capset(&header, data) != 0) {
+        goto out;
+    }
+    errno = 0;
+    if (sethostname_impl("denied-parent", 13) != -1 || errno != EPERM) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    pid = clone_impl(CLONE_NEWUSER);
+    if (pid < 0) {
+        goto out;
+    }
+    user_child = lookup_child_from_pid(pid);
+    if (!user_child) {
+        goto out;
+    }
+    set_current(user_child);
+    errno = 0;
+    if (sethostname_impl("denied-child", 12) != -1 || errno != EPERM) {
+        set_current(parent);
+        errno = ENODATA;
+        goto out;
+    }
+    set_current(parent);
+
+    pid = clone_impl(CLONE_NEWUSER | CLONE_NEWUTS);
+    if (pid < 0) {
+        goto out;
+    }
+    user_uts_child = lookup_child_from_pid(pid);
+    if (!user_uts_child) {
+        goto out;
+    }
+    set_current(user_uts_child);
+    if (sethostname_impl("child-node", 10) != 0 || uname_impl(&uts) != 0 ||
+        strcmp(uts.nodename, "child-node") != 0) {
+        set_current(parent);
+        goto out;
+    }
+    set_current(parent);
+    if (uname_impl(&uts) != 0 || strcmp(uts.nodename, "parent-node") != 0) {
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        if (user_child) {
+            release_lookup_child(parent, user_child);
+        }
+        if (user_uts_child) {
+            release_lookup_child(parent, user_uts_child);
+        }
         reset_namespace_contract_state();
         errno = saved_errno;
     }

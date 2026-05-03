@@ -171,6 +171,8 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
             {"maps", DT_REG},
             {"status", DT_REG},
             {"cgroup", DT_REG},
+            {"uid_map", DT_REG},
+            {"gid_map", DT_REG},
             {"mountinfo", DT_REG},
             {"mounts", DT_REG},
             {"fdinfo", DT_DIR},

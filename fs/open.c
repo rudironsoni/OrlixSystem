@@ -40,6 +40,10 @@ static synthetic_proc_file_t proc_self_file_for_class(proc_self_path_class_t pro
         return SYNTHETIC_PROC_FILE_STATUS;
     case PROC_SELF_CGROUP_FILE:
         return SYNTHETIC_PROC_FILE_CGROUP;
+    case PROC_SELF_UID_MAP_FILE:
+        return SYNTHETIC_PROC_FILE_UID_MAP;
+    case PROC_SELF_GID_MAP_FILE:
+        return SYNTHETIC_PROC_FILE_GID_MAP;
     case PROC_SELF_MOUNTINFO_FILE:
         return SYNTHETIC_PROC_FILE_MOUNTINFO;
     case PROC_SELF_MOUNTS_FILE:

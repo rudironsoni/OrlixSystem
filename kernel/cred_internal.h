@@ -52,6 +52,12 @@ struct cred {
     uint64_t cap_bounding;
     uint64_t cap_ambient;
     uint64_t user_ns_id;
+    uint32_t uid_map_inside;
+    uint32_t uid_map_outside;
+    uint32_t uid_map_count;
+    uint32_t gid_map_inside;
+    uint32_t gid_map_outside;
+    uint32_t gid_map_count;
 
     /* Reference counting for credential sharing */
     int refs;

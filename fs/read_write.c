@@ -185,6 +185,12 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         case SYNTHETIC_PROC_FILE_CGROUP:
             content_len = vfs_proc_task_cgroup_content(target_pid, content, sizeof(content));
             break;
+        case SYNTHETIC_PROC_FILE_UID_MAP:
+            content_len = vfs_proc_task_uid_map_content(target_pid, content, sizeof(content));
+            break;
+        case SYNTHETIC_PROC_FILE_GID_MAP:
+            content_len = vfs_proc_task_gid_map_content(target_pid, content, sizeof(content));
+            break;
         case SYNTHETIC_PROC_FILE_MOUNTINFO:
             content_len = vfs_proc_task_mountinfo_content(target_pid, content, sizeof(content));
             break;
@@ -432,6 +438,10 @@ static int synthetic_proc_file_content(synthetic_proc_file_t proc_file, int fd_n
         return vfs_proc_task_status_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_CGROUP:
         return vfs_proc_task_cgroup_content(target_pid, content, content_size);
+    case SYNTHETIC_PROC_FILE_UID_MAP:
+        return vfs_proc_task_uid_map_content(target_pid, content, content_size);
+    case SYNTHETIC_PROC_FILE_GID_MAP:
+        return vfs_proc_task_gid_map_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_MOUNTINFO:
         return vfs_proc_task_mountinfo_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_MOUNTS:

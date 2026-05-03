@@ -22,6 +22,7 @@ struct uts_namespace *uts_get(struct uts_namespace *ns);
 void uts_put(struct uts_namespace *ns);
 struct uts_namespace *uts_dup(struct uts_namespace *ns);
 uint64_t uts_namespace_id(struct uts_namespace *ns);
+uint64_t uts_namespace_owner_user_ns_id(struct uts_namespace *ns);
 int uts_unshare_current(void);
 void uts_reset_initial_namespace(void);
 void uts_reset_current_namespace(void);

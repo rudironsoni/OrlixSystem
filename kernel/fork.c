@@ -110,7 +110,10 @@ static int task_apply_clone_namespace_flags(struct task_struct *task, uint64_t f
     }
 
     if ((masked & CLONE_NEWUTS) != 0) {
+        struct task_struct *saved = get_current();
+        set_current(task);
         new_uts = uts_dup(task->uts_ns);
+        set_current(saved);
         if (!new_uts) {
             errno = ENOMEM;
             return -1;

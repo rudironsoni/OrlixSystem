@@ -4854,6 +4854,12 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
     if (strcmp(suffix, "/cgroup") == 0) {
         return PROC_SELF_CGROUP_FILE;
     }
+    if (strcmp(suffix, "/uid_map") == 0) {
+        return PROC_SELF_UID_MAP_FILE;
+    }
+    if (strcmp(suffix, "/gid_map") == 0) {
+        return PROC_SELF_GID_MAP_FILE;
+    }
     if (strcmp(suffix, "/mountinfo") == 0) {
         return PROC_SELF_MOUNTINFO_FILE;
     }
@@ -6383,6 +6389,47 @@ int vfs_proc_self_status_content(char *buf, size_t buf_len) {
     return vfs_proc_task_status_content(task ? task->pid : -1, buf, buf_len);
 }
 
+static int vfs_proc_task_id_map_content(int32_t pid, char *buf, size_t buf_len, bool group_map) {
+    struct task_struct *task;
+    struct cred *cred;
+    int ret;
+
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+
+    task = vfs_task_for_proc_pid(pid);
+    if (!task) {
+        return -ESRCH;
+    }
+
+    cred = task->cred ? task->cred : get_current_cred();
+    if (!cred) {
+        vfs_put_proc_task(task);
+        return -ESRCH;
+    }
+    ret = snprintf(buf, buf_len, "%10u %10u %10u\n",
+                   group_map ? cred->gid_map_inside : cred->uid_map_inside,
+                   group_map ? cred->gid_map_outside : cred->uid_map_outside,
+                   group_map ? cred->gid_map_count : cred->uid_map_count);
+    vfs_put_proc_task(task);
+    if (ret < 0) {
+        return -EINVAL;
+    }
+    if ((size_t)ret >= buf_len) {
+        return (int)(buf_len - 1);
+    }
+    return ret;
+}
+
+int vfs_proc_task_uid_map_content(int32_t pid, char *buf, size_t buf_len) {
+    return vfs_proc_task_id_map_content(pid, buf, buf_len, false);
+}
+
+int vfs_proc_task_gid_map_content(int32_t pid, char *buf, size_t buf_len) {
+    return vfs_proc_task_id_map_content(pid, buf, buf_len, true);
+}
+
 int vfs_access(const char *pathname, int mode) {
     if (!pathname) {
         return -EFAULT;
@@ -6603,6 +6650,7 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
                    proc_class == PROC_SELF_STAT_FILE || proc_class == PROC_SELF_STATM_FILE ||
                    proc_class == PROC_SELF_MAPS_FILE || proc_class == PROC_SELF_SMAPS_FILE ||
                    proc_class == PROC_SELF_STATUS_FILE || proc_class == PROC_SELF_CGROUP_FILE ||
+                   proc_class == PROC_SELF_UID_MAP_FILE || proc_class == PROC_SELF_GID_MAP_FILE ||
                    proc_class == PROC_SELF_MOUNTINFO_FILE ||
                    proc_class == PROC_SELF_MOUNTS_FILE || proc_class == PROC_ROOT_FILESYSTEMS_FILE ||
                    proc_class == PROC_ROOT_MEMINFO_FILE || proc_class == PROC_ROOT_CPUINFO_FILE) {

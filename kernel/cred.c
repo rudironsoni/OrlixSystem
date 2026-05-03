@@ -119,6 +119,12 @@ static struct cred global_init_cred = {
     .cap_bounding = 0,
     .cap_ambient = 0,
     .user_ns_id = 1,
+    .uid_map_inside = 0,
+    .uid_map_outside = 0,
+    .uid_map_count = UINT32_MAX,
+    .gid_map_inside = 0,
+    .gid_map_outside = 0,
+    .gid_map_count = UINT32_MAX,
     .refs = 1
 };
 
@@ -176,6 +182,12 @@ struct cred *dup_cred(const struct cred *cred) {
         new->cap_bounding = cred->cap_bounding;
         new->cap_ambient = cred->cap_ambient;
         new->user_ns_id = cred->user_ns_id;
+        new->uid_map_inside = cred->uid_map_inside;
+        new->uid_map_outside = cred->uid_map_outside;
+        new->uid_map_count = cred->uid_map_count;
+        new->gid_map_inside = cred->gid_map_inside;
+        new->gid_map_outside = cred->gid_map_outside;
+        new->gid_map_count = cred->gid_map_count;
         new->refs = 1;
     }
     return new;
@@ -198,6 +210,12 @@ void cred_init_defaults(struct cred *cred) {
     cred->no_new_privs = false;
     cred->securebits = SECUREBITS_DEFAULT;
     cred->user_ns_id = 1;
+    cred->uid_map_inside = 0;
+    cred->uid_map_outside = 0;
+    cred->uid_map_count = UINT32_MAX;
+    cred->gid_map_inside = 0;
+    cred->gid_map_outside = 0;
+    cred->gid_map_count = UINT32_MAX;
     cred_reset_caps_for_root(cred);
 }
 
@@ -233,6 +251,12 @@ void cred_reset_to_defaults(void) {
     global_init_cred.no_new_privs = false;
     global_init_cred.securebits = SECUREBITS_DEFAULT;
     global_init_cred.user_ns_id = 1;
+    global_init_cred.uid_map_inside = 0;
+    global_init_cred.uid_map_outside = 0;
+    global_init_cred.uid_map_count = UINT32_MAX;
+    global_init_cred.gid_map_inside = 0;
+    global_init_cred.gid_map_outside = 0;
+    global_init_cred.gid_map_count = UINT32_MAX;
     cred_reset_caps_for_root(&global_init_cred);
     global_init_cred.refs = 1;
     
@@ -706,6 +730,12 @@ int cred_unshare_user_namespace(struct cred *cred) {
         return -EINVAL;
     }
     cred->user_ns_id = (uint64_t)atomic_fetch_add(&cred_next_user_ns_id, 1);
+    cred->uid_map_inside = 0;
+    cred->uid_map_outside = cred->uid;
+    cred->uid_map_count = 1;
+    cred->gid_map_inside = 0;
+    cred->gid_map_outside = cred->gid;
+    cred->gid_map_count = 1;
     cred_reset_caps_for_root(cred);
     cred->uid = 0;
     cred->euid = 0;

@@ -15,6 +15,7 @@
 struct uts_namespace {
     atomic_int refs;
     uint64_t ns_id;
+    uint64_t owner_user_ns_id;
     bool static_storage;
     kernel_mutex_t lock;
     char sysname[__NEW_UTS_LEN + 1];
@@ -53,6 +54,7 @@ static void uts_init_initial_namespace(void) {
     if (!atomic_load(&initial_uts_ns_ready)) {
         atomic_init(&initial_uts_ns.refs, 1);
         initial_uts_ns.ns_id = (uint64_t)atomic_fetch_add(&next_uts_ns_id, 1);
+        initial_uts_ns.owner_user_ns_id = 1;
         initial_uts_ns.static_storage = true;
         kernel_mutex_init(&initial_uts_ns.lock);
         kernel_mutex_lock(&initial_uts_ns.lock);
@@ -109,6 +111,10 @@ struct uts_namespace *uts_dup(struct uts_namespace *ns) {
 
     atomic_init(&copy->refs, 1);
     copy->ns_id = (uint64_t)atomic_fetch_add(&next_uts_ns_id, 1);
+    copy->owner_user_ns_id = cred_user_namespace_id(get_current_cred());
+    if (copy->owner_user_ns_id == 0) {
+        copy->owner_user_ns_id = ns->owner_user_ns_id ? ns->owner_user_ns_id : 1;
+    }
     copy->static_storage = false;
     kernel_mutex_init(&copy->lock);
 
@@ -130,6 +136,14 @@ uint64_t uts_namespace_id(struct uts_namespace *ns) {
         ns = &initial_uts_ns;
     }
     return ns->ns_id;
+}
+
+uint64_t uts_namespace_owner_user_ns_id(struct uts_namespace *ns) {
+    if (!ns) {
+        uts_init_initial_namespace();
+        ns = &initial_uts_ns;
+    }
+    return ns->owner_user_ns_id ? ns->owner_user_ns_id : 1;
 }
 
 void uts_reset_initial_namespace(void) {
@@ -185,7 +199,8 @@ static int uts_copy_from_namespace(char *dst, size_t len, const char *src) {
     return 0;
 }
 
-static int uts_set_name(char dst[__NEW_UTS_LEN + 1], const char *src, size_t len) {
+static int uts_set_name(struct uts_namespace *ns, char dst[__NEW_UTS_LEN + 1],
+                        const char *src, size_t len) {
     struct cred *cred;
 
     if (!src && len > 0) {
@@ -198,7 +213,7 @@ static int uts_set_name(char dst[__NEW_UTS_LEN + 1], const char *src, size_t len
     }
 
     cred = get_current_cred();
-    if (!cred_has_cap(cred, CAP_SYS_ADMIN)) {
+    if (!cred_has_cap_in_user_namespace(cred, uts_namespace_owner_user_ns_id(ns), CAP_SYS_ADMIN)) {
         errno = EPERM;
         return -1;
     }
@@ -253,7 +268,7 @@ int sethostname_impl(const char *name, size_t len) {
     ns = current_uts_namespace();
 
     kernel_mutex_lock(&ns->lock);
-    result = uts_set_name(ns->nodename, name, len);
+    result = uts_set_name(ns, ns->nodename, name, len);
     kernel_mutex_unlock(&ns->lock);
     return result;
 }
@@ -279,7 +294,7 @@ int setdomainname_impl(const char *name, size_t len) {
     ns = current_uts_namespace();
 
     kernel_mutex_lock(&ns->lock);
-    result = uts_set_name(ns->domainname, name, len);
+    result = uts_set_name(ns, ns->domainname, name, len);
     kernel_mutex_unlock(&ns->lock);
     return result;
 }

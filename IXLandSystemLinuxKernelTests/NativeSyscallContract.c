@@ -3364,6 +3364,71 @@ out:
     return result;
 }
 
+int native_syscall_contract_mremap_shrink_preserves_accounting_and_unmaps_tail(void) {
+    struct task_struct *task = get_current();
+    char smaps[16384];
+    char kept_range[32];
+    char tail_range[32];
+    void *mapped;
+    void *shrunk;
+    uint64_t base;
+    char byte = 0;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 8192,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    base = (uint64_t)(uintptr_t)mapped;
+    if (task_write_virtual_memory_impl(task, base, "A", 1) != 1 ||
+        task_write_virtual_memory_impl(task, base + 4096, "B", 1) != 1) {
+        goto out;
+    }
+
+    shrunk = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mremap, (long)(uintptr_t)mapped,
+                                                      8192, 4096, 0, 0, 0);
+    if (shrunk != mapped) {
+        errno = (long)(uintptr_t)shrunk < 0 ? -(int)(long)(uintptr_t)shrunk : EPROTO;
+        goto out;
+    }
+    if (task_read_virtual_memory_impl(task, base, &byte, 1) != 1 || byte != 'A') {
+        errno = ENODATA;
+        goto out;
+    }
+    errno = 0;
+    if (task_read_virtual_memory_impl(task, base + 4096, &byte, 1) != -1 ||
+        task->last_fault_signal != SIGSEGV ||
+        task->last_fault_code != SEGV_MAPERR ||
+        task->last_fault_addr != base + 4096) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (format_maps_range(kept_range, sizeof(kept_range), base, base + 4096) != 0 ||
+        format_maps_range(tail_range, sizeof(tail_range), base + 4096, base + 8192) != 0 ||
+        read_file_into_buffer("/proc/self/smaps", smaps, sizeof(smaps)) != 0) {
+        goto out;
+    }
+    if (!smaps_block_contains(smaps, kept_range, "rw-p") ||
+        !smaps_block_contains(smaps, kept_range, "Size:                  4 kB") ||
+        !smaps_block_contains(smaps, kept_range, "Private_Dirty:         4 kB") ||
+        smaps_block_contains(smaps, tail_range, "")) {
+        errno = ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    return result;
+}
+
 int native_syscall_contract_moved_shared_mapping_truncate_updates_fault_mincore_and_smaps(void) {
     struct task_struct *task = get_current();
     const char path[] = "/tmp/native-moved-shared-truncate";
