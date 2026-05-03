@@ -277,6 +277,10 @@
     XCTAssertEqual(native_syscall_contract_dispatches_process_startup_syscalls(), 0, @"errno %d", errno);
 }
 
+- (void)testDispatchesShellFdVfsSyscalls {
+    XCTAssertEqual(native_syscall_contract_dispatches_shell_fd_vfs_syscalls(), 0, @"errno %d", errno);
+}
+
 - (void)testMlibcLinuxSysdepsInventoryIsKernelOwned {
     XCTAssertEqual(native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(), 0, @"errno %d", errno);
 }

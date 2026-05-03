@@ -90,8 +90,13 @@
 #include "kernel/signal.h"
 #include "kernel/task.h"
 
+#ifndef F_OK
+#define F_OK 0
+#endif
+
 extern int link_impl(const char *oldpath, const char *newpath);
 extern int unlink_impl(const char *pathname);
+extern int rmdir_impl(const char *pathname);
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long pread_impl(int fd, void *buf, size_t count, linux_off_t offset);
@@ -4058,6 +4063,114 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     return 0;
 }
 
+int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
+    const char *dir = "/tmp/native-shell-syscalls";
+    const char *file = "/tmp/native-shell-syscalls/file";
+    const char *renamed = "/tmp/native-shell-syscalls/renamed";
+    char payload[] = "helloworld";
+    char read_buf[11];
+    int fd = -1;
+    int dupfd = -1;
+    int cloexec_fd = 77;
+    long ret;
+
+    close_if_open(cloexec_fd);
+    unlink_impl(file);
+    unlink_impl(renamed);
+    rmdir_impl(dir);
+
+    ret = syscall_dispatch_impl(__NR_mkdirat, AT_FDCWD, (long)(uintptr_t)dir, 0700, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)file,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = (int)-fd;
+        goto out;
+    }
+
+    dupfd = (int)syscall_dispatch_impl(__NR_dup, fd, 0, 0, 0, 0, 0);
+    if (dupfd < 0) {
+        errno = (int)-dupfd;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_dup3, fd, cloexec_fd, O_CLOEXEC, 0, 0, 0);
+    if (ret != cloexec_fd) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, cloexec_fd, F_GETFD, 0, 0, 0, 0);
+    if (ret != FD_CLOEXEC) {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)payload, 10, 0, 0, 0);
+    if (ret != 10) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+    close_if_open(dupfd);
+    dupfd = -1;
+    close_if_open(cloexec_fd);
+
+    ret = syscall_dispatch_impl(__NR_renameat, AT_FDCWD, (long)(uintptr_t)file,
+                                AT_FDCWD, (long)(uintptr_t)renamed, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_faccessat2, AT_FDCWD, (long)(uintptr_t)renamed,
+                                F_OK, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)renamed,
+                                    O_RDONLY, 0, 0, 0);
+    if (fd < 0) {
+        errno = (int)-fd;
+        goto out;
+    }
+    memset(read_buf, 0, sizeof(read_buf));
+    ret = syscall_dispatch_impl(__NR_read, fd, (long)(uintptr_t)read_buf, 10, 0, 0, 0);
+    if (ret != 10 || strcmp(read_buf, "helloworld") != 0) {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    ret = syscall_dispatch_impl(__NR_unlinkat, AT_FDCWD, (long)(uintptr_t)renamed, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_unlinkat, AT_FDCWD, (long)(uintptr_t)dir,
+                                AT_REMOVEDIR, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    return 0;
+
+out:
+    close_if_open(fd);
+    close_if_open(dupfd);
+    close_if_open(cloexec_fd);
+    unlink_impl(file);
+    unlink_impl(renamed);
+    rmdir_impl(dir);
+    return -1;
+}
+
 int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) {
     struct required_syscall_class {
         long number;
@@ -4074,6 +4187,8 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_pwrite64,
         __NR_openat,
         __NR_close,
+        __NR_dup,
+        __NR_dup3,
         __NR_pipe2,
         __NR_fcntl,
         __NR_brk,
@@ -4094,8 +4209,14 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_epoll_ctl,
         __NR_epoll_pwait,
         __NR_readlinkat,
+        __NR_mkdirat,
+        __NR_unlinkat,
+        __NR_renameat,
+        __NR_renameat2,
         __NR_newfstatat,
         __NR_fstat,
+        __NR_faccessat,
+        __NR_faccessat2,
         __NR_getcwd,
         __NR_getpid,
         __NR_getppid,
@@ -4133,7 +4254,15 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
     };
     static const struct required_syscall_class required_classes[] = {
         {__NR_openat, SYSCALL_CAPABILITY_FD},
+        {__NR_dup, SYSCALL_CAPABILITY_FD},
+        {__NR_dup3, SYSCALL_CAPABILITY_FD},
         {__NR_pipe2, SYSCALL_CAPABILITY_FD},
+        {__NR_mkdirat, SYSCALL_CAPABILITY_FD},
+        {__NR_unlinkat, SYSCALL_CAPABILITY_FD},
+        {__NR_renameat, SYSCALL_CAPABILITY_FD},
+        {__NR_renameat2, SYSCALL_CAPABILITY_FD},
+        {__NR_faccessat, SYSCALL_CAPABILITY_FD},
+        {__NR_faccessat2, SYSCALL_CAPABILITY_FD},
         {__NR_getpid, SYSCALL_CAPABILITY_PROCESS},
         {__NR_execve, SYSCALL_CAPABILITY_PROCESS},
         {__NR_rt_sigaction, SYSCALL_CAPABILITY_SIGNAL},
@@ -4157,14 +4286,6 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_nanosleep, SYSCALL_GAP_BOOT},
         {__NR_clock_nanosleep, SYSCALL_GAP_BOOT},
         {__NR_uname, SYSCALL_GAP_BOOT},
-        {__NR_dup, SYSCALL_GAP_SHELL},
-        {__NR_dup3, SYSCALL_GAP_SHELL},
-        {__NR_mkdirat, SYSCALL_GAP_SHELL},
-        {__NR_unlinkat, SYSCALL_GAP_SHELL},
-        {__NR_renameat, SYSCALL_GAP_SHELL},
-        {__NR_renameat2, SYSCALL_GAP_SHELL},
-        {__NR_faccessat, SYSCALL_GAP_SHELL},
-        {__NR_faccessat2, SYSCALL_GAP_SHELL},
         {__NR_readv, SYSCALL_GAP_SHELL},
         {__NR_writev, SYSCALL_GAP_SHELL},
         {__NR_statx, SYSCALL_GAP_SHELL},

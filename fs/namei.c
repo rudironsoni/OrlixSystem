@@ -248,8 +248,8 @@ static int rename_validate_target_shape(const char *old_virtual_path, const char
     return 0;
 }
 
-static int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
-                          unsigned int flags) {
+int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
+                   unsigned int flags) {
     char resolved_old[MAX_PATH];
     char resolved_new[MAX_PATH];
     char translated_old[MAX_PATH];
@@ -504,7 +504,7 @@ char *getcwd_impl(char *buf, size_t size) {
     return buf;
 }
 
-static int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
+int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
     char translated_path[MAX_PATH];
     char resolved_path[MAX_PATH];
     int ret;
@@ -575,7 +575,7 @@ int mkdir_impl(const char *pathname, mode_t mode) {
     return mkdirat_impl(AT_FDCWD, pathname, mode);
 }
 
-static int unlinkat_impl(int dirfd, const char *pathname, int flags) {
+int unlinkat_impl(int dirfd, const char *pathname, int flags) {
     char translated_path[MAX_PATH];
     char resolved_path[MAX_PATH];
     struct linux_stat st;

@@ -191,11 +191,18 @@ extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, long long offs
 extern int fcntl_impl(int fd, int cmd, ...);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int fstatat_impl(int dirfd, const char *pathname, struct linux_stat *statbuf, int flags);
+extern int faccessat_impl(int dirfd, const char *pathname, int mode, int flags);
 extern int ftruncate_impl(int fd, linux_off_t length);
 extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
 extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
+extern int dup_impl(int oldfd);
+extern int dup3_impl(int oldfd, int newfd, int flags);
+extern int mkdirat_impl(int dirfd, const char *pathname, linux_mode_t mode);
+extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
+extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
+                          const char *newpath, unsigned int flags);
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
 extern int nanosleep_impl(const struct timespec *req, struct timespec *rem);
 extern int clock_gettime_impl(clockid_t clk_id, struct timespec *tp);
@@ -409,6 +416,8 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_pwrite64:
     case __NR_openat:
     case __NR_close:
+    case __NR_dup:
+    case __NR_dup3:
     case __NR_pipe2:
     case __NR_fcntl:
     case __NR_ioctl:
@@ -416,8 +425,14 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_readlinkat:
     case __NR_newfstatat:
     case __NR_fstat:
+    case __NR_faccessat:
+    case __NR_faccessat2:
     case __NR_getcwd:
     case __NR_ftruncate:
+    case __NR_mkdirat:
+    case __NR_unlinkat:
+    case __NR_renameat:
+    case __NR_renameat2:
         return SYSCALL_CAPABILITY_FD;
     case __NR_brk:
     case __NR_mmap:
@@ -500,14 +515,6 @@ enum syscall_gap_priority syscall_gap_priority_impl(long number) {
     case __NR_clock_nanosleep:
     case __NR_uname:
         return SYSCALL_GAP_BOOT;
-    case __NR_dup:
-    case __NR_dup3:
-    case __NR_mkdirat:
-    case __NR_unlinkat:
-    case __NR_renameat:
-    case __NR_renameat2:
-    case __NR_faccessat:
-    case __NR_faccessat2:
     case __NR_readv:
     case __NR_writev:
     case __NR_statx:
@@ -556,6 +563,10 @@ long syscall_dispatch_impl(long number,
                                                 (int)arg2, (linux_mode_t)arg3));
     case __NR_close:
         return syscall_result((long)close_impl((int)arg0));
+    case __NR_dup:
+        return syscall_result((long)dup_impl((int)arg0));
+    case __NR_dup3:
+        return syscall_result((long)dup3_impl((int)arg0, (int)arg1, (int)arg2));
     case __NR_pipe2:
         return syscall_result((long)pipe2_impl((int *)(uintptr_t)arg0, (int)arg1));
     case __NR_fcntl:
@@ -797,11 +808,30 @@ long syscall_dispatch_impl(long number,
     case __NR_readlinkat:
         return syscall_result((long)readlinkat((int)arg0, (const char *)(uintptr_t)arg1,
                                                (char *)(uintptr_t)arg2, (size_t)arg3));
+    case __NR_mkdirat:
+        return syscall_result((long)mkdirat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                 (linux_mode_t)arg2));
+    case __NR_unlinkat:
+        return syscall_result((long)unlinkat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                  (int)arg2));
+    case __NR_renameat:
+        return syscall_result((long)renameat2_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                   (int)arg2, (const char *)(uintptr_t)arg3, 0));
+    case __NR_renameat2:
+        return syscall_result((long)renameat2_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                   (int)arg2, (const char *)(uintptr_t)arg3,
+                                                   (unsigned int)arg4));
     case __NR_newfstatat:
         return syscall_result((long)fstatat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                  (struct linux_stat *)(uintptr_t)arg2, (int)arg3));
     case __NR_fstat:
         return syscall_result((long)fstat_impl((int)arg0, (struct linux_stat *)(uintptr_t)arg1));
+    case __NR_faccessat:
+        return syscall_result((long)faccessat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                   (int)arg2, (int)arg3));
+    case __NR_faccessat2:
+        return syscall_result((long)faccessat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                   (int)arg2, (int)arg3));
     case __NR_getcwd: {
         char *buf = (char *)(uintptr_t)arg0;
         size_t size = (size_t)arg1;
