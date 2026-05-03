@@ -197,6 +197,7 @@ extern long readv_impl(int fd, const struct iovec *iov, int iovcnt);
 extern long writev_impl(int fd, const struct iovec *iov, int iovcnt);
 extern ssize_t pread_impl(int fd, void *buf, size_t count, long long offset);
 extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, long long offset);
+extern linux_off_t lseek_impl(int fd, linux_off_t offset, int whence);
 extern int fcntl_impl(int fd, int cmd, ...);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int fstatat_impl(int dirfd, const char *pathname, struct linux_stat *statbuf, int flags);
@@ -208,6 +209,10 @@ extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
 extern int chdir_impl(const char *path);
 extern int fchdir_impl(int fd);
+extern int fchmod_impl(int fd, linux_mode_t mode);
+extern int fchmodat_impl(int dirfd, const char *pathname, linux_mode_t mode, int flags);
+extern int fchown_impl(int fd, linux_uid_t owner, linux_gid_t group);
+extern int fchownat_impl(int dirfd, const char *pathname, linux_uid_t owner, linux_gid_t group, int flags);
 extern linux_mode_t umask_impl(linux_mode_t mask);
 extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
@@ -533,6 +538,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_write:
     case __NR_pread64:
     case __NR_pwrite64:
+    case __NR_lseek:
     case __NR_readv:
     case __NR_writev:
     case __NR_openat:
@@ -558,6 +564,11 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_chdir:
     case __NR_fchdir:
     case __NR_umask:
+    case __NR_fchmod:
+    case __NR_fchmodat:
+    case __NR_fchmodat2:
+    case __NR_fchown:
+    case __NR_fchownat:
         return SYSCALL_CAPABILITY_FD;
     case __NR_brk:
     case __NR_mmap:
@@ -584,6 +595,16 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_geteuid:
     case __NR_getgid:
     case __NR_getegid:
+    case __NR_setuid:
+    case __NR_setgid:
+    case __NR_setreuid:
+    case __NR_setregid:
+    case __NR_setresuid:
+    case __NR_getresuid:
+    case __NR_setresgid:
+    case __NR_getresgid:
+    case __NR_getgroups:
+    case __NR_setgroups:
     case __NR_getpgid:
     case __NR_getsid:
     case __NR_setpgid:
@@ -691,6 +712,8 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_pwrite64:
         return syscall_result((long)pwrite_impl((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2,
                                                 (long long)arg3));
+    case __NR_lseek:
+        return syscall_result((long)lseek_impl((int)arg0, (linux_off_t)arg1, (int)arg2));
     case __NR_openat:
         return syscall_result((long)openat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                 (int)arg2, (linux_mode_t)arg3));
@@ -994,6 +1017,19 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)fchdir_impl((int)arg0));
     case __NR_umask:
         return (long)umask_impl((linux_mode_t)arg0);
+    case __NR_fchmod:
+        return syscall_result((long)fchmod_impl((int)arg0, (linux_mode_t)arg1));
+    case __NR_fchmodat:
+    case __NR_fchmodat2:
+        return syscall_result((long)fchmodat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                  (linux_mode_t)arg2, (int)arg3));
+    case __NR_fchown:
+        return syscall_result((long)fchown_impl((int)arg0, (linux_uid_t)arg1,
+                                                (linux_gid_t)arg2));
+    case __NR_fchownat:
+        return syscall_result((long)fchownat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                  (linux_uid_t)arg2, (linux_gid_t)arg3,
+                                                  (int)arg4));
     case __NR_getpid:
         return (long)getpid_impl();
     case __NR_getppid:
@@ -1008,6 +1044,30 @@ static long syscall_dispatch_inner_impl(long number,
         return (long)getgid_impl();
     case __NR_getegid:
         return (long)getegid_impl();
+    case __NR_setuid:
+        return syscall_result((long)setuid_impl((uid_t)arg0));
+    case __NR_setgid:
+        return syscall_result((long)setgid_impl((gid_t)arg0));
+    case __NR_setreuid:
+        return syscall_result((long)setreuid_impl((uid_t)arg0, (uid_t)arg1));
+    case __NR_setregid:
+        return syscall_result((long)setregid_impl((gid_t)arg0, (gid_t)arg1));
+    case __NR_setresuid:
+        return syscall_result((long)setresuid_impl((uid_t)arg0, (uid_t)arg1, (uid_t)arg2));
+    case __NR_getresuid:
+        return syscall_result((long)getresuid_impl((uid_t *)(uintptr_t)arg0,
+                                                   (uid_t *)(uintptr_t)arg1,
+                                                   (uid_t *)(uintptr_t)arg2));
+    case __NR_setresgid:
+        return syscall_result((long)setresgid_impl((gid_t)arg0, (gid_t)arg1, (gid_t)arg2));
+    case __NR_getresgid:
+        return syscall_result((long)getresgid_impl((gid_t *)(uintptr_t)arg0,
+                                                   (gid_t *)(uintptr_t)arg1,
+                                                   (gid_t *)(uintptr_t)arg2));
+    case __NR_getgroups:
+        return syscall_result((long)getgroups_impl((int)arg0, (gid_t *)(uintptr_t)arg1));
+    case __NR_setgroups:
+        return syscall_result((long)setgroups_impl((int)arg0, (const gid_t *)(uintptr_t)arg1));
     case __NR_getpgid:
         return syscall_result((long)getpgid_impl((int32_t)arg0));
     case __NR_getsid:

@@ -56,17 +56,17 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 49 | `chdir` | implemented:fd | none |
 | 50 | `fchdir` | implemented:fd | none |
 | 51 | `chroot` | kernel-owned missing:unclassified | package |
-| 52 | `fchmod` | kernel-owned missing:unclassified | shell |
-| 53 | `fchmodat` | kernel-owned missing:unclassified | shell |
-| 54 | `fchownat` | kernel-owned missing:unclassified | shell |
-| 55 | `fchown` | kernel-owned missing:unclassified | shell |
+| 52 | `fchmod` | implemented:fd | none |
+| 53 | `fchmodat` | implemented:fd | none |
+| 54 | `fchownat` | implemented:fd | none |
+| 55 | `fchown` | implemented:fd | none |
 | 56 | `openat` | implemented:fd | none |
 | 57 | `close` | implemented:fd | none |
 | 58 | `vhangup` | kernel-owned missing:unclassified | package |
 | 59 | `pipe2` | implemented:fd | none |
 | 60 | `quotactl` | kernel-owned missing:unclassified | package |
 | 61 | `getdents64` | implemented:fd | none |
-| 62 | `lseek` | kernel-owned missing:unclassified | shell |
+| 62 | `lseek` | implemented:fd | none |
 | 63 | `read` | implemented:fd | none |
 | 64 | `write` | implemented:fd | none |
 | 65 | `readv` | implemented:fd | none |
@@ -147,14 +147,14 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 140 | `setpriority` | kernel-owned missing:unclassified | package |
 | 141 | `getpriority` | kernel-owned missing:unclassified | package |
 | 142 | `reboot` | kernel-owned missing:unclassified | package |
-| 143 | `setregid` | kernel-owned missing:unclassified | shell |
-| 144 | `setgid` | kernel-owned missing:unclassified | shell |
-| 145 | `setreuid` | kernel-owned missing:unclassified | shell |
-| 146 | `setuid` | kernel-owned missing:unclassified | shell |
-| 147 | `setresuid` | kernel-owned missing:unclassified | shell |
-| 148 | `getresuid` | kernel-owned missing:unclassified | shell |
-| 149 | `setresgid` | kernel-owned missing:unclassified | shell |
-| 150 | `getresgid` | kernel-owned missing:unclassified | shell |
+| 143 | `setregid` | implemented:process | none |
+| 144 | `setgid` | implemented:process | none |
+| 145 | `setreuid` | implemented:process | none |
+| 146 | `setuid` | implemented:process | none |
+| 147 | `setresuid` | implemented:process | none |
+| 148 | `getresuid` | implemented:process | none |
+| 149 | `setresgid` | implemented:process | none |
+| 150 | `getresgid` | implemented:process | none |
 | 151 | `setfsuid` | kernel-owned missing:unclassified | package |
 | 152 | `setfsgid` | kernel-owned missing:unclassified | package |
 | 153 | `times` | kernel-owned missing:unclassified | shell |
@@ -162,8 +162,8 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 155 | `getpgid` | implemented:process | none |
 | 156 | `getsid` | implemented:process | none |
 | 157 | `setsid` | implemented:process | none |
-| 158 | `getgroups` | kernel-owned missing:unclassified | shell |
-| 159 | `setgroups` | kernel-owned missing:unclassified | shell |
+| 158 | `getgroups` | implemented:process | none |
+| 159 | `setgroups` | implemented:process | none |
 | 160 | `uname` | implemented:process | none |
 | 161 | `sethostname` | kernel-owned missing:unclassified | package |
 | 162 | `setdomainname` | kernel-owned missing:unclassified | package |
@@ -311,7 +311,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 449 | `futex_waitv` | kernel-owned missing:unclassified | package |
 | 450 | `set_mempolicy_home_node` | kernel-owned missing:unclassified | package |
 | 451 | `cachestat` | kernel-owned missing:unclassified | package |
-| 452 | `fchmodat2` | kernel-owned missing:unclassified | shell |
+| 452 | `fchmodat2` | implemented:fd | none |
 | 453 | `map_shadow_stack` | kernel-owned missing:unclassified | package |
 | 454 | `futex_wake` | kernel-owned missing:unclassified | package |
 | 455 | `futex_wait` | kernel-owned missing:unclassified | package |

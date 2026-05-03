@@ -59,7 +59,7 @@ static int inode_resolve_fd_path(int fd, char *resolved_path, size_t resolved_pa
     return 0;
 }
 
-static int chmod_impl(const char *pathname, linux_mode_t mode) {
+int chmod_impl(const char *pathname, linux_mode_t mode) {
     char resolved_path[MAX_PATH];
     int ret;
 
@@ -75,7 +75,7 @@ static int chmod_impl(const char *pathname, linux_mode_t mode) {
     return 0;
 }
 
-static int fchmod_impl(int fd, linux_mode_t mode) {
+int fchmod_impl(int fd, linux_mode_t mode) {
     char resolved_path[MAX_PATH];
     int ret;
 
@@ -91,7 +91,7 @@ static int fchmod_impl(int fd, linux_mode_t mode) {
     return 0;
 }
 
-static int fchmodat_impl(int dirfd, const char *pathname, linux_mode_t mode, int flags) {
+int fchmodat_impl(int dirfd, const char *pathname, linux_mode_t mode, int flags) {
     char resolved_path[MAX_PATH];
     int ret;
 
@@ -111,7 +111,7 @@ static int fchmodat_impl(int dirfd, const char *pathname, linux_mode_t mode, int
     return 0;
 }
 
-static int chown_impl(const char *pathname, linux_uid_t owner, linux_gid_t group) {
+int chown_impl(const char *pathname, linux_uid_t owner, linux_gid_t group) {
     char resolved_path[MAX_PATH];
     int ret;
 
@@ -127,7 +127,7 @@ static int chown_impl(const char *pathname, linux_uid_t owner, linux_gid_t group
     return 0;
 }
 
-static int fchown_impl(int fd, linux_uid_t owner, linux_gid_t group) {
+int fchown_impl(int fd, linux_uid_t owner, linux_gid_t group) {
     char resolved_path[MAX_PATH];
     int ret;
 
@@ -143,11 +143,11 @@ static int fchown_impl(int fd, linux_uid_t owner, linux_gid_t group) {
     return 0;
 }
 
-static int lchown_impl(const char *pathname, linux_uid_t owner, linux_gid_t group) {
+int lchown_impl(const char *pathname, linux_uid_t owner, linux_gid_t group) {
     return chown_impl(pathname, owner, group);
 }
 
-static int fchownat_impl(int dirfd, const char *pathname, linux_uid_t owner, linux_gid_t group, int flags) {
+int fchownat_impl(int dirfd, const char *pathname, linux_uid_t owner, linux_gid_t group, int flags) {
     char resolved_path[MAX_PATH];
     int ret;
 
