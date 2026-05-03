@@ -162,6 +162,7 @@
 #include <linux/sched.h>
 #include <linux/stat.h>
 #include <linux/time_types.h>
+#include <linux/utsname.h>
 #include <linux/xattr.h>
 
 #include <errno.h>
@@ -184,6 +185,7 @@
 #include "../kernel/seccomp.h"
 #include "../kernel/signal.h"
 #include "../kernel/task.h"
+#include "../kernel/uts.h"
 #include "../kernel/wait.h"
 
 extern int openat_impl(int dirfd, const char *pathname, int flags, linux_mode_t mode);
@@ -283,6 +285,110 @@ static long syscall_prlimit64(int32_t pid, int resource, const uint64_t *new_lim
         task->rlimits[resource].max = new_limit[1];
     }
     return 0;
+}
+
+static long syscall_clock_nanosleep(clockid_t clk_id, int flags,
+                                    const struct __kernel_timespec *req,
+                                    struct __kernel_timespec *rem) {
+    struct timespec sleep_req;
+    struct timespec sleep_rem;
+
+    if (!req) {
+        return -EFAULT;
+    }
+    if ((flags & ~1) != 0 || req->tv_sec < 0 || req->tv_nsec < 0 || req->tv_nsec >= 1000000000LL) {
+        return -EINVAL;
+    }
+
+    if ((flags & 1) != 0) {
+        struct timespec now;
+        if (clock_gettime_impl(clk_id, &now) != 0) {
+            return -(long)errno;
+        }
+        if (req->tv_sec < now.tv_sec ||
+            (req->tv_sec == now.tv_sec && req->tv_nsec <= now.tv_nsec)) {
+            return 0;
+        }
+        sleep_req.tv_sec = (time_t)(req->tv_sec - now.tv_sec);
+        sleep_req.tv_nsec = (long)(req->tv_nsec - now.tv_nsec);
+        if (sleep_req.tv_nsec < 0) {
+            sleep_req.tv_sec--;
+            sleep_req.tv_nsec += 1000000000L;
+        }
+    } else {
+        sleep_req.tv_sec = (time_t)req->tv_sec;
+        sleep_req.tv_nsec = (long)req->tv_nsec;
+    }
+
+    if (nanosleep_impl(&sleep_req, rem ? &sleep_rem : NULL) != 0) {
+        if (rem && (flags & 1) == 0) {
+            rem->tv_sec = sleep_rem.tv_sec;
+            rem->tv_nsec = sleep_rem.tv_nsec;
+        }
+        return -(long)errno;
+    }
+    if (rem && (flags & 1) == 0) {
+        rem->tv_sec = 0;
+        rem->tv_nsec = 0;
+    }
+    return 0;
+}
+
+static long syscall_tgkill(int32_t tgid, int32_t tid, int32_t sig) {
+    struct task_struct *target;
+    int result;
+
+    if (tgid <= 0 || tid <= 0 || sig < 0 || sig > KERNEL_SIG_NUM) {
+        return -EINVAL;
+    }
+
+    target = task_lookup(tid);
+    if (!target) {
+        return -ESRCH;
+    }
+    if (target->tgid != tgid) {
+        free_task(target);
+        return -ESRCH;
+    }
+    if (sig == 0) {
+        free_task(target);
+        return 0;
+    }
+
+    result = signal_generate_task(target, sig);
+    free_task(target);
+    return result < 0 ? (long)result : 0;
+}
+
+static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) {
+    int32_t child_pid;
+    struct task_struct *child;
+
+    if (((flags & CLONE_PARENT_SETTID) != 0 && !parent_tid) ||
+        ((flags & CLONE_CHILD_SETTID) != 0 && !child_tid)) {
+        return -EFAULT;
+    }
+
+    child_pid = clone_impl((uint64_t)flags);
+    if (child_pid < 0) {
+        return -(long)errno;
+    }
+
+    child = task_lookup(child_pid);
+    if (!child) {
+        return -ESRCH;
+    }
+    if ((flags & CLONE_PARENT_SETTID) != 0) {
+        *parent_tid = child->pid;
+    }
+    if ((flags & CLONE_CHILD_SETTID) != 0) {
+        *child_tid = child->pid;
+    }
+    if ((flags & CLONE_CHILD_CLEARTID) != 0) {
+        child->clear_child_tid = (uint64_t)(uintptr_t)child_tid;
+    }
+    free_task(child);
+    return child_pid;
 }
 
 static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *linux_act,
@@ -456,6 +562,8 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_msync:
         return SYSCALL_CAPABILITY_VM;
     case __NR_set_tid_address:
+    case __NR_gettid:
+    case __NR_clone:
     case __NR_execve:
     case __NR_exit:
     case __NR_exit_group:
@@ -464,12 +572,15 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_clone3:
     case __NR_getpid:
     case __NR_getppid:
+    case __NR_uname:
         return SYSCALL_CAPABILITY_PROCESS;
     case __NR_rt_sigaction:
     case __NR_sigaltstack:
     case __NR_rt_sigreturn:
     case __NR_restart_syscall:
     case __NR_rt_sigprocmask:
+    case __NR_kill:
+    case __NR_tgkill:
         return SYSCALL_CAPABILITY_SIGNAL;
     case __NR_ppoll:
     case __NR_pselect6:
@@ -499,6 +610,8 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_fremovexattr:
         return SYSCALL_CAPABILITY_XATTR;
     case __NR_clock_gettime:
+    case __NR_nanosleep:
+    case __NR_clock_nanosleep:
         return SYSCALL_CAPABILITY_TIME;
     case __NR_prlimit64:
     case __NR_set_robust_list:
@@ -519,14 +632,6 @@ enum syscall_gap_priority syscall_gap_priority_impl(long number) {
     }
 
     switch (number) {
-    case __NR_gettid:
-    case __NR_clone:
-    case __NR_kill:
-    case __NR_tgkill:
-    case __NR_nanosleep:
-    case __NR_clock_nanosleep:
-    case __NR_uname:
-        return SYSCALL_GAP_BOOT;
     case __NR_socket:
     case __NR_socketpair:
     case __NR_connect:
@@ -593,6 +698,13 @@ static long syscall_dispatch_inner_impl(long number,
         task->clear_child_tid = (uint64_t)(uintptr_t)arg0;
         return (long)task->pid;
     }
+    case __NR_gettid: {
+        struct task_struct *task = get_current();
+        return task ? (long)task->pid : -ESRCH;
+    }
+    case __NR_clone:
+        return syscall_clone((unsigned long)arg0, (int *)(uintptr_t)arg2,
+                             (int *)(uintptr_t)arg4);
     case __NR_futex: {
         int op = (int)arg1 & FUTEX_CMD_MASK;
         int timeout_ms = -1;
@@ -761,6 +873,10 @@ static long syscall_dispatch_inner_impl(long number,
         }
         return 0;
     }
+    case __NR_kill:
+        return syscall_result((long)do_kill((int32_t)arg0, (int32_t)arg1));
+    case __NR_tgkill:
+        return syscall_tgkill((int32_t)arg0, (int32_t)arg1, (int32_t)arg2);
     case __NR_ioctl:
         return syscall_result((long)ioctl_impl((int)arg0, (unsigned long)arg1, (void *)(uintptr_t)arg2));
     case __NR_getdents64:
@@ -860,6 +976,8 @@ static long syscall_dispatch_inner_impl(long number,
         return (long)getpid_impl();
     case __NR_getppid:
         return (long)getppid_impl();
+    case __NR_uname:
+        return syscall_result((long)uname_impl((struct new_utsname *)(uintptr_t)arg0));
     case __NR_exit:
     case __NR_exit_group:
         exit_impl((int)arg0);
@@ -974,6 +1092,37 @@ static long syscall_dispatch_inner_impl(long number,
         linux_ts->tv_nsec = host_ts.tv_nsec;
         return 0;
     }
+    case __NR_nanosleep: {
+        const struct __kernel_timespec *linux_req = (const struct __kernel_timespec *)(uintptr_t)arg0;
+        struct __kernel_timespec *linux_rem = (struct __kernel_timespec *)(uintptr_t)arg1;
+        struct timespec req;
+        struct timespec rem;
+
+        if (!linux_req) {
+            return -EFAULT;
+        }
+        if (linux_req->tv_sec < 0 || linux_req->tv_nsec < 0 || linux_req->tv_nsec >= 1000000000LL) {
+            return -EINVAL;
+        }
+        req.tv_sec = (time_t)linux_req->tv_sec;
+        req.tv_nsec = (long)linux_req->tv_nsec;
+        if (nanosleep_impl(&req, linux_rem ? &rem : NULL) != 0) {
+            if (linux_rem) {
+                linux_rem->tv_sec = rem.tv_sec;
+                linux_rem->tv_nsec = rem.tv_nsec;
+            }
+            return -(long)errno;
+        }
+        if (linux_rem) {
+            linux_rem->tv_sec = 0;
+            linux_rem->tv_nsec = 0;
+        }
+        return 0;
+    }
+    case __NR_clock_nanosleep:
+        return syscall_clock_nanosleep((clockid_t)arg0, (int)arg1,
+                                       (const struct __kernel_timespec *)(uintptr_t)arg2,
+                                       (struct __kernel_timespec *)(uintptr_t)arg3);
     case __NR_execve:
         return syscall_result((long)execve((const char *)(uintptr_t)arg0,
                                            (char *const *)(uintptr_t)arg1,

@@ -10,6 +10,7 @@
 #include <linux/poll.h>
 #include <linux/stat.h>
 #include <linux/time_types.h>
+#include <linux/utsname.h>
 #include <linux/xattr.h>
 #include <asm-generic/siginfo.h>
 
@@ -4247,11 +4248,18 @@ out:
 
 int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     struct task_struct *task = get_current();
+    struct task_struct *child = NULL;
+    struct __kernel_timespec invalid_sleep = {
+        .tv_sec = 0,
+        .tv_nsec = 1000000000LL,
+    };
+    struct new_utsname uts;
     uint64_t block_set = 1ULL << (2 - 1);
     uint64_t old_set = 0;
     uint64_t old_limit[2];
     uint64_t new_limit[2];
     int tid_word = 0;
+    long child_pid;
     long current_brk;
     long grown_brk;
     long second_brk;
@@ -4262,6 +4270,59 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void) {
         errno = ESRCH;
         return -1;
     }
+
+    ret = syscall_dispatch_impl(__NR_gettid, 0, 0, 0, 0, 0, 0);
+    if (ret != task->pid) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(&uts, 0, sizeof(uts));
+    ret = syscall_dispatch_impl(__NR_uname, (long)(uintptr_t)&uts, 0, 0, 0, 0, 0);
+    if (ret != 0 || strcmp(uts.sysname, "Linux") != 0 || strcmp(uts.machine, "aarch64") != 0) {
+        errno = ret < 0 ? (int)-ret : ENOMSG;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_nanosleep, (long)(uintptr_t)&invalid_sleep, 0, 0, 0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EINVAL;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_clock_nanosleep, 0, 0, (long)(uintptr_t)&invalid_sleep,
+                                0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EINVAL;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_kill, task->pid, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : ESRCH;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_tgkill, task->tgid, task->pid, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : ESRCH;
+        return -1;
+    }
+    child_pid = syscall_dispatch_impl(__NR_clone, 0, 0, 0, 0, 0, 0);
+    if (child_pid <= 0) {
+        errno = child_pid < 0 ? (int)-child_pid : ECHILD;
+        return -1;
+    }
+    child = task_lookup((int32_t)child_pid);
+    if (!child) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (child->ppid != task->pid || child->tgid != child->pid) {
+        task_unlink_child_impl(task, child);
+        free_task(child);
+        free_task(child);
+        errno = ECHILD;
+        return -1;
+    }
+    task_unlink_child_impl(task, child);
+    free_task(child);
+    free_task(child);
 
     current_brk = syscall_dispatch_impl(__NR_brk, 0, 0, 0, 0, 0, 0);
     if (current_brk <= 0) {
@@ -4585,6 +4646,8 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_fcntl,
         __NR_brk,
         __NR_set_tid_address,
+        __NR_gettid,
+        __NR_clone,
         __NR_futex,
         __NR_set_robust_list,
         __NR_get_robust_list,
@@ -4593,6 +4656,8 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_rt_sigreturn,
         __NR_restart_syscall,
         __NR_rt_sigprocmask,
+        __NR_kill,
+        __NR_tgkill,
         __NR_ioctl,
         __NR_getdents64,
         __NR_ppoll,
@@ -4613,6 +4678,7 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_getcwd,
         __NR_getpid,
         __NR_getppid,
+        __NR_uname,
         __NR_exit,
         __NR_exit_group,
         __NR_mmap,
@@ -4643,6 +4709,8 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_fremovexattr,
         __NR_prlimit64,
         __NR_clock_gettime,
+        __NR_nanosleep,
+        __NR_clock_nanosleep,
         __NR_execve,
         __NR_wait4,
         __NR_waitid,
@@ -4663,11 +4731,16 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_faccessat2, SYSCALL_CAPABILITY_FD},
         {__NR_statx, SYSCALL_CAPABILITY_FD},
         {__NR_getpid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_gettid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_clone, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_uname, SYSCALL_CAPABILITY_PROCESS},
         {__NR_exit, SYSCALL_CAPABILITY_PROCESS},
         {__NR_exit_group, SYSCALL_CAPABILITY_PROCESS},
         {__NR_execve, SYSCALL_CAPABILITY_PROCESS},
         {__NR_waitid, SYSCALL_CAPABILITY_PROCESS},
         {__NR_rt_sigaction, SYSCALL_CAPABILITY_SIGNAL},
+        {__NR_kill, SYSCALL_CAPABILITY_SIGNAL},
+        {__NR_tgkill, SYSCALL_CAPABILITY_SIGNAL},
         {__NR_mmap, SYSCALL_CAPABILITY_VM},
         {__NR_ppoll, SYSCALL_CAPABILITY_READINESS},
         {__NR_epoll_pwait, SYSCALL_CAPABILITY_READINESS},
@@ -4675,16 +4748,11 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_statmount, SYSCALL_CAPABILITY_MOUNT},
         {__NR_setxattr, SYSCALL_CAPABILITY_XATTR},
         {__NR_clock_gettime, SYSCALL_CAPABILITY_TIME},
+        {__NR_nanosleep, SYSCALL_CAPABILITY_TIME},
+        {__NR_clock_nanosleep, SYSCALL_CAPABILITY_TIME},
         {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
     };
     static const struct planned_syscall_gap planned_gaps[] = {
-        {__NR_gettid, SYSCALL_GAP_BOOT},
-        {__NR_clone, SYSCALL_GAP_BOOT},
-        {__NR_kill, SYSCALL_GAP_BOOT},
-        {__NR_tgkill, SYSCALL_GAP_BOOT},
-        {__NR_nanosleep, SYSCALL_GAP_BOOT},
-        {__NR_clock_nanosleep, SYSCALL_GAP_BOOT},
-        {__NR_uname, SYSCALL_GAP_BOOT},
         {__NR_socket, SYSCALL_GAP_NETWORK},
         {__NR_socketpair, SYSCALL_GAP_NETWORK},
         {__NR_connect, SYSCALL_GAP_NETWORK},
