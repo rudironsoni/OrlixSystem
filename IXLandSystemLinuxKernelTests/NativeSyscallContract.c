@@ -4573,13 +4573,18 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     const char *dir = "/tmp/native-shell-syscalls";
     const char *file = "/tmp/native-shell-syscalls/file";
     const char *renamed = "/tmp/native-shell-syscalls/renamed";
+    const char *copied = "/tmp/native-shell-syscalls/copied";
     char payload[] = "helloworld";
     char cwd[128];
     char read_buf[11];
+    long long copy_in_off = 0;
+    long long copy_out_off = 0;
+    struct open_how open_how;
     struct statx stx;
     struct statfs sfs;
     struct statfs fsfs;
     int fd = -1;
+    int outfd = -1;
     int dupfd = -1;
     int cloexec_fd = 77;
     long ret;
@@ -4587,6 +4592,7 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     close_if_open(cloexec_fd);
     unlink_impl(file);
     unlink_impl(renamed);
+    unlink_impl(copied);
     rmdir_impl(dir);
 
     ret = syscall_dispatch_impl(__NR_mkdirat, AT_FDCWD, (long)(uintptr_t)dir, 0700, 0, 0, 0);
@@ -4713,6 +4719,31 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
+    outfd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)copied,
+                                       O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (outfd < 0) {
+        errno = (int)-outfd;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_copy_file_range, fd, (long)(uintptr_t)&copy_in_off,
+                                outfd, (long)(uintptr_t)&copy_out_off, 10, 0);
+    if (ret != 10 || copy_in_off != 10 || copy_out_off != 10) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_lseek, outfd, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    memset(read_buf, 0, sizeof(read_buf));
+    ret = syscall_dispatch_impl(__NR_read, outfd, (long)(uintptr_t)read_buf, 10, 0, 0, 0);
+    if (ret != 10 || strcmp(read_buf, "helloworld") != 0) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    close_if_open(outfd);
+    outfd = -1;
     close_if_open(fd);
     fd = -1;
     close_if_open(dupfd);
@@ -4763,6 +4794,23 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         goto out;
     }
 
+    memset(&open_how, 0, sizeof(open_how));
+    open_how.flags = O_RDONLY;
+    fd = (int)syscall_dispatch_impl(__NR_openat2, AT_FDCWD, (long)(uintptr_t)renamed,
+                                    (long)(uintptr_t)&open_how, sizeof(open_how), 0, 0);
+    if (fd < 0) {
+        errno = (int)-fd;
+        goto out;
+    }
+    memset(read_buf, 0, sizeof(read_buf));
+    ret = syscall_dispatch_impl(__NR_read, fd, (long)(uintptr_t)read_buf, 5, 0, 0, 0);
+    if (ret != 5 || strcmp(read_buf, "hello") != 0) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
     fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)renamed,
                                     O_RDONLY, 0, 0, 0);
     if (fd < 0) {
@@ -4792,6 +4840,11 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
+    ret = syscall_dispatch_impl(__NR_unlinkat, AT_FDCWD, (long)(uintptr_t)copied, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
     ret = syscall_dispatch_impl(__NR_chdir, (long)(uintptr_t)"/", 0, 0, 0, 0, 0);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
@@ -4809,8 +4862,10 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
 out:
     syscall_dispatch_impl(__NR_chdir, (long)(uintptr_t)"/", 0, 0, 0, 0, 0);
     close_if_open(fd);
+    close_if_open(outfd);
     close_if_open(dupfd);
     close_if_open(cloexec_fd);
+    unlink_impl(copied);
     unlink_impl(file);
     unlink_impl(renamed);
     rmdir_impl(dir);
@@ -5064,6 +5119,8 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_times,
         __NR_getrusage,
         __NR_close_range,
+        __NR_copy_file_range,
+        __NR_openat2,
         __NR_execve,
         __NR_wait4,
         __NR_waitid,
@@ -5144,6 +5201,8 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_times, SYSCALL_CAPABILITY_RESOURCE},
         {__NR_getrusage, SYSCALL_CAPABILITY_RESOURCE},
         {__NR_close_range, SYSCALL_CAPABILITY_FD},
+        {__NR_copy_file_range, SYSCALL_CAPABILITY_FD},
+        {__NR_openat2, SYSCALL_CAPABILITY_FD},
         {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
     };
     static const struct planned_syscall_gap planned_gaps[] = {

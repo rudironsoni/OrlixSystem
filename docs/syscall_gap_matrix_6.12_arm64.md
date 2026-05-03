@@ -273,7 +273,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 282 | `userfaultfd` | kernel-owned missing:unclassified | package |
 | 283 | `membarrier` | kernel-owned missing:unclassified | package |
 | 284 | `mlock2` | kernel-owned missing:unclassified | package |
-| 285 | `copy_file_range` | kernel-owned missing:unclassified | shell |
+| 285 | `copy_file_range` | implemented:fd | none |
 | 286 | `preadv2` | kernel-owned missing:unclassified | package |
 | 287 | `pwritev2` | kernel-owned missing:unclassified | package |
 | 288 | `pkey_mprotect` | kernel-owned missing:unclassified | package |
@@ -296,7 +296,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 434 | `pidfd_open` | kernel-owned missing:unclassified | package |
 | 435 | `clone3` | implemented:process | none |
 | 436 | `close_range` | implemented:fd | none |
-| 437 | `openat2` | kernel-owned missing:unclassified | shell |
+| 437 | `openat2` | implemented:fd | none |
 | 438 | `pidfd_getfd` | kernel-owned missing:unclassified | package |
 | 439 | `faccessat2` | implemented:fd | none |
 | 440 | `process_madvise` | kernel-owned missing:unclassified | package |

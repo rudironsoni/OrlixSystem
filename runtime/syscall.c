@@ -199,6 +199,8 @@ extern long writev_impl(int fd, const struct iovec *iov, int iovcnt);
 extern ssize_t pread_impl(int fd, void *buf, size_t count, long long offset);
 extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, long long offset);
 extern linux_off_t lseek_impl(int fd, linux_off_t offset, int whence);
+extern ssize_t copy_file_range_impl(int fd_in, linux_off_t *off_in, int fd_out,
+                                    linux_off_t *off_out, size_t len, unsigned int flags);
 extern int fcntl_impl(int fd, int cmd, ...);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int fstatat_impl(int dirfd, const char *pathname, struct linux_stat *statbuf, int flags);
@@ -590,6 +592,8 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_fdatasync:
     case __NR_syncfs:
     case __NR_close_range:
+    case __NR_copy_file_range:
+    case __NR_openat2:
         return SYSCALL_CAPABILITY_FD;
     case __NR_brk:
     case __NR_mmap:
@@ -740,11 +744,33 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_pwrite64:
         return syscall_result((long)pwrite_impl((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2,
                                                 (long long)arg3));
+    case __NR_copy_file_range:
+        return syscall_result((long)copy_file_range_impl((int)arg0, (linux_off_t *)(uintptr_t)arg1,
+                                                         (int)arg2, (linux_off_t *)(uintptr_t)arg3,
+                                                         (size_t)arg4, (unsigned int)arg5));
     case __NR_lseek:
         return syscall_result((long)lseek_impl((int)arg0, (linux_off_t)arg1, (int)arg2));
     case __NR_openat:
         return syscall_result((long)openat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                 (int)arg2, (linux_mode_t)arg3));
+    case __NR_openat2: {
+        const struct open_how *how = (const struct open_how *)(uintptr_t)arg2;
+
+        if (!how) {
+            return -EFAULT;
+        }
+        if ((size_t)arg3 < sizeof(*how)) {
+            return -EINVAL;
+        }
+        if (how->resolve != 0) {
+            return -EINVAL;
+        }
+        if ((how->flags & O_CREAT) == 0 && how->mode != 0) {
+            return -EINVAL;
+        }
+        return syscall_result((long)openat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                (int)how->flags, (linux_mode_t)how->mode));
+    }
     case __NR_close:
         return syscall_result((long)close_impl((int)arg0));
     case __NR_close_range:

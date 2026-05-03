@@ -627,6 +627,69 @@ ssize_t pwrite_impl(int fd, const void *buf, size_t count, linux_off_t offset) {
     return bytes;
 }
 
+ssize_t copy_file_range_impl(int fd_in, linux_off_t *off_in, int fd_out,
+                             linux_off_t *off_out, size_t len, unsigned int flags) {
+    char buffer[16384];
+    size_t copied = 0;
+
+    if (flags != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (len == 0) {
+        return 0;
+    }
+
+    while (copied < len) {
+        size_t chunk = len - copied;
+        ssize_t nread;
+        ssize_t nwritten;
+        size_t written = 0;
+
+        if (chunk > sizeof(buffer)) {
+            chunk = sizeof(buffer);
+        }
+
+        if (off_in) {
+            nread = pread_impl(fd_in, buffer, chunk, *off_in);
+        } else {
+            nread = read_impl(fd_in, buffer, chunk);
+        }
+        if (nread < 0) {
+            return copied > 0 ? (ssize_t)copied : -1;
+        }
+        if (nread == 0) {
+            break;
+        }
+
+        while (written < (size_t)nread) {
+            if (off_out) {
+                nwritten = pwrite_impl(fd_out, buffer + written,
+                                       (size_t)nread - written, *off_out);
+            } else {
+                nwritten = write_impl(fd_out, buffer + written, (size_t)nread - written);
+            }
+            if (nwritten < 0) {
+                return copied > 0 ? (ssize_t)copied : -1;
+            }
+            if (nwritten == 0) {
+                errno = EIO;
+                return copied > 0 ? (ssize_t)copied : -1;
+            }
+            if (off_out) {
+                *off_out += (linux_off_t)nwritten;
+            }
+            written += (size_t)nwritten;
+            copied += (size_t)nwritten;
+        }
+        if (off_in) {
+            *off_in += (linux_off_t)nread;
+        }
+    }
+
+    return (ssize_t)copied;
+}
+
 __attribute__((visibility("default"))) ssize_t read(int fd, void *buf, size_t count) {
     return read_impl(fd, buf, count);
 }
