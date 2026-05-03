@@ -400,6 +400,53 @@ unsigned int task_cgroup_member_count(const struct task_struct *task) {
     return count;
 }
 
+static int task_cgroup_proc_content_for_viewer(const struct task_struct *viewer,
+                                               const struct task_struct *task,
+                                               char *buf, size_t buflen) {
+    int ret;
+    char visible[MAX_PATH];
+    const char *root_path;
+    const char *task_path;
+    size_t root_len;
+
+    if (!buf || buflen == 0) {
+        return -EINVAL;
+    }
+    if (!viewer || !task) {
+        return -ESRCH;
+    }
+
+    task_path = task->cgroup ? task->cgroup->path : "/";
+    root_path = viewer->cgroup_ns_root ? viewer->cgroup_ns_root->path : "/";
+    if (!cgroup_path_is_prefix(root_path, task_path)) {
+        return -EACCES;
+    }
+    if (strcmp(root_path, "/") == 0) {
+        if (strlen(task_path) >= sizeof(visible)) {
+            return -ENAMETOOLONG;
+        }
+        memcpy(visible, task_path, strlen(task_path) + 1);
+    } else {
+        root_len = strlen(root_path);
+        if (task_path[root_len] == '\0') {
+            memcpy(visible, "/", 2);
+        } else {
+            if (strlen(task_path + root_len) >= sizeof(visible)) {
+                return -ENAMETOOLONG;
+            }
+            memcpy(visible, task_path + root_len, strlen(task_path + root_len) + 1);
+        }
+    }
+    ret = snprintf(buf, buflen, "0::%s\n", visible);
+    if (ret < 0) {
+        return -EINVAL;
+    }
+    if ((size_t)ret >= buflen) {
+        return (int)(buflen - 1);
+    }
+    return ret;
+}
+
 int task_cgroup_proc_content(const struct task_struct *task, char *buf, size_t buflen) {
     int ret;
     char visible[MAX_PATH];
@@ -410,7 +457,6 @@ int task_cgroup_proc_content(const struct task_struct *task, char *buf, size_t b
     if (!task) {
         return -ESRCH;
     }
-
     ret = cgroup_visible_path_for_task(task, visible, sizeof(visible));
     if (ret != 0) {
         return ret;
@@ -1088,6 +1134,7 @@ int cgroupfs_child_at(const char *path, size_t index, char *name, size_t name_le
 }
 
 int cgroup_proc_task_content(int32_t pid, char *buf, size_t buflen) {
+    struct task_struct *viewer = get_current();
     struct task_struct *task;
     int ret;
 
@@ -1095,7 +1142,7 @@ int cgroup_proc_task_content(int32_t pid, char *buf, size_t buflen) {
     if (!task) {
         return -ESRCH;
     }
-    ret = task_cgroup_proc_content(task, buf, buflen);
+    ret = task_cgroup_proc_content_for_viewer(viewer, task, buf, buflen);
     free_task(task);
     return ret;
 }

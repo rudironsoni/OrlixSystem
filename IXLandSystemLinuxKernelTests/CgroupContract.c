@@ -794,3 +794,57 @@ out:
     }
     return ret;
 }
+
+int cgroup_contract_proc_pid_cgroup_hides_tasks_outside_reader_namespace(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    char pidbuf[32];
+    char path[64];
+    char buf[128];
+    int ret = -1;
+
+    if (!parent || cgroup_contract_restore_root() != 0) {
+        return -1;
+    }
+    if (cgroup_contract_ignore_exists(mkdir_impl("/sys/fs/cgroup/reader-root", 0755)) != 0 ||
+        cgroup_contract_ignore_exists(mkdir_impl("/sys/fs/cgroup/outside-reader", 0755)) != 0) {
+        goto out;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+    cgroup_contract_format_pid(child->pid, pidbuf, sizeof(pidbuf));
+    if (cgroup_contract_write_file("/sys/fs/cgroup/outside-reader/cgroup.procs", pidbuf) != 0 ||
+        cgroup_contract_write_current_pid("/sys/fs/cgroup/reader-root/cgroup.procs") != 0 ||
+        unshare_impl(CLONE_NEWCGROUP) != 0) {
+        goto out;
+    }
+    memcpy(path, "/proc/", 6);
+    cgroup_contract_format_pid(child->pid, path + 6, sizeof(path) - 6);
+    for (char *p = path; *p; p++) {
+        if (*p == '\n') {
+            memcpy(p, "/cgroup", 8);
+            break;
+        }
+    }
+    errno = 0;
+    if (cgroup_contract_read_file(path, buf, sizeof(buf)) == 0 || errno != EACCES) {
+        errno = EPROTO;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (child) {
+            task_unlink_child_impl(parent, child);
+            free_task(child);
+        }
+        set_current(parent);
+        cgroup_contract_restore_root();
+        errno = saved_errno;
+    }
+    return ret;
+}

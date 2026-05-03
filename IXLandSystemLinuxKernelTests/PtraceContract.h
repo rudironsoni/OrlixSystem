@@ -7,5 +7,8 @@ int ptrace_contract_newuser_child_can_attach_same_namespace_task(void);
 int ptrace_contract_regset_round_trips_general_registers(void);
 int ptrace_contract_syscall_trace_records_entry_and_exit(void);
 int ptrace_contract_cont_injects_pending_signal(void);
+int ptrace_contract_attach_stop_is_waitpid_visible(void);
+int ptrace_contract_syscall_stop_is_waitpid_visible(void);
+int ptrace_contract_peek_poke_data_uses_virtual_memory(void);
 
 #endif /* IXLAND_SYSTEM_LINUX_KERNEL_TESTS_PTRACE_CONTRACT_H */

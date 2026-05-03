@@ -9,6 +9,16 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <linux/types.h>
+#ifdef SIGSTOP
+#undef SIGSTOP
+#endif
+#ifdef SIGTRAP
+#undef SIGTRAP
+#endif
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
 #include <asm/ptrace.h>
 #include <linux/audit.h>
 #include <linux/capability.h>
@@ -131,6 +141,11 @@ static long ptrace_copy_syscall_info(struct task_struct *target, void *addr, voi
     return (long)ncopy;
 }
 
+static void ptrace_report_stop(struct task_struct *target, int32_t sig) {
+    task_mark_stopped_by_signal(target, sig);
+    task_notify_parent_state_change(target);
+}
+
 long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
     struct task_struct *tracer = get_current();
     struct task_struct *target;
@@ -171,6 +186,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         target->ptrace_attached = true;
         target->ptrace_signal = 0;
         kernel_mutex_unlock(&target->lock);
+        ptrace_report_stop(target, SIGSTOP);
         free_task(target);
         return 0;
     case PTRACE_DETACH:
@@ -212,6 +228,40 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         }
         free_task(target);
         return 0;
+    case PTRACE_PEEKDATA:
+    case PTRACE_PEEKTEXT:
+        if (ptrace_get_target(pid, &target) != 0) {
+            return -1;
+        }
+        {
+            long word = 0;
+            long nread = task_read_virtual_memory_impl(target, (uint64_t)(uintptr_t)addr,
+                                                       &word, sizeof(word));
+            int saved_errno = errno;
+            free_task(target);
+            if (nread != (long)sizeof(word)) {
+                errno = nread < 0 ? saved_errno : EIO;
+                return -1;
+            }
+            return word;
+        }
+    case PTRACE_POKEDATA:
+    case PTRACE_POKETEXT:
+        if (ptrace_get_target(pid, &target) != 0) {
+            return -1;
+        }
+        {
+            long word = (long)(intptr_t)data;
+            long nwritten = task_write_virtual_memory_impl(target, (uint64_t)(uintptr_t)addr,
+                                                           &word, sizeof(word));
+            int saved_errno = errno;
+            free_task(target);
+            if (nwritten != (long)sizeof(word)) {
+                errno = nwritten < 0 ? saved_errno : EIO;
+                return -1;
+            }
+            return 0;
+        }
     case PTRACE_GETREGSET:
         if ((long)(uintptr_t)addr != NT_PRSTATUS) {
             errno = EINVAL;
@@ -272,6 +322,7 @@ void ptrace_note_syscall_entry(long number, long arg0, long arg1, long arg2,
     task->ptrace_syscall_args[4] = (uint64_t)arg4;
     task->ptrace_syscall_args[5] = (uint64_t)arg5;
     kernel_mutex_unlock(&task->lock);
+    ptrace_report_stop(task, SIGTRAP);
 }
 
 void ptrace_note_syscall_exit(long retval) {
@@ -285,4 +336,5 @@ void ptrace_note_syscall_exit(long retval) {
     task->ptrace_syscall_retval = retval;
     task->ptrace_syscall_is_error = retval < 0;
     kernel_mutex_unlock(&task->lock);
+    ptrace_report_stop(task, SIGTRAP);
 }

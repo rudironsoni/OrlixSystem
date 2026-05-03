@@ -102,4 +102,9 @@
                    @"cgroup namespace should reject migration of tasks outside its visible subtree, errno %d", errno);
 }
 
+- (void)testProcPidCgroupHidesTasksOutsideReaderNamespace {
+    XCTAssertEqual(cgroup_contract_proc_pid_cgroup_hides_tasks_outside_reader_namespace(), 0,
+                   @"/proc/<pid>/cgroup should not leak cgroups outside the reader namespace, errno %d", errno);
+}
+
 @end

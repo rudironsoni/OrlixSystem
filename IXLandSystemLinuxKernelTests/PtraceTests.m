@@ -41,4 +41,16 @@
     XCTAssertEqual(ptrace_contract_cont_injects_pending_signal(), 0, @"errno %d", errno);
 }
 
+- (void)testAttachStopIsWaitpidVisible {
+    XCTAssertEqual(ptrace_contract_attach_stop_is_waitpid_visible(), 0, @"errno %d", errno);
+}
+
+- (void)testSyscallStopIsWaitpidVisible {
+    XCTAssertEqual(ptrace_contract_syscall_stop_is_waitpid_visible(), 0, @"errno %d", errno);
+}
+
+- (void)testPeekPokeDataUsesVirtualMemory {
+    XCTAssertEqual(ptrace_contract_peek_poke_data_uses_virtual_memory(), 0, @"errno %d", errno);
+}
+
 @end
