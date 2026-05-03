@@ -922,6 +922,130 @@ out:
     return ret;
 }
 
+int procfs_namespace_contract_clone_files_shares_thread_fdtable(void) {
+    struct task_struct *parent;
+    struct task_struct *thread = NULL;
+    int fd = -1;
+    char path[160] = {0};
+    char link_target[MAX_PATH];
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    thread = task_create_child_with_flags_impl(parent, CLONE_THREAD | CLONE_FILES);
+    if (!thread) {
+        return -1;
+    }
+    fd = open_impl("/dev/null", O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0) {
+        goto out;
+    }
+
+    proc_pid_file_path(path, sizeof(path), parent->pid, "/task/");
+    append_positive_decimal(path, sizeof(path), thread->pid);
+    if (strlen(path) + 4 >= sizeof(path)) {
+        errno = ENAMETOOLONG;
+        goto out;
+    }
+    memcpy(path + strlen(path), "/fd/", 5);
+    append_positive_decimal(path, sizeof(path), fd);
+    if (read_link_content(path, link_target, sizeof(link_target)) != 0 ||
+        strcmp(link_target, "/dev/null") != 0) {
+        errno = ENOENT;
+        goto out;
+    }
+
+    set_current(thread);
+    if (close_impl(fd) != 0) {
+        set_current(parent);
+        goto out;
+    }
+    set_current(parent);
+    if (fcntl_impl(fd, F_GETFD) != -1 || errno != EBADF) {
+        errno = EBUSY;
+        goto out;
+    }
+    fd = -1;
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        close_impl(fd);
+        if (thread) {
+            task_unlink_child_impl(parent, thread);
+            free_task(thread);
+        }
+        reset_procfs_namespace_state();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int procfs_namespace_contract_proc_task_tid_status_reports_thread_signal_state(void) {
+    struct task_struct *parent;
+    struct task_struct *thread = NULL;
+    char path[160] = {0};
+    char content[4096];
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    thread = task_create_child_with_flags_impl(parent, CLONE_THREAD);
+    if (!thread) {
+        return -1;
+    }
+    memset(thread->comm, 0, sizeof(thread->comm));
+    memcpy(thread->comm, "sig-tid", 8);
+    if (signal_generate_task(thread, SIGUSR1) != 0) {
+        goto out;
+    }
+
+    proc_pid_file_path(path, sizeof(path), parent->pid, "/task/");
+    append_positive_decimal(path, sizeof(path), thread->pid);
+    if (strlen(path) + 8 >= sizeof(path)) {
+        errno = ENAMETOOLONG;
+        goto out;
+    }
+    memcpy(path + strlen(path), "/status", 8);
+    if (read_file_content(path, content, sizeof(content)) != 0) {
+        goto out;
+    }
+    if (!contains(content, "Name:\tsig-tid\n") ||
+        !contains(content, "Tgid:\t") ||
+        !contains(content, "Threads:\t2\n") ||
+        !contains(content, "SigQ:\t1/1024\n") ||
+        !contains(content, "SigPnd:\t0000000000000200\n")) {
+        errno = ENODATA;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (thread && thread->signal) {
+            thread->signal->pending.sig[(SIGUSR1 - 1) >> 6] &= ~(1ULL << ((SIGUSR1 - 1) & 63));
+        }
+        if (thread) {
+            task_unlink_child_impl(parent, thread);
+            free_task(thread);
+        }
+        reset_procfs_namespace_state();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void) {
     struct task_struct *parent;
     struct task_struct *child = NULL;

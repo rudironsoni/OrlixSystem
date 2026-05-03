@@ -418,6 +418,10 @@ static long long mm_shared_file_remaining(const struct task_vma *vma, size_t off
     return (long long)(vma->image_size - offset);
 }
 
+long long mm_vma_file_remaining_impl(const struct task_vma *vma, size_t offset) {
+    return mm_shared_file_remaining(vma, offset);
+}
+
 long mm_shared_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *buf, size_t count) {
     size_t offset;
     uint64_t page_index;

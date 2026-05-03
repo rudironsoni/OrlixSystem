@@ -8,6 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct task_vma;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -19,6 +21,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
 int madvise_impl(void *addr, size_t length, int advice);
 int mincore_impl(void *addr, size_t length, unsigned char *vec);
 void mm_note_file_truncate_impl(int fd, int64_t length);
+long long mm_vma_file_remaining_impl(const struct task_vma *vma, size_t offset);
 void *brk_impl(void *addr);
 int msync_impl(void *addr, size_t len, int flags);
 

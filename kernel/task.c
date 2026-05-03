@@ -6,6 +6,7 @@
 #include "signal.h"
 #include "cgroup.h"
 #include "cred_internal.h"
+#include "mm.h"
 #include "seccomp.h"
 #include "uts.h"
 
@@ -443,6 +444,13 @@ static long task_read_vma(const struct task_vma *vma, uint64_t addr, void *buf, 
     if (vma->shared_pages) {
         return mm_shared_vma_read_impl(vma, addr, buf, count);
     }
+    if (vma->kind == TASK_VMA_FILE && !vma->shared) {
+        uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
+        if ((!vma->dirty_pages || page_index >= vma->page_count || vma->dirty_pages[page_index] == 0) &&
+            mm_vma_file_remaining_impl(vma, (size_t)(addr - vma->start)) < 0) {
+            return -1;
+        }
+    }
     if (vma->private_pages) {
         return mm_private_vma_read_impl(vma, addr, buf, count);
     }
@@ -482,6 +490,13 @@ static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf,
     }
     if (vma->shared_pages) {
         return mm_shared_vma_write_impl(vma, addr, buf, count);
+    }
+    if (vma->kind == TASK_VMA_FILE && !vma->shared) {
+        uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
+        if ((!vma->dirty_pages || page_index >= vma->page_count || vma->dirty_pages[page_index] == 0) &&
+            mm_vma_file_remaining_impl(vma, (size_t)(addr - vma->start)) < 0) {
+            return -1;
+        }
     }
     if (vma->private_pages) {
         return mm_private_vma_write_impl(vma, addr, buf, count);
@@ -966,7 +981,9 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         }
     }
 
-    if (parent->files) {
+    if (parent->files && (flags & CLONE_FILES) != 0) {
+        child->files = get_files(parent->files);
+    } else if (parent->files) {
         child->files = dup_files(parent->files);
         if (!child->files) {
             free_task(child);

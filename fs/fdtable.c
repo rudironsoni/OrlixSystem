@@ -45,6 +45,7 @@ struct files_struct *alloc_files(size_t max_fds) {
     }
 
     files->max_fds = max_fds;
+    atomic_init(&files->refs, 1);
     fs_mutex_init(&files->lock);
 
     return files;
@@ -53,6 +54,9 @@ struct files_struct *alloc_files(size_t max_fds) {
 void free_files(struct files_struct *files) {
     if (!files)
         return;
+    if (atomic_fetch_sub(&files->refs, 1) != 1) {
+        return;
+    }
 
     fs_mutex_lock(&files->lock);
     for (size_t i = 0; i < files->max_fds; i++) {
@@ -65,6 +69,13 @@ void free_files(struct files_struct *files) {
     free(files->fd);
     fs_mutex_destroy(&files->lock);
     free(files);
+}
+
+struct files_struct *get_files(struct files_struct *files) {
+    if (files) {
+        atomic_fetch_add(&files->refs, 1);
+    }
+    return files;
 }
 
 struct files_struct *dup_files(struct files_struct *parent) {

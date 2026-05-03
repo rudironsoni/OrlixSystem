@@ -37,10 +37,12 @@ struct files_struct {
     struct file **fd;
     size_t max_fds;
     fs_mutex_t lock;
+    atomic_int refs;
 };
 
 struct files_struct *alloc_files(size_t max_fds);
 void free_files(struct files_struct *files);
+struct files_struct *get_files(struct files_struct *files);
 struct files_struct *dup_files(struct files_struct *parent);
 
 struct file *alloc_file(void);

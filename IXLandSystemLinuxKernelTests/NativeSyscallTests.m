@@ -141,6 +141,10 @@
     XCTAssertEqual(native_syscall_contract_private_file_cow_smaps_survives_munmap_gap(), 0, @"errno %d", errno);
 }
 
+- (void)testPrivateFileCowSurvivesTruncateAndCleanPageFaults {
+    XCTAssertEqual(native_syscall_contract_private_file_cow_survives_truncate_and_clean_page_faults(), 0, @"errno %d", errno);
+}
+
 - (void)testRenameUpdatesOpenFdAndMappingIdentity {
     XCTAssertEqual(native_syscall_contract_rename_updates_open_fd_and_mapping_identity(), 0, @"errno %d", errno);
 }

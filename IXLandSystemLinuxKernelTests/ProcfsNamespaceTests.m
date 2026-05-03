@@ -64,6 +64,14 @@
     XCTAssertEqual(procfs_namespace_contract_proc_task_tid_fd_maps_and_stat_are_thread_targeted(), 0, @"errno %d", errno);
 }
 
+- (void)testCloneFilesSharesThreadFdtable {
+    XCTAssertEqual(procfs_namespace_contract_clone_files_shares_thread_fdtable(), 0, @"errno %d", errno);
+}
+
+- (void)testProcTaskTidStatusReportsThreadSignalState {
+    XCTAssertEqual(procfs_namespace_contract_proc_task_tid_status_reports_thread_signal_state(), 0, @"errno %d", errno);
+}
+
 - (void)testProcPidStatCwdAndExeReportTargetTask {
     XCTAssertEqual(procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(), 0, @"errno %d", errno);
 }
