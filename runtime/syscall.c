@@ -180,6 +180,7 @@
 #include "../fs/vfs.h"
 #include "../kernel/futex.h"
 #include "../kernel/mm.h"
+#include "../kernel/ptrace.h"
 #include "../kernel/seccomp.h"
 #include "../kernel/signal.h"
 #include "../kernel/task.h"
@@ -953,6 +954,10 @@ long syscall_dispatch_impl(long number,
         return syscall_prlimit64((int32_t)arg0, (int)arg1,
                                  (const uint64_t *)(uintptr_t)arg2,
                                  (uint64_t *)(uintptr_t)arg3);
+    case __NR_ptrace:
+        return syscall_result(ptrace_impl(arg0, (__kernel_pid_t)arg1,
+                                          (void *)(uintptr_t)arg2,
+                                          (void *)(uintptr_t)arg3));
     case __NR_clock_gettime: {
         struct timespec host_ts;
         struct __kernel_timespec *linux_ts = (struct __kernel_timespec *)(uintptr_t)arg1;

@@ -1,0 +1,8 @@
+#ifndef IXLAND_SYSTEM_LINUX_KERNEL_TESTS_PTRACE_CONTRACT_H
+#define IXLAND_SYSTEM_LINUX_KERNEL_TESTS_PTRACE_CONTRACT_H
+
+int ptrace_contract_attach_detach_child_same_user_namespace(void);
+int ptrace_contract_newuser_child_cannot_attach_parent_namespace_task(void);
+int ptrace_contract_newuser_child_can_attach_same_namespace_task(void);
+
+#endif /* IXLAND_SYSTEM_LINUX_KERNEL_TESTS_PTRACE_CONTRACT_H */

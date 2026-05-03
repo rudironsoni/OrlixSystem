@@ -1,5 +1,6 @@
 #include "CgroupContract.h"
 
+#include <linux/capability.h>
 #include <linux/fcntl.h>
 #include <linux/sched.h>
 
@@ -17,8 +18,11 @@ extern int close_impl(int fd);
 extern int mkdir_impl(const char *pathname, unsigned int mode);
 extern int rmdir_impl(const char *pathname);
 extern int unshare_impl(uint64_t flags);
+extern int clone_impl(uint64_t flags);
 extern int mount_impl(const char *source, const char *target, const char *filesystemtype,
                       unsigned long mountflags, const void *data);
+extern int capget(cap_user_header_t header, cap_user_data_t data);
+extern int capset(cap_user_header_t header, const cap_user_data_t data);
 
 static void cgroup_contract_format_pid(int32_t pid, char *buf, unsigned long size);
 
@@ -653,6 +657,92 @@ int cgroup_contract_rmdir_parent_with_child_fails_notempty(void) {
 out:
     {
         int saved_errno = errno;
+        cgroup_contract_restore_root();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int cgroup_contract_newuser_caps_are_scoped_to_cgroup_namespace_owner(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    struct task_struct *parent = get_current();
+    struct task_struct *user_child = NULL;
+    struct task_struct *user_cgroup_child = NULL;
+    int pid;
+    int ret = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (cgroup_contract_restore_root() != 0 || capget(&header, data) != 0) {
+        return -1;
+    }
+    data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
+    if (capset(&header, data) != 0) {
+        return -1;
+    }
+    errno = 0;
+    if (cgroup_contract_write_file("/sys/fs/cgroup/pids.max", "16\n") != -1 ||
+        errno != EPERM) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    pid = clone_impl(CLONE_NEWUSER);
+    if (pid < 0) {
+        goto out;
+    }
+    user_child = task_lookup(pid);
+    if (!user_child) {
+        errno = ESRCH;
+        goto out;
+    }
+    set_current(user_child);
+    errno = 0;
+    if (cgroup_contract_write_file("/sys/fs/cgroup/pids.max", "16\n") != -1 ||
+        errno != EPERM) {
+        set_current(parent);
+        errno = ENODATA;
+        goto out;
+    }
+    set_current(parent);
+
+    pid = clone_impl(CLONE_NEWUSER | CLONE_NEWCGROUP);
+    if (pid < 0) {
+        goto out;
+    }
+    user_cgroup_child = task_lookup(pid);
+    if (!user_cgroup_child) {
+        errno = ESRCH;
+        goto out;
+    }
+    set_current(user_cgroup_child);
+    if (cgroup_contract_write_file("/sys/fs/cgroup/pids.max", "16\n") != 0 ||
+        cgroup_contract_write_file("/sys/fs/cgroup/cgroup.freeze", "1\n") != 0 ||
+        cgroup_contract_write_file("/sys/fs/cgroup/cgroup.freeze", "0\n") != 0) {
+        set_current(parent);
+        goto out;
+    }
+    set_current(parent);
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        if (user_child) {
+            task_unlink_child_impl(parent, user_child);
+            free_task(user_child);
+        }
+        if (user_cgroup_child) {
+            task_unlink_child_impl(parent, user_cgroup_child);
+            free_task(user_cgroup_child);
+        }
         cgroup_contract_restore_root();
         errno = saved_errno;
     }

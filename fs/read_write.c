@@ -191,6 +191,9 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         case SYNTHETIC_PROC_FILE_GID_MAP:
             content_len = vfs_proc_task_gid_map_content(target_pid, content, sizeof(content));
             break;
+        case SYNTHETIC_PROC_FILE_SETGROUPS:
+            content_len = vfs_proc_task_setgroups_content(target_pid, content, sizeof(content));
+            break;
         case SYNTHETIC_PROC_FILE_MOUNTINFO:
             content_len = vfs_proc_task_mountinfo_content(target_pid, content, sizeof(content));
             break;
@@ -346,6 +349,22 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
             }
             return (ssize_t)ret;
         }
+        {
+            synthetic_proc_file_t proc_file = get_fd_synthetic_proc_file_impl(entry);
+            if (proc_file == SYNTHETIC_PROC_FILE_UID_MAP ||
+                proc_file == SYNTHETIC_PROC_FILE_GID_MAP ||
+                proc_file == SYNTHETIC_PROC_FILE_SETGROUPS) {
+                int target_pid = get_fd_proc_file_target_pid_impl(entry);
+                long ret = vfs_proc_task_write_id_map_content(proc_file, target_pid,
+                                                              (const char *)buf, count);
+                put_fd_entry_impl(entry);
+                if (ret < 0) {
+                    errno = -ret;
+                    return -1;
+                }
+                return ret;
+            }
+        }
         put_fd_entry_impl(entry);
         errno = EINVAL;
         return -1;
@@ -442,6 +461,8 @@ static int synthetic_proc_file_content(synthetic_proc_file_t proc_file, int fd_n
         return vfs_proc_task_uid_map_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_GID_MAP:
         return vfs_proc_task_gid_map_content(target_pid, content, content_size);
+    case SYNTHETIC_PROC_FILE_SETGROUPS:
+        return vfs_proc_task_setgroups_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_MOUNTINFO:
         return vfs_proc_task_mountinfo_content(target_pid, content, content_size);
     case SYNTHETIC_PROC_FILE_MOUNTS:

@@ -27,6 +27,7 @@ extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
+extern int setgroups_impl(int size, const gid_t *list);
 extern void cred_reset_to_defaults(void);
 extern int capget(cap_user_header_t header, cap_user_data_t data);
 extern int capset(cap_user_header_t header, const cap_user_data_t data);
@@ -51,6 +52,21 @@ static int write_file(const char *path, const char *content) {
     size_t len = strlen(content);
 
     fd = open_impl(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) {
+        return -1;
+    }
+    if (write_impl(fd, content, len) != (long)len) {
+        close_impl(fd);
+        return -1;
+    }
+    return close_impl(fd);
+}
+
+static int write_existing_file(const char *path, const char *content) {
+    int fd;
+    size_t len = strlen(content);
+
+    fd = open_impl(path, O_WRONLY, 0);
     if (fd < 0) {
         return -1;
     }
@@ -617,6 +633,72 @@ int namespace_contract_proc_uid_gid_maps_are_visible(void) {
     set_current(child);
     if (read_file_contains("/proc/self/uid_map", "         0          0          1") != 0 ||
         read_file_contains("/proc/self/gid_map", "         0          0          1") != 0) {
+        set_current(parent);
+        goto out;
+    }
+    set_current(parent);
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        if (child) {
+            release_lookup_child(parent, child);
+        }
+        reset_namespace_contract_state();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int namespace_contract_proc_uid_gid_maps_are_writable_with_setgroups_policy(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    gid_t groups[1] = {7};
+    int pid;
+    int ret = -1;
+
+    reset_namespace_contract_state();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    pid = clone_impl(CLONE_NEWUSER);
+    if (pid < 0) {
+        goto out;
+    }
+    child = lookup_child_from_pid(pid);
+    if (!child) {
+        goto out;
+    }
+    set_current(child);
+    if (read_file_contains("/proc/self/setgroups", "allow") != 0) {
+        set_current(parent);
+        goto out;
+    }
+    errno = 0;
+    if (write_existing_file("/proc/self/gid_map", "0 2000 1\n") != -1 ||
+        errno != EPERM) {
+        set_current(parent);
+        errno = EPROTO;
+        goto out;
+    }
+    if (write_existing_file("/proc/self/setgroups", "deny\n") != 0 ||
+        read_file_contains("/proc/self/setgroups", "deny") != 0) {
+        set_current(parent);
+        goto out;
+    }
+    errno = 0;
+    if (setgroups_impl(1, groups) != -1 || errno != EPERM) {
+        set_current(parent);
+        errno = ENODATA;
+        goto out;
+    }
+    if (write_existing_file("/proc/self/uid_map", "0 1000 1\n") != 0 ||
+        write_existing_file("/proc/self/gid_map", "0 2000 1\n") != 0 ||
+        read_file_contains("/proc/self/uid_map", "         0       1000          1") != 0 ||
+        read_file_contains("/proc/self/gid_map", "         0       2000          1") != 0) {
         set_current(parent);
         goto out;
     }

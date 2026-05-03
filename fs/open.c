@@ -44,6 +44,8 @@ static synthetic_proc_file_t proc_self_file_for_class(proc_self_path_class_t pro
         return SYNTHETIC_PROC_FILE_UID_MAP;
     case PROC_SELF_GID_MAP_FILE:
         return SYNTHETIC_PROC_FILE_GID_MAP;
+    case PROC_SELF_SETGROUPS_FILE:
+        return SYNTHETIC_PROC_FILE_SETGROUPS;
     case PROC_SELF_MOUNTINFO_FILE:
         return SYNTHETIC_PROC_FILE_MOUNTINFO;
     case PROC_SELF_MOUNTS_FILE:
@@ -86,7 +88,10 @@ static int try_open_proc_self_file(const char *resolved_path, int flags, mode_t 
         return 0;
     }
 
-    if ((flags & O_ACCMODE) == O_WRONLY || (flags & O_ACCMODE) == O_RDWR) {
+    if (((flags & O_ACCMODE) == O_WRONLY || (flags & O_ACCMODE) == O_RDWR) &&
+        proc_file != SYNTHETIC_PROC_FILE_UID_MAP &&
+        proc_file != SYNTHETIC_PROC_FILE_GID_MAP &&
+        proc_file != SYNTHETIC_PROC_FILE_SETGROUPS) {
         errno = EACCES;
         return -1;
     }

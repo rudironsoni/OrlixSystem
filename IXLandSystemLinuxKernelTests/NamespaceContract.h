@@ -16,6 +16,7 @@ int namespace_contract_clone_newpid_records_child_namespace_metadata(void);
 int namespace_contract_unshare_newpid_applies_to_next_child_metadata(void);
 int namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(void);
 int namespace_contract_proc_uid_gid_maps_are_visible(void);
+int namespace_contract_proc_uid_gid_maps_are_writable_with_setgroups_policy(void);
 int namespace_contract_newuser_caps_are_scoped_to_uts_namespace_owner(void);
 
 #ifdef __cplusplus

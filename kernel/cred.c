@@ -125,6 +125,7 @@ static struct cred global_init_cred = {
     .gid_map_inside = 0,
     .gid_map_outside = 0,
     .gid_map_count = UINT32_MAX,
+    .setgroups_allowed = true,
     .refs = 1
 };
 
@@ -188,6 +189,7 @@ struct cred *dup_cred(const struct cred *cred) {
         new->gid_map_inside = cred->gid_map_inside;
         new->gid_map_outside = cred->gid_map_outside;
         new->gid_map_count = cred->gid_map_count;
+        new->setgroups_allowed = cred->setgroups_allowed;
         new->refs = 1;
     }
     return new;
@@ -216,6 +218,7 @@ void cred_init_defaults(struct cred *cred) {
     cred->gid_map_inside = 0;
     cred->gid_map_outside = 0;
     cred->gid_map_count = UINT32_MAX;
+    cred->setgroups_allowed = true;
     cred_reset_caps_for_root(cred);
 }
 
@@ -257,6 +260,7 @@ void cred_reset_to_defaults(void) {
     global_init_cred.gid_map_inside = 0;
     global_init_cred.gid_map_outside = 0;
     global_init_cred.gid_map_count = UINT32_MAX;
+    global_init_cred.setgroups_allowed = true;
     cred_reset_caps_for_root(&global_init_cred);
     global_init_cred.refs = 1;
     
@@ -602,6 +606,9 @@ int cred_setgroups(struct cred *cred, size_t size, const gid_t *list) {
     if (!cred) {
         return -EINVAL;
     }
+    if (!cred->setgroups_allowed) {
+        return -EPERM;
+    }
     if (!cred_has_cap(cred, CAP_SETGID)) {
         return -EPERM;
     }
@@ -624,6 +631,123 @@ int cred_setgroups(struct cred *cred, size_t size, const gid_t *list) {
     cred->groups = new_groups;
     cred->group_count = size;
     return 0;
+}
+
+static int cred_parse_id_map_line(const char *buf, size_t count,
+                                  uint32_t *inside, uint32_t *outside, uint32_t *extent) {
+    uint64_t values[3] = {0, 0, 0};
+    size_t index = 0;
+    size_t pos = 0;
+
+    if (!buf || !inside || !outside || !extent) {
+        return -EFAULT;
+    }
+    while (pos < count && (buf[pos] == ' ' || buf[pos] == '\t' || buf[pos] == '\n')) {
+        pos++;
+    }
+    while (index < 3) {
+        bool saw_digit = false;
+        uint64_t value = 0;
+        while (pos < count && buf[pos] >= '0' && buf[pos] <= '9') {
+            saw_digit = true;
+            value = (value * 10U) + (uint64_t)(buf[pos] - '0');
+            if (value > UINT32_MAX) {
+                return -EINVAL;
+            }
+            pos++;
+        }
+        if (!saw_digit) {
+            return -EINVAL;
+        }
+        values[index++] = value;
+        while (pos < count && (buf[pos] == ' ' || buf[pos] == '\t')) {
+            pos++;
+        }
+    }
+    while (pos < count && (buf[pos] == ' ' || buf[pos] == '\t' || buf[pos] == '\n' || buf[pos] == '\0')) {
+        pos++;
+    }
+    if (pos != count || values[2] == 0) {
+        return -EINVAL;
+    }
+    *inside = (uint32_t)values[0];
+    *outside = (uint32_t)values[1];
+    *extent = (uint32_t)values[2];
+    return 0;
+}
+
+int cred_write_uid_map(struct cred *cred, const char *buf, size_t count) {
+    uint32_t inside;
+    uint32_t outside;
+    uint32_t extent;
+    int ret;
+
+    if (!cred) {
+        return -EINVAL;
+    }
+    ret = cred_parse_id_map_line(buf, count, &inside, &outside, &extent);
+    if (ret != 0) {
+        return ret;
+    }
+    cred->uid_map_inside = inside;
+    cred->uid_map_outside = outside;
+    cred->uid_map_count = extent;
+    return 0;
+}
+
+int cred_write_gid_map(struct cred *cred, const char *buf, size_t count) {
+    uint32_t inside;
+    uint32_t outside;
+    uint32_t extent;
+    int ret;
+
+    if (!cred) {
+        return -EINVAL;
+    }
+    if (cred->setgroups_allowed) {
+        return -EPERM;
+    }
+    ret = cred_parse_id_map_line(buf, count, &inside, &outside, &extent);
+    if (ret != 0) {
+        return ret;
+    }
+    cred->gid_map_inside = inside;
+    cred->gid_map_outside = outside;
+    cred->gid_map_count = extent;
+    return 0;
+}
+
+int cred_write_setgroups(struct cred *cred, const char *buf, size_t count) {
+    if (!cred || (!buf && count > 0)) {
+        return -EFAULT;
+    }
+    while (count > 0 && (buf[count - 1] == '\n' || buf[count - 1] == '\0' ||
+                         buf[count - 1] == ' ' || buf[count - 1] == '\t')) {
+        count--;
+    }
+    while (count > 0 && (*buf == ' ' || *buf == '\t')) {
+        buf++;
+        count--;
+    }
+    if (count == 4 && strncmp(buf, "deny", 4) == 0) {
+        cred->setgroups_allowed = false;
+        free(cred->groups);
+        cred->groups = NULL;
+        cred->group_count = 0;
+        return 0;
+    }
+    if (count == 5 && strncmp(buf, "allow", 5) == 0) {
+        if (!cred_has_cap(cred, CAP_SETGID)) {
+            return -EPERM;
+        }
+        cred->setgroups_allowed = true;
+        return 0;
+    }
+    return -EINVAL;
+}
+
+const char *cred_setgroups_state(const struct cred *cred) {
+    return (!cred || cred->setgroups_allowed) ? "allow" : "deny";
 }
 
 void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid, uint32_t mode) {
@@ -736,6 +860,7 @@ int cred_unshare_user_namespace(struct cred *cred) {
     cred->gid_map_inside = 0;
     cred->gid_map_outside = cred->gid;
     cred->gid_map_count = 1;
+    cred->setgroups_allowed = true;
     cred_reset_caps_for_root(cred);
     cred->uid = 0;
     cred->euid = 0;

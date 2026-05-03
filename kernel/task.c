@@ -990,6 +990,7 @@ struct task_struct *alloc_task(void) {
     task->ns_pid = task->pid;
     task->pid_ns_level = 0;
     task->cgroup_ns_id = 1;
+    task->cgroup_ns_owner_user_ns_id = 1;
     task->vfork_parent = NULL;
     for (int i = 0; i < 16; i++) {
         task->rlimits[i].cur = UINT64_MAX;
@@ -1130,6 +1131,8 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         cgroup_put(child->cgroup_ns_root);
         child->cgroup_ns_root = cgroup_get(parent->cgroup_ns_root);
         child->cgroup_ns_id = task_cgroup_namespace_id(parent);
+        child->cgroup_ns_owner_user_ns_id = parent->cgroup_ns_owner_user_ns_id ?
+                                            parent->cgroup_ns_owner_user_ns_id : 1;
     }
     if (parent->seccomp) {
         child->seccomp = seccomp_get(parent->seccomp);

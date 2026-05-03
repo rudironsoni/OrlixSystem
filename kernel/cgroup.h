@@ -39,6 +39,7 @@ void task_detach_cgroup(struct task_struct *task);
 int task_unshare_cgroup_namespace(struct task_struct *task);
 int task_reset_cgroup_namespace(struct task_struct *task);
 uint64_t task_cgroup_namespace_id(const struct task_struct *task);
+uint64_t task_cgroup_namespace_owner_user_ns_id(const struct task_struct *task);
 const char *task_cgroup_path(const struct task_struct *task);
 unsigned int task_cgroup_member_count(const struct task_struct *task);
 int task_cgroup_proc_content(const struct task_struct *task, char *buf, size_t buflen);

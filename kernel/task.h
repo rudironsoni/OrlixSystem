@@ -319,6 +319,7 @@ struct task_struct {
     struct cgroup *cgroup;
     struct cgroup *cgroup_ns_root;
     uint64_t cgroup_ns_id;
+    uint64_t cgroup_ns_owner_user_ns_id;
     struct seccomp *seccomp;
     struct tty_struct *tty;
     struct mm_struct *mm;
@@ -326,6 +327,8 @@ struct task_struct {
     struct uts_namespace *uts_ns;
     uint64_t exec_secure;
     uint64_t exec_dumpable;
+    int32_t ptracer_pid;
+    bool ptrace_attached;
     uint64_t clear_child_tid;
     uint64_t robust_list_head;
     uint64_t robust_list_len;

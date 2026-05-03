@@ -92,4 +92,9 @@
                    @"rmdir should reject cgroups with child cgroups, errno %d", errno);
 }
 
+- (void)testNewuserCapsAreScopedToCgroupNamespaceOwner {
+    XCTAssertEqual(cgroup_contract_newuser_caps_are_scoped_to_cgroup_namespace_owner(), 0,
+                   @"cgroup control should require CAP_SYS_ADMIN in cgroup namespace owner user namespace, errno %d", errno);
+}
+
 @end

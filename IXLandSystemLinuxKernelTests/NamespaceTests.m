@@ -60,6 +60,10 @@
     XCTAssertEqual(namespace_contract_proc_uid_gid_maps_are_visible(), 0, @"errno %d", errno);
 }
 
+- (void)testProcUidGidMapsAreWritableWithSetgroupsPolicy {
+    XCTAssertEqual(namespace_contract_proc_uid_gid_maps_are_writable_with_setgroups_policy(), 0, @"errno %d", errno);
+}
+
 - (void)testNewuserCapsAreScopedToUtsNamespaceOwner {
     XCTAssertEqual(namespace_contract_newuser_caps_are_scoped_to_uts_namespace_owner(), 0, @"errno %d", errno);
 }

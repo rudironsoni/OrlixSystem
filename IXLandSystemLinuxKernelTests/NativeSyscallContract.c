@@ -206,6 +206,8 @@ static int format_maps_range(char *buf, size_t buf_len, uint64_t start, uint64_t
     return 0;
 }
 
+static int proc_path_for_pid(char *buf, size_t buf_len, int32_t pid, const char *suffix);
+
 static int format_proc_fd_path(char *buf, size_t buf_len, int fd) {
     const char prefix[] = "/proc/self/fd/";
     char digits[16];
@@ -3426,6 +3428,134 @@ int native_syscall_contract_mremap_shrink_preserves_accounting_and_unmaps_tail(v
 
 out:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    return result;
+}
+
+int native_syscall_contract_proc_child_smaps_tracks_file_mapping_mremap_and_munmap(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    const char private_path[] = "/tmp/native-child-private-smaps-remap";
+    const char shared_path[] = "/tmp/native-child-shared-smaps-munmap";
+    char pages[8192];
+    char smaps[32768];
+    char proc_path[64];
+    char private_kept[32];
+    char private_tail[32];
+    char shared_kept[32];
+    char shared_tail[32];
+    void *private_map = (void *)-1;
+    void *shared_map = (void *)-1;
+    int private_fd = -1;
+    int shared_fd = -1;
+    int32_t child_pid;
+    uint64_t private_base;
+    uint64_t shared_base;
+    int result = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(pages, 'P', sizeof(pages));
+    unlink_impl(private_path);
+    unlink_impl(shared_path);
+    private_fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)private_path,
+                                            O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    shared_fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)shared_path,
+                                           O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (private_fd < 0 || shared_fd < 0) {
+        errno = private_fd < 0 ? -private_fd : -shared_fd;
+        goto out;
+    }
+    if (syscall_dispatch_impl(__NR_write, private_fd, (long)(uintptr_t)pages, sizeof(pages), 0, 0, 0) !=
+            (long)sizeof(pages) ||
+        syscall_dispatch_impl(__NR_write, shared_fd, (long)(uintptr_t)pages, sizeof(pages), 0, 0, 0) !=
+            (long)sizeof(pages)) {
+        errno = EIO;
+        goto out;
+    }
+    private_map = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(pages),
+                                                           PROT_READ | PROT_WRITE, MAP_PRIVATE,
+                                                           private_fd, 0);
+    shared_map = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(pages),
+                                                          PROT_READ | PROT_WRITE, MAP_SHARED,
+                                                          shared_fd, 0);
+    if ((long)(uintptr_t)private_map < 0 || (long)(uintptr_t)shared_map < 0) {
+        errno = (long)(uintptr_t)private_map < 0 ? -(int)(long)(uintptr_t)private_map :
+                                                   -(int)(long)(uintptr_t)shared_map;
+        goto out;
+    }
+    private_base = (uint64_t)(uintptr_t)private_map;
+    shared_base = (uint64_t)(uintptr_t)shared_map;
+    if (task_write_virtual_memory_impl(parent, private_base, "C", 1) != 1 ||
+        task_write_virtual_memory_impl(parent, shared_base + 4096, "S", 1) != 1) {
+        goto out;
+    }
+    child_pid = clone_impl(0);
+    if (child_pid < 0) {
+        goto out;
+    }
+    child = task_lookup(child_pid);
+    if (!child) {
+        errno = ESRCH;
+        goto out;
+    }
+    set_current(child);
+    if (syscall_dispatch_impl(__NR_mremap, (long)(uintptr_t)private_map, 8192, 4096, 0, 0, 0) !=
+            (long)(uintptr_t)private_map ||
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(shared_base + 4096), 4096, 0, 0, 0, 0) != 0) {
+        set_current(parent);
+        goto out;
+    }
+    set_current(parent);
+
+    if (proc_path_for_pid(proc_path, sizeof(proc_path), child->pid, "/smaps") != 0 ||
+        format_maps_range(private_kept, sizeof(private_kept), private_base, private_base + 4096) != 0 ||
+        format_maps_range(private_tail, sizeof(private_tail), private_base + 4096, private_base + 8192) != 0 ||
+        format_maps_range(shared_kept, sizeof(shared_kept), shared_base, shared_base + 4096) != 0 ||
+        format_maps_range(shared_tail, sizeof(shared_tail), shared_base + 4096, shared_base + 8192) != 0 ||
+        read_file_into_buffer(proc_path, smaps, sizeof(smaps)) != 0) {
+        goto out;
+    }
+    if (!smaps_block_contains(smaps, private_kept, private_path) ||
+        !smaps_block_contains(smaps, private_kept, "Private_Dirty:         4 kB") ||
+        smaps_block_contains(smaps, private_tail, "") ||
+        !smaps_block_contains(smaps, shared_kept, shared_path) ||
+        !smaps_block_contains(smaps, shared_kept, "Shared_Clean:          4 kB") ||
+        smaps_block_contains(smaps, shared_tail, "")) {
+        errno = ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (child) {
+            set_current(child);
+            if ((long)(uintptr_t)private_map >= 0) {
+                syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)private_map, 4096, 0, 0, 0, 0);
+            }
+            if ((long)(uintptr_t)shared_map >= 0) {
+                syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)shared_map, 4096, 0, 0, 0, 0);
+            }
+            set_current(parent);
+            task_unlink_child_impl(parent, child);
+            free_task(child);
+            free_task(child);
+        }
+        if ((long)(uintptr_t)private_map >= 0) {
+            syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)private_map, sizeof(pages), 0, 0, 0, 0);
+        }
+        if ((long)(uintptr_t)shared_map >= 0) {
+            syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)shared_map, sizeof(pages), 0, 0, 0, 0);
+        }
+        close_if_open(private_fd);
+        close_if_open(shared_fd);
+        unlink_impl(private_path);
+        unlink_impl(shared_path);
+        errno = saved_errno;
+    }
     return result;
 }
 

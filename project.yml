@@ -111,6 +111,8 @@ targets:
       group: kernel/net
     - path: kernel/pid.c
       group: kernel
+    - path: kernel/ptrace.c
+      group: kernel
     - path: kernel/random.c
       group: kernel
     - path: kernel/resource.c
@@ -182,6 +184,7 @@ targets:
     - IXLandSystemLinuxKernelTests/ProcfsNamespaceTests.m
     - IXLandSystemLinuxKernelTests/DevfsTests.m
     - IXLandSystemLinuxKernelTests/SeccompTests.m
+    - IXLandSystemLinuxKernelTests/PtraceTests.m
     - path: IXLandSystemLinuxKernelTests/LinuxUAPICompileSmoke.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
@@ -218,12 +221,17 @@ targets:
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
       - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
+    - path: IXLandSystemLinuxKernelTests/PtraceContract.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi
     - IXLandSystemLinuxKernelTests/PTYSessionContract.h
     - IXLandSystemLinuxKernelTests/PTYJobControlContract.h
     - IXLandSystemLinuxKernelTests/WaitJobControlContract.h
     - IXLandSystemLinuxKernelTests/PipeContract.h
     - IXLandSystemLinuxKernelTests/ReadinessContract.h
     - IXLandSystemLinuxKernelTests/EpollContract.h
+    - IXLandSystemLinuxKernelTests/PtraceContract.h
     - path: IXLandSystemLinuxKernelTests/CgroupContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)

@@ -190,6 +190,10 @@
     XCTAssertEqual(native_syscall_contract_mremap_shrink_preserves_accounting_and_unmaps_tail(), 0, @"errno %d", errno);
 }
 
+- (void)testProcChildSmapsTracksFileMappingMremapAndMunmap {
+    XCTAssertEqual(native_syscall_contract_proc_child_smaps_tracks_file_mapping_mremap_and_munmap(), 0, @"errno %d", errno);
+}
+
 - (void)testMovedSharedMappingTruncateUpdatesFaultMincoreAndSmaps {
     XCTAssertEqual(native_syscall_contract_moved_shared_mapping_truncate_updates_fault_mincore_and_smaps(), 0, @"errno %d", errno);
 }

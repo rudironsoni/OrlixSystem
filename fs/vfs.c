@@ -4860,6 +4860,9 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
     if (strcmp(suffix, "/gid_map") == 0) {
         return PROC_SELF_GID_MAP_FILE;
     }
+    if (strcmp(suffix, "/setgroups") == 0) {
+        return PROC_SELF_SETGROUPS_FILE;
+    }
     if (strcmp(suffix, "/mountinfo") == 0) {
         return PROC_SELF_MOUNTINFO_FILE;
     }
@@ -6430,6 +6433,76 @@ int vfs_proc_task_gid_map_content(int32_t pid, char *buf, size_t buf_len) {
     return vfs_proc_task_id_map_content(pid, buf, buf_len, true);
 }
 
+int vfs_proc_task_setgroups_content(int32_t pid, char *buf, size_t buf_len) {
+    struct task_struct *task;
+    struct cred *cred;
+    int ret;
+
+    if (!buf || buf_len == 0) {
+        return -EINVAL;
+    }
+    task = vfs_task_for_proc_pid(pid);
+    if (!task) {
+        return -ESRCH;
+    }
+    cred = task->cred ? task->cred : get_current_cred();
+    if (!cred) {
+        vfs_put_proc_task(task);
+        return -ESRCH;
+    }
+    ret = snprintf(buf, buf_len, "%s\n", cred_setgroups_state(cred));
+    vfs_put_proc_task(task);
+    if (ret < 0) {
+        return -EINVAL;
+    }
+    if ((size_t)ret >= buf_len) {
+        return (int)(buf_len - 1);
+    }
+    return ret;
+}
+
+long vfs_proc_task_write_id_map_content(synthetic_proc_file_t proc_file, int32_t pid,
+                                        const char *buf, size_t count) {
+    struct task_struct *current = get_current();
+    struct task_struct *task;
+    int ret;
+
+    if (!buf && count > 0) {
+        return -EFAULT;
+    }
+    if (!current) {
+        return -ESRCH;
+    }
+    task = vfs_task_for_proc_pid(pid);
+    if (!task) {
+        return -ESRCH;
+    }
+    if (task->pid != current->pid) {
+        vfs_put_proc_task(task);
+        return -EPERM;
+    }
+    if (!task->cred) {
+        vfs_put_proc_task(task);
+        return -ESRCH;
+    }
+    switch (proc_file) {
+    case SYNTHETIC_PROC_FILE_UID_MAP:
+        ret = cred_write_uid_map(task->cred, buf, count);
+        break;
+    case SYNTHETIC_PROC_FILE_GID_MAP:
+        ret = cred_write_gid_map(task->cred, buf, count);
+        break;
+    case SYNTHETIC_PROC_FILE_SETGROUPS:
+        ret = cred_write_setgroups(task->cred, buf, count);
+        break;
+    default:
+        ret = -EINVAL;
+        break;
+    }
+    vfs_put_proc_task(task);
+    return ret == 0 ? (long)count : ret;
+}
+
 int vfs_access(const char *pathname, int mode) {
     if (!pathname) {
         return -EFAULT;
@@ -6651,6 +6724,7 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
                    proc_class == PROC_SELF_MAPS_FILE || proc_class == PROC_SELF_SMAPS_FILE ||
                    proc_class == PROC_SELF_STATUS_FILE || proc_class == PROC_SELF_CGROUP_FILE ||
                    proc_class == PROC_SELF_UID_MAP_FILE || proc_class == PROC_SELF_GID_MAP_FILE ||
+                   proc_class == PROC_SELF_SETGROUPS_FILE ||
                    proc_class == PROC_SELF_MOUNTINFO_FILE ||
                    proc_class == PROC_SELF_MOUNTS_FILE || proc_class == PROC_ROOT_FILESYSTEMS_FILE ||
                    proc_class == PROC_ROOT_MEMINFO_FILE || proc_class == PROC_ROOT_CPUINFO_FILE) {

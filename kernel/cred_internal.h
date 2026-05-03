@@ -58,6 +58,7 @@ struct cred {
     uint32_t gid_map_inside;
     uint32_t gid_map_outside;
     uint32_t gid_map_count;
+    bool setgroups_allowed;
 
     /* Reference counting for credential sharing */
     int refs;
@@ -139,6 +140,10 @@ bool cred_has_group(const struct cred *cred, gid_t gid);
 
 /* Virtual setgroups implementation */
 int cred_setgroups(struct cred *cred, size_t size, const gid_t *list);
+int cred_write_uid_map(struct cred *cred, const char *buf, size_t count);
+int cred_write_gid_map(struct cred *cred, const char *buf, size_t count);
+int cred_write_setgroups(struct cred *cred, const char *buf, size_t count);
+const char *cred_setgroups_state(const struct cred *cred);
 
 /* Apply executable owner and mode metadata during exec */
 void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid, uint32_t mode);

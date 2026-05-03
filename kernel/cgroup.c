@@ -4,6 +4,7 @@
 
 #include "cgroup.h"
 
+#include "cred_internal.h"
 #include "task.h"
 
 #include <errno.h>
@@ -12,6 +13,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <linux/capability.h>
 
 struct cgroup {
     char path[MAX_PATH];
@@ -30,6 +33,17 @@ struct cgroup {
 static struct cgroup *root_cgroup;
 static kernel_mutex_t cgroup_lock = KERNEL_MUTEX_INITIALIZER;
 static atomic_ullong next_cgroup_ns_id = 2;
+
+static bool cgroupfs_current_can_control(void) {
+    struct task_struct *task = get_current();
+    uint64_t owner_user_ns_id;
+
+    if (!task) {
+        return false;
+    }
+    owner_user_ns_id = task->cgroup_ns_owner_user_ns_id ? task->cgroup_ns_owner_user_ns_id : 1;
+    return cred_has_cap_in_user_namespace(get_current_cred(), owner_user_ns_id, CAP_SYS_ADMIN);
+}
 
 static void cgroup_free_tree(struct cgroup *cgrp) {
     if (!cgrp) {
@@ -310,6 +324,10 @@ int task_unshare_cgroup_namespace(struct task_struct *task) {
     old_root = task->cgroup_ns_root;
     task->cgroup_ns_root = cgroup_get(task->cgroup);
     task->cgroup_ns_id = atomic_fetch_add(&next_cgroup_ns_id, 1);
+    task->cgroup_ns_owner_user_ns_id = cred_user_namespace_id(task->cred);
+    if (task->cgroup_ns_owner_user_ns_id == 0) {
+        task->cgroup_ns_owner_user_ns_id = 1;
+    }
     cgroup_put(old_root);
     return 0;
 }
@@ -328,6 +346,7 @@ int task_reset_cgroup_namespace(struct task_struct *task) {
     old_root = task->cgroup_ns_root;
     task->cgroup_ns_root = root;
     task->cgroup_ns_id = 1;
+    task->cgroup_ns_owner_user_ns_id = 1;
     cgroup_put(old_root);
     return 0;
 }
@@ -337,6 +356,13 @@ uint64_t task_cgroup_namespace_id(const struct task_struct *task) {
         return 0;
     }
     return task->cgroup_ns_id == 0 ? 1 : task->cgroup_ns_id;
+}
+
+uint64_t task_cgroup_namespace_owner_user_ns_id(const struct task_struct *task) {
+    if (!task || task->cgroup_ns_owner_user_ns_id == 0) {
+        return 1;
+    }
+    return task->cgroup_ns_owner_user_ns_id;
 }
 
 const char *task_cgroup_path(const struct task_struct *task) {
@@ -510,6 +536,9 @@ int cgroupfs_mkdir(const char *path) {
         cgroup_absolute_from_visible(task, visible, absolute, sizeof(absolute)) != 0) {
         return -EINVAL;
     }
+    if (!cgroupfs_current_can_control()) {
+        return -EPERM;
+    }
     if (cgroup_init() != 0) {
         return -ENOMEM;
     }
@@ -580,6 +609,9 @@ int cgroupfs_rmdir(const char *path) {
         strcmp(visible, "/") == 0 ||
         cgroup_absolute_from_visible(task, visible, absolute, sizeof(absolute)) != 0) {
         return -EINVAL;
+    }
+    if (!cgroupfs_current_can_control()) {
+        return -EPERM;
     }
 
     kernel_mutex_lock(&cgroup_lock);
@@ -898,6 +930,9 @@ long cgroupfs_write_node(const char *cgroup_path, enum cgroupfs_node_type type,
 
     if (!buf && count > 0) {
         return -EFAULT;
+    }
+    if (!cgroupfs_current_can_control()) {
+        return -EPERM;
     }
     if (cgroupfs_cgroup_for_absolute_path(cgroup_path, &target) != 0) {
         return -ENOENT;
