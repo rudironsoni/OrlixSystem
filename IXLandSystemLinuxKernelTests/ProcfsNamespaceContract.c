@@ -696,6 +696,98 @@ out:
     return ret;
 }
 
+int procfs_namespace_contract_proc_task_tid_status_aliases_thread(void) {
+    struct task_struct *parent;
+    struct task_struct *thread = NULL;
+    char task_dir[96] = {0};
+    char tid_dir[112] = {0};
+    char status_path[128] = {0};
+    char tid_name[16] = {0};
+    char dirents[1024];
+    char content[2048];
+    int fd = -1;
+    long nread;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    thread = task_create_child_with_flags_impl(parent, CLONE_THREAD);
+    if (!thread) {
+        return -1;
+    }
+    thread->comm[0] = 't';
+    thread->comm[1] = 'i';
+    thread->comm[2] = 'd';
+    thread->comm[3] = '-';
+    thread->comm[4] = 'v';
+    thread->comm[5] = 'i';
+    thread->comm[6] = 'e';
+    thread->comm[7] = 'w';
+    thread->comm[8] = '\0';
+
+    proc_pid_file_path(task_dir, sizeof(task_dir), parent->pid, "/task");
+    fd = open_impl(task_dir, O_RDONLY | O_DIRECTORY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    nread = getdents64(fd, dirents, sizeof(dirents));
+    if (nread < 0) {
+        goto out;
+    }
+    append_positive_decimal(tid_name, sizeof(tid_name), thread->pid);
+    if (!procfs_dirents_contain_name(dirents, nread, tid_name)) {
+        errno = ENODATA;
+        goto out;
+    }
+    close_impl(fd);
+    fd = -1;
+
+    proc_pid_file_path(tid_dir, sizeof(tid_dir), parent->pid, "/task/");
+    append_positive_decimal(tid_dir, sizeof(tid_dir), thread->pid);
+    fd = open_impl(tid_dir, O_RDONLY | O_DIRECTORY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    close_impl(fd);
+    fd = -1;
+
+    proc_pid_file_path(status_path, sizeof(status_path), parent->pid, "/task/");
+    append_positive_decimal(status_path, sizeof(status_path), thread->pid);
+    if (strlen(status_path) + 8 >= sizeof(status_path)) {
+        errno = ENAMETOOLONG;
+        goto out;
+    }
+    memcpy(status_path + strlen(status_path), "/status", 8);
+    if (read_file_content(status_path, content, sizeof(content)) != 0) {
+        goto out;
+    }
+    if (!contains(content, "Name:\ttid-view\n") ||
+        !contains(content, "Threads:\t2\n")) {
+        errno = ENOMSG;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        if (thread) {
+            task_unlink_child_impl(parent, thread);
+            free_task(thread);
+        }
+        reset_procfs_namespace_state();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void) {
     struct task_struct *parent;
     struct task_struct *child = NULL;

@@ -56,6 +56,10 @@
     XCTAssertEqual(procfs_namespace_contract_proc_status_reports_thread_group_count(), 0, @"errno %d", errno);
 }
 
+- (void)testProcTaskTidStatusAliasesThread {
+    XCTAssertEqual(procfs_namespace_contract_proc_task_tid_status_aliases_thread(), 0, @"errno %d", errno);
+}
+
 - (void)testProcPidStatCwdAndExeReportTargetTask {
     XCTAssertEqual(procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(), 0, @"errno %d", errno);
 }

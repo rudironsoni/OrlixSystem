@@ -241,6 +241,68 @@ static int smaps_block_contains(const char *content, const char *range, const ch
            (strstr(block, needle) && strstr(block, needle) < next);
 }
 
+static int smaps_block_vmflags_contains(const char *content, const char *range, const char *needle) {
+    const char *block;
+    const char *next;
+    const char *line;
+    const char *line_end;
+    const char *found;
+
+    if (!content || !range || !needle) {
+        errno = EINVAL;
+        return 0;
+    }
+    block = strstr(content, range);
+    if (!block) {
+        return 0;
+    }
+    next = strstr(block + 1, "\n000");
+    if (!next) {
+        next = block + strlen(block);
+    }
+    line = strstr(block, "VmFlags:");
+    if (!line || line >= next) {
+        return 0;
+    }
+    line_end = strchr(line, '\n');
+    if (!line_end || line_end > next) {
+        line_end = next;
+    }
+    found = strstr(line, needle);
+    return found && found < line_end;
+}
+
+static int smaps_block_vmflags_lacks(const char *content, const char *range, const char *needle) {
+    const char *block;
+    const char *next;
+    const char *line;
+    const char *line_end;
+    const char *found;
+
+    if (!content || !range || !needle) {
+        errno = EINVAL;
+        return 0;
+    }
+    block = strstr(content, range);
+    if (!block) {
+        return 0;
+    }
+    next = strstr(block + 1, "\n000");
+    if (!next) {
+        next = block + strlen(block);
+    }
+    line = strstr(block, "VmFlags:");
+    if (!line || line >= next) {
+        return 0;
+    }
+    line_end = strchr(line, '\n');
+    if (!line_end || line_end > next) {
+        line_end = next;
+    }
+    found = strstr(line, needle);
+    return !found || found >= line_end;
+}
+
 static int contains_host_path_fragment(const char *buf) {
     return strstr(buf, "/private/") != NULL ||
            strstr(buf, "/var/mobile/") != NULL ||
@@ -2168,7 +2230,7 @@ int native_syscall_contract_smaps_splits_mprotect_runs_and_preserves_dirty_count
     struct task_struct *task = get_current();
     void *mapped = (void *)-1;
     uint64_t base;
-    char smaps[32768];
+    static char smaps[262144];
     char left[32];
     char middle[32];
     char right[32];
@@ -2929,6 +2991,113 @@ out_mapped:
 out:
     close_if_open(fd);
     unlink_impl(path);
+    return result;
+}
+
+int native_syscall_contract_mprotect_file_smaps_vmflags_follow_permission_runs(void) {
+    struct task_struct *task = get_current();
+    const char private_path[] = "/tmp/native-mprotect-private-vmflags";
+    const char shared_path[] = "/tmp/native-mprotect-shared-vmflags";
+    char page[12288];
+    char smaps[32768];
+    char private_middle[32];
+    char shared_middle[32];
+    void *private_map = (void *)-1;
+    void *shared_map = (void *)-1;
+    int private_fd = -1;
+    int shared_fd = -1;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    memset(page, 'V', sizeof(page));
+    private_fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)private_path,
+                                            O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    shared_fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)shared_path,
+                                           O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (private_fd < 0 || shared_fd < 0) {
+        errno = private_fd < 0 ? -private_fd : -shared_fd;
+        goto out;
+    }
+    if (syscall_dispatch_impl(__NR_write, private_fd, (long)(uintptr_t)page, sizeof(page), 0, 0, 0) !=
+            (long)sizeof(page) ||
+        syscall_dispatch_impl(__NR_write, shared_fd, (long)(uintptr_t)page, sizeof(page), 0, 0, 0) !=
+            (long)sizeof(page)) {
+        errno = EIO;
+        goto out;
+    }
+
+    private_map = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(page),
+                                                           PROT_READ | PROT_WRITE,
+                                                           MAP_PRIVATE, private_fd, 0);
+    shared_map = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(page),
+                                                          PROT_READ | PROT_WRITE,
+                                                          MAP_SHARED, shared_fd, 0);
+    if ((long)(uintptr_t)private_map < 0 || (long)(uintptr_t)shared_map < 0) {
+        errno = (long)(uintptr_t)private_map < 0 ? -(int)(long)(uintptr_t)private_map :
+                                                   -(int)(long)(uintptr_t)shared_map;
+        goto out;
+    }
+    if (syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)private_map + 4096,
+                              4096, PROT_READ, 0, 0, 0) != 0 ||
+        syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)shared_map + 4096,
+                              4096, PROT_READ, 0, 0, 0) != 0) {
+        goto out;
+    }
+    if (format_maps_range(private_middle, sizeof(private_middle),
+                          (uint64_t)(uintptr_t)private_map + 4096,
+                          (uint64_t)(uintptr_t)private_map + 8192) != 0 ||
+        format_maps_range(shared_middle, sizeof(shared_middle),
+                          (uint64_t)(uintptr_t)shared_map + 4096,
+                          (uint64_t)(uintptr_t)shared_map + 8192) != 0 ||
+        read_file_into_buffer("/proc/self/smaps", smaps, sizeof(smaps)) != 0) {
+        goto out;
+    }
+    if (!smaps_block_contains(smaps, private_middle, "r--p") ||
+        !smaps_block_vmflags_contains(smaps, private_middle, " rd")) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (!smaps_block_vmflags_lacks(smaps, private_middle, " wr")) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!smaps_block_contains(smaps, shared_middle, "r--s")) {
+        errno = ECHILD;
+        goto out;
+    }
+    if (!smaps_block_vmflags_contains(smaps, shared_middle, " rd")) {
+        errno = ENOMSG;
+        goto out;
+    }
+    if (!smaps_block_vmflags_contains(smaps, shared_middle, " sh")) {
+        errno = ENOTRECOVERABLE;
+        goto out;
+    }
+    if (!smaps_block_vmflags_lacks(smaps, shared_middle, " wr")) {
+        errno = ERANGE;
+        goto out;
+    }
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if ((long)(uintptr_t)private_map >= 0) {
+            syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)private_map, sizeof(page), 0, 0, 0, 0);
+        }
+        if ((long)(uintptr_t)shared_map >= 0) {
+            syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)shared_map, sizeof(page), 0, 0, 0, 0);
+        }
+        close_if_open(private_fd);
+        close_if_open(shared_fd);
+        unlink_impl(private_path);
+        unlink_impl(shared_path);
+        errno = saved_errno;
+    }
     return result;
 }
 

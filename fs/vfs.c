@@ -3602,9 +3602,23 @@ static int vfs_umount_with_operation(const char *target, enum vfs_umount_operati
         return -EPERM;
     }
 
-    ret = vfs_resolve_virtual_path_at(AT_FDCWD, target, resolved_target, sizeof(resolved_target));
-    if (ret != 0) {
-        return ret;
+    if (strcmp(target, ".") == 0) {
+        struct task_struct *task = get_current();
+
+        if (!task || !task->fs) {
+            return -ESRCH;
+        }
+        fs_mutex_lock(&task->fs->lock);
+        ret = vfs_copy_string(task->fs->pwd_path, resolved_target, sizeof(resolved_target));
+        fs_mutex_unlock(&task->fs->lock);
+        if (ret != 0) {
+            return ret;
+        }
+    } else {
+        ret = vfs_resolve_virtual_path_at(AT_FDCWD, target, resolved_target, sizeof(resolved_target));
+        if (ret != 0) {
+            return ret;
+        }
     }
 
     fs_mutex_lock(&mnt_ns->lock);
@@ -4367,11 +4381,77 @@ static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_pa
     return self_path + 10;
 }
 
+static int vfs_proc_task_tid_for_path(const char *vpath, int32_t *tid_out,
+                                      const char **suffix_out) {
+    struct task_struct *group_task = NULL;
+    struct task_struct *thread = NULL;
+    const char *cursor;
+    int32_t group_pid = -1;
+    long tid;
+    char *endptr;
+
+    if (!vpath || !tid_out || !suffix_out) {
+        return -EINVAL;
+    }
+    *tid_out = -1;
+    *suffix_out = NULL;
+
+    if (strncmp(vpath, "/proc/self", 10) == 0 &&
+        (vpath[10] == '\0' || vpath[10] == '/')) {
+        struct task_struct *current = get_current();
+        if (!current) {
+            return -ENOENT;
+        }
+        group_pid = current->pid;
+        cursor = vpath + 10;
+    } else if (strncmp(vpath, "/proc/", 6) == 0 && vpath[6] >= '0' && vpath[6] <= '9') {
+        long pid = strtol(vpath + 6, &endptr, 10);
+        if (pid <= 0 || (*endptr != '\0' && *endptr != '/')) {
+            return -ENOENT;
+        }
+        group_pid = (int32_t)pid;
+        cursor = endptr;
+    } else {
+        return -ENOENT;
+    }
+
+    if (strncmp(cursor, "/task/", 6) != 0 || cursor[6] == '\0') {
+        return -ENOENT;
+    }
+    tid = strtol(cursor + 6, &endptr, 10);
+    if (tid <= 0 || (*endptr != '\0' && *endptr != '/')) {
+        return -ENOENT;
+    }
+
+    group_task = task_lookup(group_pid);
+    thread = task_lookup((int32_t)tid);
+    if (!group_task || !thread || group_task->tgid != thread->tgid) {
+        if (group_task) {
+            free_task(group_task);
+        }
+        if (thread) {
+            free_task(thread);
+        }
+        return -ENOENT;
+    }
+    *tid_out = thread->pid;
+    *suffix_out = endptr;
+    free_task(group_task);
+    free_task(thread);
+    return 0;
+}
+
 int vfs_proc_target_pid_for_path(const char *vpath) {
     struct task_struct *task;
+    int32_t tid;
+    const char *suffix;
 
     if (!vpath) {
         return -1;
+    }
+    if (vfs_proc_task_tid_for_path(vpath, &tid, &suffix) == 0) {
+        (void)suffix;
+        return tid;
     }
     if (strncmp(vpath, "/proc/self", 10) == 0 &&
         (vpath[10] == '\0' || vpath[10] == '/')) {
@@ -4424,6 +4504,8 @@ int vfs_proc_fd_num_for_path(const char *vpath, const char *leaf) {
 proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
     char mapped[MAX_PATH];
     const char *suffix;
+    int32_t tid;
+    int task_tid_path = 0;
 
     if (!vpath) {
         return PROC_SELF_NONE;
@@ -4439,13 +4521,28 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
         return PROC_ROOT_CPUINFO_FILE;
     }
 
-    suffix = vfs_proc_current_task_suffix(vpath, mapped, sizeof(mapped));
+    if (vfs_proc_task_tid_for_path(vpath, &tid, &suffix) == 0) {
+        (void)tid;
+        task_tid_path = 1;
+    } else {
+        suffix = vfs_proc_current_task_suffix(vpath, mapped, sizeof(mapped));
+    }
     if (!suffix) {
         return PROC_SELF_NONE;
     }
 
     if (strcmp(suffix, "") == 0) {
-        return PROC_SELF_DIR;
+        return task_tid_path ? PROC_SELF_THREAD_DIR : PROC_SELF_DIR;
+    }
+    if (strcmp(suffix, "/task") == 0) {
+        return PROC_SELF_TASK_DIR;
+    }
+    if (strncmp(suffix, "/task/", 6) == 0 && suffix[6] != '\0') {
+        char *endptr;
+        long tid_value = strtol(suffix + 6, &endptr, 10);
+        if (tid_value > 0 && *endptr == '\0') {
+            return PROC_SELF_THREAD_DIR;
+        }
     }
     if (strcmp(suffix, "/fd") == 0) {
         return PROC_SELF_FD_DIR;
@@ -5385,8 +5482,8 @@ static uint64_t vfs_vma_resident_page_count_range(const struct task_vma *vma,
     return resident;
 }
 
-static int vfs_vma_vmflags(const struct task_vma *vma, char *buf, size_t buf_len) {
-    uint32_t flags;
+static int vfs_vma_vmflags_for_page_flags(const struct task_vma *vma, uint32_t flags,
+                                           char *buf, size_t buf_len) {
     size_t pos = 0;
     int ret;
 
@@ -5394,7 +5491,6 @@ static int vfs_vma_vmflags(const struct task_vma *vma, char *buf, size_t buf_len
         return -EINVAL;
     }
 
-    flags = task_vma_page_flags_impl(vma, vma->start);
     buf[0] = '\0';
 
     if ((flags & PF_R) != 0) {
@@ -5424,6 +5520,14 @@ static int vfs_vma_vmflags(const struct task_vma *vma, char *buf, size_t buf_len
         return -ENAMETOOLONG;
     }
     return 0;
+}
+
+static int vfs_vma_vmflags(const struct task_vma *vma, char *buf, size_t buf_len) {
+    if (!vma) {
+        return -EINVAL;
+    }
+    return vfs_vma_vmflags_for_page_flags(vma, task_vma_page_flags_impl(vma, vma->start),
+                                          buf, buf_len);
 }
 
 static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
@@ -5482,6 +5586,9 @@ static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *
                 anonymous_kb = dirty_kb;
             }
 
+            if (vfs_vma_vmflags_for_page_flags(vma, run_flags, vmflags, sizeof(vmflags)) != 0) {
+                vmflags[0] = '\0';
+            }
             vfs_maps_permissions(run_flags, vma->shared, perms);
             if (vfs_proc_append(buf, buf_len, &pos,
                                 "%012llx-%012llx %s %08llx 00:00 0%s%s\n",
@@ -6141,8 +6248,9 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
 
     {
         proc_self_path_class_t proc_class = vfs_classify_proc_self_path(resolved_virtual);
-        if (proc_class == PROC_SELF_DIR || proc_class == PROC_SELF_FD_DIR || proc_class == PROC_SELF_FDINFO_DIR ||
-            proc_class == PROC_SELF_NS_DIR) {
+        if (proc_class == PROC_SELF_DIR || proc_class == PROC_SELF_FD_DIR ||
+            proc_class == PROC_SELF_FDINFO_DIR || proc_class == PROC_SELF_NS_DIR ||
+            proc_class == PROC_SELF_TASK_DIR || proc_class == PROC_SELF_THREAD_DIR) {
             memset(statbuf, 0, sizeof(*statbuf));
             statbuf->st_mode = S_IFDIR | 0555;
             statbuf->st_nlink = 2;

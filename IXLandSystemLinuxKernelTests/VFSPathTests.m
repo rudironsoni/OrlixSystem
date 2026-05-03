@@ -1558,6 +1558,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"lazy detached refs should survive child root/cwd pins and reap after task release, errno %d", errno);
 }
 
+- (void)testChildMountNamespaceDetachSurvivesChildRootAndPwdPins {
+    extern int vfs_contract_child_mount_namespace_detach_survives_child_root_and_pwd_pins(void);
+    XCTAssertEqual(vfs_contract_child_mount_namespace_detach_survives_child_root_and_pwd_pins(), 0,
+                   @"child mount namespace detached refs should survive child root/cwd pins and reap after child release, errno %d", errno);
+}
+
 - (void)testUmount2DetachDetachesBusyMountFromNamespace {
     extern int vfs_contract_umount2_detach_detaches_busy_mount_from_namespace(void);
     XCTAssertEqual(vfs_contract_umount2_detach_detaches_busy_mount_from_namespace(), 0,

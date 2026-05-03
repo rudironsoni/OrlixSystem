@@ -16,6 +16,7 @@
 #include "pty.h"
 #include "vfs.h"
 #include "kernel/cgroup.h"
+#include "kernel/task.h"
 
 struct linux_dirent64 {
     uint64_t d_ino;
@@ -174,6 +175,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
             {"mounts", DT_REG},
             {"fdinfo", DT_DIR},
             {"ns", DT_DIR},
+            {"task", DT_DIR},
         };
 
         size_t num_entries = sizeof(entries) / sizeof(entries[0]);
@@ -236,6 +238,55 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
             idx++;
             cursor++;
         }
+    }
+
+    if (dir_class == SYNTHETIC_DIR_PROC_SELF_TASK) {
+        char dir_path[MAX_PATH];
+        struct task_struct *target = NULL;
+        int target_pid;
+        int scan_pid = (cursor >= 2) ? ((int)cursor - 2) : 0;
+
+        if (get_fd_path_impl(entry, dir_path, sizeof(dir_path)) != 0) {
+            errno = ENOENT;
+            return -1;
+        }
+        target_pid = vfs_proc_target_pid_for_path(dir_path);
+        target = task_lookup(target_pid);
+        if (!target) {
+            errno = ENOENT;
+            return -1;
+        }
+
+        kernel_mutex_lock(&task_table_lock);
+        for (int bucket = 0; bucket < TASK_MAX_TASKS; bucket++) {
+            struct task_struct *task = task_table[bucket];
+
+            while (task) {
+                if (task->tgid == target->tgid && task->pid >= scan_pid) {
+                    char name[16];
+                    int ret = snprintf(name, sizeof(name), "%d", task->pid);
+                    if (ret < 0 || (size_t)ret >= sizeof(name)) {
+                        kernel_mutex_unlock(&task_table_lock);
+                        free_task(target);
+                        errno = ENAMETOOLONG;
+                        return -1;
+                    }
+                    rc = append_linux_dirent64(dirp, count, &written, 1,
+                                               (int64_t)(task->pid + 2), DT_DIR, name);
+                    if (rc == 0) {
+                        kernel_mutex_unlock(&task_table_lock);
+                        free_task(target);
+                        goto done;
+                    }
+                    cursor = task->pid + 1;
+                    scan_pid = task->pid + 1;
+                }
+                task = task->hash_next;
+            }
+        }
+        kernel_mutex_unlock(&task_table_lock);
+        free_task(target);
+        goto done;
     }
 
     if (dir_class == SYNTHETIC_DIR_DEV) {
