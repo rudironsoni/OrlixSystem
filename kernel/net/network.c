@@ -20,7 +20,7 @@
 #include <string.h>
 #include <sys/socket.h>
 
-#include "../../internal/ios/kernel/sync.h"
+#include "../sync.h"
 
 /* iOS Network framework includes */
 #import <Network/Network.h>

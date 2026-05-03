@@ -52,7 +52,7 @@ struct linux_statfs {
 typedef _Atomic int linux_atomic_int;
 
 #include "fdtable.h"
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 
 #ifdef __cplusplus
 extern "C" {

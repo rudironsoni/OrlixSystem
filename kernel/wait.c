@@ -5,29 +5,16 @@
 #include <string.h>
 
 #include <linux/types.h>
-#ifdef SIGCHLD
-#undef SIGCHLD
-#endif
-#ifdef SIGCONT
-#undef SIGCONT
-#endif
+#include <asm/posix_types.h>
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
-#ifdef WSTOPPED
-#undef WSTOPPED
-#endif
-#ifdef WCONTINUED
-#undef WCONTINUED
-#endif
-#ifdef WNOWAIT
-#undef WNOWAIT
-#endif
 #include <linux/wait.h>
 #include <asm-generic/siginfo.h>
 
 #include "signal.h"
 #include "task.h"
+#include "wait.h"
 
 enum wait_report_kind {
     WAIT_REPORT_NONE = 0,
@@ -37,7 +24,8 @@ enum wait_report_kind {
     WAIT_REPORT_CONTINUED,
 };
 
-static bool wait_child_matches_selector(const struct task_struct *parent, const struct task_struct *child, int32_t pid) {
+static bool wait_child_matches_selector(const struct task_struct *parent, const struct task_struct *child,
+                                        __kernel_pid_t pid) {
     if (!parent || !child) {
         return false;
     }
@@ -93,7 +81,7 @@ static int wait_report_status(const struct task_struct *child, enum wait_report_
     }
 }
 
-static int wait_record_restart(struct task_struct *parent, int32_t pid, int *wstatus, int options) {
+static int wait_record_restart(struct task_struct *parent, __kernel_pid_t pid, int *wstatus, int options) {
     return task_restart_record_impl(parent, TASK_RESTART_WAITPID,
                                     (uint64_t)(int64_t)pid,
                                     (uint64_t)(uintptr_t)wstatus,
@@ -101,13 +89,13 @@ static int wait_record_restart(struct task_struct *parent, int32_t pid, int *wst
                                     0, 0, 0);
 }
 
-int32_t waitpid_impl(int32_t pid, int *wstatus, int options) {
+__kernel_pid_t waitpid_impl(__kernel_pid_t pid, int *wstatus, int options) {
     struct task_struct *parent = get_current();
     struct task_struct *child;
     struct task_struct *matched_child;
     enum wait_report_kind report_kind;
     bool matched_any_child;
-    int32_t matched_pid;
+    __kernel_pid_t matched_pid;
     int matched_status;
     bool should_reap;
     if (!parent) {
@@ -213,17 +201,17 @@ int32_t waitpid_impl(int32_t pid, int *wstatus, int options) {
     return matched_pid;
 }
 
-int32_t wait4_impl(int32_t pid, int *wstatus, int options, void *rusage) {
+__kernel_pid_t wait4_impl(__kernel_pid_t pid, int *wstatus, int options, void *rusage) {
     /* rusage not implemented yet - just call waitpid_impl */
     (void)rusage;
     return waitpid_impl(pid, wstatus, options);
 }
 
-int waitid_impl(int idtype, int32_t id, void *infop_arg, int options, void *rusage) {
+int waitid_impl(int idtype, __kernel_pid_t id, void *infop_arg, int options, void *rusage) {
     siginfo_t *infop = (siginfo_t *)infop_arg;
     int selector;
     int status = 0;
-    int32_t waited;
+    __kernel_pid_t waited;
 
     (void)rusage;
     if (!infop) {
@@ -283,7 +271,7 @@ int waitid_impl(int idtype, int32_t id, void *infop_arg, int options, void *rusa
     return 0;
 }
 
-int32_t wait_impl(int *wstatus) {
+__kernel_pid_t wait_impl(int *wstatus) {
     return waitpid_impl(-1, wstatus, 0);
 }
 
@@ -295,18 +283,18 @@ int32_t wait_impl(int *wstatus) {
  */
 
 __attribute__((visibility("default"))) __kernel_pid_t waitpid(__kernel_pid_t pid, int *wstatus, int options) {
-    return (__kernel_pid_t)waitpid_impl((int32_t)pid, wstatus, options);
+    return waitpid_impl(pid, wstatus, options);
 }
 
 __attribute__((visibility("default"))) __kernel_pid_t wait4(__kernel_pid_t pid, int *wstatus, int options,
                                                             void *rusage) {
-    return (__kernel_pid_t)wait4_impl((int32_t)pid, wstatus, options, rusage);
+    return wait4_impl(pid, wstatus, options, rusage);
 }
 
 __attribute__((visibility("default"))) __kernel_pid_t wait(int *wstatus) {
-    return (__kernel_pid_t)wait_impl(wstatus);
+    return wait_impl(wstatus);
 }
 
 __attribute__((visibility("default"))) __kernel_pid_t wait3(int *wstatus, int options, void *rusage) {
-    return (__kernel_pid_t)wait4_impl(-1, wstatus, options, rusage);
+    return wait4_impl(-1, wstatus, options, rusage);
 }

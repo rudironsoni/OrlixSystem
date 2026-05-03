@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include "fdtable.h"
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 #include "pty.h"
 #include "vfs.h"
 #include "kernel/cgroup.h"

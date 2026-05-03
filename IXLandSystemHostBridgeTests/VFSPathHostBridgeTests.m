@@ -18,7 +18,6 @@
 #include "internal/ios/fs/path_host.h"
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
-#include "kernel/task.h"
 #include "IXLandSystemHostBridgeTests/HostTestSupport.h"
 
 #ifndef INVALID_FLAG_TEST_VALUE

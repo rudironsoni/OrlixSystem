@@ -198,6 +198,17 @@ Required implementation behavior:
 
 If a quick fix conflicts with these rules, the quick fix is wrong.
 
+Additional hard rule:
+- Do not rationalize Darwin/iOS leakage in Linux-owner files by saying a file
+  “does not need Darwin.” Linux-owner files are forbidden from depending on
+  Darwin/iOS in the first place. If such a dependency appears, fix the boundary
+  instead of explaining it away.
+- Do not downgrade Linux ABI types to local fixed-width convenience types when
+  vendored Linux UAPI or Linux ABI supplements provide the contract type.
+- Laziness is not an implementation strategy: do not choose shallow stubs,
+  renamed adapters, local typedefs, or narrow test-shaped behavior when the
+  kernel capability requires real subsystem semantics.
+
 ## 11) No Policy Theater
 
 Forbidden:

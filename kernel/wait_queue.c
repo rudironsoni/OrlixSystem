@@ -2,9 +2,9 @@
 
 #include <errno.h>
 
-#include "../internal/ios/kernel/sync.h"
 #include "signal.h"
 #include "task.h"
+#include "sync.h"
 
 static kernel_mutex_t *wait_queue_lock_ptr(struct wait_queue_head *queue) {
     return (kernel_mutex_t *)queue->lock_storage;

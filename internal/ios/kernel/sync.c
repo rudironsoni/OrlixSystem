@@ -4,7 +4,7 @@
  * This file includes Darwin headers and provides the implementation
  * using Darwin's pthread functions. It is the ONLY file in the kernel
  * sync subsystem that includes Darwin headers like <pthread.h>.
- * This is the private bridge - the public interface is in sync.h
+ * This is the private bridge - the kernel-owner interface is kernel/sync.h
  *
  * NOTE: This file does NOT include Linux UAPI headers. It implements
  * the _impl() functions using Darwin's native types directly.
@@ -18,7 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "sync.h"
+#include "../../../kernel/sync.h"
 
 /* ============================================================================
  * MUTEX - Darwin pthread implementation
@@ -28,10 +28,10 @@ int kernel_mutex_init(kernel_mutex_t *mutex) {
     if (!mutex) {
         return -EINVAL;
     }
-    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->_storage;
+    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->storage;
     int ret = pthread_mutex_init(pmutex, NULL);
     if (ret == 0) {
-        mutex->_initialized = 1;
+        mutex->initialized = 1;
     }
     return ret;
 }
@@ -40,12 +40,12 @@ int kernel_mutex_destroy(kernel_mutex_t *mutex) {
     if (!mutex) {
         return -EINVAL;
     }
-    if (!mutex->_initialized) {
+    if (!mutex->initialized) {
         return 0;
     }
-    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->_storage;
+    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->storage;
     int ret = pthread_mutex_destroy(pmutex);
-    mutex->_initialized = 0;
+    mutex->initialized = 0;
     return ret;
 }
 
@@ -53,14 +53,14 @@ int kernel_mutex_lock(kernel_mutex_t *mutex) {
     if (!mutex) {
         return -EINVAL;
     }
-    if (!mutex->_initialized) {
+    if (!mutex->initialized) {
         /* Auto-initialize if needed */
         int ret = kernel_mutex_init(mutex);
         if (ret != 0) {
             return ret;
         }
     }
-    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->_storage;
+    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->storage;
     return pthread_mutex_lock(pmutex);
 }
 
@@ -68,10 +68,10 @@ int kernel_mutex_unlock(kernel_mutex_t *mutex) {
     if (!mutex) {
         return -EINVAL;
     }
-    if (!mutex->_initialized) {
+    if (!mutex->initialized) {
         return -EINVAL;
     }
-    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->_storage;
+    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->storage;
     return pthread_mutex_unlock(pmutex);
 }
 
@@ -83,10 +83,10 @@ int kernel_cond_init(kernel_cond_t *cond) {
     if (!cond) {
         return -EINVAL;
     }
-    pthread_cond_t *pcond = (pthread_cond_t *)cond->_storage;
+    pthread_cond_t *pcond = (pthread_cond_t *)cond->storage;
     int ret = pthread_cond_init(pcond, NULL);
     if (ret == 0) {
-        cond->_initialized = 1;
+        cond->initialized = 1;
     }
     return ret;
 }
@@ -95,12 +95,12 @@ int kernel_cond_destroy(kernel_cond_t *cond) {
     if (!cond) {
         return -EINVAL;
     }
-    if (!cond->_initialized) {
+    if (!cond->initialized) {
         return 0;
     }
-    pthread_cond_t *pcond = (pthread_cond_t *)cond->_storage;
+    pthread_cond_t *pcond = (pthread_cond_t *)cond->storage;
     int ret = pthread_cond_destroy(pcond);
-    cond->_initialized = 0;
+    cond->initialized = 0;
     return ret;
 }
 
@@ -108,17 +108,17 @@ int kernel_cond_wait(kernel_cond_t *cond, kernel_mutex_t *mutex) {
     if (!cond || !mutex) {
         return -EINVAL;
     }
-    if (!cond->_initialized) {
+    if (!cond->initialized) {
         int ret = kernel_cond_init(cond);
         if (ret != 0) {
             return ret;
         }
     }
-    if (!mutex->_initialized) {
+    if (!mutex->initialized) {
         return -EINVAL;
     }
-    pthread_cond_t *pcond = (pthread_cond_t *)cond->_storage;
-    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->_storage;
+    pthread_cond_t *pcond = (pthread_cond_t *)cond->storage;
+    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->storage;
     return pthread_cond_wait(pcond, pmutex);
 }
 
@@ -129,13 +129,13 @@ int kernel_cond_timedwait_ms(kernel_cond_t *cond, kernel_mutex_t *mutex, int tim
     if (!cond || !mutex || timeout_ms < 0) {
         return -EINVAL;
     }
-    if (!cond->_initialized) {
+    if (!cond->initialized) {
         int ret = kernel_cond_init(cond);
         if (ret != 0) {
             return ret;
         }
     }
-    if (!mutex->_initialized) {
+    if (!mutex->initialized) {
         return -EINVAL;
     }
 
@@ -148,8 +148,8 @@ int kernel_cond_timedwait_ms(kernel_cond_t *cond, kernel_mutex_t *mutex, int tim
         deadline.tv_nsec -= 1000000000L;
     }
 
-    pthread_cond_t *pcond = (pthread_cond_t *)cond->_storage;
-    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->_storage;
+    pthread_cond_t *pcond = (pthread_cond_t *)cond->storage;
+    pthread_mutex_t *pmutex = (pthread_mutex_t *)mutex->storage;
     ret = pthread_cond_timedwait(pcond, pmutex, &deadline);
     if (ret == host_pthread_timedout) {
         return KERNEL_COND_WAIT_TIMED_OUT;
@@ -161,10 +161,10 @@ int kernel_cond_broadcast(kernel_cond_t *cond) {
     if (!cond) {
         return -EINVAL;
     }
-    if (!cond->_initialized) {
+    if (!cond->initialized) {
         return -EINVAL;
     }
-    pthread_cond_t *pcond = (pthread_cond_t *)cond->_storage;
+    pthread_cond_t *pcond = (pthread_cond_t *)cond->storage;
     return pthread_cond_broadcast(pcond);
 }
 
@@ -176,10 +176,10 @@ int kernel_thread_attr_init(kernel_thread_attr_t *attr) {
     if (!attr) {
         return -EINVAL;
     }
-    pthread_attr_t *pattr = (pthread_attr_t *)attr->_storage;
+    pthread_attr_t *pattr = (pthread_attr_t *)attr->storage;
     int ret = pthread_attr_init(pattr);
     if (ret == 0) {
-        attr->_initialized = 1;
+        attr->initialized = 1;
     }
     return ret;
 }
@@ -188,12 +188,12 @@ int kernel_thread_attr_destroy(kernel_thread_attr_t *attr) {
     if (!attr) {
         return -EINVAL;
     }
-    if (!attr->_initialized) {
+    if (!attr->initialized) {
         return 0;
     }
-    pthread_attr_t *pattr = (pthread_attr_t *)attr->_storage;
+    pthread_attr_t *pattr = (pthread_attr_t *)attr->storage;
     int ret = pthread_attr_destroy(pattr);
-    attr->_initialized = 0;
+    attr->initialized = 0;
     return ret;
 }
 
@@ -201,10 +201,10 @@ int kernel_thread_attr_setstacksize(kernel_thread_attr_t *attr, size_t stacksize
     if (!attr) {
         return -EINVAL;
     }
-    if (!attr->_initialized) {
+    if (!attr->initialized) {
         return -EINVAL;
     }
-    pthread_attr_t *pattr = (pthread_attr_t *)attr->_storage;
+    pthread_attr_t *pattr = (pthread_attr_t *)attr->storage;
     return pthread_attr_setstacksize(pattr, stacksize);
 }
 
@@ -229,12 +229,12 @@ int kernel_thread_create(kernel_thread_t *thread, const kernel_thread_attr_t *at
     args[0] = start_routine;
     args[1] = arg;
     
-    pthread_t *pthread = (pthread_t *)thread->_storage;
-    pthread_attr_t *pattr = attr && attr->_initialized ? (pthread_attr_t *)attr->_storage : NULL;
+    pthread_t *pthread = (pthread_t *)thread->storage;
+    pthread_attr_t *pattr = attr && attr->initialized ? (pthread_attr_t *)attr->storage : NULL;
     
     int ret = pthread_create(pthread, pattr, kernel_thread_trampoline, args);
     if (ret == 0) {
-        thread->_initialized = 1;
+        thread->initialized = 1;
     } else {
         free(args);
     }
@@ -242,18 +242,18 @@ int kernel_thread_create(kernel_thread_t *thread, const kernel_thread_attr_t *at
 }
 
 int kernel_thread_detach(kernel_thread_t thread) {
-    if (!thread._initialized) {
+    if (!thread.initialized) {
         return -EINVAL;
     }
-    pthread_t *pthread = (pthread_t *)thread._storage;
+    pthread_t *pthread = (pthread_t *)thread.storage;
     return pthread_detach(*pthread);
 }
 
 kernel_thread_t kernel_thread_self(void) {
     kernel_thread_t thread;
-    pthread_t *pthread = (pthread_t *)thread._storage;
+    pthread_t *pthread = (pthread_t *)thread.storage;
     *pthread = pthread_self();
-    thread._initialized = 1;
+    thread.initialized = 1;
     return thread;
 }
 
@@ -272,9 +272,9 @@ int kernel_once(kernel_once_t *once_control, void (*init_routine)(void)) {
     /* Simple implementation using a mutex for once semantics */
     static pthread_mutex_t once_mutex = PTHREAD_MUTEX_INITIALIZER;
     pthread_mutex_lock(&once_mutex);
-    if (!once_control->_initialized) {
+    if (!once_control->initialized) {
         init_routine();
-        once_control->_initialized = 1;
+        once_control->initialized = 1;
     }
     pthread_mutex_unlock(&once_mutex);
     return 0;
@@ -296,8 +296,8 @@ int kernel_sigemptyset(kernel_sigset_t *set) {
     if (!set) {
         return -EINVAL;
     }
-    memset(set->_storage, 0, KERNEL_SIGSET_STORAGE_SIZE);
-    set->_initialized = 1;
+    memset(set->storage, 0, KERNEL_SIGSET_STORAGE_SIZE);
+    set->initialized = 1;
     return 0;
 }
 

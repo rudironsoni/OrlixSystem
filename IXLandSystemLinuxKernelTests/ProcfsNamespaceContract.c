@@ -22,6 +22,7 @@
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "kernel/uts.h"
+#include "kernel/wait.h"
 
 extern int clone_impl(uint64_t flags);
 extern int unshare_impl(uint64_t flags);
@@ -37,7 +38,6 @@ extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
 extern int signal_generate_process(struct task_struct *target, int32_t sig);
-extern int32_t waitpid_impl(int32_t pid, int *wstatus, int options);
 extern void cred_reset_to_defaults(void);
 extern void set_current_cred(struct cred *cred);
 

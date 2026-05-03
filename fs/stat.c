@@ -9,7 +9,7 @@
 
 #include "vfs.h"
 #include "fdtable.h"
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 #include "internal/ios/fs/file_io_host.h"
 #include "internal/ios/fs/path_host.h"
 #include "vfs.h"

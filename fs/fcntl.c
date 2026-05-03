@@ -3,7 +3,7 @@
 #include <errno.h>
 #include <stdarg.h>
 
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 #include "fdtable.h"
 
 static int fcntl_get_entry_or_badf(int fd, void **entry_out) {

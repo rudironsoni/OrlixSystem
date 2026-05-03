@@ -31,6 +31,7 @@
 #include "kernel/init.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
+#include "kernel/wait.h"
 #include "runtime/native/registry.h"
 
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
@@ -43,8 +44,6 @@ extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int unlink_impl(const char *pathname);
 extern int kernel_exec_init(const char *preferred_path, char *const argv[], char *const envp[]);
 extern void exit_impl(int status);
-extern int32_t waitpid_impl(int32_t pid, int *wstatus, int options);
-
 #ifndef WIFEXITED
 #define WIFEXITED(status) (((status) & 0x7f) == 0)
 #endif

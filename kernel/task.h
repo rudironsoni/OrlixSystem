@@ -23,7 +23,7 @@
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
-#include "../internal/ios/kernel/sync.h"
+#include "sync.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -275,11 +275,9 @@ struct exec_image {
 };
 
 /* Task structure - virtual kernel's internal representation of a Linux task
- * This is PRIVATE internal state, NOT Linux UAPI.
- * Uses int32_t for PIDs to avoid host type contamination. */
+ * This is PRIVATE internal state, NOT Linux UAPI. */
 struct task_struct {
-    /* Virtual PID/TGID/PGID/SID namespace identity
-     * int32_t used instead of host pid_t */
+    /* Virtual PID/TGID/PGID/SID namespace identity */
     int32_t pid;
     int32_t tgid;
     int32_t ppid;
@@ -443,12 +441,8 @@ int unshare_impl(uint64_t flags);
 int task_exec_transition_impl(const char *path, const char *argv0);
 int task_record_exec_strings_impl(char *const argv[], char *const envp[]);
 
-/* Virtual exit/wait - internal helpers */
+/* Virtual exit helper */
 void exit_impl(int status);
-int32_t wait_impl(int *wstatus);
-int32_t waitpid_impl(int32_t pid, int *wstatus, int options);
-int32_t wait4_impl(int32_t pid, int *wstatus, int options, void *rusage);
-int waitid_impl(int idtype, int32_t id, void *infop, int options, void *rusage);
 
 /* Virtual vfork notifications */
 void vfork_exec_notify(void);

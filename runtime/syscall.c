@@ -183,6 +183,7 @@
 #include "../kernel/seccomp.h"
 #include "../kernel/signal.h"
 #include "../kernel/task.h"
+#include "../kernel/wait.h"
 
 extern int openat_impl(int dirfd, const char *pathname, int flags, linux_mode_t mode);
 extern ssize_t read_impl(int fd, void *buf, size_t count);
@@ -716,7 +717,7 @@ long syscall_dispatch_impl(long number,
             ret = futex_wait_impl((int *)(uintptr_t)arg0, (int)arg1, (int)arg2);
             return ret < 0 ? -(long)errno : ret;
         case TASK_RESTART_WAITPID:
-            ret = waitpid_impl((int32_t)arg0, (int *)(uintptr_t)arg1, (int)arg2);
+            ret = waitpid_impl((__kernel_pid_t)arg0, (int *)(uintptr_t)arg1, (int)arg2);
             return ret < 0 ? -(long)errno : ret;
         case TASK_RESTART_SELECT:
             ret = select_impl((int)arg0, (fd_set *)(uintptr_t)arg1,
@@ -973,10 +974,10 @@ long syscall_dispatch_impl(long number,
                                            (char *const *)(uintptr_t)arg1,
                                            (char *const *)(uintptr_t)arg2));
     case __NR_wait4:
-        return syscall_result((long)wait4_impl((int32_t)arg0, (int *)(uintptr_t)arg1,
+        return syscall_result((long)wait4_impl((__kernel_pid_t)arg0, (int *)(uintptr_t)arg1,
                                                (int)arg2, (void *)(uintptr_t)arg3));
     case __NR_waitid:
-        return syscall_result((long)waitid_impl((int)arg0, (int32_t)arg1,
+        return syscall_result((long)waitid_impl((int)arg0, (__kernel_pid_t)arg1,
                                                 (void *)(uintptr_t)arg2, (int)arg3,
                                                 (void *)(uintptr_t)arg4));
     case __NR_clone3:

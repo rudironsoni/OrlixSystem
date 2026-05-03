@@ -11,7 +11,7 @@
 #include <string.h>
 
 #include "fdtable.h"
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 #include "poll.h"
 #include "../kernel/task.h"
 

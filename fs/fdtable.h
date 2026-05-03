@@ -9,7 +9,7 @@
 typedef uint32_t linux_mode_t;
 typedef int64_t linux_off_t;
 
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 
 #define NR_OPEN_DEFAULT 256
 #define MAX_PATH 4096

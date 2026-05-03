@@ -23,7 +23,7 @@
 #include <stdint.h>
 #include <stdatomic.h>
 
-#include "../internal/ios/kernel/sync.h"
+#include "sync.h"
 
 #ifdef __cplusplus
 extern "C" {

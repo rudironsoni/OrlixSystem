@@ -18,6 +18,7 @@
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
+#include "kernel/wait.h"
 
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int close_impl(int fd);

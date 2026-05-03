@@ -12,7 +12,7 @@
 
 #include "fdtable.h"
 #include "internal/ios/fs/file_io_host.h"
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 #include "pipe.h"
 #include "pty.h"
 #include "vfs.h"

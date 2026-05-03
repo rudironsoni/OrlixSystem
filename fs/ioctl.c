@@ -16,7 +16,7 @@
 #include "fdtable.h"
 #include "pty.h"
 #include "internal/ios/fs/ioctl_host.h"
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 
 int ioctl_impl(int fd, unsigned long request, void *arg) {
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {

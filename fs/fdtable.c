@@ -7,7 +7,7 @@
 
 #include <linux/fcntl.h>
 
-#include "internal/ios/fs/sync.h"
+#include "sync.h"
 
 /* Standard file descriptors - local definitions to avoid Darwin <unistd.h> */
 #ifndef STDIN_FILENO
