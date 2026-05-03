@@ -7,12 +7,18 @@
 
 #include <errno.h>
 #include <linux/fcntl.h>
+#include <linux/time_types.h>
 
 #include "fdtable.h"
 #include "vfs.h"
 #include "internal/ios/fs/file_io_host.h"
 #include "../kernel/mm.h"
 #include "../kernel/task.h"
+
+#define LINUX_UTIME_NOW_VALUE  ((1L << 30) - 1L)
+#define LINUX_UTIME_OMIT_VALUE ((1L << 30) - 2L)
+
+extern int linux_realtime_now_impl(struct __kernel_timespec *tp);
 
 static int inode_resolve_path_at(int dirfd, const char *pathname, char *resolved_path,
                                  size_t resolved_path_len) {
@@ -163,6 +169,86 @@ int fchownat_impl(int dirfd, const char *pathname, linux_uid_t owner, linux_gid_
     }
 
     ret = vfs_chown_metadata(resolved_path, owner, group);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timespec times[2],
+                   int flags) {
+    char resolved_path[MAX_PATH];
+    struct linux_stat st;
+    struct __kernel_timespec now;
+    long atime_sec;
+    unsigned long atime_nsec;
+    long mtime_sec;
+    unsigned long mtime_nsec;
+    int stat_flags = flags & AT_SYMLINK_NOFOLLOW;
+    int ret;
+
+    if ((flags & ~AT_SYMLINK_NOFOLLOW) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    ret = inode_resolve_path_at(dirfd, pathname, resolved_path, sizeof(resolved_path));
+    if (ret != 0) {
+        return -1;
+    }
+    ret = vfs_fstatat(AT_FDCWD, resolved_path, &st, stat_flags);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    atime_sec = st.st_atime_sec;
+    atime_nsec = st.st_atime_nsec;
+    mtime_sec = st.st_mtime_sec;
+    mtime_nsec = st.st_mtime_nsec;
+
+    if (!times || times[0].tv_nsec == LINUX_UTIME_NOW_VALUE ||
+        times[1].tv_nsec == LINUX_UTIME_NOW_VALUE) {
+        if (linux_realtime_now_impl(&now) != 0) {
+            return -1;
+        }
+    }
+
+    if (!times) {
+        atime_sec = (long)now.tv_sec;
+        atime_nsec = (unsigned long)now.tv_nsec;
+        mtime_sec = (long)now.tv_sec;
+        mtime_nsec = (unsigned long)now.tv_nsec;
+    } else {
+        if (times[0].tv_nsec != LINUX_UTIME_OMIT_VALUE) {
+            if (times[0].tv_nsec == LINUX_UTIME_NOW_VALUE) {
+                atime_sec = (long)now.tv_sec;
+                atime_nsec = (unsigned long)now.tv_nsec;
+            } else if (times[0].tv_nsec < 0 || times[0].tv_nsec >= 1000000000LL ||
+                       times[0].tv_sec < 0) {
+                errno = EINVAL;
+                return -1;
+            } else {
+                atime_sec = (long)times[0].tv_sec;
+                atime_nsec = (unsigned long)times[0].tv_nsec;
+            }
+        }
+        if (times[1].tv_nsec != LINUX_UTIME_OMIT_VALUE) {
+            if (times[1].tv_nsec == LINUX_UTIME_NOW_VALUE) {
+                mtime_sec = (long)now.tv_sec;
+                mtime_nsec = (unsigned long)now.tv_nsec;
+            } else if (times[1].tv_nsec < 0 || times[1].tv_nsec >= 1000000000LL ||
+                       times[1].tv_sec < 0) {
+                errno = EINVAL;
+                return -1;
+            } else {
+                mtime_sec = (long)times[1].tv_sec;
+                mtime_nsec = (unsigned long)times[1].tv_nsec;
+            }
+        }
+    }
+
+    ret = vfs_utimens_metadata(resolved_path, atime_sec, atime_nsec, mtime_sec, mtime_nsec);
     if (ret != 0) {
         errno = -ret;
         return -1;

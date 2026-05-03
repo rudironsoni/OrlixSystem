@@ -415,6 +415,8 @@ void vfs_exchange_path_metadata(const char *left_resolved_vpath, const char *rig
 void vfs_apply_stat_metadata(const char *resolved_vpath, struct linux_stat *statbuf);
 int vfs_chmod_metadata(const char *resolved_vpath, linux_mode_t mode);
 int vfs_chown_metadata(const char *resolved_vpath, linux_uid_t owner, linux_gid_t group);
+int vfs_utimens_metadata(const char *resolved_vpath, long atime_sec, unsigned long atime_nsec,
+                         long mtime_sec, unsigned long mtime_nsec);
 
 const char *vfs_backing_root_for_class(enum vfs_backing_class cls);
 

@@ -92,7 +92,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 85 | `timerfd_create` | kernel-owned missing:unclassified | shell |
 | 86 | `timerfd_settime` | kernel-owned missing:unclassified | shell |
 | 87 | `timerfd_gettime` | kernel-owned missing:unclassified | shell |
-| 88 | `utimensat` | kernel-owned missing:unclassified | shell |
+| 88 | `utimensat` | implemented:fd | none |
 | 89 | `acct` | kernel-owned missing:unclassified | package |
 | 90 | `capget` | kernel-owned missing:unclassified | package |
 | 91 | `capset` | kernel-owned missing:unclassified | package |

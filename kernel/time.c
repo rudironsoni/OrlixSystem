@@ -18,6 +18,8 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <linux/time_types.h>
+
 #include "task.h"
 #include "signal.h"
 #include "wait_queue.h"
@@ -83,6 +85,21 @@ int nanosleep_impl(const struct timespec *req, struct timespec *rem) {
         rem->tv_sec = 0;
         rem->tv_nsec = 0;
     }
+    return 0;
+}
+
+int linux_realtime_now_impl(struct __kernel_timespec *tp) {
+    struct timespec host_ts;
+
+    if (!tp) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (clock_gettime_impl(CLOCK_REALTIME, &host_ts) != 0) {
+        return -1;
+    }
+    tp->tv_sec = (__kernel_time64_t)host_ts.tv_sec;
+    tp->tv_nsec = (long long)host_ts.tv_nsec;
     return 0;
 }
 

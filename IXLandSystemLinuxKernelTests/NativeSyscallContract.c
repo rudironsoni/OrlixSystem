@@ -4580,6 +4580,7 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     long long copy_in_off = 0;
     long long copy_out_off = 0;
     struct open_how open_how;
+    struct __kernel_timespec file_times[2];
     struct statx stx;
     struct statfs sfs;
     struct statfs fsfs;
@@ -4780,6 +4781,16 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
+    file_times[0].tv_sec = 1234;
+    file_times[0].tv_nsec = 567;
+    file_times[1].tv_sec = 2345;
+    file_times[1].tv_nsec = 678;
+    ret = syscall_dispatch_impl(__NR_utimensat, AT_FDCWD, (long)(uintptr_t)renamed,
+                                (long)(uintptr_t)file_times, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
     ret = syscall_dispatch_impl(__NR_sync, 0, 0, 0, 0, 0, 0);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
@@ -4828,7 +4839,9 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
                                 AT_STATX_SYNC_AS_STAT, STATX_BASIC_STATS,
                                 (long)(uintptr_t)&stx, 0);
     if (ret != 0 || (stx.stx_mode & 0777) != 0660 ||
-        stx.stx_uid != 1002 || stx.stx_gid != 1003) {
+        stx.stx_uid != 1002 || stx.stx_gid != 1003 ||
+        stx.stx_atime.tv_sec != 1234 || stx.stx_atime.tv_nsec != 567 ||
+        stx.stx_mtime.tv_sec != 2345 || stx.stx_mtime.tv_nsec != 678) {
         errno = ret < 0 ? (int)-ret : ENODATA;
         goto out;
     }
@@ -5121,6 +5134,7 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_close_range,
         __NR_copy_file_range,
         __NR_openat2,
+        __NR_utimensat,
         __NR_execve,
         __NR_wait4,
         __NR_waitid,
@@ -5203,6 +5217,7 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_close_range, SYSCALL_CAPABILITY_FD},
         {__NR_copy_file_range, SYSCALL_CAPABILITY_FD},
         {__NR_openat2, SYSCALL_CAPABILITY_FD},
+        {__NR_utimensat, SYSCALL_CAPABILITY_FD},
         {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
     };
     static const struct planned_syscall_gap planned_gaps[] = {

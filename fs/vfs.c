@@ -215,6 +215,11 @@ struct vfs_metadata_entry {
     linux_uid_t uid;
     linux_gid_t gid;
     linux_mode_t mode;
+    bool has_times;
+    long atime_sec;
+    unsigned long atime_nsec;
+    long mtime_sec;
+    unsigned long mtime_nsec;
     bool has_file_caps;
     uint64_t cap_permitted;
     uint64_t cap_inheritable;
@@ -1303,6 +1308,12 @@ void vfs_apply_stat_metadata(const char *resolved_vpath, struct linux_stat *stat
         statbuf->st_gid = vfs_metadata_table[idx].gid;
         statbuf->st_mode = file_type | (vfs_metadata_table[idx].mode & 07777U);
     }
+    if (idx >= 0 && vfs_metadata_table[idx].has_times) {
+        statbuf->st_atime_sec = vfs_metadata_table[idx].atime_sec;
+        statbuf->st_atime_nsec = vfs_metadata_table[idx].atime_nsec;
+        statbuf->st_mtime_sec = vfs_metadata_table[idx].mtime_sec;
+        statbuf->st_mtime_nsec = vfs_metadata_table[idx].mtime_nsec;
+    }
     fs_mutex_unlock(&vfs_metadata_lock);
 }
 
@@ -1524,6 +1535,28 @@ static void vfs_metadata_sync_identity_attrs_locked(uint64_t identity,
         entry->uid = uid;
         entry->gid = gid;
         entry->mode = mode & 07777U;
+    }
+}
+
+static void vfs_metadata_sync_identity_times_locked(uint64_t identity,
+                                                    long atime_sec,
+                                                    unsigned long atime_nsec,
+                                                    long mtime_sec,
+                                                    unsigned long mtime_nsec) {
+    if (identity == 0) {
+        return;
+    }
+    for (size_t i = 0; i < VFS_METADATA_MAX; i++) {
+        struct vfs_metadata_entry *entry = &vfs_metadata_table[i];
+
+        if (!entry->active || entry->file_identity != identity) {
+            continue;
+        }
+        entry->has_times = true;
+        entry->atime_sec = atime_sec;
+        entry->atime_nsec = atime_nsec;
+        entry->mtime_sec = mtime_sec;
+        entry->mtime_nsec = mtime_nsec;
     }
 }
 
@@ -1930,6 +1963,11 @@ void vfs_link_path_metadata(const char *old_resolved_vpath, const char *new_reso
             vfs_metadata_table[new_idx].uid = vfs_metadata_table[old_idx].uid;
             vfs_metadata_table[new_idx].gid = vfs_metadata_table[old_idx].gid;
             vfs_metadata_table[new_idx].mode = vfs_metadata_table[old_idx].mode;
+            vfs_metadata_table[new_idx].has_times = vfs_metadata_table[old_idx].has_times;
+            vfs_metadata_table[new_idx].atime_sec = vfs_metadata_table[old_idx].atime_sec;
+            vfs_metadata_table[new_idx].atime_nsec = vfs_metadata_table[old_idx].atime_nsec;
+            vfs_metadata_table[new_idx].mtime_sec = vfs_metadata_table[old_idx].mtime_sec;
+            vfs_metadata_table[new_idx].mtime_nsec = vfs_metadata_table[old_idx].mtime_nsec;
             vfs_metadata_table[new_idx].has_file_caps = vfs_metadata_table[old_idx].has_file_caps;
             vfs_metadata_table[new_idx].cap_permitted = vfs_metadata_table[old_idx].cap_permitted;
             vfs_metadata_table[new_idx].cap_inheritable = vfs_metadata_table[old_idx].cap_inheritable;
@@ -2126,6 +2164,47 @@ int vfs_chown_metadata(const char *resolved_vpath, linux_uid_t owner, linux_gid_
     ret = vfs_record_metadata_for_stat(resolved_vpath, &st);
     if (ret == 0) {
         vfs_metadata_sync_identity_attrs_locked(identity, st.st_uid, st.st_gid, st.st_mode);
+    }
+    fs_mutex_unlock(&vfs_metadata_lock);
+    return ret;
+}
+
+int vfs_utimens_metadata(const char *resolved_vpath, long atime_sec, unsigned long atime_nsec,
+                         long mtime_sec, unsigned long mtime_nsec) {
+    char translated_path[MAX_PATH];
+    struct linux_stat st;
+    struct cred *cred = get_current_cred();
+    uint64_t identity;
+    int ret;
+
+    if (!resolved_vpath || !cred) {
+        return -EINVAL;
+    }
+    if (atime_nsec >= 1000000000UL || mtime_nsec >= 1000000000UL ||
+        atime_sec < 0 || mtime_sec < 0) {
+        return -EINVAL;
+    }
+
+    ret = vfs_translate_path(resolved_vpath, translated_path, sizeof(translated_path));
+    if (ret != 0) {
+        return ret;
+    }
+    ret = vfs_stat_virtual_backed_path(resolved_vpath, translated_path, &st);
+    if (ret != 0) {
+        return ret;
+    }
+    if (!cred_has_cap(cred, CAP_FOWNER) && cred->fsuid != st.st_uid &&
+        !vfs_cred_has_mode_permission(cred, &st, 02)) {
+        return -EACCES;
+    }
+
+    identity = vfs_file_identity_for_path(resolved_vpath);
+
+    fs_mutex_lock(&vfs_metadata_lock);
+    ret = vfs_record_metadata_for_stat(resolved_vpath, &st);
+    if (ret == 0) {
+        vfs_metadata_sync_identity_times_locked(identity, atime_sec, atime_nsec,
+                                               mtime_sec, mtime_nsec);
     }
     fs_mutex_unlock(&vfs_metadata_lock);
     return ret;

@@ -216,6 +216,8 @@ extern int fchmod_impl(int fd, linux_mode_t mode);
 extern int fchmodat_impl(int dirfd, const char *pathname, linux_mode_t mode, int flags);
 extern int fchown_impl(int fd, linux_uid_t owner, linux_gid_t group);
 extern int fchownat_impl(int dirfd, const char *pathname, linux_uid_t owner, linux_gid_t group, int flags);
+extern int utimensat_impl(int dirfd, const char *pathname,
+                          const struct __kernel_timespec times[2], int flags);
 struct statfs;
 extern void sync_impl(void);
 extern int fsync_impl(int fd);
@@ -594,6 +596,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_close_range:
     case __NR_copy_file_range:
     case __NR_openat2:
+    case __NR_utimensat:
         return SYSCALL_CAPABILITY_FD;
     case __NR_brk:
     case __NR_mmap:
@@ -1087,6 +1090,10 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)fchownat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                   (linux_uid_t)arg2, (linux_gid_t)arg3,
                                                   (int)arg4));
+    case __NR_utimensat:
+        return syscall_result((long)utimensat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                   (const struct __kernel_timespec *)(uintptr_t)arg2,
+                                                   (int)arg3));
     case __NR_statfs:
         return syscall_result((long)statfs_impl((const char *)(uintptr_t)arg0,
                                                 (struct statfs *)(uintptr_t)arg1));
