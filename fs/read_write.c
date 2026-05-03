@@ -17,6 +17,7 @@
 #include "pty.h"
 #include "vfs.h"
 #include "kernel/cgroup.h"
+#include "kernel/task.h"
 
 /* Linux-owner type for file offsets (matches __kernel_off_t) */
 typedef long long linux_off_t;
@@ -59,6 +60,11 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         struct pipe_endpoint *endpoint = get_fd_pipe_endpoint_impl(entry);
         bool nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
         ssize_t ret = pipe_read_endpoint_impl(endpoint, buf, count, nonblock);
+        if (ret < 0 && errno == EINTR && !nonblock) {
+            task_restart_record_impl(get_current(), TASK_RESTART_PIPE_READ,
+                                     (uint64_t)fd, (uint64_t)(uintptr_t)buf,
+                                     (uint64_t)count, 0, 0, 0);
+        }
         put_fd_entry_impl(entry);
         return ret;
     }
@@ -275,6 +281,11 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
         struct pipe_endpoint *endpoint = get_fd_pipe_endpoint_impl(entry);
         bool nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
         ssize_t ret = pipe_write_endpoint_impl(endpoint, buf, count, nonblock);
+        if (ret < 0 && errno == EINTR && !nonblock) {
+            task_restart_record_impl(get_current(), TASK_RESTART_PIPE_WRITE,
+                                     (uint64_t)fd, (uint64_t)(uintptr_t)buf,
+                                     (uint64_t)count, 0, 0, 0);
+        }
         put_fd_entry_impl(entry);
         return ret;
     }

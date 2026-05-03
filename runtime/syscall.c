@@ -197,6 +197,7 @@ extern char *getcwd_impl(char *buf, size_t size);
 extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
+extern int nanosleep_impl(const struct timespec *req, struct timespec *rem);
 extern int clock_gettime_impl(clockid_t clk_id, struct timespec *tp);
 extern int mount_setattr(int dirfd, const char *pathname, unsigned int flags,
                          struct mount_attr *attr, size_t size);
@@ -526,17 +527,50 @@ long syscall_dispatch_impl(long number,
     }
     case __NR_restart_syscall: {
         struct task_struct *task = get_current();
-        long restart_pc;
+        enum task_restart_kind kind;
+        uint64_t arg0;
+        uint64_t arg1;
+        uint64_t arg2;
+        uint64_t arg3;
+        uint64_t arg4;
+        uint64_t arg5;
+        long ret;
 
         if (!task || !task->mm) {
             return -ESRCH;
         }
-        if (!task->mm->signal_frame_restartable) {
+        kind = (enum task_restart_kind)task->mm->signal_frame_restart_kind;
+        if (kind == TASK_RESTART_NONE) {
             return -EINTR;
         }
-        restart_pc = (long)task->mm->signal_frame_restart_return_pc;
-        task->mm->signal_frame_restartable = 0;
-        return restart_pc;
+        arg0 = task->mm->signal_frame_restart_arg0;
+        arg1 = task->mm->signal_frame_restart_arg1;
+        arg2 = task->mm->signal_frame_restart_arg2;
+        arg3 = task->mm->signal_frame_restart_arg3;
+        arg4 = task->mm->signal_frame_restart_arg4;
+        arg5 = task->mm->signal_frame_restart_arg5;
+        task_restart_clear_impl(task);
+
+        switch (kind) {
+        case TASK_RESTART_NANOSLEEP:
+            ret = nanosleep_impl((const struct timespec *)(uintptr_t)arg0,
+                                 (struct timespec *)(uintptr_t)arg1);
+            return ret < 0 ? -(long)errno : ret;
+        case TASK_RESTART_POLL:
+            ret = poll_impl((struct pollfd *)(uintptr_t)arg0, (nfds_t)arg1, (int)arg2);
+            return ret < 0 ? -(long)errno : ret;
+        case TASK_RESTART_PIPE_READ:
+            ret = read_impl((int)arg0, (void *)(uintptr_t)arg1, (size_t)arg2);
+            return ret < 0 ? -(long)errno : ret;
+        case TASK_RESTART_PIPE_WRITE:
+            ret = write_impl((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2);
+            return ret < 0 ? -(long)errno : ret;
+        default:
+            (void)arg3;
+            (void)arg4;
+            (void)arg5;
+            return -EINTR;
+        }
     }
     case __NR_rt_sigprocmask: {
         struct signal_mask_bits set;

@@ -1510,6 +1510,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"open_tree clone should preserve nested mount topology when attached, errno %d", errno);
 }
 
+- (void)testOpenTreeCloneAttachPropagatesPrivateSubtreeToSharedAndSlave {
+    extern int vfs_contract_open_tree_clone_attach_propagates_private_subtree_to_shared_and_slave(void);
+    XCTAssertEqual(vfs_contract_open_tree_clone_attach_propagates_private_subtree_to_shared_and_slave(), 0,
+                   @"open_tree clone attach should propagate the detached subtree into shared peers and slave receivers, errno %d", errno);
+}
+
 - (void)testOpenTreeCloneSurvivesSourceNamespaceTeardown {
     extern int vfs_contract_open_tree_clone_survives_source_namespace_teardown(void);
     XCTAssertEqual(vfs_contract_open_tree_clone_survives_source_namespace_teardown(), 0,

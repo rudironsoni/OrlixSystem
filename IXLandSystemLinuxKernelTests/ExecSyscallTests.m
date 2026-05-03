@@ -11,8 +11,10 @@ extern int exec_syscall_contract_missing_path_preserves_state_and_cloexec_fds(vo
 extern int exec_syscall_contract_native_success_applies_transition_and_returns_entry_status(void);
 extern int exec_syscall_contract_native_exec_records_proc_cmdline_and_environ(void);
 extern int exec_syscall_contract_native_execve_applies_setuid_setgid_saved_ids(void);
+extern int exec_syscall_contract_native_execve_setid_marks_secure_and_not_dumpable(void);
 extern int exec_syscall_contract_native_execve_no_new_privs_blocks_setid_saved_ids(void);
 extern int exec_syscall_contract_native_execve_applies_file_capability_metadata(void);
+extern int exec_syscall_contract_native_execve_file_caps_mark_secure_and_clear_ambient(void);
 extern int exec_syscall_contract_native_execve_honors_capability_bounding_drop(void);
 extern int exec_syscall_contract_native_execve_no_new_privs_blocks_file_capabilities(void);
 extern int exec_syscall_contract_native_execve_no_new_privs_clears_ambient_on_file_caps(void);
@@ -32,6 +34,7 @@ extern int exec_syscall_contract_elf_interp_loads_virtual_loader_image(void);
 extern int exec_syscall_contract_elf_static_builds_initial_stack_and_auxv(void);
 extern int exec_syscall_contract_elf_dynamic_auxv_points_to_loader_base(void);
 extern int exec_syscall_contract_elf_auxv_records_virtual_credentials(void);
+extern int exec_syscall_contract_elf_setid_auxv_sets_at_secure_and_dumpable(void);
 extern int exec_syscall_contract_elf_virtual_memory_writes_writable_segment(void);
 extern int exec_syscall_contract_elf_virtual_memory_writes_initial_stack(void);
 extern int exec_syscall_contract_elf_virtual_memory_fault_policy(void);
@@ -104,12 +107,20 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
     XCTAssertEqual(exec_syscall_contract_native_execve_applies_setuid_setgid_saved_ids(), 0, @"errno %d", errno);
 }
 
+- (void)testNativeExecveSetidMarksSecureAndNotDumpable {
+    XCTAssertEqual(exec_syscall_contract_native_execve_setid_marks_secure_and_not_dumpable(), 0, @"errno %d", errno);
+}
+
 - (void)testNativeExecveNoNewPrivsBlocksSetidSavedIds {
     XCTAssertEqual(exec_syscall_contract_native_execve_no_new_privs_blocks_setid_saved_ids(), 0, @"errno %d", errno);
 }
 
 - (void)testNativeExecveAppliesFileCapabilityMetadata {
     XCTAssertEqual(exec_syscall_contract_native_execve_applies_file_capability_metadata(), 0, @"errno %d", errno);
+}
+
+- (void)testNativeExecveFileCapsMarkSecureAndClearAmbient {
+    XCTAssertEqual(exec_syscall_contract_native_execve_file_caps_mark_secure_and_clear_ambient(), 0, @"errno %d", errno);
 }
 
 - (void)testNativeExecveHonorsCapabilityBoundingDrop {
@@ -186,6 +197,10 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testElfAuxvRecordsVirtualCredentials {
     XCTAssertEqual(exec_syscall_contract_elf_auxv_records_virtual_credentials(), 0, @"errno %d", errno);
+}
+
+- (void)testElfSetidAuxvSetsAtSecureAndDumpable {
+    XCTAssertEqual(exec_syscall_contract_elf_setid_auxv_sets_at_secure_and_dumpable(), 0, @"errno %d", errno);
 }
 
 - (void)testElfVirtualMemoryWritesWritableSegment {

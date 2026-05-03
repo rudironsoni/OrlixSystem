@@ -213,6 +213,21 @@ struct mm_struct {
     uint64_t signal_frame_restart_return_pc;
     uint64_t signal_frame_restart_sp;
     uint64_t signal_frame_restart_signo;
+    uint64_t signal_frame_restart_kind;
+    uint64_t signal_frame_restart_arg0;
+    uint64_t signal_frame_restart_arg1;
+    uint64_t signal_frame_restart_arg2;
+    uint64_t signal_frame_restart_arg3;
+    uint64_t signal_frame_restart_arg4;
+    uint64_t signal_frame_restart_arg5;
+};
+
+enum task_restart_kind {
+    TASK_RESTART_NONE = 0,
+    TASK_RESTART_NANOSLEEP,
+    TASK_RESTART_POLL,
+    TASK_RESTART_PIPE_READ,
+    TASK_RESTART_PIPE_WRITE,
 };
 
 /* Exec image types - virtual kernel internal */
@@ -305,6 +320,8 @@ struct task_struct {
     struct mm_struct *mm;
     struct exec_image *exec_image;
     struct uts_namespace *uts_ns;
+    uint64_t exec_secure;
+    uint64_t exec_dumpable;
     uint64_t clear_child_tid;
     uint64_t robust_list_head;
     uint64_t robust_list_len;
@@ -384,6 +401,10 @@ void task_exchange_vma_backing_paths_impl(const char *left_path, const char *rig
 void task_note_memory_fault_impl(struct task_struct *task, uint64_t addr, int32_t code);
 void task_note_memory_signal_fault_impl(struct task_struct *task, int32_t signo, int32_t code, uint64_t addr);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task);
+void task_restart_clear_impl(struct task_struct *task);
+int task_restart_record_impl(struct task_struct *task, enum task_restart_kind kind,
+                             uint64_t arg0, uint64_t arg1, uint64_t arg2,
+                             uint64_t arg3, uint64_t arg4, uint64_t arg5);
 void task_clear_vmas_impl(struct mm_struct *mm);
 struct mm_struct *task_mm_get_impl(struct mm_struct *mm);
 struct mm_struct *task_mm_dup_impl(const struct mm_struct *mm);

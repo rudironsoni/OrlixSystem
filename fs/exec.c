@@ -495,7 +495,7 @@ static int exec_build_initial_elf_stack(struct task_struct *task,
         exec_auxv_append(mm, AT_EUID, cred ? cred->euid : 0) != 0 ||
         exec_auxv_append(mm, AT_GID, cred ? cred->gid : 0) != 0 ||
         exec_auxv_append(mm, AT_EGID, cred ? cred->egid : 0) != 0 ||
-        exec_auxv_append(mm, AT_SECURE, 0) != 0 ||
+        exec_auxv_append(mm, AT_SECURE, task->exec_secure ? 1 : 0) != 0 ||
         exec_auxv_append(mm, AT_RANDOM, mm->auxv_random_addr) != 0 ||
         exec_auxv_append(mm, AT_PLATFORM, mm->auxv_platform_addr) != 0 ||
         exec_auxv_append(mm, AT_EXECFN, mm->auxv_execfn_addr) != 0 ||

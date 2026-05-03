@@ -128,10 +128,18 @@ static int read_fdinfo_flags(int fd_num, unsigned int *flags_out) {
 }
 
 static void clear_pending_signal(struct task_struct *task, int sig) {
+    int32_t dequeued = 0;
+
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return;
     }
+    while (signal_dequeue(task, NULL, &dequeued) > 0) {
+        if (dequeued == sig) {
+            break;
+        }
+    }
     task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
     task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
@@ -789,7 +797,14 @@ int pipe_contract_blocking_read_interrupted_by_signal(void) {
 
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        ret = 0;
+        if (!child->mm ||
+            child->mm->signal_frame_restart_kind != TASK_RESTART_PIPE_READ ||
+            child->mm->signal_frame_restart_arg0 != (uint64_t)fds[0]) {
+            ret = ENODATA;
+        } else {
+            task_restart_clear_impl(child);
+            ret = 0;
+        }
     }
 
 out_destroy:
@@ -899,7 +914,14 @@ int pipe_contract_blocking_write_interrupted_by_signal(void) {
 
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        ret = 0;
+        if (!child->mm ||
+            child->mm->signal_frame_restart_kind != TASK_RESTART_PIPE_WRITE ||
+            child->mm->signal_frame_restart_arg0 != (uint64_t)fds[1]) {
+            ret = ENODATA;
+        } else {
+            task_restart_clear_impl(child);
+            ret = 0;
+        }
     }
 
 out_destroy:

@@ -10,12 +10,14 @@
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 
 extern void free(void *);
+extern int nanosleep_impl(const struct timespec *req, struct timespec *rem);
 
 static void signal_contract_disable_altstack(void) {
     stack_t disabled;
@@ -26,10 +28,18 @@ static void signal_contract_disable_altstack(void) {
 }
 
 static void signal_contract_clear_pending(struct task_struct *task, int signo) {
+    int32_t dequeued = 0;
+
     if (!task || !task->signal || signo < 1 || signo > KERNEL_SIG_NUM) {
         return;
     }
+    while (signal_dequeue(task, NULL, &dequeued) > 0) {
+        if (dequeued == signo) {
+            break;
+        }
+    }
     task->thread_pending_signals &= ~(1ULL << ((signo - 1) & 63));
+    task->signal->pending.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
     task->signal->shared_pending.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
 }
 
@@ -813,8 +823,7 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
         task->mm->signal_frame_restart_return_pc != 0x3333 ||
         task->mm->signal_frame_restart_sp != (uint64_t)(uintptr_t)mapped + 16384 ||
         task->mm->signal_frame_restart_signo != SIGUSR1 ||
-        syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0) != 0x3333 ||
-        task->mm->signal_frame_restartable != 0 ||
+        task->mm->signal_frame_restart_kind != TASK_RESTART_NONE ||
         syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0) != -EINTR) {
         errno = EPROTO;
         goto out;
@@ -829,9 +838,31 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
                                   (uint64_t)(uintptr_t)mapped + 16384, &frame_sp) != 0 ||
         task->mm->signal_frame_restartable != 0 ||
         task->mm->signal_frame_restart_return_pc != 0x4444 ||
+        task->mm->signal_frame_restart_kind != TASK_RESTART_NONE ||
         syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0) != -EINTR) {
         errno = ENODATA;
         goto out;
+    }
+
+    {
+        struct timespec req = {.tv_sec = 0, .tv_nsec = 1000000};
+        struct timespec rem = {0};
+        task->signal->blocked = old_blocked;
+        signal_generate_task(task, SIGUSR1);
+        if (nanosleep_impl(&req, &rem) != -1 ||
+            errno != EINTR ||
+            task->mm->signal_frame_restart_kind != TASK_RESTART_NANOSLEEP ||
+            task->mm->signal_frame_restart_arg0 != (uint64_t)(uintptr_t)&req ||
+            task->mm->signal_frame_restart_arg1 != (uint64_t)(uintptr_t)&rem) {
+            errno = EBADMSG;
+            goto out;
+        }
+        signal_contract_clear_pending(task, SIGUSR1);
+        if (syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0) != 0 ||
+            task->mm->signal_frame_restart_kind != TASK_RESTART_NONE) {
+            errno = EALREADY;
+            goto out;
+        }
     }
 
     ret = 0;
@@ -842,7 +873,9 @@ out:
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_usr1,
                               0, sizeof(old_usr1.sa_mask), 0, 0);
         task->signal->blocked = old_blocked;
+        signal_contract_clear_pending(task, SIGUSR1);
         task->mm->signal_frame_restartable = 0;
+        task_restart_clear_impl(task);
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         errno = saved_errno;
     }

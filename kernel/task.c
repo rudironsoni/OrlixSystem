@@ -856,6 +856,38 @@ const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *t
     return &task->mm->handoff;
 }
 
+void task_restart_clear_impl(struct task_struct *task) {
+    if (!task || !task->mm) {
+        return;
+    }
+    task->mm->signal_frame_restart_kind = TASK_RESTART_NONE;
+    task->mm->signal_frame_restart_arg0 = 0;
+    task->mm->signal_frame_restart_arg1 = 0;
+    task->mm->signal_frame_restart_arg2 = 0;
+    task->mm->signal_frame_restart_arg3 = 0;
+    task->mm->signal_frame_restart_arg4 = 0;
+    task->mm->signal_frame_restart_arg5 = 0;
+}
+
+int task_restart_record_impl(struct task_struct *task, enum task_restart_kind kind,
+                             uint64_t arg0, uint64_t arg1, uint64_t arg2,
+                             uint64_t arg3, uint64_t arg4, uint64_t arg5) {
+    if (!task || kind == TASK_RESTART_NONE) {
+        return -EINVAL;
+    }
+    if (!task_ensure_mm_impl(task)) {
+        return -errno;
+    }
+    task->mm->signal_frame_restart_kind = (uint64_t)kind;
+    task->mm->signal_frame_restart_arg0 = arg0;
+    task->mm->signal_frame_restart_arg1 = arg1;
+    task->mm->signal_frame_restart_arg2 = arg2;
+    task->mm->signal_frame_restart_arg3 = arg3;
+    task->mm->signal_frame_restart_arg4 = arg4;
+    task->mm->signal_frame_restart_arg5 = arg5;
+    return 0;
+}
+
 struct task_struct *alloc_task(void) {
     struct task_struct *task = calloc(1, sizeof(struct task_struct));
     if (!task)
@@ -894,6 +926,8 @@ struct task_struct *alloc_task(void) {
     task->thread_pending_signals = 0;
     atomic_init(&task->new_pid_namespace_pending, false);
     task->clone_flags = 0;
+    task->exec_secure = 0;
+    task->exec_dumpable = 1;
 
     kernel_mutex_init(&task->lock);
     kernel_cond_init(&task->wait_cond);
@@ -972,6 +1006,8 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
     child->pgid = parent->pgid;
     child->sid = parent->sid;
     child->clone_flags = flags;
+    child->exec_secure = parent->exec_secure;
+    child->exec_dumpable = parent->exec_dumpable;
     if ((flags & CLONE_THREAD) != 0) {
         child->tgid = parent->tgid;
         child->ppid = parent->ppid;
@@ -1596,6 +1632,11 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
     const char *comm_source;
     size_t comm_len;
     int closed;
+    uint32_t old_euid = 0;
+    uint32_t old_egid = 0;
+    uint64_t old_cap_permitted = 0;
+    uint64_t old_cap_effective = 0;
+    bool secure_exec = false;
 
     task = get_current();
     if (!task) {
@@ -1614,6 +1655,13 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
         return -1;
     }
 
+    if (task->cred) {
+        old_euid = task->cred->euid;
+        old_egid = task->cred->egid;
+        old_cap_permitted = task->cred->cap_permitted;
+        old_cap_effective = task->cred->cap_effective;
+    }
+
     if (vfs_fstatat(AT_FDCWD, normalized_path, &st, 0) == 0) {
         uint32_t exec_mode = st.st_mode;
         uint64_t file_cap_permitted = 0;
@@ -1630,6 +1678,16 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
                                               file_cap_inheritable, file_cap_effective);
         }
     }
+    if (task->cred) {
+        secure_exec = task->cred->euid != old_euid || task->cred->egid != old_egid;
+        if ((task->cred->cap_permitted != old_cap_permitted ||
+             task->cred->cap_effective != old_cap_effective) &&
+            (task->cred->cap_permitted != 0 || task->cred->cap_effective != 0)) {
+            secure_exec = true;
+        }
+    }
+    task->exec_secure = secure_exec ? 1 : 0;
+    task->exec_dumpable = secure_exec ? 0 : 1;
 
     closed = close_on_exec_impl();
     if (closed < 0) {
@@ -1654,6 +1712,7 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
         task->mm->signal_frame_restart_return_pc = 0;
         task->mm->signal_frame_restart_sp = 0;
         task->mm->signal_frame_restart_signo = 0;
+        task_restart_clear_impl(task);
     }
 
     memcpy(task->exe, normalized_path, strlen(normalized_path) + 1);

@@ -147,10 +147,18 @@ static int expect_nul_vector(const char *buf, ssize_t len, const char *const exp
 }
 
 static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+    int32_t dequeued = 0;
+
     if (!task || !task->signal || sig <= 0 || sig > KERNEL_SIG_NUM) {
         return;
     }
+    while (signal_dequeue(task, NULL, &dequeued) > 0) {
+        if (dequeued == sig) {
+            break;
+        }
+    }
     task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
     task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
@@ -1157,6 +1165,53 @@ out:
     return result;
 }
 
+int exec_syscall_contract_native_execve_setid_marks_secure_and_not_dumpable(void) {
+    char *argv[] = {"secure-setid-native", NULL};
+    char *envp[] = {NULL};
+    const char *path = "/tmp/exec-native-secure-setid";
+    int status;
+    int result = -1;
+    struct task_struct *task = get_current();
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    cred_reset_to_defaults();
+    native_registry_clear();
+    unlink_impl(path);
+    if (native_register(path, native_exec_status) != 0 ||
+        write_file_exact(path, "native") != 0 ||
+        chown(path, 2000, 3000) != 0 ||
+        chmod(path, S_ISUID | S_ISGID | 0755) != 0 ||
+        setgid_impl(1000) != 0 ||
+        setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    status = execve(path, argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (task->exec_secure != 1 || task->exec_dumpable != 0 ||
+        expect_current_ids(1000, 2000, 2000, 1000, 3000, 3000) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl(path);
+    cred_reset_to_defaults();
+    task->exec_secure = 0;
+    task->exec_dumpable = 1;
+    return result;
+}
+
 int exec_syscall_contract_native_execve_no_new_privs_blocks_setid_saved_ids(void) {
     char *argv[] = {"cred-nnp-native", NULL};
     char *envp[] = {NULL};
@@ -1244,6 +1299,58 @@ out:
     native_registry_clear();
     unlink_impl(path);
     cred_reset_to_defaults();
+    return result;
+}
+
+int exec_syscall_contract_native_execve_file_caps_mark_secure_and_clear_ambient(void) {
+    char *argv[] = {"secure-cap-native", NULL};
+    char *envp[] = {NULL};
+    const char *path = "/tmp/exec-native-secure-file-cap";
+    uint64_t cap_mask = 1ULL << CAP_NET_BIND_SERVICE;
+    int status;
+    int result = -1;
+    struct task_struct *task = get_current();
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    cred_reset_to_defaults();
+    native_registry_clear();
+    unlink_impl(path);
+    if (native_register(path, native_exec_status) != 0 ||
+        write_file_exact(path, "native") != 0 ||
+        chmod(path, 0755) != 0 ||
+        vfs_set_file_capabilities(path, cap_mask, 0, true) != 0 ||
+        setgid_impl(1000) != 0 ||
+        setuid_impl(1000) != 0) {
+        goto out;
+    }
+    get_current_cred()->cap_ambient = cap_mask;
+
+    status = execve(path, argv, envp);
+    if (status != 23) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (task->exec_secure != 1 ||
+        task->exec_dumpable != 0 ||
+        get_current_cred()->cap_ambient != 0 ||
+        (get_current_cred()->cap_permitted & cap_mask) == 0 ||
+        (get_current_cred()->cap_effective & cap_mask) == 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl(path);
+    cred_reset_to_defaults();
+    task->exec_secure = 0;
+    task->exec_dumpable = 1;
     return result;
 }
 
@@ -2230,6 +2337,52 @@ out:
     return result;
 }
 
+int exec_syscall_contract_elf_setid_auxv_sets_at_secure_and_dumpable(void) {
+    struct task_struct *task = get_current();
+    unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/exec-elf-secure-setid");
+    build_exec_elf64_without_interp(image, sizeof(image), 0x404000, 0x400000);
+    if (create_exec_bytes("/tmp/exec-elf-secure-setid", image, sizeof(image)) != 0 ||
+        chown("/tmp/exec-elf-secure-setid", 2000, 3000) != 0 ||
+        chmod("/tmp/exec-elf-secure-setid", S_ISUID | S_ISGID | 0755) != 0 ||
+        setgid_impl(1000) != 0 ||
+        setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    if (execve("/tmp/exec-elf-secure-setid", NULL, NULL) != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (expect_auxv_value(task, AT_UID, 1000) != 0 ||
+        expect_auxv_value(task, AT_EUID, 2000) != 0 ||
+        expect_auxv_value(task, AT_GID, 1000) != 0 ||
+        expect_auxv_value(task, AT_EGID, 3000) != 0 ||
+        expect_auxv_value(task, AT_SECURE, 1) != 0 ||
+        task->exec_secure != 1 ||
+        task->exec_dumpable != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-elf-secure-setid");
+    cred_reset_to_defaults();
+    task->exec_secure = 0;
+    task->exec_dumpable = 1;
+    return result;
+}
+
 int exec_syscall_contract_elf_virtual_memory_writes_writable_segment(void) {
     struct task_struct *task = get_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
@@ -2360,6 +2513,7 @@ int exec_syscall_contract_elf_virtual_memory_fault_policy(void) {
     result = 0;
 
 out:
+    clear_pending_signal(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-vm-faults");
     return result;
 }
@@ -2453,6 +2607,7 @@ int exec_syscall_contract_elf_below_stack_guard_faults_with_sigsegv_maperr(void)
     result = 0;
 
 out:
+    clear_pending_signal(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-stack-guard");
     return result;
 }
@@ -2566,6 +2721,7 @@ int exec_syscall_contract_elf_stack_growth_respects_rlimit(void) {
     result = 0;
 
 out:
+    clear_pending_signal(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-stack-rlimit");
     return result;
 }
@@ -2615,6 +2771,7 @@ int exec_syscall_contract_elf_stack_growth_keeps_lower_guard_faulting(void) {
     result = 0;
 
 out:
+    clear_pending_signal(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-stack-lower-guard");
     return result;
 }
@@ -2792,6 +2949,7 @@ int exec_syscall_contract_elf_vma_page_permissions_are_page_granular(void) {
     result = 0;
 
 out:
+    clear_pending_signal(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-vma-page-policy");
     return result;
 }
@@ -3094,9 +3252,11 @@ int exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(void) {
     }
 
     result = 0;
+    clear_pending_signal(task, SIGSEGV);
     return result;
 
 out:
+    clear_pending_signal(task, SIGSEGV);
     munmap_impl(addr, TASK_VMA_PAGE_SIZE * 2);
     return result;
 }

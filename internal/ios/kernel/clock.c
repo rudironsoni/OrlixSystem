@@ -94,10 +94,6 @@ int usleep_impl(useconds_t usec) {
     return usleep(usec);
 }
 
-int nanosleep_impl(const struct timespec *req, struct timespec *rem) {
-    return nanosleep(req, rem);
-}
-
 /* ============================================================================
  * ITIMER - Interval timers (iOS does not support)
  * ============================================================================ */

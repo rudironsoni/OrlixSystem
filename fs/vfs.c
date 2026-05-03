@@ -571,6 +571,105 @@ static int vfs_mount_propagate_shared_child_locked(struct vfs_mount_namespace *m
     return 0;
 }
 
+static int vfs_mount_propagate_attached_subtree_locked(struct vfs_mount_namespace *mnt_ns,
+                                                       const int *mounted_slots,
+                                                       size_t mounted_count) {
+    struct vfs_mount_entry *root;
+    struct vfs_mount_entry *parent = NULL;
+    size_t parent_len = 0;
+
+    if (!mnt_ns || !mounted_slots || mounted_count == 0 ||
+        mounted_slots[0] < 0 || mounted_slots[0] >= MAX_MOUNTS ||
+        !mnt_ns->entries[mounted_slots[0]].active) {
+        return -EINVAL;
+    }
+
+    root = &mnt_ns->entries[mounted_slots[0]];
+    for (size_t i = 0; i < MAX_MOUNTS; i++) {
+        struct vfs_mount_entry *entry = &mnt_ns->entries[i];
+        size_t entry_len;
+
+        if (!entry->active || entry->propagation != MS_SHARED ||
+            !vfs_path_matches_prefix(root->target, entry->target) ||
+            strcmp(root->target, entry->target) == 0) {
+            continue;
+        }
+        entry_len = strlen(entry->target);
+        if (!parent || entry_len > parent_len) {
+            parent = entry;
+            parent_len = entry_len;
+        }
+    }
+    if (!parent) {
+        return 0;
+    }
+
+    for (size_t peer_idx = 0; peer_idx < MAX_MOUNTS; peer_idx++) {
+        struct vfs_mount_entry *peer = &mnt_ns->entries[peer_idx];
+        bool shared_peer;
+        bool slave_peer;
+
+        if (!peer->active || peer == parent) {
+            continue;
+        }
+        shared_peer = peer->propagation == MS_SHARED &&
+                      parent->peer_group_id != 0 &&
+                      peer->peer_group_id == parent->peer_group_id;
+        slave_peer = peer->propagation == MS_SLAVE &&
+                     parent->peer_group_id != 0 &&
+                     peer->master_group_id == parent->peer_group_id;
+        if (!shared_peer && !slave_peer) {
+            continue;
+        }
+
+        for (size_t mounted_idx = 0; mounted_idx < mounted_count; mounted_idx++) {
+            struct vfs_mount_entry *mounted;
+            char peer_target[MAX_PATH];
+            const char *suffix;
+            int slot;
+            int ret;
+            bool exists = false;
+
+            if (mounted_slots[mounted_idx] < 0 || mounted_slots[mounted_idx] >= MAX_MOUNTS ||
+                !mnt_ns->entries[mounted_slots[mounted_idx]].active) {
+                return -EINVAL;
+            }
+            mounted = &mnt_ns->entries[mounted_slots[mounted_idx]];
+            suffix = mounted->target + parent_len;
+            ret = snprintf(peer_target, sizeof(peer_target), "%s%s", peer->target, suffix);
+            if (ret < 0 || (size_t)ret >= sizeof(peer_target)) {
+                return -ENAMETOOLONG;
+            }
+
+            for (size_t scan = 0; scan < MAX_MOUNTS; scan++) {
+                if (mnt_ns->entries[scan].active &&
+                    strcmp(mnt_ns->entries[scan].target, peer_target) == 0) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (exists) {
+                continue;
+            }
+
+            slot = vfs_mount_find_free_slot_locked(mnt_ns);
+            if (slot < 0) {
+                return -ENOSPC;
+            }
+            ret = vfs_mount_copy_entry(&mnt_ns->entries[slot], mounted->source, peer_target,
+                                       mounted->fstype, mounted->flags, mounted->propagation);
+            if (ret != 0) {
+                return ret;
+            }
+            mnt_ns->entries[slot].peer_group_id = mounted->peer_group_id;
+            mnt_ns->entries[slot].master_group_id = mounted->master_group_id;
+            vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[slot]);
+        }
+    }
+
+    return 0;
+}
+
 static bool vfs_mount_target_matches_tree(const char *target, const char *root) {
     return target && root && (strcmp(target, root) == 0 || vfs_path_matches_prefix(target, root));
 }
@@ -2742,10 +2841,9 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
             }
             vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[slot]);
             added_slots[added_count++] = slot;
-            ret = vfs_mount_propagate_shared_child_locked(mnt_ns, slot);
-            if (ret != 0) {
-                break;
-            }
+        }
+        if (ret == 0) {
+            ret = vfs_mount_propagate_attached_subtree_locked(mnt_ns, added_slots, added_count);
         }
         if (ret != 0) {
             for (size_t i = 0; i < added_count; i++) {
@@ -6061,6 +6159,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         "CapBnd:\t%016llx\n"
         "CapAmb:\t%016llx\n"
         "NoNewPrivs:\t%d\n"
+        "Dumpable:\t%d\n"
         "Threads:\t%u\n"
         "SigQ:\t%u/1024\n"
         "SigPnd:\t%016llx\n"
@@ -6086,6 +6185,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         (unsigned long long)cred->cap_bounding,
         (unsigned long long)cred->cap_ambient,
         cred->no_new_privs ? 1 : 0,
+        task->exec_dumpable ? 1 : 0,
         thread_count,
         queued_signals,
         (unsigned long long)sigpnd,

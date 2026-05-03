@@ -11,6 +11,7 @@
 #include "pipe.h"
 #include "pty.h"
 #include "../kernel/wait_queue.h"
+#include "../kernel/task.h"
 
 #define POLL_HOST_SLICE_MS 25
 
@@ -282,7 +283,13 @@ int poll_impl(struct pollfd *fds, nfds_t nfds, int timeout) {
         if (timeout == 0) {
             return 0;
         }
-        return poll_wait_for_readiness_impl(timeout);
+        int ret = poll_wait_for_readiness_impl(timeout);
+        if (ret < 0 && errno == EINTR) {
+            task_restart_record_impl(get_current(), TASK_RESTART_POLL,
+                                     (uint64_t)(uintptr_t)fds, (uint64_t)nfds,
+                                     (uint64_t)(int64_t)timeout, 0, 0, 0);
+        }
+        return ret;
     }
 
     for (;;) {
@@ -310,6 +317,11 @@ int poll_impl(struct pollfd *fds, nfds_t nfds, int timeout) {
         }
 
         if (poll_wait_after_snapshot(observed_generation, wait_ms) < 0) {
+            if (errno == EINTR) {
+                task_restart_record_impl(get_current(), TASK_RESTART_POLL,
+                                         (uint64_t)(uintptr_t)fds, (uint64_t)nfds,
+                                         (uint64_t)(int64_t)timeout, 0, 0, 0);
+            }
             return -1;
         }
         if (timeout > 0) {

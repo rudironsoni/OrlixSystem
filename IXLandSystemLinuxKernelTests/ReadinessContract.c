@@ -356,7 +356,17 @@ int readiness_contract_poll_pipe_signal_interrupt_returns_intr(void) {
         goto out_destroy;
     }
     ret = case_wait_done(&ctx);
-    if (ret == EINTR) ret = 0;
+    if (ret == EINTR) {
+        if (!child->mm ||
+            child->mm->signal_frame_restart_kind != TASK_RESTART_POLL ||
+            child->mm->signal_frame_restart_arg1 != 1 ||
+            (int)child->mm->signal_frame_restart_arg2 != -1) {
+            ret = ENODATA;
+        } else {
+            task_restart_clear_impl(child);
+            ret = 0;
+        }
+    }
 out_destroy:
     case_destroy(&ctx);
     task_unlink_child_impl(parent, child);
