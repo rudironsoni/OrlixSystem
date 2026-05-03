@@ -802,10 +802,12 @@ int pty_session_contract_session_leader_exit_hangs_up_foreground_pgrp(void) {
     }
 
     clear_pending_signal(foreground, SIGHUP);
+    clear_pending_signal(foreground, SIGCONT);
     exit_impl(0);
     set_current(saved);
 
     if (!signal_is_pending(foreground, SIGHUP) ||
+        !signal_is_pending(foreground, SIGCONT) ||
         !atomic_load(&foreground->signaled) ||
         atomic_load(&foreground->termsig) != SIGHUP) {
         errno = ENOMSG;
@@ -826,6 +828,94 @@ out:
     if (get_current() != saved) {
         set_current(saved);
     }
+    close_if_open(slave_fd);
+    close_if_open(master_fd);
+    if (foreground) {
+        foreground_parent = foreground->parent;
+        task_unlink_child_impl(foreground_parent, foreground);
+        free_task(foreground);
+    }
+    if (session) {
+        task_unlink_child_impl(saved, session);
+        free_task(session);
+    }
+    return ret;
+}
+
+int pty_session_contract_session_leader_tiocnotty_hangs_up_foreground_pgrp(void) {
+    struct task_struct *saved = get_current();
+    struct task_struct *session = NULL;
+    struct task_struct *foreground = NULL;
+    struct task_struct *foreground_parent = NULL;
+    int master_fd = -1;
+    int slave_fd = -1;
+    int tty_fd = -1;
+    unsigned int pty_index = 0;
+    int32_t foreground_pgrp;
+    int ret = -1;
+
+    if (!saved) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    session = task_create_child_impl(saved);
+    if (!session) {
+        return -1;
+    }
+
+    set_current(session);
+    if (setsid_impl() != session->pid) {
+        goto out;
+    }
+    if (alloc_pty_pair(0, 0, &master_fd, &slave_fd, &pty_index) != 0 ||
+        pty_contract_ioctl(slave_fd, TIOCSCTTY, 0) != 0) {
+        goto out;
+    }
+
+    foreground = task_create_child_impl(session);
+    if (!foreground || setpgid_impl(foreground->pid, foreground->pid) != 0) {
+        goto out;
+    }
+    foreground_pgrp = foreground->pid;
+    if (pty_contract_ioctl(slave_fd, TIOCSPGRP, &foreground_pgrp) != 0) {
+        goto out;
+    }
+
+    tty_fd = open_impl("/dev/tty", O_RDWR, 0);
+    if (tty_fd < 0) {
+        goto out;
+    }
+
+    clear_pending_signal(foreground, SIGHUP);
+    clear_pending_signal(foreground, SIGCONT);
+    if (pty_contract_ioctl(tty_fd, TIOCNOTTY, 0) != 0) {
+        goto out;
+    }
+
+    if (!signal_is_pending(foreground, SIGHUP) ||
+        !signal_is_pending(foreground, SIGCONT) ||
+        !atomic_load(&foreground->signaled) ||
+        atomic_load(&foreground->termsig) != SIGHUP) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    kernel_mutex_lock(&foreground->lock);
+    if (foreground->tty != NULL) {
+        kernel_mutex_unlock(&foreground->lock);
+        errno = ENOTRECOVERABLE;
+        goto out;
+    }
+    kernel_mutex_unlock(&foreground->lock);
+
+    ret = 0;
+
+out:
+    if (get_current() != saved) {
+        set_current(saved);
+    }
+    close_if_open(tty_fd);
     close_if_open(slave_fd);
     close_if_open(master_fd);
     if (foreground) {

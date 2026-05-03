@@ -828,6 +828,49 @@ out:
     return ret;
 }
 
+int task_exec_contract_noexec_mount_blocks_exec_transition(void) {
+    int fd = -1;
+    int ret = -1;
+
+    umount("/tmp/task-exec-noexec-target");
+    unlink_impl("/tmp/task-exec-noexec-source/file");
+    rmdir_impl("/tmp/task-exec-noexec-source");
+    rmdir_impl("/tmp/task-exec-noexec-target");
+
+    if (mkdir_impl("/tmp/task-exec-noexec-source", 0700) != 0 ||
+        mkdir_impl("/tmp/task-exec-noexec-target", 0700) != 0) {
+        goto out;
+    }
+    fd = open_impl("/tmp/task-exec-noexec-source/file", O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    if (mount("/tmp/task-exec-noexec-source", "/tmp/task-exec-noexec-target", NULL,
+              MS_BIND | MS_NOEXEC, NULL) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (task_exec_transition_impl("/tmp/task-exec-noexec-target/file", "noexec-file") == 0 ||
+        errno != EACCES) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    umount("/tmp/task-exec-noexec-target");
+    unlink_impl("/tmp/task-exec-noexec-source/file");
+    rmdir_impl("/tmp/task-exec-noexec-source");
+    rmdir_impl("/tmp/task-exec-noexec-target");
+    return ret;
+}
+
 int task_exec_contract_ambient_raise_requires_inheritable_cap(void) {
     struct __user_cap_header_struct header = {
         .version = _LINUX_CAPABILITY_VERSION_3,

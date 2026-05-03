@@ -6488,3 +6488,30 @@ out:
     (void)rmdir_impl(source);
     return ret;
 }
+
+int vfs_contract_nodev_mount_blocks_device_open(void) {
+    int fd = -1;
+    int ret = -1;
+
+    if (mount("/dev", "/dev", "bind", MS_BIND | MS_REMOUNT | MS_NODEV, NULL) != 0) {
+        return -1;
+    }
+
+    errno = 0;
+    fd = open_impl("/dev/null", O_RDONLY, 0);
+    if (fd >= 0 || errno != EACCES) {
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        errno = EPROTO;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (mount("/dev", "/dev", "bind", MS_BIND | MS_REMOUNT, NULL) != 0 && ret == 0) {
+        ret = -1;
+    }
+    return ret;
+}

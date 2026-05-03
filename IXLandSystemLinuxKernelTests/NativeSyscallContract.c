@@ -4059,6 +4059,10 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void) {
 }
 
 int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) {
+    struct required_syscall_class {
+        long number;
+        enum syscall_capability_class capability_class;
+    };
     static const long required_syscalls[] = {
         __NR_read,
         __NR_write,
@@ -4123,10 +4127,32 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_wait4,
         __NR_clone3,
     };
+    static const struct required_syscall_class required_classes[] = {
+        {__NR_openat, SYSCALL_CAPABILITY_FD},
+        {__NR_pipe2, SYSCALL_CAPABILITY_FD},
+        {__NR_getpid, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_execve, SYSCALL_CAPABILITY_PROCESS},
+        {__NR_rt_sigaction, SYSCALL_CAPABILITY_SIGNAL},
+        {__NR_mmap, SYSCALL_CAPABILITY_VM},
+        {__NR_ppoll, SYSCALL_CAPABILITY_READINESS},
+        {__NR_epoll_pwait, SYSCALL_CAPABILITY_READINESS},
+        {__NR_mount_setattr, SYSCALL_CAPABILITY_MOUNT},
+        {__NR_statmount, SYSCALL_CAPABILITY_MOUNT},
+        {__NR_setxattr, SYSCALL_CAPABILITY_XATTR},
+        {__NR_clock_gettime, SYSCALL_CAPABILITY_TIME},
+        {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
+    };
 
     for (size_t i = 0; i < sizeof(required_syscalls) / sizeof(required_syscalls[0]); i++) {
         if (!syscall_is_implemented_impl(required_syscalls[i])) {
             errno = ENOSYS;
+            return -1;
+        }
+    }
+
+    for (size_t i = 0; i < sizeof(required_classes) / sizeof(required_classes[0]); i++) {
+        if (syscall_capability_class_impl(required_classes[i].number) != required_classes[i].capability_class) {
+            errno = ENOMSG;
             return -1;
         }
     }

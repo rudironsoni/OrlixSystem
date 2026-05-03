@@ -1287,6 +1287,8 @@ int pty_set_foreground_pgrp_impl(unsigned int pty_index, int32_t pgrp) {
 
 int pty_detach_controlling_tty_impl(void) {
     struct task_struct *task = get_current();
+    int32_t foreground_pgrp = 0;
+    bool session_leader = false;
     if (!task) {
         errno = ESRCH;
         return -1;
@@ -1302,6 +1304,7 @@ int pty_detach_controlling_tty_impl(void) {
 
     unsigned int pty_index = (unsigned int)task->tty->index;
     int32_t current_sid = task->sid;
+    session_leader = task->pid == task->sid && task->sid > 0;
 
     atomic_fetch_sub(&task->tty->refs, 1);
     task->tty = NULL;
@@ -1309,13 +1312,23 @@ int pty_detach_controlling_tty_impl(void) {
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (pair->allocated && pair->has_controlling_session && pair->controlling_sid == current_sid) {
+        foreground_pgrp = pair->foreground_pgrp;
         pair->has_controlling_session = false;
         pair->controlling_sid = 0;
         pair->foreground_pgrp = 0;
+        wait_queue_wake_all(&pair->wait);
     }
     fs_mutex_unlock(&pty_lock);
 
     kernel_mutex_unlock(&task->lock);
+    if (session_leader) {
+        pty_clear_session_tty_refs_impl(pty_index, current_sid);
+        if (foreground_pgrp > 0) {
+            (void)signal_generate_pgrp(foreground_pgrp, SIGHUP);
+            (void)signal_generate_pgrp(foreground_pgrp, SIGCONT);
+        }
+        poll_notify_readiness_impl();
+    }
     return 0;
 }
 
@@ -1358,6 +1371,7 @@ void pty_session_leader_exit_impl(struct task_struct *task) {
 
     if (foreground_pgrp > 0) {
         (void)signal_generate_pgrp(foreground_pgrp, SIGHUP);
+        (void)signal_generate_pgrp(foreground_pgrp, SIGCONT);
     }
     poll_notify_readiness_impl();
 }

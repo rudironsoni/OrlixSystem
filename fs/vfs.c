@@ -3118,6 +3118,12 @@ int vfs_statmount(const struct mnt_id_req *req, struct statmount *buf, size_t bu
     if ((entry->flags & MS_NOSUID) != 0) {
         buf->mnt_attr |= MOUNT_ATTR_NOSUID;
     }
+    if ((entry->flags & MS_NODEV) != 0) {
+        buf->mnt_attr |= MOUNT_ATTR_NODEV;
+    }
+    if ((entry->flags & MS_NOEXEC) != 0) {
+        buf->mnt_attr |= MOUNT_ATTR_NOEXEC;
+    }
     buf->mnt_propagation = entry->propagation;
     buf->mnt_peer_group = entry->peer_group_id;
     buf->mnt_master = entry->master_group_id;
@@ -3676,6 +3682,21 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
                 fs_mutex_unlock(&mnt_ns->lock);
                 return 0;
             }
+            if (!mnt_ns->entries[i].active && slot < 0) {
+                slot = (int)i;
+            }
+        }
+        if ((strcmp(resolved_target, "/dev") == 0 ||
+             strcmp(resolved_target, "/proc") == 0 ||
+             strcmp(resolved_target, "/sys") == 0) && slot >= 0) {
+            ret = vfs_mount_copy_entry(&mnt_ns->entries[slot], resolved_target, resolved_target,
+                                       "bind", (flags & vfs_mount_attribute_flags()) | MS_BIND,
+                                       propagation);
+            if (ret == 0) {
+                vfs_mount_assign_propagation_ids_locked(mnt_ns, &mnt_ns->entries[slot]);
+            }
+            fs_mutex_unlock(&mnt_ns->lock);
+            return ret;
         }
         fs_mutex_unlock(&mnt_ns->lock);
         return -EINVAL;

@@ -1743,6 +1743,10 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
         errno = -closed;
         return -1;
     }
+    if ((vfs_mount_flags_for_path(normalized_path) & MS_NOEXEC) != 0) {
+        errno = EACCES;
+        return -1;
+    }
 
     if (task->cred) {
         old_euid = task->cred->euid;

@@ -1882,6 +1882,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"statfs should report Linux mount attribute flags, errno %d", errno);
 }
 
+- (void)testNodevMountBlocksDeviceOpen {
+    extern int vfs_contract_nodev_mount_blocks_device_open(void);
+    XCTAssertEqual(vfs_contract_nodev_mount_blocks_device_open(), 0,
+                   @"nodev mount should block device opens, errno %d", errno);
+}
+
 /* ============================================================================
  * SIGNAL-FAMILY SEMANTICS TESTS
  * ============================================================================ */

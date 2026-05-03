@@ -5,6 +5,19 @@
 extern "C" {
 #endif
 
+enum syscall_capability_class {
+    SYSCALL_CAPABILITY_NONE = 0,
+    SYSCALL_CAPABILITY_FD,
+    SYSCALL_CAPABILITY_PROCESS,
+    SYSCALL_CAPABILITY_SIGNAL,
+    SYSCALL_CAPABILITY_VM,
+    SYSCALL_CAPABILITY_READINESS,
+    SYSCALL_CAPABILITY_MOUNT,
+    SYSCALL_CAPABILITY_XATTR,
+    SYSCALL_CAPABILITY_TIME,
+    SYSCALL_CAPABILITY_RESOURCE,
+};
+
 long syscall_dispatch_impl(long number,
                            long arg0,
                            long arg1,
@@ -13,6 +26,7 @@ long syscall_dispatch_impl(long number,
                            long arg4,
                            long arg5);
 int syscall_is_implemented_impl(long number);
+enum syscall_capability_class syscall_capability_class_impl(long number);
 
 #ifdef __cplusplus
 }

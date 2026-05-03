@@ -15,5 +15,6 @@ int pty_session_contract_controlling_tty_survives_dup_of_slave_descriptor(void);
 int pty_session_contract_controlling_tty_clears_or_fails_predictably_after_close_policy(void);
 int pty_session_contract_pty_fdinfo_reflects_flags_and_paths(void);
 int pty_session_contract_session_leader_exit_hangs_up_foreground_pgrp(void);
+int pty_session_contract_session_leader_tiocnotty_hangs_up_foreground_pgrp(void);
 
 #endif

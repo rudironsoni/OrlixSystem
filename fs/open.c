@@ -1,4 +1,5 @@
 #include <linux/fcntl.h>
+#include <linux/mount.h>
 
 #include <errno.h>
 #include <stdbool.h>
@@ -14,6 +15,10 @@
 #include "kernel/task.h"
 
 #define MAX_PATH 4096
+
+static bool open_path_is_nodev_blocked(const char *resolved_path) {
+    return (vfs_mount_flags_for_path(resolved_path) & MS_NODEV) != 0;
+}
 
 static synthetic_proc_file_t proc_self_file_for_class(proc_self_path_class_t proc_class) {
     switch (proc_class) {
@@ -272,9 +277,18 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
     }
 
     {
-        synthetic_dev_node_t dev_node = vfs_path_is_synthetic_dev_node(resolved_path);
+        char mounted_dev_path[MAX_PATH];
+        const char *dev_lookup_path = resolved_path;
+        if (vfs_apply_mounts_to_path(resolved_path, mounted_dev_path, sizeof(mounted_dev_path)) == 0) {
+            dev_lookup_path = mounted_dev_path;
+        }
+        synthetic_dev_node_t dev_node = vfs_path_is_synthetic_dev_node(dev_lookup_path);
         if (dev_node == SYNTHETIC_DEV_PTMX) {
             unsigned int pty_index;
+            if (open_path_is_nodev_blocked(resolved_path)) {
+                errno = EACCES;
+                return -1;
+            }
             if (pty_allocate_pair_impl(&pty_index) != 0) {
                 return -1;
             }
@@ -287,6 +301,10 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
             return fd;
         }
         if (dev_node != SYNTHETIC_DEV_NONE) {
+            if (open_path_is_nodev_blocked(resolved_path)) {
+                errno = EACCES;
+                return -1;
+            }
             int fd = alloc_fd_impl();
             if (fd < 0) {
                 return -1;
@@ -298,8 +316,17 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
 
     {
         unsigned int pty_index;
-        if (strcmp(resolved_path, "/dev/tty") == 0) {
+        char mounted_tty_path[MAX_PATH];
+        const char *tty_lookup_path = resolved_path;
+        if (vfs_apply_mounts_to_path(resolved_path, mounted_tty_path, sizeof(mounted_tty_path)) == 0) {
+            tty_lookup_path = mounted_tty_path;
+        }
+        if (strcmp(tty_lookup_path, "/dev/tty") == 0) {
             char tty_path[MAX_PATH];
+            if (open_path_is_nodev_blocked(resolved_path)) {
+                errno = EACCES;
+                return -1;
+            }
             if (pty_open_controlling_slave_impl(&pty_index) != 0) {
                 return -1;
             }
@@ -316,7 +343,12 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
             return fd;
         }
 
-        if (pty_open_slave_by_path_impl(resolved_path, &pty_index) == 0) {
+        if (pty_open_slave_by_path_impl(tty_lookup_path, &pty_index) == 0) {
+            if (open_path_is_nodev_blocked(resolved_path)) {
+                pty_close_end_impl(pty_index, false);
+                errno = EACCES;
+                return -1;
+            }
             int fd = alloc_fd_impl();
             if (fd < 0) {
                 pty_close_end_impl(pty_index, false);
@@ -464,9 +496,18 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
     }
 
     {
-        synthetic_dev_node_t dev_node = vfs_path_is_synthetic_dev_node(resolved_path);
+        char mounted_dev_path[MAX_PATH];
+        const char *dev_lookup_path = resolved_path;
+        if (vfs_apply_mounts_to_path(resolved_path, mounted_dev_path, sizeof(mounted_dev_path)) == 0) {
+            dev_lookup_path = mounted_dev_path;
+        }
+        synthetic_dev_node_t dev_node = vfs_path_is_synthetic_dev_node(dev_lookup_path);
         if (dev_node == SYNTHETIC_DEV_PTMX) {
             unsigned int pty_index;
+            if (open_path_is_nodev_blocked(resolved_path)) {
+                errno = EACCES;
+                return -1;
+            }
             if (pty_allocate_pair_impl(&pty_index) != 0) {
                 return -1;
             }
@@ -479,6 +520,10 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
             return fd;
         }
         if (dev_node != SYNTHETIC_DEV_NONE) {
+            if (open_path_is_nodev_blocked(resolved_path)) {
+                errno = EACCES;
+                return -1;
+            }
             int fd = alloc_fd_impl();
             if (fd < 0) {
                 return -1;
@@ -490,8 +535,17 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
 
     {
         unsigned int pty_index;
-        if (strcmp(resolved_path, "/dev/tty") == 0) {
+        char mounted_tty_path[MAX_PATH];
+        const char *tty_lookup_path = resolved_path;
+        if (vfs_apply_mounts_to_path(resolved_path, mounted_tty_path, sizeof(mounted_tty_path)) == 0) {
+            tty_lookup_path = mounted_tty_path;
+        }
+        if (strcmp(tty_lookup_path, "/dev/tty") == 0) {
             char tty_path[MAX_PATH];
+            if (open_path_is_nodev_blocked(resolved_path)) {
+                errno = EACCES;
+                return -1;
+            }
             if (pty_open_controlling_slave_impl(&pty_index) != 0) {
                 return -1;
             }
@@ -508,7 +562,12 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
             return fd;
         }
 
-        if (pty_open_slave_by_path_impl(resolved_path, &pty_index) == 0) {
+        if (pty_open_slave_by_path_impl(tty_lookup_path, &pty_index) == 0) {
+            if (open_path_is_nodev_blocked(resolved_path)) {
+                pty_close_end_impl(pty_index, false);
+                errno = EACCES;
+                return -1;
+            }
             int fd = alloc_fd_impl();
             if (fd < 0) {
                 pty_close_end_impl(pty_index, false);
