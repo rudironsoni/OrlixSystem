@@ -5639,6 +5639,59 @@ out:
     return ret;
 }
 
+int vfs_contract_sticky_directory_blocks_nonowner_exchange_target(void) {
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/vfs-cred-sticky-exchange-dir/left");
+    unlink_impl("/tmp/vfs-cred-sticky-exchange-dir/right");
+    rmdir_impl("/tmp/vfs-cred-sticky-exchange-dir");
+    if (mkdir_impl("/tmp/vfs-cred-sticky-exchange-dir", 01777) != 0) {
+        goto out;
+    }
+    fd = open_impl("/tmp/vfs-cred-sticky-exchange-dir/left", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0) {
+        goto out;
+    }
+    close_impl(fd);
+    fd = open_impl("/tmp/vfs-cred-sticky-exchange-dir/right", O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd < 0) {
+        goto out;
+    }
+    close_impl(fd);
+    fd = -1;
+    if (chown("/tmp/vfs-cred-sticky-exchange-dir/left", 1000, 1000) != 0 ||
+        chown("/tmp/vfs-cred-sticky-exchange-dir/right", 2000, 2000) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+    errno = 0;
+    if (renameat2(AT_FDCWD, "/tmp/vfs-cred-sticky-exchange-dir/left",
+                  AT_FDCWD, "/tmp/vfs-cred-sticky-exchange-dir/right",
+                  AT_RENAME_EXCHANGE) != -1 ||
+        errno != EPERM) {
+        errno = EPERM;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        close_impl(fd);
+        cred_reset_to_defaults();
+        unlink_impl("/tmp/vfs-cred-sticky-exchange-dir/left");
+        unlink_impl("/tmp/vfs-cred-sticky-exchange-dir/right");
+        rmdir_impl("/tmp/vfs-cred-sticky-exchange-dir");
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_nonroot_cannot_mkdirat_inside_root_private_dir(void) {
     int dirfd = -1;
     int ret = -1;

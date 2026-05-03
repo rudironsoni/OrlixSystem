@@ -50,6 +50,18 @@ static synthetic_proc_file_t proc_self_file_for_class(proc_self_path_class_t pro
     }
 }
 
+static bool open_path_is_numeric_proc_path(const char *resolved_path) {
+    char *endptr;
+
+    if (!resolved_path || strncmp(resolved_path, "/proc/", 6) != 0 ||
+        resolved_path[6] < '0' || resolved_path[6] > '9') {
+        return false;
+    }
+
+    (void)strtol(resolved_path + 6, &endptr, 10);
+    return *endptr == '\0' || *endptr == '/';
+}
+
 static int try_open_proc_self_file(const char *resolved_path, int flags, mode_t mode,
                                    proc_self_path_class_t proc_class, int *out_fd) {
     synthetic_proc_file_t proc_file = proc_self_file_for_class(proc_class);
@@ -244,6 +256,10 @@ int open_impl(const char *pathname, int flags, mode_t mode) {
             if (proc_ret != 0) {
                 return (proc_ret < 0) ? -1 : proc_fd;
             }
+            if (proc_class == PROC_SELF_NONE && open_path_is_numeric_proc_path(resolved_path)) {
+                errno = ENOENT;
+                return -1;
+            }
         }
     }
 
@@ -431,6 +447,10 @@ int openat_impl(int dirfd, const char *pathname, int flags, mode_t mode) {
             int proc_ret = try_open_proc_self_file(resolved_path, flags, mode, proc_class, &proc_fd);
             if (proc_ret != 0) {
                 return (proc_ret < 0) ? -1 : proc_fd;
+            }
+            if (proc_class == PROC_SELF_NONE && open_path_is_numeric_proc_path(resolved_path)) {
+                errno = ENOENT;
+                return -1;
             }
         }
     }

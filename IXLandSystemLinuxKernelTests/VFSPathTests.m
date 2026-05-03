@@ -1744,6 +1744,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"sticky directories should block rename by non-owners, errno %d", errno);
 }
 
+- (void)testStickyDirectoryBlocksNonOwnerExchangeTarget {
+    extern int vfs_contract_sticky_directory_blocks_nonowner_exchange_target(void);
+    XCTAssertEqual(vfs_contract_sticky_directory_blocks_nonowner_exchange_target(), 0,
+                   @"sticky directories should block exchange of non-owned target, errno %d", errno);
+}
+
 - (void)testNonrootCannotMkdiratInsideRootPrivateDir {
     extern int vfs_contract_nonroot_cannot_mkdirat_inside_root_private_dir(void);
     XCTAssertEqual(vfs_contract_nonroot_cannot_mkdirat_inside_root_private_dir(), 0,

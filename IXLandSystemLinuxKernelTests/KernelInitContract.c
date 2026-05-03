@@ -1,10 +1,18 @@
 #include <linux/fcntl.h>
+#include <linux/wait.h>
 
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
 #include <string.h>
+
+#ifdef SIGCHLD
+#undef SIGCHLD
+#endif
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
 
 #ifndef S_IFMT
 #define S_IFMT 0170000
@@ -21,6 +29,7 @@
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "kernel/init.h"
+#include "kernel/signal.h"
 #include "kernel/task.h"
 #include "runtime/native/registry.h"
 
@@ -34,6 +43,14 @@ extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int unlink_impl(const char *pathname);
 extern int kernel_exec_init(const char *preferred_path, char *const argv[], char *const envp[]);
 extern void exit_impl(int status);
+extern int32_t waitpid_impl(int32_t pid, int *wstatus, int options);
+
+#ifndef WIFEXITED
+#define WIFEXITED(status) (((status) & 0x7f) == 0)
+#endif
+#ifndef WEXITSTATUS
+#define WEXITSTATUS(status) (((status) >> 8) & 0xff)
+#endif
 
 struct linux_dirent64 {
     uint64_t d_ino;
@@ -976,6 +993,78 @@ out:
     {
         int saved_errno = errno;
         close_impl(fd);
+        set_current(init_task);
+        if (child) {
+            task_unlink_child_impl(init_task, child);
+            task_unlink_child_impl(parent, child);
+            free_task(child);
+        }
+        if (parent) {
+            task_unlink_child_impl(init_task, parent);
+            free_task(parent);
+        }
+        set_current(saved);
+        errno = saved_errno;
+    }
+    return result;
+}
+
+int kernel_init_contract_pid1_reaps_adopted_child_exit(void) {
+    struct task_struct *parent = NULL;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    int status = 0;
+    int child_pid;
+    int result = -1;
+
+    saved = get_current();
+    if (!init_task || saved != init_task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    parent = task_create_child_impl(init_task);
+    if (!parent) {
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        goto out;
+    }
+    child_pid = child->pid;
+
+    set_current(parent);
+    exit_impl(0);
+    set_current(init_task);
+
+    if (child->parent != init_task || child->ppid != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    child->signal->shared_pending.sig[(SIGCHLD - 1) >> 6] &= ~(1ULL << ((SIGCHLD - 1) & 63));
+    init_task->signal->shared_pending.sig[(SIGCHLD - 1) >> 6] &= ~(1ULL << ((SIGCHLD - 1) & 63));
+
+    set_current(child);
+    exit_impl(37);
+    set_current(init_task);
+
+    if (!signal_is_pending(init_task, SIGCHLD)) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (waitpid_impl(child_pid, &status, 0) != child_pid ||
+        !WIFEXITED(status) || WEXITSTATUS(status) != 37) {
+        errno = EPROTO;
+        goto out;
+    }
+    child = NULL;
+
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
         set_current(init_task);
         if (child) {
             task_unlink_child_impl(init_task, child);

@@ -2316,6 +2316,75 @@ out:
     return ret;
 }
 
+int procfs_namespace_contract_reaped_proc_pid_mounts_disappear(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    char path[96] = {0};
+    char content[4096];
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    if (fs_unshare_mount_namespace(child->fs) != 0) {
+        goto out;
+    }
+    if (mkdir_impl("/tmp/proc-reaped-mnt-source", 0700) != 0 && errno != EEXIST) {
+        goto out;
+    }
+    if (mkdir_impl("/tmp/proc-reaped-mnt-target", 0700) != 0 && errno != EEXIST) {
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    if (mount("/tmp/proc-reaped-mnt-source", "/tmp/proc-reaped-mnt-target", NULL, MS_BIND, NULL) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    proc_pid_file_path(path, sizeof(path), child->pid, "/mounts");
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "/tmp/proc-reaped-mnt-source")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    child = NULL;
+
+    errno = 0;
+    if (read_file_content(path, content, sizeof(content)) != -1 || errno != ENOENT) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    if (child) {
+        saved = get_current();
+        set_current(child);
+        umount("/tmp/proc-reaped-mnt-target");
+        set_current(saved);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
 int procfs_namespace_contract_root_files_are_readable(void) {
     char content[1024];
 
