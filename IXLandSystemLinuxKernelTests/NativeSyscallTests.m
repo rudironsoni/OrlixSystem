@@ -137,6 +137,10 @@
     XCTAssertEqual(native_syscall_contract_smaps_splits_mprotect_runs_and_preserves_dirty_counts(), 0, @"errno %d", errno);
 }
 
+- (void)testMapFixedGapCoalescesCompatibleAnonymousVmas {
+    XCTAssertEqual(native_syscall_contract_map_fixed_gap_coalesces_compatible_anonymous_vmas(), 0, @"errno %d", errno);
+}
+
 - (void)testPrivateFileCowSmapsSurvivesMunmapGap {
     XCTAssertEqual(native_syscall_contract_private_file_cow_smaps_survives_munmap_gap(), 0, @"errno %d", errno);
 }

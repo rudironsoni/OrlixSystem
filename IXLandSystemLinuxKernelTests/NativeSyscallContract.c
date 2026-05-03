@@ -2383,6 +2383,72 @@ out:
     return result;
 }
 
+int native_syscall_contract_map_fixed_gap_coalesces_compatible_anonymous_vmas(void) {
+    struct task_struct *task = get_current();
+    void *mapped = (void *)-1;
+    void *middle = (void *)-1;
+    uint64_t base;
+    char maps[8192];
+    char smaps[16384];
+    char full[32];
+    char split[32];
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 12288,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    base = (uint64_t)(uintptr_t)mapped;
+    if (task_write_virtual_memory_impl(task, base, "L", 1) != 1 ||
+        task_write_virtual_memory_impl(task, base + 8192, "R", 1) != 1 ||
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(base + 4096), 4096, 0, 0, 0, 0) != 0) {
+        goto out;
+    }
+
+    middle = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, (long)(uintptr_t)(base + 4096),
+                                                      4096, PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED,
+                                                      -1, 0);
+    if (middle != (void *)(uintptr_t)(base + 4096)) {
+        errno = (long)(uintptr_t)middle < 0 ? -(int)(long)(uintptr_t)middle : EPROTO;
+        goto out;
+    }
+    if (task_write_virtual_memory_impl(task, base + 4096, "M", 1) != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (format_maps_range(full, sizeof(full), base, base + 12288) != 0 ||
+        format_maps_range(split, sizeof(split), base + 4096, base + 8192) != 0 ||
+        read_file_into_buffer("/proc/self/maps", maps, sizeof(maps)) != 0 ||
+        read_file_into_buffer("/proc/self/smaps", smaps, sizeof(smaps)) != 0) {
+        goto out;
+    }
+    if (!strstr(maps, full) || !smaps_block_contains(smaps, full, "rw-p") ||
+        !smaps_block_contains(smaps, full, "Size:                 12 kB") ||
+        !smaps_block_contains(smaps, full, "Private_Dirty:        12 kB")) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (strstr(maps, split) || smaps_block_contains(smaps, split, "")) {
+        errno = EEXIST;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 12288, 0, 0, 0, 0);
+    return result;
+}
+
 int native_syscall_contract_private_file_cow_smaps_survives_munmap_gap(void) {
     struct task_struct *task = get_current();
     const char path[] = "/tmp/native-private-cow-smaps-gap";
