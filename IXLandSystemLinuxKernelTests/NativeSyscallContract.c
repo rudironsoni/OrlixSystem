@@ -2456,6 +2456,35 @@ out:
     return result;
 }
 
+int native_syscall_contract_mremap_fixed_rejects_zero_target(void) {
+    void *mapped;
+    void *remapped;
+    int result = -1;
+
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+
+    remapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mremap, (long)(uintptr_t)mapped,
+                                                        4096, 4096,
+                                                        MREMAP_MAYMOVE | MREMAP_FIXED,
+                                                        0, 0);
+    if ((long)(uintptr_t)remapped != -EINVAL) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+    return result;
+}
+
 int native_syscall_contract_madvise_split_vma_clears_each_permission_run(void) {
     struct task_struct *task = get_current();
     void *mapped = (void *)-1;

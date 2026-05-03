@@ -1438,6 +1438,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"MS_REC propagation remount should update the virtual mount subtree, errno %d", errno);
 }
 
+- (void)testRecursiveRemountSlavePreservesPeerGroupMasters {
+    extern int vfs_contract_recursive_remount_slave_preserves_peer_group_masters(void);
+    XCTAssertEqual(vfs_contract_recursive_remount_slave_preserves_peer_group_masters(), 0,
+                   @"MS_REC slave remount should preserve former shared peer groups as masters, errno %d", errno);
+}
+
 - (void)testListmountStatmountReportsSlaveMaster {
     extern int vfs_contract_listmount_statmount_reports_slave_master(void);
     XCTAssertEqual(vfs_contract_listmount_statmount_reports_slave_master(), 0,

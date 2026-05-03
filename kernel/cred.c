@@ -620,7 +620,8 @@ void cred_apply_exec_metadata(struct cred *cred, uid_t file_uid, gid_t file_gid,
     cred->suid = cred->euid;
     cred->sgid = cred->egid;
 
-    if (cred->euid == 0 && !cred->no_new_privs) {
+    if (cred->euid == 0 && !cred->no_new_privs &&
+        (cred->securebits & SECBIT_NOROOT) == 0) {
         cred->cap_permitted = cred->cap_bounding;
         cred->cap_effective = cred->cap_permitted;
     } else if (cred->euid != 0) {

@@ -448,10 +448,20 @@ static void vfs_mount_assign_propagation_ids_locked(struct vfs_mount_namespace *
 static void vfs_mount_set_propagation_locked(struct vfs_mount_namespace *mnt_ns,
                                              struct vfs_mount_entry *entry,
                                              unsigned long propagation) {
+    unsigned long old_propagation;
+    uint64_t old_peer_group_id;
+
     if (!mnt_ns || !entry || propagation == 0) {
         return;
     }
+    old_propagation = entry->propagation;
+    old_peer_group_id = entry->peer_group_id;
     entry->propagation = propagation;
+    entry->peer_group_id = 0;
+    entry->master_group_id = 0;
+    if (propagation == MS_SLAVE && old_propagation == MS_SHARED && old_peer_group_id != 0) {
+        entry->master_group_id = old_peer_group_id;
+    }
     vfs_mount_assign_propagation_ids_locked(mnt_ns, entry);
 }
 
@@ -2514,10 +2524,7 @@ int vfs_mount_setattr(int dirfd, const char *pathname, unsigned int flags,
             entry->flags &= ~MS_NOSUID;
         }
         if (attr->propagation != 0) {
-            entry->propagation = (unsigned long)attr->propagation;
-            entry->peer_group_id = 0;
-            entry->master_group_id = 0;
-            vfs_mount_assign_propagation_ids_locked(mnt_ns, entry);
+            vfs_mount_set_propagation_locked(mnt_ns, entry, (unsigned long)attr->propagation);
         }
         found = 1;
     }

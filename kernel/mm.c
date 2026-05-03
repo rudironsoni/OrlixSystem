@@ -1561,7 +1561,9 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         errno = EFAULT;
         return (void *)-1;
     }
-    if ((flags & MREMAP_FIXED) != 0 && (new_start % TASK_VMA_PAGE_SIZE) != 0) {
+    if ((flags & MREMAP_FIXED) != 0 &&
+        (new_start == 0 || (new_start % TASK_VMA_PAGE_SIZE) != 0 ||
+         new_len > UINT64_MAX - new_start)) {
         errno = EINVAL;
         return (void *)-1;
     }
