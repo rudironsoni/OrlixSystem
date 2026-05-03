@@ -719,6 +719,29 @@ static bool vfs_any_task_fs_pins_mount_tree(uint64_t mount_ns_id, const char *ta
     return pins;
 }
 
+static unsigned int vfs_proc_task_thread_count(const struct task_struct *task) {
+    unsigned int count = 0;
+
+    if (!task) {
+        return 0;
+    }
+
+    kernel_mutex_lock(&task_table_lock);
+    for (int i = 0; i < TASK_MAX_TASKS; i++) {
+        struct task_struct *cursor = task_table[i];
+
+        while (cursor) {
+            if (cursor->tgid == task->tgid) {
+                count++;
+            }
+            cursor = cursor->hash_next;
+        }
+    }
+    kernel_mutex_unlock(&task_table_lock);
+
+    return count ? count : 1;
+}
+
 static int vfs_detached_mount_record(uint64_t mount_ns_id, const char *target) {
     int free_slot = -1;
 
@@ -5842,6 +5865,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
     uint64_t sigblk = 0;
     uint64_t sigign = 0;
     uint64_t sigcgt = 0;
+    unsigned int thread_count;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
@@ -5880,6 +5904,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
     }
     vfs_vm_account_task(task, &acct);
     vfs_proc_task_signal_status(task, &queued_signals, &sigpnd, &shdpnd, &sigblk, &sigign, &sigcgt);
+    thread_count = vfs_proc_task_thread_count(task);
 
     if (vfs_proc_append(buf, buf_len, &pos,
         "Name:\t%s\n"
@@ -5923,7 +5948,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         "CapBnd:\t%016llx\n"
         "CapAmb:\t%016llx\n"
         "NoNewPrivs:\t%d\n"
-        "Threads:\t1\n"
+        "Threads:\t%u\n"
         "SigQ:\t%u/1024\n"
         "SigPnd:\t%016llx\n"
         "ShdPnd:\t%016llx\n"
@@ -5948,6 +5973,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         (unsigned long long)cred->cap_bounding,
         (unsigned long long)cred->cap_ambient,
         cred->no_new_privs ? 1 : 0,
+        thread_count,
         queued_signals,
         (unsigned long long)sigpnd,
         (unsigned long long)shdpnd,

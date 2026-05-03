@@ -2869,6 +2869,69 @@ out:
     return result;
 }
 
+int native_syscall_contract_private_file_madvise_dontneed_restores_file_page_after_cow(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-private-file-madvise-cow";
+    char page[4096];
+    char verify[8];
+    const char original[] = "FILE";
+    const char cow_patch[] = "COW!";
+    void *mapped;
+    int fd = -1;
+    int result = -1;
+    long ret;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(page, 'A', sizeof(page));
+    memcpy(page, original, sizeof(original) - 1);
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    if (syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)page, sizeof(page), 0, 0, 0) !=
+        (long)sizeof(page)) {
+        errno = EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, sizeof(page),
+                                                      PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    if (task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, cow_patch,
+                                       sizeof(cow_patch) - 1) != (long)sizeof(cow_patch) - 1) {
+        errno = EPROTO;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_madvise, (long)(uintptr_t)mapped, 4096,
+                                MADV_DONTNEED, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mapped;
+    }
+    memset(verify, 0, sizeof(verify));
+    if (task_read_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, verify,
+                                      sizeof(original) - 1) != (long)sizeof(original) - 1 ||
+        memcmp(verify, original, sizeof(original) - 1) != 0) {
+        errno = ENODATA;
+        goto out_mapped;
+    }
+    result = 0;
+
+out_mapped:
+    syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, sizeof(page), 0, 0, 0, 0);
+out:
+    close_if_open(fd);
+    unlink_impl(path);
+    return result;
+}
+
 int native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child;

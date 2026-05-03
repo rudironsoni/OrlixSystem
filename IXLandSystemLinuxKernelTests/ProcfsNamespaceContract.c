@@ -661,6 +661,41 @@ int procfs_namespace_contract_proc_status_reports_thread_and_signal_queue_fields
     return 0;
 }
 
+int procfs_namespace_contract_proc_status_reports_thread_group_count(void) {
+    struct task_struct *parent;
+    struct task_struct *thread = NULL;
+    char content[2048];
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    thread = task_create_child_with_flags_impl(parent, CLONE_THREAD);
+    if (!thread) {
+        return -1;
+    }
+
+    if (read_file_content("/proc/self/status", content, sizeof(content)) != 0) {
+        goto out;
+    }
+    if (!contains(content, "Threads:\t2\n")) {
+        errno = ENODATA;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    if (thread) {
+        task_unlink_child_impl(parent, thread);
+        free_task(thread);
+    }
+    reset_procfs_namespace_state();
+    return ret;
+}
+
 int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void) {
     struct task_struct *parent;
     struct task_struct *child = NULL;

@@ -169,6 +169,10 @@
     XCTAssertEqual(native_syscall_contract_madvise_split_vma_clears_each_permission_run(), 0, @"errno %d", errno);
 }
 
+- (void)testPrivateFileMadviseDontneedRestoresFilePageAfterCow {
+    XCTAssertEqual(native_syscall_contract_private_file_madvise_dontneed_restores_file_page_after_cow(), 0, @"errno %d", errno);
+}
+
 - (void)testCloneWithoutVmPreservesSharedFileMappings {
     XCTAssertEqual(native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(), 0, @"errno %d", errno);
 }

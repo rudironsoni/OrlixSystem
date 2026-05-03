@@ -612,6 +612,43 @@ static long long mm_fd_pwrite(int fd, const void *buf, size_t count, long long o
     return bytes;
 }
 
+static long long mm_vma_pread(const struct task_vma *vma, void *buf, size_t count,
+                              long long offset) {
+    long long bytes;
+    int reopened;
+    int saved_errno;
+
+    if (!vma || !buf) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (vma->backing_fd >= 0) {
+        bytes = mm_fd_pread(vma->backing_fd, buf, count, offset);
+        if (bytes >= 0 || errno != EBADF) {
+            return bytes;
+        }
+    }
+    if (vma->backing_path[0] == '\0') {
+        errno = EBADF;
+        return -1;
+    }
+
+    reopened = open_impl(vma->backing_path, O_RDONLY, 0);
+    if (reopened < 0) {
+        return -1;
+    }
+    bytes = mm_fd_pread(reopened, buf, count, offset);
+    saved_errno = errno;
+    if (close_impl(reopened) != 0 && bytes >= 0) {
+        return -1;
+    }
+    if (bytes < 0) {
+        errno = saved_errno;
+    }
+    return bytes;
+}
+
 static long long mm_vma_pwrite(struct task_vma *vma, const void *buf, size_t count,
                                long long offset) {
     long long bytes;
@@ -1540,6 +1577,88 @@ int munmap_impl(void *addr, size_t len) {
     return 0;
 }
 
+static int mm_load_private_file_page(const struct task_vma *vma, uint64_t page_index,
+                                     uint8_t page_image[TASK_VMA_PAGE_SIZE]) {
+    uint64_t image_offset;
+    uint64_t file_offset;
+    size_t image_remaining;
+    size_t source_len = TASK_VMA_PAGE_SIZE;
+    long long bytes = -1;
+
+    if (!vma || !page_image || vma->kind != TASK_VMA_FILE || vma->shared ||
+        page_index >= vma->page_count) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    memset(page_image, 0, TASK_VMA_PAGE_SIZE);
+    image_offset = page_index * TASK_VMA_PAGE_SIZE;
+    file_offset = vma->backing_offset + image_offset;
+    if (vma->backing_fd >= 0 || vma->backing_path[0] != '\0') {
+        bytes = mm_vma_pread(vma, page_image, TASK_VMA_PAGE_SIZE, (long long)file_offset);
+        if (bytes < 0 && errno != ENXIO) {
+            return -1;
+        }
+        if (bytes >= 0) {
+            source_len = (size_t)bytes;
+        }
+    } else if (vma->image && image_offset < vma->image_size) {
+        image_remaining = vma->image_size - (size_t)image_offset;
+        if (image_remaining < source_len) {
+            source_len = image_remaining;
+        }
+        memcpy(page_image, (const unsigned char *)vma->image + image_offset, source_len);
+    } else {
+        source_len = 0;
+    }
+    (void)source_len;
+    return 0;
+}
+
+static int mm_restore_private_file_page(struct task_vma *vma, uint64_t page_index) {
+    uint8_t page_image[TASK_VMA_PAGE_SIZE];
+    struct vm_private_page *page;
+
+    if (mm_load_private_file_page(vma, page_index, page_image) != 0) {
+        return -1;
+    }
+    page = mm_private_page_alloc(page_image, TASK_VMA_PAGE_SIZE);
+    if (!page) {
+        return -1;
+    }
+    mm_private_page_put_impl(vma->private_pages[page_index]);
+    vma->private_pages[page_index] = page;
+    if (page_index == 0) {
+        vma->image = page->image;
+    }
+    return 0;
+}
+
+static int mm_restore_private_file_image_page(struct task_vma *vma, uint64_t page_index) {
+    uint8_t page_image[TASK_VMA_PAGE_SIZE];
+    size_t image_offset;
+    size_t to_copy;
+
+    if (mm_load_private_file_page(vma, page_index, page_image) != 0) {
+        return -1;
+    }
+    if (!vma->image) {
+        errno = EINVAL;
+        return -1;
+    }
+    image_offset = (size_t)(page_index * TASK_VMA_PAGE_SIZE);
+    if (image_offset >= vma->image_size) {
+        errno = EINVAL;
+        return -1;
+    }
+    to_copy = vma->image_size - image_offset;
+    if (to_copy > TASK_VMA_PAGE_SIZE) {
+        to_copy = TASK_VMA_PAGE_SIZE;
+    }
+    memcpy((unsigned char *)vma->image + image_offset, page_image, to_copy);
+    return 0;
+}
+
 static int mm_zero_vma_range(struct task_vma *vma, uint64_t start, uint64_t end) {
     uint64_t cursor = start;
 
@@ -1557,11 +1676,23 @@ static int mm_zero_vma_range(struct task_vma *vma, uint64_t start, uint64_t end)
         } else if (vma->private_pages && page_index < vma->page_count && vma->private_pages[page_index]) {
             uint8_t zero_page[TASK_VMA_PAGE_SIZE] = {0};
 
-            if (mm_private_vma_write_impl(vma, cursor, zero_page, to_zero) != (long)to_zero) {
+            if (vma->kind == TASK_VMA_FILE && !vma->shared &&
+                page_offset == 0 && to_zero == TASK_VMA_PAGE_SIZE) {
+                if (mm_restore_private_file_page(vma, page_index) != 0) {
+                    return -1;
+                }
+            } else if (mm_private_vma_write_impl(vma, cursor, zero_page, to_zero) != (long)to_zero) {
                 return -1;
             }
         } else if (vma->image) {
-            memset((unsigned char *)vma->image + offset, 0, to_zero);
+            if (vma->kind == TASK_VMA_FILE && !vma->shared &&
+                page_offset == 0 && to_zero == TASK_VMA_PAGE_SIZE) {
+                if (mm_restore_private_file_image_page(vma, page_index) != 0) {
+                    return -1;
+                }
+            } else {
+                memset((unsigned char *)vma->image + offset, 0, to_zero);
+            }
         }
         if (vma->dirty_pages && page_index < vma->page_count) {
             vma->dirty_pages[page_index] = 0;
