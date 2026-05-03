@@ -18,6 +18,7 @@
 
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int close_impl(int fd);
+extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 
 /* Test 1: System is booted */
@@ -144,6 +145,101 @@ int kernel_boot_test_init_identity_is_pid_namespace_root(void) {
     }
     if (init->exe[0] != '\0') {
         return -6;
+    }
+    return 0;
+}
+
+static int kernel_boot_parse_proc_stat_starttime(const char *buf,
+                                                 unsigned long long *starttime_out) {
+    const char *cursor;
+    int field = 3;
+
+    if (!buf || !starttime_out) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    cursor = strrchr(buf, ')');
+    if (!cursor || cursor[1] != ' ') {
+        errno = EPROTO;
+        return -1;
+    }
+    cursor += 2;
+
+    while (*cursor != '\0' && field < 22) {
+        while (*cursor == ' ') {
+            cursor++;
+        }
+        while (*cursor != '\0' && *cursor != ' ') {
+            cursor++;
+        }
+        field++;
+    }
+    while (*cursor == ' ') {
+        cursor++;
+    }
+    if (*cursor < '0' || *cursor > '9') {
+        errno = EPROTO;
+        return -1;
+    }
+
+    *starttime_out = 0;
+    while (*cursor >= '0' && *cursor <= '9') {
+        *starttime_out = (*starttime_out * 10ULL) + (unsigned long long)(*cursor - '0');
+        cursor++;
+    }
+    return 0;
+}
+
+int kernel_boot_test_task_start_time_is_kernel_owned(void) {
+    struct task_struct *init = init_task;
+    struct task_struct *child = NULL;
+    int ret = -1;
+
+    if (!init) {
+        return -1;
+    }
+    if (init->start_time_ns == 0) {
+        return -2;
+    }
+
+    child = task_create_child_impl(init);
+    if (!child) {
+        return -3;
+    }
+    if (child->start_time_ns == 0 || child->start_time_ns < init->start_time_ns) {
+        ret = -4;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    task_unlink_child_impl(init, child);
+    free_task(child);
+    return ret;
+}
+
+int kernel_boot_test_proc_self_stat_reports_start_time(void) {
+    int fd = -1;
+    char buf[512];
+    long nread;
+    unsigned long long starttime = 0;
+
+    fd = open_impl("/proc/self/stat", O_RDONLY, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    nread = read_impl(fd, buf, sizeof(buf) - 1);
+    close_impl(fd);
+    if (nread <= 0) {
+        return -2;
+    }
+    buf[nread] = '\0';
+    if (kernel_boot_parse_proc_stat_starttime(buf, &starttime) != 0) {
+        return -3;
+    }
+    if (starttime == 0) {
+        return -4;
     }
     return 0;
 }

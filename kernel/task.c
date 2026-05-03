@@ -18,6 +18,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <linux/fcntl.h>
 #include <linux/elf.h>
@@ -99,10 +100,37 @@ static struct mm_struct *task_ensure_mm_impl(struct task_struct *task) {
 
 static __thread struct task_struct *current_task = NULL;
 struct task_struct *init_task = NULL;
+static atomic_ullong task_boot_time_ns = 0;
 
 /* Task table - accessible to signal.c for killpg */
 kernel_mutex_t task_table_lock = KERNEL_MUTEX_INITIALIZER;
 struct task_struct *task_table[TASK_MAX_TASKS] = {NULL};
+
+static uint64_t task_monotonic_time_ns(void) {
+    struct timespec ts;
+
+    if (kernel_clock_gettime(1, &ts) != 0) {
+        return 0;
+    }
+    if (ts.tv_sec < 0 || ts.tv_nsec < 0) {
+        return 0;
+    }
+    return ((uint64_t)ts.tv_sec * 1000000000ULL) + (uint64_t)ts.tv_nsec;
+}
+
+static uint64_t task_start_time_since_boot_ns(void) {
+    uint64_t now = task_monotonic_time_ns();
+    uint64_t boot = atomic_load(&task_boot_time_ns);
+
+    if (boot == 0) {
+        boot = now;
+        atomic_store(&task_boot_time_ns, boot);
+    }
+    if (now <= boot) {
+        return 1;
+    }
+    return now - boot;
+}
 
 int task_hash(int32_t pid) {
     return (int)(pid % TASK_MAX_TASKS);
@@ -971,9 +999,7 @@ struct task_struct *alloc_task(void) {
         return NULL;
     }
 
-    /* Store start time as nanoseconds - use simple counter for now
-     * Real implementation would use kernel_clock_gettime from time subsystem */
-    task->start_time_ns = 0; /* TODO: integrate with time subsystem */
+    task->start_time_ns = task_start_time_since_boot_ns();
 
     int idx = task_hash(task->pid);
     kernel_mutex_lock(&task_table_lock);
@@ -1325,6 +1351,7 @@ int task_init(void) {
     if (!init_task) {
         /* Re-initialize from scratch */
         pid_init();
+        atomic_store(&task_boot_time_ns, task_monotonic_time_ns());
         if (cgroup_init() != 0) {
             return -1;
         }
@@ -1380,6 +1407,7 @@ void task_deinit(void) {
     }
     cgroup_deinit();
     current_task = NULL;
+    atomic_store(&task_boot_time_ns, 0);
     atomic_store(&task_initialized, false);
 }
 

@@ -17,6 +17,8 @@ extern int kernel_boot_test_task_init(void);
 extern int kernel_boot_test_init_identity_is_pid_namespace_root(void);
 extern int kernel_boot_test_proc_self_tree_is_available(void);
 extern int kernel_boot_test_stdio_fd_links_are_virtual_dev_null(void);
+extern int kernel_boot_test_task_start_time_is_kernel_owned(void);
+extern int kernel_boot_test_proc_self_stat_reports_start_time(void);
 extern int kernel_boot_test_fd_table(void);
 extern int kernel_boot_test_idempotent(void);
 extern int kernel_boot_test_cold_boot(void);
@@ -139,6 +141,20 @@ extern int kernel_boot_test_reboot(void);
         XCTAssertEqual(start_kernel(), 0, @"Boot should succeed");
     }
     XCTAssertEqual(kernel_boot_test_stdio_fd_links_are_virtual_dev_null(), 0);
+}
+
+- (void)testTaskStartTimeIsKernelOwned {
+    if (!kernel_is_booted()) {
+        XCTAssertEqual(start_kernel(), 0, @"Boot should succeed");
+    }
+    XCTAssertEqual(kernel_boot_test_task_start_time_is_kernel_owned(), 0);
+}
+
+- (void)testProcSelfStatReportsStartTime {
+    if (!kernel_is_booted()) {
+        XCTAssertEqual(start_kernel(), 0, @"Boot should succeed");
+    }
+    XCTAssertEqual(kernel_boot_test_proc_self_stat_reports_start_time(), 0);
 }
 
 - (void)testBootIdempotent {

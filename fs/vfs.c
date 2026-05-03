@@ -5210,7 +5210,7 @@ int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
         tty_nr = task->tty->index;
         tpgid = task->tty->foreground_pgrp;
     }
-    starttime = (unsigned long long)(task->start_time_ns / 10000000ULL);
+    starttime = (unsigned long long)((task->start_time_ns + 9999999ULL) / 10000000ULL);
     vsize = (unsigned long long)(acct.size_pages * TASK_VMA_PAGE_SIZE);
     rss = (unsigned long long)acct.resident_pages;
 
