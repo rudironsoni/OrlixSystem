@@ -11,6 +11,7 @@ int epoll_contract_wait_pipe_readable_after_write(void);
 int epoll_contract_wait_blocks_until_pipe_write(void);
 int epoll_contract_wait_timeout_returns_zero(void);
 int epoll_contract_wait_signal_interrupt_returns_intr(void);
+int epoll_contract_restart_syscall_reenters_wait(void);
 int epoll_contract_wait_reports_pipe_hup_after_writer_close(void);
 int epoll_contract_wait_pty_readable_after_peer_write(void);
 int epoll_contract_fd_appears_in_proc_self_fd(void);

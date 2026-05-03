@@ -40,6 +40,7 @@
 - (void)testEpollWaitBlocksUntilPipeWrite { XCTAssertEqual(epoll_contract_wait_blocks_until_pipe_write(), 0, @"errno %d", errno); }
 - (void)testEpollWaitTimeoutReturnsZero { XCTAssertEqual(epoll_contract_wait_timeout_returns_zero(), 0, @"errno %d", errno); }
 - (void)testEpollWaitSignalInterruptReturnsIntr { XCTAssertEqual(epoll_contract_wait_signal_interrupt_returns_intr(), 0, @"errno %d", errno); }
+- (void)testEpollRestartSyscallReentersWait { XCTAssertEqual(epoll_contract_restart_syscall_reenters_wait(), 0, @"errno %d", errno); }
 - (void)testEpollWaitReportsPipeHupAfterWriterClose { XCTAssertEqual(epoll_contract_wait_reports_pipe_hup_after_writer_close(), 0, @"errno %d", errno); }
 - (void)testEpollWaitPtyReadableAfterPeerWrite { XCTAssertEqual(epoll_contract_wait_pty_readable_after_peer_write(), 0, @"errno %d", errno); }
 - (void)testEpollFdAppearsInProcSelfFd { XCTAssertEqual(epoll_contract_fd_appears_in_proc_self_fd(), 0, @"errno %d", errno); }

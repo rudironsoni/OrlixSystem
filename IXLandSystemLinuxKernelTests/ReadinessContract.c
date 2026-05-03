@@ -95,10 +95,13 @@ static int alloc_pty_pair(int *master_fd_out, int *slave_fd_out) {
 
 struct readiness_thread_case {
     int fd;
+    int write_fd;
     int mode;
     kernel_mutex_t lock;
     kernel_cond_t cond;
     int started;
+    int restart_ready;
+    int proceed;
     int done;
     int result;
     struct task_struct *task;
@@ -142,6 +145,31 @@ static void case_mark_done(struct readiness_thread_case *ctx, int result) {
     kernel_mutex_unlock(&ctx->lock);
 }
 
+static void case_mark_restart_ready(struct readiness_thread_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->restart_ready = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    while (!ctx->proceed) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void case_wait_restart_ready(struct readiness_thread_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->restart_ready) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void case_allow_restart(struct readiness_thread_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->proceed = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
 static void case_wait_started(struct readiness_thread_case *ctx) {
     kernel_mutex_lock(&ctx->lock);
     while (!ctx->started) {
@@ -159,6 +187,22 @@ static int case_wait_done(struct readiness_thread_case *ctx) {
     result = ctx->result;
     kernel_mutex_unlock(&ctx->lock);
     return result;
+}
+
+static void clear_pending_signal(struct task_struct *task, int sig) {
+    int32_t dequeued = 0;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    while (signal_dequeue(task, NULL, &dequeued) > 0) {
+        if (dequeued == sig) {
+            break;
+        }
+    }
+    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
 static void pselect_case_init(struct pselect_mask_case *ctx, int fd, struct task_struct *task) {
@@ -275,6 +319,38 @@ static void *select_thread(void *arg) {
         case_mark_done(ctx, EINTR);
     } else {
         case_mark_done(ctx, errno ? errno : EIO);
+    }
+    return NULL;
+}
+
+static void *select_restart_thread(void *arg) {
+    struct readiness_thread_case *ctx = arg;
+    fd_set readfds;
+    long ret;
+
+    set_current(ctx->task);
+    FD_ZERO(&readfds);
+    FD_SET(ctx->fd, &readfds);
+    case_mark_started(ctx);
+    ret = select_impl(ctx->fd + 1, &readfds, NULL, NULL, NULL);
+    if (ret != -1 || errno != EINTR ||
+        !ctx->task->mm ||
+        ctx->task->mm->signal_frame_restart_kind != TASK_RESTART_SELECT ||
+        ctx->task->mm->signal_frame_restart_arg0 != (uint64_t)(int64_t)(ctx->fd + 1) ||
+        ctx->task->mm->signal_frame_restart_arg1 != (uint64_t)(uintptr_t)&readfds ||
+        ctx->task->mm->signal_frame_restart_arg2 != 0 ||
+        ctx->task->mm->signal_frame_restart_arg3 != 0) {
+        case_mark_done(ctx, ENODATA);
+        return NULL;
+    }
+    clear_pending_signal(ctx->task, SIGUSR1);
+    case_mark_restart_ready(ctx);
+    ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
+    if (ret == 1 && FD_ISSET(ctx->fd, &readfds) &&
+        ctx->task->mm->signal_frame_restart_kind == TASK_RESTART_NONE) {
+        case_mark_done(ctx, 0);
+    } else {
+        case_mark_done(ctx, ret < 0 ? (int)-ret : EIO);
     }
     return NULL;
 }
@@ -529,7 +605,60 @@ int readiness_contract_select_signal_interrupt_returns_intr(void) {
         goto out_destroy;
     }
     ret = case_wait_done(&ctx);
-    if (ret == EINTR) ret = 0;
+    if (ret == EINTR) {
+        if (!child->mm ||
+            child->mm->signal_frame_restart_kind != TASK_RESTART_SELECT ||
+            child->mm->signal_frame_restart_arg0 != (uint64_t)(int64_t)(fds[0] + 1)) {
+            ret = ENODATA;
+        } else {
+            task_restart_clear_impl(child);
+            ret = 0;
+        }
+    }
+out_destroy:
+    case_destroy(&ctx);
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+out:
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return ret;
+}
+
+int readiness_contract_select_restart_syscall_reenters_readiness_wait(void) {
+    int fds[2] = {-1, -1};
+    struct readiness_thread_case ctx;
+    kernel_thread_t thread;
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    int ret = 0;
+
+    if (pipe_impl(fds) != 0) return errno;
+    child = task_create_child_impl(parent);
+    if (!child) {
+        ret = errno ? errno : ENOMEM;
+        goto out;
+    }
+    case_init(&ctx, fds[0], 0);
+    ctx.write_fd = fds[1];
+    ctx.task = child;
+    if (kernel_thread_create(&thread, NULL, select_restart_thread, &ctx) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    kernel_thread_detach(thread);
+    case_wait_started(&ctx);
+    if (signal_generate_task(child, SIGUSR1) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    case_wait_restart_ready(&ctx);
+    if (write_impl(ctx.write_fd, "r", 1) != 1) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    case_allow_restart(&ctx);
+    ret = case_wait_done(&ctx);
 out_destroy:
     case_destroy(&ctx);
     task_unlink_child_impl(parent, child);

@@ -13,6 +13,7 @@
 #include "fdtable.h"
 #include "internal/ios/fs/sync.h"
 #include "poll.h"
+#include "../kernel/task.h"
 
 typedef struct epitem {
     int fd;
@@ -279,7 +280,7 @@ int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int ti
 
     for (;;) {
         int ready = epoll_copy_ready(instance, events, maxevents);
-        if (ready > 0 || timeout >= 0) {
+        if (ready > 0 || timeout == 0) {
             epoll_release_fd_impl(instance);
             return ready;
         }
@@ -290,6 +291,14 @@ int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int ti
             return 0;
         }
         if (poll_wait_for_readiness_impl(wait_ms) < 0) {
+            if (errno == EINTR) {
+                task_restart_record_impl(get_current(), TASK_RESTART_EPOLL_WAIT,
+                                         (uint64_t)(int64_t)epfd,
+                                         (uint64_t)(uintptr_t)events,
+                                         (uint64_t)(int64_t)maxevents,
+                                         (uint64_t)(int64_t)timeout,
+                                         0, 0);
+            }
             epoll_release_fd_impl(instance);
             return -1;
         }

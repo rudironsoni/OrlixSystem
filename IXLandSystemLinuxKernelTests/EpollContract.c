@@ -134,9 +134,12 @@ static int alloc_pty_pair(int *master_fd_out, int *slave_fd_out) {
 
 struct epoll_thread_case {
     int epfd;
+    int write_fd;
     kernel_mutex_t lock;
     kernel_cond_t cond;
     int started;
+    int restart_ready;
+    int proceed;
     int done;
     int result;
     struct task_struct *task;
@@ -179,6 +182,31 @@ static void case_mark_done(struct epoll_thread_case *ctx, int result) {
     kernel_mutex_unlock(&ctx->lock);
 }
 
+static void case_mark_restart_ready(struct epoll_thread_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->restart_ready = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    while (!ctx->proceed) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void case_wait_restart_ready(struct epoll_thread_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->restart_ready) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void case_allow_restart(struct epoll_thread_case *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->proceed = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
 static void case_wait_started(struct epoll_thread_case *ctx) {
     kernel_mutex_lock(&ctx->lock);
     while (!ctx->started) {
@@ -196,6 +224,22 @@ static int case_wait_done(struct epoll_thread_case *ctx) {
     result = ctx->result;
     kernel_mutex_unlock(&ctx->lock);
     return result;
+}
+
+static void clear_pending_signal(struct task_struct *task, int sig) {
+    int32_t dequeued = 0;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    while (signal_dequeue(task, NULL, &dequeued) > 0) {
+        if (dequeued == sig) {
+            break;
+        }
+    }
+    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
 static void epoll_mask_case_init(struct epoll_mask_case *ctx, int epfd, struct task_struct *task) {
@@ -285,6 +329,36 @@ static void *epoll_wait_thread(void *arg) {
         case_mark_done(ctx, EINTR);
     } else {
         case_mark_done(ctx, errno ? errno : EIO);
+    }
+    return NULL;
+}
+
+static void *epoll_restart_thread(void *arg) {
+    struct epoll_thread_case *ctx = arg;
+    struct epoll_event event;
+    long ret;
+
+    set_current(ctx->task);
+    case_mark_started(ctx);
+    ret = epoll_wait_impl(ctx->epfd, &event, 1, -1);
+    if (ret != -1 || errno != EINTR ||
+        !ctx->task->mm ||
+        ctx->task->mm->signal_frame_restart_kind != TASK_RESTART_EPOLL_WAIT ||
+        ctx->task->mm->signal_frame_restart_arg0 != (uint64_t)(int64_t)ctx->epfd ||
+        ctx->task->mm->signal_frame_restart_arg1 != (uint64_t)(uintptr_t)&event ||
+        ctx->task->mm->signal_frame_restart_arg2 != 1 ||
+        (int)ctx->task->mm->signal_frame_restart_arg3 != -1) {
+        case_mark_done(ctx, ENODATA);
+        return NULL;
+    }
+    clear_pending_signal(ctx->task, SIGUSR1);
+    case_mark_restart_ready(ctx);
+    ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
+    if (ret == 1 && (event.events & EPOLLIN) &&
+        ctx->task->mm->signal_frame_restart_kind == TASK_RESTART_NONE) {
+        case_mark_done(ctx, 0);
+    } else {
+        case_mark_done(ctx, ret < 0 ? (int)-ret : EIO);
     }
     return NULL;
 }
@@ -459,7 +533,67 @@ int epoll_contract_wait_signal_interrupt_returns_intr(void) {
         goto out_destroy;
     }
     ret = case_wait_done(&ctx);
-    if (ret == EINTR) ret = 0;
+    if (ret == EINTR) {
+        if (!child->mm ||
+            child->mm->signal_frame_restart_kind != TASK_RESTART_EPOLL_WAIT ||
+            child->mm->signal_frame_restart_arg0 != (uint64_t)(int64_t)epfd ||
+            child->mm->signal_frame_restart_arg2 != 1 ||
+            (int)child->mm->signal_frame_restart_arg3 != -1) {
+            ret = ENODATA;
+        } else {
+            task_restart_clear_impl(child);
+            ret = 0;
+        }
+    }
+out_destroy:
+    case_destroy(&ctx);
+out_child:
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+out:
+    close_if_open(epfd); close_if_open(fds[0]); close_if_open(fds[1]);
+    return ret;
+}
+
+int epoll_contract_restart_syscall_reenters_wait(void) {
+    int epfd = -1, fds[2] = {-1, -1}, ret = 0;
+    struct epoll_thread_case ctx;
+    kernel_thread_t thread;
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+
+    epfd = epoll_create1_impl(0);
+    if (epfd < 0 || pipe_impl(fds) != 0) return errno;
+    child = task_create_child_impl(parent);
+    if (!child) {
+        ret = errno ? errno : ENOMEM;
+        goto out;
+    }
+    if (add_pipe_read(epfd, fds[0], 1) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_child;
+    }
+    case_init(&ctx, epfd);
+    ctx.task = child;
+    ctx.write_fd = fds[1];
+    if (kernel_thread_create(&thread, NULL, epoll_restart_thread, &ctx) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    kernel_thread_detach(thread);
+    case_wait_started(&ctx);
+    if (signal_generate_task(child, SIGUSR1) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    case_wait_restart_ready(&ctx);
+    if (write_impl(ctx.write_fd, "e", 1) != 1) {
+        ret = errno ? errno : EIO;
+        case_allow_restart(&ctx);
+        goto out_destroy;
+    }
+    case_allow_restart(&ctx);
+    ret = case_wait_done(&ctx);
 out_destroy:
     case_destroy(&ctx);
 out_child:

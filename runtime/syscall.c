@@ -571,8 +571,16 @@ long syscall_dispatch_impl(long number,
         case TASK_RESTART_WAITPID:
             ret = waitpid_impl((int32_t)arg0, (int *)(uintptr_t)arg1, (int)arg2);
             return ret < 0 ? -(long)errno : ret;
+        case TASK_RESTART_SELECT:
+            ret = select_impl((int)arg0, (fd_set *)(uintptr_t)arg1,
+                              (fd_set *)(uintptr_t)arg2, (fd_set *)(uintptr_t)arg3,
+                              (struct timeval *)(uintptr_t)arg4);
+            return ret < 0 ? -(long)errno : ret;
+        case TASK_RESTART_EPOLL_WAIT:
+            ret = epoll_wait_impl((int)arg0, (struct epoll_event *)(uintptr_t)arg1,
+                                  (int)arg2, (int)arg3);
+            return ret < 0 ? -(long)errno : ret;
         default:
-            (void)arg3;
             (void)arg4;
             (void)arg5;
             return -EINTR;

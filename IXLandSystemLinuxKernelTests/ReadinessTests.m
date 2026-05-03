@@ -44,6 +44,7 @@
 - (void)testSelectPipeWriteReportsWritable { XCTAssertEqual(readiness_contract_select_pipe_write_reports_writable(), 0, @"errno %d", errno); }
 - (void)testSelectTimeoutReturnsZero { XCTAssertEqual(readiness_contract_select_timeout_returns_zero(), 0, @"errno %d", errno); }
 - (void)testSelectSignalInterruptReturnsIntr { XCTAssertEqual(readiness_contract_select_signal_interrupt_returns_intr(), 0, @"errno %d", errno); }
+- (void)testSelectRestartSyscallReentersReadinessWait { XCTAssertEqual(readiness_contract_select_restart_syscall_reenters_readiness_wait(), 0, @"errno %d", errno); }
 - (void)testSelectPtyReadWakesOnPeerWrite { XCTAssertEqual(readiness_contract_select_pty_read_wakes_on_peer_write(), 0, @"errno %d", errno); }
 - (void)testPselect6PipeUsesSharedReadinessEngine { XCTAssertEqual(readiness_contract_pselect6_pipe_uses_shared_readiness_engine(), 0, @"errno %d", errno); }
 - (void)testPselect6MaskBlocksSignalUntilPipeReadyAndRestores { XCTAssertEqual(readiness_contract_pselect6_mask_blocks_signal_until_pipe_ready_and_restores(), 0, @"errno %d", errno); }

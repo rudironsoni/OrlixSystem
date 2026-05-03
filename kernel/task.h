@@ -230,6 +230,8 @@ enum task_restart_kind {
     TASK_RESTART_PIPE_WRITE,
     TASK_RESTART_FUTEX_WAIT,
     TASK_RESTART_WAITPID,
+    TASK_RESTART_SELECT,
+    TASK_RESTART_EPOLL_WAIT,
 };
 
 /* Exec image types - virtual kernel internal */
