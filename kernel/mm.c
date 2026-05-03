@@ -119,6 +119,12 @@ static void mm_private_page_get(struct vm_private_page *page) {
     }
 }
 
+static void mm_vma_mark_resident(struct task_vma *vma, uint64_t page_index) {
+    if (vma && vma->resident_pages && page_index < vma->page_count) {
+        vma->resident_pages[page_index] = 1;
+    }
+}
+
 void mm_private_page_put_impl(struct vm_private_page *page) {
     if (!page) {
         return;
@@ -170,7 +176,7 @@ static int mm_private_vma_enable_cow(struct task_vma *vma) {
     return 0;
 }
 
-long mm_private_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *buf, size_t count) {
+long mm_private_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count) {
     uint64_t offset;
     uint64_t page_index;
     size_t page_offset;
@@ -193,6 +199,7 @@ long mm_private_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *b
     if (to_copy > TASK_VMA_PAGE_SIZE - page_offset) {
         to_copy = TASK_VMA_PAGE_SIZE - page_offset;
     }
+    mm_vma_mark_resident(vma, page_index);
     memcpy(buf, vma->private_pages[page_index]->image + page_offset, to_copy);
     return (long)to_copy;
 }
@@ -443,7 +450,7 @@ long long mm_vma_file_size_impl(const struct task_vma *vma) {
     return (long long)vma->image_size;
 }
 
-long mm_shared_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *buf, size_t count) {
+long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count) {
     size_t offset;
     uint64_t page_index;
     size_t page_offset;
@@ -471,6 +478,7 @@ long mm_shared_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *bu
             if (to_copy > TASK_VMA_PAGE_SIZE - page_offset) {
                 to_copy = TASK_VMA_PAGE_SIZE - page_offset;
             }
+            mm_vma_mark_resident(vma, offset / TASK_VMA_PAGE_SIZE);
             memset(buf, 0, to_copy);
             return (long)to_copy;
         }
@@ -494,6 +502,7 @@ long mm_shared_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *bu
     if ((long long)to_copy > file_remaining) {
         to_copy = (size_t)file_remaining;
     }
+    mm_vma_mark_resident(vma, page_index);
     memcpy(buf, vma->shared_pages[page_index]->image + page_offset, to_copy);
     return (long)to_copy;
 }

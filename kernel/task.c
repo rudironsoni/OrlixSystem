@@ -463,7 +463,7 @@ void task_mm_put_impl(struct mm_struct *mm) {
     free(mm);
 }
 
-static long task_read_vma(const struct task_vma *vma, uint64_t addr, void *buf, size_t count) {
+static long task_read_vma(struct task_vma *vma, uint64_t addr, void *buf, size_t count) {
     size_t offset;
     size_t available;
     uint64_t page_remaining;
@@ -508,6 +508,9 @@ static long task_read_vma(const struct task_vma *vma, uint64_t addr, void *buf, 
                 if (to_zero > TASK_VMA_PAGE_SIZE - page_offset) {
                     to_zero = TASK_VMA_PAGE_SIZE - page_offset;
                 }
+                if (vma->resident_pages && page_index < vma->page_count) {
+                    vma->resident_pages[page_index] = 1;
+                }
                 memset(buf, 0, to_zero);
                 return (long)to_zero;
             }
@@ -523,6 +526,12 @@ static long task_read_vma(const struct task_vma *vma, uint64_t addr, void *buf, 
     to_copy = count < available ? count : available;
     if ((uint64_t)to_copy > page_remaining) {
         to_copy = (size_t)page_remaining;
+    }
+    if (vma->resident_pages) {
+        uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
+        if (page_index < vma->page_count) {
+            vma->resident_pages[page_index] = 1;
+        }
     }
     memcpy(buf, (const unsigned char *)vma->image + offset, to_copy);
     return (long)to_copy;

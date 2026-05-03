@@ -416,9 +416,9 @@ void task_mm_put_impl(struct mm_struct *mm);
 void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping);
 void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping);
 void mm_private_page_put_impl(struct vm_private_page *page);
-long mm_shared_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *buf, size_t count);
+long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
 long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
-long mm_private_vma_read_impl(const struct task_vma *vma, uint64_t addr, void *buf, size_t count);
+long mm_private_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
 long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
 
 /* Virtual process identity syscalls (internal helpers) */

@@ -241,6 +241,10 @@
     XCTAssertEqual(native_syscall_contract_mincore_reports_virtual_residency(), 0, @"errno %d", errno);
 }
 
+- (void)testReadFaultRestoresMincoreResidency {
+    XCTAssertEqual(native_syscall_contract_read_fault_restores_mincore_residency(), 0, @"errno %d", errno);
+}
+
 - (void)testTruncatedFileMappingFaultQueuesSigbus {
     XCTAssertEqual(native_syscall_contract_truncated_file_mapping_fault_queues_sigbus(), 0, @"errno %d", errno);
 }
