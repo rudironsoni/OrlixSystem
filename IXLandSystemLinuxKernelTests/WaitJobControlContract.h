@@ -21,5 +21,6 @@ int wait_job_control_contract_child_exit_generates_sigchld_for_parent(void);
 int wait_job_control_contract_pty_background_read_stop_is_waitpid_visible(void);
 int wait_job_control_contract_pty_background_write_tostop_stop_is_waitpid_visible(void);
 int wait_job_control_contract_pty_vsusp_stop_is_waitpid_visible(void);
+int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void);
 
 #endif

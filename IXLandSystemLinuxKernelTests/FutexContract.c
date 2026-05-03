@@ -5,6 +5,12 @@
 #include <linux/mman.h>
 #include <linux/sched.h>
 #include <linux/time_types.h>
+#ifdef SIGUSR1
+#undef SIGUSR1
+#endif
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
 
 #include <errno.h>
 #include <pthread.h>
@@ -14,6 +20,7 @@
 #include <time.h>
 
 #include "runtime/syscall.h"
+#include "kernel/signal.h"
 #include "kernel/task.h"
 
 extern int futex(int *uaddr, int futex_op, int val,
@@ -25,12 +32,32 @@ struct futex_wait_thread {
     atomic_int ready;
     int rc;
     int saved_errno;
+    struct task_struct *task;
 };
+
+static void futex_clear_pending_signal(struct task_struct *task, int sig) {
+    int32_t dequeued = 0;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    while (signal_dequeue(task, NULL, &dequeued) > 0) {
+        if (dequeued == sig) {
+            break;
+        }
+    }
+    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+}
 
 static void *futex_wait_thread_main(void *arg) {
     struct futex_wait_thread *ctx = (struct futex_wait_thread *)arg;
     struct timespec timeout = {2, 0};
 
+    if (ctx->task) {
+        set_current(ctx->task);
+    }
     atomic_store(&ctx->ready, 1);
     ctx->rc = futex(ctx->word, FUTEX_WAIT_PRIVATE, 0, &timeout, NULL, 0);
     ctx->saved_errno = errno;
@@ -89,6 +116,7 @@ int futex_contract_wake_releases_waiter(void) {
     atomic_init(&ctx.ready, 0);
     ctx.rc = -1;
     ctx.saved_errno = 0;
+    ctx.task = NULL;
 
     if (pthread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
         errno = ECHILD;
@@ -104,6 +132,76 @@ int futex_contract_wake_releases_waiter(void) {
     }
     pthread_join(thread, NULL);
     if (ret != 1 || ctx.rc != 0 || ctx.saved_errno != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
+int futex_contract_interrupted_wait_records_restart(void) {
+    struct futex_wait_thread ctx;
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct task_struct *restore;
+    pthread_t thread;
+    int word = 0;
+    long ret;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    ctx.word = &word;
+    ctx.task = child;
+    atomic_init(&ctx.ready, 0);
+    ctx.rc = -1;
+    ctx.saved_errno = 0;
+
+    if (pthread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+        errno = ECHILD;
+        return -1;
+    }
+    while (atomic_load(&ctx.ready) == 0) {
+        /* spin until the waiter has entered the futex path */
+    }
+    if (signal_generate_task(child, SIGUSR1) != 0) {
+        pthread_join(thread, NULL);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+        return -1;
+    }
+    pthread_join(thread, NULL);
+
+    if (ctx.rc != -1 || ctx.saved_errno != EINTR ||
+        !child->mm ||
+        child->mm->signal_frame_restart_kind != TASK_RESTART_FUTEX_WAIT ||
+        child->mm->signal_frame_restart_arg0 != (uint64_t)(uintptr_t)&word ||
+        child->mm->signal_frame_restart_arg1 != 0 ||
+        child->mm->signal_frame_restart_arg2 != 2000) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+        errno = ENODATA;
+        return -1;
+    }
+
+    futex_clear_pending_signal(child, SIGUSR1);
+    atomic_store((_Atomic int *)&word, 1);
+    restore = get_current();
+    set_current(child);
+    ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
+    set_current(restore);
+
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+
+    if (ret != -EAGAIN) {
         errno = EPROTO;
         return -1;
     }

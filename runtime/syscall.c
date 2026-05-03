@@ -565,6 +565,12 @@ long syscall_dispatch_impl(long number,
         case TASK_RESTART_PIPE_WRITE:
             ret = write_impl((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2);
             return ret < 0 ? -(long)errno : ret;
+        case TASK_RESTART_FUTEX_WAIT:
+            ret = futex_wait_impl((int *)(uintptr_t)arg0, (int)arg1, (int)arg2);
+            return ret < 0 ? -(long)errno : ret;
+        case TASK_RESTART_WAITPID:
+            ret = waitpid_impl((int32_t)arg0, (int *)(uintptr_t)arg1, (int)arg2);
+            return ret < 0 ? -(long)errno : ret;
         default:
             (void)arg3;
             (void)arg4;

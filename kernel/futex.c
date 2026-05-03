@@ -115,6 +115,11 @@ int futex_wait_impl(int *uaddr, int expected, int timeout_ms) {
     wait_queue_unlock(&bucket->wait);
 
     if (ret == -EINTR) {
+        task_restart_record_impl(get_current(), TASK_RESTART_FUTEX_WAIT,
+                                 (uint64_t)(uintptr_t)uaddr,
+                                 (uint64_t)(int64_t)expected,
+                                 (uint64_t)(int64_t)timeout_ms,
+                                 0, 0, 0);
         errno = EINTR;
         return -1;
     }

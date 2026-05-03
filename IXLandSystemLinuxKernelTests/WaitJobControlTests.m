@@ -96,4 +96,8 @@
     XCTAssertEqual(wait_job_control_contract_pty_vsusp_stop_is_waitpid_visible(), 0, @"errno %d", errno);
 }
 
+- (void)testWaitpidSignalInterruptRecordsRestart {
+    XCTAssertEqual(wait_job_control_contract_waitpid_signal_interrupt_records_restart(), 0, @"errno %d", errno);
+}
+
 @end

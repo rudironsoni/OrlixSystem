@@ -1,4 +1,5 @@
 #include <asm/ioctls.h>
+#include <asm/unistd.h>
 #include <linux/fcntl.h>
 #include <linux/wait.h>
 #define __ASSEMBLY__ 1
@@ -6,12 +7,15 @@
 #undef __ASSEMBLY__
 
 #include <errno.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "fs/fdtable.h"
 #include "fs/pty.h"
+#include "runtime/syscall.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 
@@ -56,6 +60,25 @@ static void clear_pending_signal(struct task_struct *task, int32_t sig) {
     }
     task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
     task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+}
+
+struct waitpid_restart_thread {
+    struct task_struct *task;
+    int32_t child_pid;
+    int status;
+    int32_t result;
+    int saved_errno;
+    atomic_int ready;
+};
+
+static void *waitpid_restart_thread_main(void *arg) {
+    struct waitpid_restart_thread *ctx = arg;
+
+    set_current(ctx->task);
+    atomic_store(&ctx->ready, 1);
+    ctx->result = waitpid_impl(ctx->child_pid, &ctx->status, 0);
+    ctx->saved_errno = errno;
+    return NULL;
 }
 
 static int append_decimal(char *buf, size_t buf_size, int value) {
@@ -829,4 +852,91 @@ out:
     close_if_open(slave_fd);
     detach_controlling_tty_if_present();
     return result;
+}
+
+int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *waiter = NULL;
+    struct task_struct *child = NULL;
+    struct task_struct *restore;
+    struct waitpid_restart_thread ctx;
+    pthread_t thread;
+    long ret;
+    int status = 0;
+    int32_t expected_pid;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    waiter = task_create_child_impl(parent);
+    if (!waiter) {
+        return -1;
+    }
+    child = task_create_child_impl(waiter);
+    if (!child) {
+        task_unlink_child_impl(parent, waiter);
+        free_task(waiter);
+        return -1;
+    }
+    expected_pid = child->pid;
+
+    ctx.task = waiter;
+    ctx.child_pid = child->pid;
+    ctx.status = 0;
+    ctx.result = 0;
+    ctx.saved_errno = 0;
+    atomic_init(&ctx.ready, 0);
+
+    if (pthread_create(&thread, NULL, waitpid_restart_thread_main, &ctx) != 0) {
+        destroy_child_task(waiter, child);
+        task_unlink_child_impl(parent, waiter);
+        free_task(waiter);
+        errno = ECHILD;
+        return -1;
+    }
+    while (atomic_load(&ctx.ready) == 0) {
+        /* spin until the waiter has entered waitpid_impl */
+    }
+    if (signal_generate_task(waiter, SIGUSR1) != 0) {
+        pthread_join(thread, NULL);
+        destroy_child_task(waiter, child);
+        task_unlink_child_impl(parent, waiter);
+        free_task(waiter);
+        return -1;
+    }
+    pthread_join(thread, NULL);
+
+    if (ctx.result != -1 || ctx.saved_errno != EINTR ||
+        !waiter->mm ||
+        waiter->mm->signal_frame_restart_kind != TASK_RESTART_WAITPID ||
+        waiter->mm->signal_frame_restart_arg0 != (uint64_t)(int64_t)expected_pid ||
+        waiter->mm->signal_frame_restart_arg1 != (uint64_t)(uintptr_t)&ctx.status ||
+        waiter->mm->signal_frame_restart_arg2 != 0) {
+        destroy_child_task(waiter, child);
+        task_unlink_child_impl(parent, waiter);
+        free_task(waiter);
+        errno = ENODATA;
+        return -1;
+    }
+
+    clear_pending_signal(waiter, SIGUSR1);
+    clear_pending_signal(waiter, SIGCHLD);
+    task_mark_exited(child, 7);
+    task_notify_parent_state_change(child);
+
+    restore = get_current();
+    set_current(waiter);
+    ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
+    status = ctx.status;
+    set_current(restore);
+
+    task_unlink_child_impl(parent, waiter);
+    free_task(waiter);
+
+    if (ret != expected_pid || !WIFEXITED(status) || WEXITSTATUS(status) != 7) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
 }

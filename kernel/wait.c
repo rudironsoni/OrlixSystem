@@ -79,6 +79,14 @@ static int wait_report_status(const struct task_struct *child, enum wait_report_
     }
 }
 
+static int wait_record_restart(struct task_struct *parent, int32_t pid, int *wstatus, int options) {
+    return task_restart_record_impl(parent, TASK_RESTART_WAITPID,
+                                    (uint64_t)(int64_t)pid,
+                                    (uint64_t)(uintptr_t)wstatus,
+                                    (uint64_t)(int64_t)options,
+                                    0, 0, 0);
+}
+
 int32_t waitpid_impl(int32_t pid, int *wstatus, int options) {
     struct task_struct *parent = get_current();
     struct task_struct *child;
@@ -131,7 +139,23 @@ int32_t waitpid_impl(int32_t pid, int *wstatus, int options) {
             return 0;
         }
 
+        if (signal_has_unblocked_pending(parent)) {
+            wait_record_restart(parent, pid, wstatus, options);
+            parent->waiters--;
+            kernel_mutex_unlock(&parent->lock);
+            errno = EINTR;
+            return -1;
+        }
+
         kernel_cond_wait(&parent->wait_cond, &parent->lock);
+
+        if (signal_has_unblocked_pending(parent)) {
+            wait_record_restart(parent, pid, wstatus, options);
+            parent->waiters--;
+            kernel_mutex_unlock(&parent->lock);
+            errno = EINTR;
+            return -1;
+        }
     }
 
     matched_pid = matched_child->pid;
