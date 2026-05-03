@@ -638,6 +638,29 @@ int procfs_namespace_contract_proc_status_reports_groups_and_capabilities(void) 
     return 0;
 }
 
+int procfs_namespace_contract_proc_status_reports_thread_and_signal_queue_fields(void) {
+    char content[2048];
+
+    reset_procfs_namespace_state();
+
+    if (read_file_content("/proc/self/status", content, sizeof(content)) != 0) {
+        return -1;
+    }
+
+    if (!contains(content, "Threads:\t1\n") ||
+        !contains(content, "SigQ:\t") ||
+        !contains(content, "SigPnd:\t") ||
+        !contains(content, "ShdPnd:\t") ||
+        !contains(content, "SigBlk:\t") ||
+        !contains(content, "SigIgn:\t") ||
+        !contains(content, "SigCgt:\t")) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    return 0;
+}
+
 int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void) {
     struct task_struct *parent;
     struct task_struct *child = NULL;

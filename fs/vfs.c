@@ -142,6 +142,7 @@
 #include "../kernel/cgroup.h"
 #include "../kernel/task.h"
 #include "../kernel/cred_internal.h"
+#include "../kernel/signal.h"
 #include "../kernel/uts.h"
 
 /* makedev for device nodes - Linux UAPI style */
@@ -5042,6 +5043,61 @@ static const char *vfs_proc_task_state_name(enum task_state state) {
     }
 }
 
+static void vfs_proc_task_signal_status(const struct task_struct *task,
+                                        unsigned int *queued_out,
+                                        uint64_t *private_pending_out,
+                                        uint64_t *shared_pending_out,
+                                        uint64_t *blocked_out,
+                                        uint64_t *ignored_out,
+                                        uint64_t *caught_out) {
+    unsigned int queued = 0;
+    uint64_t private_pending = 0;
+    uint64_t shared_pending = 0;
+    uint64_t blocked = 0;
+    uint64_t ignored = 0;
+    uint64_t caught = 0;
+
+    if (task && task->signal) {
+        kernel_mutex_lock(&task->signal->lock);
+        private_pending = task->signal->pending.sig[0];
+        blocked = task->signal->blocked.sig[0];
+        queued = task->signal->queue.count < 0 ? 0U : (unsigned int)task->signal->queue.count;
+        for (int sig = 1; sig <= KERNEL_SIG_NUM; sig++) {
+            sighandler_t handler = task->signal->actions[sig - 1].handler;
+            uint64_t bit = 1ULL << (sig - 1);
+
+            if (!handler) {
+                continue;
+            }
+            if ((uintptr_t)handler == 1U) {
+                ignored |= bit;
+            } else {
+                caught |= bit;
+            }
+        }
+        kernel_mutex_unlock(&task->signal->lock);
+    }
+
+    if (queued_out) {
+        *queued_out = queued;
+    }
+    if (private_pending_out) {
+        *private_pending_out = private_pending;
+    }
+    if (shared_pending_out) {
+        *shared_pending_out = shared_pending;
+    }
+    if (blocked_out) {
+        *blocked_out = blocked;
+    }
+    if (ignored_out) {
+        *ignored_out = ignored;
+    }
+    if (caught_out) {
+        *caught_out = caught;
+    }
+}
+
 static struct task_struct *vfs_task_for_proc_pid(int32_t pid) {
     struct task_struct *current;
 
@@ -5780,6 +5836,12 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
     struct vfs_vm_accounting acct;
     size_t pos = 0;
     char state_char;
+    unsigned int queued_signals = 0;
+    uint64_t sigpnd = 0;
+    uint64_t shdpnd = 0;
+    uint64_t sigblk = 0;
+    uint64_t sigign = 0;
+    uint64_t sigcgt = 0;
 
     if (!buf || buf_len == 0) {
         return -EINVAL;
@@ -5817,6 +5879,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
             break;
     }
     vfs_vm_account_task(task, &acct);
+    vfs_proc_task_signal_status(task, &queued_signals, &sigpnd, &shdpnd, &sigblk, &sigign, &sigcgt);
 
     if (vfs_proc_append(buf, buf_len, &pos,
         "Name:\t%s\n"
@@ -5860,6 +5923,13 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         "CapBnd:\t%016llx\n"
         "CapAmb:\t%016llx\n"
         "NoNewPrivs:\t%d\n"
+        "Threads:\t1\n"
+        "SigQ:\t%u/1024\n"
+        "SigPnd:\t%016llx\n"
+        "ShdPnd:\t%016llx\n"
+        "SigBlk:\t%016llx\n"
+        "SigIgn:\t%016llx\n"
+        "SigCgt:\t%016llx\n"
         "VmSize:\t%llu kB\n"
         "VmRSS:\t%llu kB\n"
         "RssAnon:\t%llu kB\n"
@@ -5878,6 +5948,12 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         (unsigned long long)cred->cap_bounding,
         (unsigned long long)cred->cap_ambient,
         cred->no_new_privs ? 1 : 0,
+        queued_signals,
+        (unsigned long long)sigpnd,
+        (unsigned long long)shdpnd,
+        (unsigned long long)sigblk,
+        (unsigned long long)sigign,
+        (unsigned long long)sigcgt,
         (unsigned long long)(acct.size_pages * 4ULL),
         (unsigned long long)(acct.resident_pages * 4ULL),
         (unsigned long long)((acct.resident_pages - acct.resident_shared_pages) * 4ULL),

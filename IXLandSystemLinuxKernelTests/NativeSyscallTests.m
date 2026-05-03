@@ -64,6 +64,10 @@
     XCTAssertEqual(native_syscall_contract_msync_preserves_clean_shared_pages(), 0, @"errno %d", errno);
 }
 
+- (void)testPrivateFileMappingMsyncDoesNotWriteBackCow {
+    XCTAssertEqual(native_syscall_contract_private_file_mapping_msync_does_not_write_back_cow(), 0, @"errno %d", errno);
+}
+
 - (void)testUnlinkedSharedMappingSyncsThroughOpenFd {
     XCTAssertEqual(native_syscall_contract_unlinked_shared_mapping_syncs_through_open_fd(), 0, @"errno %d", errno);
 }
