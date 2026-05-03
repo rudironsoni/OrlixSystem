@@ -1456,6 +1456,18 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"MS_REC propagation remount should update the virtual mount subtree, errno %d", errno);
 }
 
+- (void)testMountSetattrRecursiveAttrsVisibleInStatmount {
+    extern int vfs_contract_mount_setattr_recursive_attrs_visible_in_statmount(void);
+    XCTAssertEqual(vfs_contract_mount_setattr_recursive_attrs_visible_in_statmount(), 0,
+                   @"mount_setattr AT_RECURSIVE should expose child mount attrs through statmount, errno %d", errno);
+}
+
+- (void)testRecursiveRemountAttrsVisibleInStatmount {
+    extern int vfs_contract_recursive_remount_attrs_visible_in_statmount(void);
+    XCTAssertEqual(vfs_contract_recursive_remount_attrs_visible_in_statmount(), 0,
+                   @"MS_REC remount should expose child mount attrs through statmount, errno %d", errno);
+}
+
 - (void)testRecursiveRemountSlavePreservesPeerGroupMasters {
     extern int vfs_contract_recursive_remount_slave_preserves_peer_group_masters(void);
     XCTAssertEqual(vfs_contract_recursive_remount_slave_preserves_peer_group_masters(), 0,

@@ -4063,6 +4063,10 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         long number;
         enum syscall_capability_class capability_class;
     };
+    struct planned_syscall_gap {
+        long number;
+        enum syscall_gap_priority priority;
+    };
     static const long required_syscalls[] = {
         __NR_read,
         __NR_write,
@@ -4142,6 +4146,38 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_clock_gettime, SYSCALL_CAPABILITY_TIME},
         {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
     };
+    static const struct planned_syscall_gap planned_gaps[] = {
+        {__NR_exit, SYSCALL_GAP_BOOT},
+        {__NR_exit_group, SYSCALL_GAP_BOOT},
+        {__NR_gettid, SYSCALL_GAP_BOOT},
+        {__NR_waitid, SYSCALL_GAP_BOOT},
+        {__NR_clone, SYSCALL_GAP_BOOT},
+        {__NR_kill, SYSCALL_GAP_BOOT},
+        {__NR_tgkill, SYSCALL_GAP_BOOT},
+        {__NR_nanosleep, SYSCALL_GAP_BOOT},
+        {__NR_clock_nanosleep, SYSCALL_GAP_BOOT},
+        {__NR_uname, SYSCALL_GAP_BOOT},
+        {__NR_dup, SYSCALL_GAP_SHELL},
+        {__NR_dup3, SYSCALL_GAP_SHELL},
+        {__NR_mkdirat, SYSCALL_GAP_SHELL},
+        {__NR_unlinkat, SYSCALL_GAP_SHELL},
+        {__NR_renameat, SYSCALL_GAP_SHELL},
+        {__NR_renameat2, SYSCALL_GAP_SHELL},
+        {__NR_faccessat, SYSCALL_GAP_SHELL},
+        {__NR_faccessat2, SYSCALL_GAP_SHELL},
+        {__NR_readv, SYSCALL_GAP_SHELL},
+        {__NR_writev, SYSCALL_GAP_SHELL},
+        {__NR_statx, SYSCALL_GAP_SHELL},
+        {__NR_socket, SYSCALL_GAP_NETWORK},
+        {__NR_socketpair, SYSCALL_GAP_NETWORK},
+        {__NR_connect, SYSCALL_GAP_NETWORK},
+        {__NR_sendto, SYSCALL_GAP_NETWORK},
+        {__NR_recvfrom, SYSCALL_GAP_NETWORK},
+        {__NR_sendmsg, SYSCALL_GAP_NETWORK},
+        {__NR_recvmsg, SYSCALL_GAP_NETWORK},
+        {__NR_recvmmsg, SYSCALL_GAP_NETWORK},
+        {__NR_sendmmsg, SYSCALL_GAP_NETWORK},
+    };
 
     for (size_t i = 0; i < sizeof(required_syscalls) / sizeof(required_syscalls[0]); i++) {
         if (!syscall_is_implemented_impl(required_syscalls[i])) {
@@ -4153,6 +4189,14 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
     for (size_t i = 0; i < sizeof(required_classes) / sizeof(required_classes[0]); i++) {
         if (syscall_capability_class_impl(required_classes[i].number) != required_classes[i].capability_class) {
             errno = ENOMSG;
+            return -1;
+        }
+    }
+
+    for (size_t i = 0; i < sizeof(planned_gaps) / sizeof(planned_gaps[0]); i++) {
+        if (syscall_is_implemented_impl(planned_gaps[i].number) ||
+            syscall_gap_priority_impl(planned_gaps[i].number) != planned_gaps[i].priority) {
+            errno = ENOTSUP;
             return -1;
         }
     }

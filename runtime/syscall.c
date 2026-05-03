@@ -483,6 +483,50 @@ int syscall_is_implemented_impl(long number) {
     return syscall_capability_class_impl(number) != SYSCALL_CAPABILITY_NONE;
 }
 
+enum syscall_gap_priority syscall_gap_priority_impl(long number) {
+    if (syscall_is_implemented_impl(number)) {
+        return SYSCALL_GAP_NONE;
+    }
+
+    switch (number) {
+    case __NR_exit:
+    case __NR_exit_group:
+    case __NR_gettid:
+    case __NR_waitid:
+    case __NR_clone:
+    case __NR_kill:
+    case __NR_tgkill:
+    case __NR_nanosleep:
+    case __NR_clock_nanosleep:
+    case __NR_uname:
+        return SYSCALL_GAP_BOOT;
+    case __NR_dup:
+    case __NR_dup3:
+    case __NR_mkdirat:
+    case __NR_unlinkat:
+    case __NR_renameat:
+    case __NR_renameat2:
+    case __NR_faccessat:
+    case __NR_faccessat2:
+    case __NR_readv:
+    case __NR_writev:
+    case __NR_statx:
+        return SYSCALL_GAP_SHELL;
+    case __NR_socket:
+    case __NR_socketpair:
+    case __NR_connect:
+    case __NR_sendto:
+    case __NR_recvfrom:
+    case __NR_sendmsg:
+    case __NR_recvmsg:
+    case __NR_recvmmsg:
+    case __NR_sendmmsg:
+        return SYSCALL_GAP_NETWORK;
+    default:
+        return SYSCALL_GAP_NONE;
+    }
+}
+
 long syscall_dispatch_impl(long number,
                            long arg0,
                            long arg1,

@@ -355,6 +355,12 @@ static unsigned long vfs_mount_attribute_flags(void) {
     return MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC;
 }
 
+static void vfs_mount_apply_remount_attributes(struct vfs_mount_entry *entry,
+                                               unsigned long flags) {
+    entry->flags = (entry->flags & ~vfs_mount_attribute_flags()) |
+                   (flags & vfs_mount_attribute_flags()) | MS_BIND;
+}
+
 static unsigned long vfs_mount_selected_propagation(unsigned long flags) {
     unsigned long propagation = flags & vfs_mount_propagation_flags();
     if ((propagation & (propagation - 1UL)) != 0) {
@@ -3670,8 +3676,16 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         fs_mutex_lock(&mnt_ns->lock);
         for (size_t i = 0; i < MAX_MOUNTS; i++) {
             if (mnt_ns->entries[i].active && strcmp(mnt_ns->entries[i].target, resolved_target) == 0) {
-                mnt_ns->entries[i].flags = (mnt_ns->entries[i].flags & ~vfs_mount_attribute_flags()) |
-                                            (flags & vfs_mount_attribute_flags()) | MS_BIND;
+                if ((flags & MS_REC) != 0) {
+                    for (size_t child = 0; child < MAX_MOUNTS; child++) {
+                        if (mnt_ns->entries[child].active &&
+                            vfs_mount_target_matches_tree(mnt_ns->entries[child].target, resolved_target)) {
+                            vfs_mount_apply_remount_attributes(&mnt_ns->entries[child], flags);
+                        }
+                    }
+                } else {
+                    vfs_mount_apply_remount_attributes(&mnt_ns->entries[i], flags);
+                }
                 if (propagation != 0) {
                     if ((flags & MS_REC) != 0) {
                         vfs_mount_set_tree_propagation_locked(mnt_ns, resolved_target, propagation);

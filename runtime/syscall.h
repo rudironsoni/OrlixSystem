@@ -18,6 +18,14 @@ enum syscall_capability_class {
     SYSCALL_CAPABILITY_RESOURCE,
 };
 
+enum syscall_gap_priority {
+    SYSCALL_GAP_NONE = 0,
+    SYSCALL_GAP_BOOT,
+    SYSCALL_GAP_SHELL,
+    SYSCALL_GAP_PACKAGE,
+    SYSCALL_GAP_NETWORK,
+};
+
 long syscall_dispatch_impl(long number,
                            long arg0,
                            long arg1,
@@ -27,6 +35,7 @@ long syscall_dispatch_impl(long number,
                            long arg5);
 int syscall_is_implemented_impl(long number);
 enum syscall_capability_class syscall_capability_class_impl(long number);
+enum syscall_gap_priority syscall_gap_priority_impl(long number);
 
 #ifdef __cplusplus
 }

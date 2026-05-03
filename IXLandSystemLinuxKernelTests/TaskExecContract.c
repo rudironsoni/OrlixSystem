@@ -828,6 +828,67 @@ out:
     return ret;
 }
 
+int task_exec_contract_nosuid_mount_blocks_file_capability_exec_gain(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    uint64_t cap_setuid = 1ULL << CAP_SETUID;
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    umount("/tmp/task-exec-nosuid-filecap-target");
+    unlink_impl("/tmp/task-exec-nosuid-filecap-source/filecap-file");
+    rmdir_impl("/tmp/task-exec-nosuid-filecap-source");
+    rmdir_impl("/tmp/task-exec-nosuid-filecap-target");
+
+    if (mkdir_impl("/tmp/task-exec-nosuid-filecap-source", 0700) != 0 ||
+        mkdir_impl("/tmp/task-exec-nosuid-filecap-target", 0700) != 0) {
+        goto out;
+    }
+    fd = open_impl("/tmp/task-exec-nosuid-filecap-source/filecap-file",
+                   O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    if (vfs_set_file_capabilities("/tmp/task-exec-nosuid-filecap-source/filecap-file",
+                                  cap_setuid, 0, true) != 0 ||
+        mount("/tmp/task-exec-nosuid-filecap-source", "/tmp/task-exec-nosuid-filecap-target",
+              NULL, MS_BIND | MS_NOSUID, NULL) != 0 ||
+        setuid_impl(1000) != 0 ||
+        task_exec_transition_impl("/tmp/task-exec-nosuid-filecap-target/filecap-file",
+                                  "nosuid-filecap-file") != 0 ||
+        capget(&header, data) != 0) {
+        goto out;
+    }
+    if (task_exec_contract_cap_has_permitted(data, CAP_SETUID) ||
+        task_exec_contract_cap_has_effective(data, CAP_SETUID)) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!get_current() || get_current()->exec_secure != 0 || get_current()->exec_dumpable != 1) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    cred_reset_to_defaults();
+    vfs_remove_file_capabilities("/tmp/task-exec-nosuid-filecap-source/filecap-file");
+    umount("/tmp/task-exec-nosuid-filecap-target");
+    unlink_impl("/tmp/task-exec-nosuid-filecap-source/filecap-file");
+    rmdir_impl("/tmp/task-exec-nosuid-filecap-source");
+    rmdir_impl("/tmp/task-exec-nosuid-filecap-target");
+    return ret;
+}
+
 int task_exec_contract_noexec_mount_blocks_exec_transition(void) {
     int fd = -1;
     int ret = -1;
