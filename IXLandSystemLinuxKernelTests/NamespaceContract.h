@@ -14,6 +14,7 @@ int namespace_contract_unshare_newns_isolates_current_mounts(void);
 int namespace_contract_clone_newns_with_clone_fs_rejected(void);
 int namespace_contract_clone_newpid_records_child_namespace_metadata(void);
 int namespace_contract_unshare_newpid_applies_to_next_child_metadata(void);
+int namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(void);
 
 #ifdef __cplusplus
 }

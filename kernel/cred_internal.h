@@ -51,6 +51,7 @@ struct cred {
     uint64_t cap_inheritable;
     uint64_t cap_bounding;
     uint64_t cap_ambient;
+    uint64_t user_ns_id;
 
     /* Reference counting for credential sharing */
     int refs;
@@ -142,6 +143,9 @@ int cred_set_no_new_privs(struct cred *cred);
 
 /* Virtual capability state */
 bool cred_has_cap(const struct cred *cred, int cap);
+bool cred_has_cap_in_user_namespace(const struct cred *cred, uint64_t user_ns_id, int cap);
+uint64_t cred_user_namespace_id(const struct cred *cred);
+int cred_unshare_user_namespace(struct cred *cred);
 void cred_apply_exec_file_capabilities(struct cred *cred, uint64_t permitted,
                                        uint64_t inheritable, bool effective);
 

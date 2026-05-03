@@ -12,6 +12,7 @@
 
 #include <errno.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -51,6 +52,8 @@ static uint64_t cred_cap_bit(int cap) {
     }
     return 1ULL << cap;
 }
+
+static atomic_ullong cred_next_user_ns_id = 2;
 
 static void cred_reset_caps_for_root(struct cred *cred) {
     uint64_t full;
@@ -115,6 +118,7 @@ static struct cred global_init_cred = {
     .cap_inheritable = 0,
     .cap_bounding = 0,
     .cap_ambient = 0,
+    .user_ns_id = 1,
     .refs = 1
 };
 
@@ -171,6 +175,7 @@ struct cred *dup_cred(const struct cred *cred) {
         new->cap_inheritable = cred->cap_inheritable;
         new->cap_bounding = cred->cap_bounding;
         new->cap_ambient = cred->cap_ambient;
+        new->user_ns_id = cred->user_ns_id;
         new->refs = 1;
     }
     return new;
@@ -192,6 +197,7 @@ void cred_init_defaults(struct cred *cred) {
     cred->group_count = 0;
     cred->no_new_privs = false;
     cred->securebits = SECUREBITS_DEFAULT;
+    cred->user_ns_id = 1;
     cred_reset_caps_for_root(cred);
 }
 
@@ -226,6 +232,7 @@ void cred_reset_to_defaults(void) {
     global_init_cred.group_count = 0;
     global_init_cred.no_new_privs = false;
     global_init_cred.securebits = SECUREBITS_DEFAULT;
+    global_init_cred.user_ns_id = 1;
     cred_reset_caps_for_root(&global_init_cred);
     global_init_cred.refs = 1;
     
@@ -681,6 +688,34 @@ bool cred_has_cap(const struct cred *cred, int cap) {
         return false;
     }
     return (cred->cap_effective & bit) != 0;
+}
+
+bool cred_has_cap_in_user_namespace(const struct cred *cred, uint64_t user_ns_id, int cap) {
+    if (!cred || user_ns_id == 0 || cred->user_ns_id != user_ns_id) {
+        return false;
+    }
+    return cred_has_cap(cred, cap);
+}
+
+uint64_t cred_user_namespace_id(const struct cred *cred) {
+    return cred ? cred->user_ns_id : 0;
+}
+
+int cred_unshare_user_namespace(struct cred *cred) {
+    if (!cred) {
+        return -EINVAL;
+    }
+    cred->user_ns_id = (uint64_t)atomic_fetch_add(&cred_next_user_ns_id, 1);
+    cred_reset_caps_for_root(cred);
+    cred->uid = 0;
+    cred->euid = 0;
+    cred->suid = 0;
+    cred->fsuid = 0;
+    cred->gid = 0;
+    cred->egid = 0;
+    cred->sgid = 0;
+    cred->fsgid = 0;
+    return 0;
 }
 
 /* ============================================================================

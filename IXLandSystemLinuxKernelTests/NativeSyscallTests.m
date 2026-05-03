@@ -45,6 +45,10 @@
     XCTAssertEqual(native_syscall_contract_munmap_gap_and_map_fixed_replace_policy(), 0, @"errno %d", errno);
 }
 
+- (void)testMapFixedNoreplaceReusesUnmappedGapOnly {
+    XCTAssertEqual(native_syscall_contract_map_fixed_noreplace_reuses_unmapped_gap_only(), 0, @"errno %d", errno);
+}
+
 - (void)testMremapGrowsAndMovesMapping {
     XCTAssertEqual(native_syscall_contract_mremap_grows_and_moves_mapping(), 0, @"errno %d", errno);
 }

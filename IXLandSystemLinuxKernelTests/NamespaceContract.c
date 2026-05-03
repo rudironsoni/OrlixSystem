@@ -1,4 +1,5 @@
 #include <linux/fcntl.h>
+#include <linux/capability.h>
 #include <linux/mount.h>
 #include <linux/sched.h>
 #include <linux/utsname.h>
@@ -27,6 +28,8 @@ extern long write_impl(int fd, const void *buf, size_t count);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
 extern void cred_reset_to_defaults(void);
+extern int capget(cap_user_header_t header, cap_user_data_t data);
+extern int capset(cap_user_header_t header, const cap_user_data_t data);
 
 static int expect_errno(int expected) {
     if (errno != expected) {
@@ -465,5 +468,105 @@ int namespace_contract_unshare_newpid_applies_to_next_child_metadata(void) {
     }
     release_lookup_child(parent, child);
     reset_namespace_contract_state();
+    return ret;
+}
+
+int namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    struct task_struct *parent = get_current();
+    struct task_struct *user_child = NULL;
+    struct task_struct *user_mnt_child = NULL;
+    int pid;
+    int ret = -1;
+
+    reset_namespace_contract_state();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (prepare_mount_paths() != 0) {
+        errno = ENOMSG;
+        goto out;
+    }
+    if (capget(&header, data) != 0) {
+        goto out;
+    }
+    data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
+    if (capset(&header, data) != 0) {
+        goto out;
+    }
+    errno = 0;
+    if (mount("/tmp/ns-parent-source", "/tmp/ns-target", NULL, MS_BIND, NULL) != -1 ||
+        errno != EPERM) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    pid = clone_impl(CLONE_NEWUSER);
+    if (pid < 0) {
+        errno = ENODATA;
+        goto out;
+    }
+    user_child = lookup_child_from_pid(pid);
+    if (!user_child) {
+        errno = ESRCH;
+        goto out;
+    }
+    set_current(user_child);
+    errno = 0;
+    if (mount("/tmp/ns-parent-source", "/tmp/ns-target", NULL, MS_BIND, NULL) != -1 ||
+        errno != EPERM) {
+        set_current(parent);
+        errno = ENODATA;
+        goto out;
+    }
+    set_current(parent);
+
+    pid = clone_impl(CLONE_NEWUSER | CLONE_NEWNS);
+    if (pid < 0) {
+        errno = ENXIO;
+        goto out;
+    }
+    user_mnt_child = lookup_child_from_pid(pid);
+    if (!user_mnt_child) {
+        errno = ESRCH;
+        goto out;
+    }
+    set_current(user_mnt_child);
+    if (mount("/tmp/ns-parent-source", "/tmp/ns-target", NULL, MS_BIND, NULL) != 0) {
+        set_current(parent);
+        goto out;
+    }
+    if (read_file_exact("/tmp/ns-target/file", "parent") != 0) {
+        set_current(parent);
+        errno = ENOMSG;
+        goto out;
+    }
+    set_current(parent);
+    if (read_file_exact("/tmp/ns-target/file", "target") != 0) {
+        errno = ESRCH;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        if (user_child) {
+            release_lookup_child(parent, user_child);
+        }
+        if (user_mnt_child) {
+            release_lookup_child(parent, user_mnt_child);
+        }
+        cleanup_mount_paths();
+        reset_namespace_contract_state();
+        errno = saved_errno;
+    }
     return ret;
 }

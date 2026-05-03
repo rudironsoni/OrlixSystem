@@ -49,7 +49,7 @@ typedef struct {
 static __thread fork_ctx_t *active_fork_ctx = NULL;
 
 static unsigned long clone_namespace_flags(void) {
-    return CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWCGROUP;
+    return CLONE_NEWNS | CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWCGROUP | CLONE_NEWUSER;
 }
 
 static unsigned long clone_supported_flags(void) {
@@ -84,13 +84,25 @@ static int task_apply_clone_namespace_flags(struct task_struct *task, uint64_t f
     uint64_t masked = flags & ~0xffULL;
     struct uts_namespace *new_uts;
 
+    if ((masked & CLONE_NEWUSER) != 0) {
+        int ret = cred_unshare_user_namespace(task->cred);
+        if (ret != 0) {
+            errno = -ret;
+            return -1;
+        }
+    }
+
     if ((masked & CLONE_NEWNS) != 0) {
         int ret;
+        struct task_struct *saved;
         if (!task->fs) {
             errno = ESRCH;
             return -1;
         }
+        saved = get_current();
+        set_current(task);
         ret = fs_unshare_mount_namespace(task->fs);
+        set_current(saved);
         if (ret < 0) {
             errno = -ret;
             return -1;

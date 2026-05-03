@@ -9,6 +9,7 @@ int native_syscall_contract_dispatches_fd_pipe_and_procfs(void);
 int native_syscall_contract_dispatches_vm_identity_time_and_dirs(void);
 int native_syscall_contract_enforces_vma_fault_policy(void);
 int native_syscall_contract_munmap_gap_and_map_fixed_replace_policy(void);
+int native_syscall_contract_map_fixed_noreplace_reuses_unmapped_gap_only(void);
 int native_syscall_contract_mremap_grows_and_moves_mapping(void);
 int native_syscall_contract_madvise_dontneed_discards_private_page(void);
 int native_syscall_contract_maps_shared_file_and_syncs(void);

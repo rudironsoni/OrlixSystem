@@ -52,4 +52,8 @@
     XCTAssertEqual(namespace_contract_unshare_newpid_applies_to_next_child_metadata(), 0, @"errno %d", errno);
 }
 
+- (void)testNewuserCapsAreScopedToMountNamespaceOwner {
+    XCTAssertEqual(namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(), 0, @"errno %d", errno);
+}
+
 @end

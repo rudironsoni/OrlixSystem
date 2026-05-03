@@ -729,6 +729,70 @@ out:
     return result;
 }
 
+int native_syscall_contract_map_fixed_noreplace_reuses_unmapped_gap_only(void) {
+    struct task_struct *task = get_current();
+    void *mapped = NULL;
+    uint64_t base;
+    char byte = 0;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_mmap, 0, 12288, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)ret;
+    base = (uint64_t)(uintptr_t)mapped;
+    if (task_write_virtual_memory_impl(task, base, "A", 1) != 1 ||
+        task_write_virtual_memory_impl(task, base + 4096, "B", 1) != 1 ||
+        task_write_virtual_memory_impl(task, base + 8192, "C", 1) != 1) {
+        errno = EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(base + 4096), 4096,
+                                0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_mmap, (long)(uintptr_t)(base + 4096), 4096,
+                                PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+                                -1, 0);
+    if (ret != (long)(base + 4096)) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    if (task_read_virtual_memory_impl(task, base, &byte, 1) != 1 || byte != 'A' ||
+        task_read_virtual_memory_impl(task, base + 4096, &byte, 1) != 1 || byte != 0 ||
+        task_read_virtual_memory_impl(task, base + 8192, &byte, 1) != 1 || byte != 'C') {
+        errno = ENODATA;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_mmap, (long)(uintptr_t)(base + 4096), 4096,
+                                PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+                                -1, 0);
+    if (ret != -EEXIST) {
+        errno = EBUSY;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    if (mapped) {
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)base, 12288, 0, 0, 0, 0);
+    }
+    return result;
+}
+
 int native_syscall_contract_mremap_grows_and_moves_mapping(void) {
     struct task_struct *task = get_current();
     void *mapped;

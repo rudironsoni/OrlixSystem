@@ -191,6 +191,7 @@ struct vfs_mount_namespace {
     struct vfs_mount_entry entries[MAX_MOUNTS];
     linux_atomic_int refs;
     uint64_t ns_id;
+    uint64_t owner_user_ns_id;
     fs_mutex_t lock;
 };
 
@@ -249,6 +250,10 @@ static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
 
     atomic_init(&mnt_ns->refs, 1);
     mnt_ns->ns_id = (uint64_t)atomic_fetch_add(&vfs_next_mount_ns_id, 1);
+    mnt_ns->owner_user_ns_id = cred_user_namespace_id(get_current_cred());
+    if (mnt_ns->owner_user_ns_id == 0) {
+        mnt_ns->owner_user_ns_id = 1;
+    }
     fs_mutex_init(&mnt_ns->lock);
     return mnt_ns;
 }
@@ -296,6 +301,10 @@ static struct vfs_mount_namespace *vfs_dup_mount_namespace(struct vfs_mount_name
 
     fs_mutex_lock(&old->lock);
     memcpy(new_ns->entries, old->entries, sizeof(new_ns->entries));
+    new_ns->owner_user_ns_id = cred_user_namespace_id(get_current_cred());
+    if (new_ns->owner_user_ns_id == 0) {
+        new_ns->owner_user_ns_id = old->owner_user_ns_id;
+    }
     for (size_t i = 0; i < MAX_MOUNTS; i++) {
         struct vfs_mount_entry *entry = &new_ns->entries[i];
 
@@ -345,6 +354,15 @@ static struct vfs_mount_namespace *vfs_task_mount_namespace(void) {
     }
 
     return task->fs->mnt_ns;
+}
+
+static bool vfs_current_has_mount_admin(const struct vfs_mount_namespace *mnt_ns) {
+    if (!mnt_ns) {
+        return false;
+    }
+    return cred_has_cap_in_user_namespace(get_current_cred(),
+                                          mnt_ns->owner_user_ns_id,
+                                          CAP_SYS_ADMIN);
 }
 
 static unsigned long vfs_mount_propagation_flags(void) {
@@ -2686,7 +2704,7 @@ int vfs_mount_setattr(int dirfd, const char *pathname, unsigned int flags,
     if (!mnt_ns) {
         return -ESRCH;
     }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+    if (!vfs_current_has_mount_admin(mnt_ns)) {
         return -EPERM;
     }
     if (size < MOUNT_ATTR_SIZE_VER0 || (flags & ~AT_RECURSIVE) != 0) {
@@ -2759,7 +2777,7 @@ int vfs_open_tree(int dirfd, const char *pathname, unsigned int flags) {
     if (!mnt_ns) {
         return -ESRCH;
     }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+    if (!vfs_current_has_mount_admin(mnt_ns)) {
         return -EPERM;
     }
     if ((flags & ~(OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC)) != 0) {
@@ -2843,7 +2861,7 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
     if (!mnt_ns) {
         return -ESRCH;
     }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+    if (!vfs_current_has_mount_admin(mnt_ns)) {
         return -EPERM;
     }
     if ((flags & ~MOVE_MOUNT__MASK) != 0 ||
@@ -2957,6 +2975,7 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
 
 int vfs_pivot_root(const char *new_root, const char *put_old) {
     struct task_struct *task = get_current();
+    struct vfs_mount_namespace *mnt_ns = NULL;
     char resolved_new_root[MAX_PATH];
     char resolved_put_old[MAX_PATH];
     char host_new_root[MAX_PATH];
@@ -2974,7 +2993,8 @@ int vfs_pivot_root(const char *new_root, const char *put_old) {
     if (!task || !task->fs) {
         return -ESRCH;
     }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+    mnt_ns = task->fs->mnt_ns;
+    if (!vfs_current_has_mount_admin(mnt_ns)) {
         return -EPERM;
     }
 
@@ -3049,7 +3069,7 @@ long vfs_listmount(const struct mnt_id_req *req, uint64_t *mnt_ids, size_t nr_mn
     if (!mnt_ns) {
         return -ESRCH;
     }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+    if (!vfs_current_has_mount_admin(mnt_ns)) {
         return -EPERM;
     }
     if (req->size < MNT_ID_REQ_SIZE_VER0 || (flags & ~LISTMOUNT_REVERSE) != 0) {
@@ -3110,7 +3130,7 @@ int vfs_statmount(const struct mnt_id_req *req, struct statmount *buf, size_t bu
     if (!mnt_ns) {
         return -ESRCH;
     }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+    if (!vfs_current_has_mount_admin(mnt_ns)) {
         return -EPERM;
     }
     if (req->size < MNT_ID_REQ_SIZE_VER0 || bufsize < sizeof(*buf) || flags != 0) {
@@ -3670,7 +3690,7 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     if (!mnt_ns) {
         return -ESRCH;
     }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+    if (!vfs_current_has_mount_admin(mnt_ns)) {
         return -EPERM;
     }
     if (fstype && fstype[0] != '\0' && strcmp(fstype, "bind") != 0 && !cgroup2_mount) {
@@ -3838,7 +3858,7 @@ static int vfs_umount_with_operation(const char *target, enum vfs_umount_operati
     if (!mnt_ns) {
         return -ESRCH;
     }
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+    if (!vfs_current_has_mount_admin(mnt_ns)) {
         return -EPERM;
     }
 

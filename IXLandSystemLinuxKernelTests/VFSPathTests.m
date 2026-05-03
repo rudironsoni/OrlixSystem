@@ -1552,6 +1552,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"move_mount should propagate moved shared child mounts to peer mount trees, errno %d", errno);
 }
 
+- (void)testSharedMoveUpdatesProcMountinfoForPeer {
+    extern int vfs_contract_shared_move_updates_proc_mountinfo_for_peer(void);
+    XCTAssertEqual(vfs_contract_shared_move_updates_proc_mountinfo_for_peer(), 0,
+                   @"shared move propagation should update /proc/self/mountinfo for peer mount trees, errno %d", errno);
+}
+
 - (void)testSlaveChildMoveDoesNotPropagateToSharedPeer {
     extern int vfs_contract_slave_child_move_does_not_propagate_to_shared_peer(void);
     XCTAssertEqual(vfs_contract_slave_child_move_does_not_propagate_to_shared_peer(), 0,
