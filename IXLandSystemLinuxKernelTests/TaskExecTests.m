@@ -19,6 +19,8 @@ extern int task_exec_contract_setid_exec_saved_ids_allow_drop_and_reacquire(void
 extern int task_exec_contract_no_new_privs_blocks_setuid_exec_gain(void);
 extern int task_exec_contract_no_new_privs_blocks_setgid_exec_gain(void);
 extern int task_exec_contract_no_new_privs_is_irreversible(void);
+extern int task_exec_contract_file_capability_exec_grants_permitted_and_effective(void);
+extern int task_exec_contract_no_new_privs_blocks_file_capability_exec_gain(void);
 extern int task_exec_contract_keepcaps_preserves_permitted_caps_after_setuid(void);
 extern int task_exec_contract_securebits_keepcaps_lock_is_enforced(void);
 extern int task_exec_contract_ambient_capability_survives_plain_exec(void);
@@ -102,6 +104,14 @@ extern int task_exec_contract_capability_bounding_drop_blocks_inheritable_and_cl
 
 - (void)testNoNewPrivsIsIrreversible {
     XCTAssertEqual(task_exec_contract_no_new_privs_is_irreversible(), 0, @"errno %d", errno);
+}
+
+- (void)testFileCapabilityExecGrantsPermittedAndEffective {
+    XCTAssertEqual(task_exec_contract_file_capability_exec_grants_permitted_and_effective(), 0, @"errno %d", errno);
+}
+
+- (void)testNoNewPrivsBlocksFileCapabilityExecGain {
+    XCTAssertEqual(task_exec_contract_no_new_privs_blocks_file_capability_exec_gain(), 0, @"errno %d", errno);
 }
 
 - (void)testKeepcapsPreservesPermittedCapsAfterSetuid {

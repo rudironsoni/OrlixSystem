@@ -485,14 +485,12 @@ static long task_read_vma(struct task_vma *vma, uint64_t addr, void *buf, size_t
         errno = EACCES;
         return -1;
     }
-    if (vma->shared_pages) {
-        return mm_shared_vma_read_impl(vma, addr, buf, count);
-    }
-    if (vma->kind == TASK_VMA_FILE && !vma->shared) {
+    if (vma->kind == TASK_VMA_FILE) {
         uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
         size_t file_offset = (size_t)(addr - vma->start);
         long long file_size = mm_vma_file_size_impl(vma);
-        if ((!vma->dirty_pages || page_index >= vma->page_count || vma->dirty_pages[page_index] == 0) &&
+        if ((vma->shared || !vma->dirty_pages || page_index >= vma->page_count ||
+             vma->dirty_pages[page_index] == 0) &&
             file_size >= 0) {
             size_t page_start = file_offset - (file_offset % TASK_VMA_PAGE_SIZE);
             uint64_t backing_page_start = vma->backing_offset + (uint64_t)page_start;
@@ -515,6 +513,9 @@ static long task_read_vma(struct task_vma *vma, uint64_t addr, void *buf, size_t
                 return (long)to_zero;
             }
         }
+    }
+    if (vma->shared_pages) {
+        return mm_shared_vma_read_impl(vma, addr, buf, count);
     }
     if (vma->private_pages) {
         return mm_private_vma_read_impl(vma, addr, buf, count);
@@ -559,20 +560,21 @@ static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf,
         errno = EACCES;
         return -1;
     }
-    if (vma->shared_pages) {
-        return mm_shared_vma_write_impl(vma, addr, buf, count);
-    }
-    if (vma->kind == TASK_VMA_FILE && !vma->shared) {
+    if (vma->kind == TASK_VMA_FILE) {
         uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
         size_t file_offset = (size_t)(addr - vma->start);
         long long file_size = mm_vma_file_size_impl(vma);
         size_t page_start = file_offset - (file_offset % TASK_VMA_PAGE_SIZE);
-        if ((!vma->dirty_pages || page_index >= vma->page_count || vma->dirty_pages[page_index] == 0) &&
+        if ((vma->shared || !vma->dirty_pages || page_index >= vma->page_count ||
+             vma->dirty_pages[page_index] == 0) &&
             file_size >= 0 &&
             vma->backing_offset + (uint64_t)page_start >= (uint64_t)file_size) {
             errno = ENXIO;
             return -1;
         }
+    }
+    if (vma->shared_pages) {
+        return mm_shared_vma_write_impl(vma, addr, buf, count);
     }
     if (vma->private_pages) {
         return mm_private_vma_write_impl(vma, addr, buf, count);

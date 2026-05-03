@@ -245,6 +245,10 @@
     XCTAssertEqual(native_syscall_contract_read_fault_restores_mincore_residency(), 0, @"errno %d", errno);
 }
 
+- (void)testMincoreUsesFileOffsetForTruncateResidency {
+    XCTAssertEqual(native_syscall_contract_mincore_uses_file_offset_for_truncate_residency(), 0, @"errno %d", errno);
+}
+
 - (void)testTruncatedFileMappingFaultQueuesSigbus {
     XCTAssertEqual(native_syscall_contract_truncated_file_mapping_fault_queues_sigbus(), 0, @"errno %d", errno);
 }

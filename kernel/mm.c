@@ -429,6 +429,30 @@ long long mm_vma_file_remaining_impl(const struct task_vma *vma, size_t offset) 
     return mm_shared_file_remaining(vma, offset);
 }
 
+static long long mm_fd_size(int fd) {
+    long long original;
+    long long size;
+    int saved_errno;
+
+    if (fd < 0) {
+        errno = EBADF;
+        return -1;
+    }
+    original = lseek_impl(fd, 0, SEEK_CUR);
+    if (original < 0) {
+        return -1;
+    }
+    size = lseek_impl(fd, 0, SEEK_END);
+    saved_errno = errno;
+    if (lseek_impl(fd, original, SEEK_SET) < 0 && size >= 0) {
+        return -1;
+    }
+    if (size < 0) {
+        errno = saved_errno;
+    }
+    return size;
+}
+
 long long mm_vma_file_size_impl(const struct task_vma *vma) {
     uint64_t identity;
 
@@ -446,6 +470,14 @@ long long mm_vma_file_size_impl(const struct task_vma *vma) {
                 return (long long)mm_file_size_notes[i].size;
             }
         }
+    }
+    if (vma->backing_fd >= 0) {
+        long long size = mm_fd_size(vma->backing_fd);
+
+        if (size >= 0) {
+            return size;
+        }
+        errno = 0;
     }
     return (long long)vma->image_size;
 }
@@ -1886,7 +1918,13 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
         }
         if (vma->kind == TASK_VMA_FILE) {
             long long file_size = mm_vma_file_size_impl(vma);
-            uint64_t page_file_offset = page_index * TASK_VMA_PAGE_SIZE;
+            uint64_t page_file_offset;
+
+            if (page_index > (UINT64_MAX - vma->backing_offset) / TASK_VMA_PAGE_SIZE) {
+                errno = ENOMEM;
+                return -1;
+            }
+            page_file_offset = vma->backing_offset + (page_index * TASK_VMA_PAGE_SIZE);
             if (file_size >= 0 && page_file_offset >= (uint64_t)file_size) {
                 vec[page] = 0U;
                 errno = 0;

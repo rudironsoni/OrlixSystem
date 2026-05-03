@@ -822,6 +822,104 @@ out:
     return result;
 }
 
+int native_syscall_contract_mincore_uses_file_offset_for_truncate_residency(void) {
+    struct task_struct *task = get_current();
+    const char path[] = "/tmp/native-mincore-offset-truncate";
+    char pages[8192];
+    char byte = 0;
+    unsigned char vec[1] = {0xff};
+    void *mapped = (void *)-1;
+    uint64_t base;
+    int fd = -1;
+    long ret;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    memset(pages, 'O', sizeof(pages));
+    unlink_impl(path);
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)path,
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = -fd;
+        return -1;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)pages, sizeof(pages), 0, 0, 0);
+    if (ret != (long)sizeof(pages)) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096,
+                                                      PROT_READ, MAP_SHARED, fd, 4096);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    base = (uint64_t)(uintptr_t)mapped;
+    if (task_read_virtual_memory_impl(task, base, &byte, 1) != 1 || byte != 'O') {
+        errno = EPROTO;
+        goto out_mapped;
+    }
+    vec[0] = 0xff;
+    if (syscall_dispatch_impl(__NR_mincore, (long)(uintptr_t)mapped, 4096,
+                              (long)(uintptr_t)vec, 0, 0, 0) != 0 ||
+        (vec[0] & 1) == 0) {
+        errno = ENODATA;
+        goto out_mapped;
+    }
+    ret = syscall_dispatch_impl(__NR_ftruncate, fd, 4096, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out_mapped;
+    }
+    vec[0] = 0xff;
+    if (syscall_dispatch_impl(__NR_mincore, (long)(uintptr_t)mapped, 4096,
+                              (long)(uintptr_t)vec, 0, 0, 0) != 0 ||
+        (vec[0] & 1) != 0) {
+        errno = ENOMSG;
+        goto out_mapped;
+    }
+    if (task_read_virtual_memory_impl(task, base, &byte, 1) != -1) {
+        errno = EPROTO;
+        goto out_mapped;
+    }
+    if (errno != EFAULT) {
+        errno = ERANGE;
+        goto out_mapped;
+    }
+    if (task->last_fault_signal != SIGBUS) {
+        errno = ENOTRECOVERABLE;
+        goto out_mapped;
+    }
+    if (task->last_fault_code != BUS_ADRERR) {
+        errno = EOWNERDEAD;
+        goto out_mapped;
+    }
+    if (task->last_fault_addr != base) {
+        errno = ESTALE;
+        goto out_mapped;
+    }
+
+    result = 0;
+
+out_mapped:
+    {
+        int saved_errno = errno;
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
+        errno = saved_errno;
+    }
+out:
+    {
+        int saved_errno = errno;
+        close_if_open(fd);
+        unlink_impl(path);
+        errno = saved_errno;
+    }
+    return result;
+}
+
 int native_syscall_contract_maps_shared_file_and_syncs(void) {
     struct task_struct *task = get_current();
     const char path[] = "/tmp/native-shared-map";

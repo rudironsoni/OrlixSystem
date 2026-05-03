@@ -50,6 +50,9 @@ static int expect_errno(int expected) {
     return 0;
 }
 
+static int task_exec_contract_cap_has_effective(const struct __user_cap_data_struct *data, int cap);
+static int task_exec_contract_cap_has_permitted(const struct __user_cap_data_struct *data, int cap);
+
 int task_exec_contract_rejects_missing_current_task(void) {
     struct task_struct *saved = get_current();
     int result;
@@ -537,6 +540,99 @@ int task_exec_contract_no_new_privs_is_irreversible(void) {
     }
     cred_reset_to_defaults();
     return 0;
+}
+
+int task_exec_contract_file_capability_exec_grants_permitted_and_effective(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    uint64_t cap_setuid = 1ULL << CAP_SETUID;
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-filecap-file");
+
+    fd = open_impl("/tmp/task-exec-filecap-file", O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    if (vfs_set_file_capabilities("/tmp/task-exec-filecap-file", cap_setuid, 0, true) != 0 ||
+        setuid_impl(1000) != 0 ||
+        task_exec_transition_impl("/tmp/task-exec-filecap-file", "filecap-file") != 0 ||
+        capget(&header, data) != 0) {
+        goto out;
+    }
+    if (!task_exec_contract_cap_has_permitted(data, CAP_SETUID) ||
+        !task_exec_contract_cap_has_effective(data, CAP_SETUID)) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!get_current() || get_current()->exec_secure != 1 || get_current()->exec_dumpable != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    cred_reset_to_defaults();
+    vfs_remove_file_capabilities("/tmp/task-exec-filecap-file");
+    unlink_impl("/tmp/task-exec-filecap-file");
+    return ret;
+}
+
+int task_exec_contract_no_new_privs_blocks_file_capability_exec_gain(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    uint64_t cap_setuid = 1ULL << CAP_SETUID;
+    int fd = -1;
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    unlink_impl("/tmp/task-exec-nnp-filecap-file");
+
+    fd = open_impl("/tmp/task-exec-nnp-filecap-file", O_RDWR | O_CREAT | O_TRUNC, 0755);
+    if (fd < 0) {
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    if (vfs_set_file_capabilities("/tmp/task-exec-nnp-filecap-file", cap_setuid, 0, true) != 0 ||
+        prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+        setuid_impl(1000) != 0 ||
+        task_exec_transition_impl("/tmp/task-exec-nnp-filecap-file", "nnp-filecap-file") != 0 ||
+        capget(&header, data) != 0) {
+        goto out;
+    }
+    if (task_exec_contract_cap_has_permitted(data, CAP_SETUID) ||
+        task_exec_contract_cap_has_effective(data, CAP_SETUID)) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!get_current() || get_current()->exec_secure != 0 || get_current()->exec_dumpable != 1) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    close_if_open(fd);
+    cred_reset_to_defaults();
+    vfs_remove_file_capabilities("/tmp/task-exec-nnp-filecap-file");
+    unlink_impl("/tmp/task-exec-nnp-filecap-file");
+    return ret;
 }
 
 static int task_exec_contract_cap_has_effective(const struct __user_cap_data_struct *data, int cap) {
