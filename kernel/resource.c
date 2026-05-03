@@ -8,8 +8,11 @@
  * Linux-shaped canonical owner - iOS mediation as implementation detail
  */
 
+#include "resource.h"
+
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/resource.h>
 
 /* Forward declare struct rlimit64 for visibility on platforms where it may
@@ -44,8 +47,37 @@ static int setrlimit64_impl(int resource, const struct rlimit64 *rlim) {
  * RUSAGE - Resource usage (private implementation)
  * ============================================================================ */
 
+long times_impl(struct linux_tms_kernel *buf) {
+    if (buf) {
+        memset(buf, 0, sizeof(*buf));
+    }
+    return 0;
+}
+
+int linux_getrusage_impl(int who, struct linux_rusage_kernel *usage) {
+    if (who != 0 && who != -1 && who != 1) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!usage) {
+        errno = EFAULT;
+        return -1;
+    }
+    memset(usage, 0, sizeof(*usage));
+    return 0;
+}
+
 static int getrusage_impl(int who, struct rusage *usage) {
-    return getrusage(who, usage);
+    if (who != 0 && who != -1 && who != 1) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!usage) {
+        errno = EFAULT;
+        return -1;
+    }
+    memset(usage, 0, sizeof(*usage));
+    return 0;
 }
 
 /* ============================================================================

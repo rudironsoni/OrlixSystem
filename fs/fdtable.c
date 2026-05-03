@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <linux/close_range.h>
 #include <linux/fcntl.h>
 
 #include "sync.h"
@@ -1378,6 +1379,51 @@ int close_impl(int fd) {
         return -1;
     }
     free_fd_impl(fd);
+    return 0;
+}
+
+int close_range_impl(unsigned int first, unsigned int last, unsigned int flags) {
+    struct task_struct *task;
+    unsigned int allowed_flags = CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC;
+    unsigned int upper;
+
+    file_init_impl();
+    if ((flags & ~allowed_flags) != 0 || first > last) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (first >= NR_OPEN_DEFAULT) {
+        return 0;
+    }
+    upper = last >= NR_OPEN_DEFAULT ? (unsigned int)NR_OPEN_DEFAULT - 1 : last;
+
+    task = get_current();
+    if ((flags & CLOSE_RANGE_CLOEXEC) != 0) {
+        if (task && task->files) {
+            fs_mutex_lock(&task->files->lock);
+            for (unsigned int fd = first; fd <= upper && (size_t)fd < task->files->max_fds; fd++) {
+                if (task->files->fd[fd]) {
+                    task->files->fd[fd]->fd_flags |= FD_CLOEXEC;
+                }
+            }
+            fs_mutex_unlock(&task->files->lock);
+            return 0;
+        }
+        fs_mutex_lock(&fd_table_lock);
+        for (unsigned int fd = first; fd <= upper; fd++) {
+            if (fd_table[fd].used) {
+                fd_table[fd].fd_flags |= FD_CLOEXEC;
+            }
+        }
+        fs_mutex_unlock(&fd_table_lock);
+        return 0;
+    }
+
+    for (unsigned int fd = first; fd <= upper; fd++) {
+        if (close_impl((int)fd) != 0 && errno != EBADF) {
+            return -1;
+        }
+    }
     return 0;
 }
 

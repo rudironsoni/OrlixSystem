@@ -157,7 +157,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 150 | `getresgid` | implemented:process | none |
 | 151 | `setfsuid` | kernel-owned missing:unclassified | package |
 | 152 | `setfsgid` | kernel-owned missing:unclassified | package |
-| 153 | `times` | kernel-owned missing:unclassified | shell |
+| 153 | `times` | implemented:resource | none |
 | 154 | `setpgid` | implemented:process | none |
 | 155 | `getpgid` | implemented:process | none |
 | 156 | `getsid` | implemented:process | none |
@@ -169,7 +169,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 162 | `setdomainname` | kernel-owned missing:unclassified | package |
 | 163 | `getrlimit` | kernel-owned missing:unclassified | package |
 | 164 | `setrlimit` | kernel-owned missing:unclassified | package |
-| 165 | `getrusage` | kernel-owned missing:unclassified | shell |
+| 165 | `getrusage` | implemented:resource | none |
 | 166 | `umask` | implemented:fd | none |
 | 167 | `prctl` | implemented:process | none |
 | 168 | `getcpu` | kernel-owned missing:unclassified | package |
@@ -295,7 +295,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 433 | `fspick` | kernel-owned missing:unclassified | package |
 | 434 | `pidfd_open` | kernel-owned missing:unclassified | package |
 | 435 | `clone3` | implemented:process | none |
-| 436 | `close_range` | kernel-owned missing:unclassified | shell |
+| 436 | `close_range` | implemented:fd | none |
 | 437 | `openat2` | kernel-owned missing:unclassified | shell |
 | 438 | `pidfd_getfd` | kernel-owned missing:unclassified | package |
 | 439 | `faccessat2` | implemented:fd | none |

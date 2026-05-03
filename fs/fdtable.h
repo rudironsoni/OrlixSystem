@@ -227,6 +227,7 @@ void fdtable_sync_current_task_from_static_impl(void);
 
 /* Close implementation using static fd table */
 int close_impl(int fd);
+int close_range_impl(unsigned int first, unsigned int last, unsigned int flags);
 int close_on_exec_impl(void);
 
 #ifdef __cplusplus

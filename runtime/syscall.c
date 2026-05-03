@@ -183,6 +183,7 @@
 #include "../kernel/futex.h"
 #include "../kernel/mm.h"
 #include "../kernel/ptrace.h"
+#include "../kernel/resource.h"
 #include "../kernel/seccomp.h"
 #include "../kernel/signal.h"
 #include "../kernel/task.h"
@@ -225,6 +226,7 @@ extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 extern int dup_impl(int oldfd);
 extern int dup3_impl(int oldfd, int newfd, int flags);
+extern int close_range_impl(unsigned int first, unsigned int last, unsigned int flags);
 extern int mkdirat_impl(int dirfd, const char *pathname, linux_mode_t mode);
 extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
@@ -587,6 +589,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_fsync:
     case __NR_fdatasync:
     case __NR_syncfs:
+    case __NR_close_range:
         return SYSCALL_CAPABILITY_FD;
     case __NR_brk:
     case __NR_mmap:
@@ -674,6 +677,8 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_prlimit64:
     case __NR_set_robust_list:
     case __NR_get_robust_list:
+    case __NR_times:
+    case __NR_getrusage:
         return SYSCALL_CAPABILITY_RESOURCE;
     case __NR_getrandom:
         return SYSCALL_CAPABILITY_RANDOM;
@@ -742,6 +747,9 @@ static long syscall_dispatch_inner_impl(long number,
                                                 (int)arg2, (linux_mode_t)arg3));
     case __NR_close:
         return syscall_result((long)close_impl((int)arg0));
+    case __NR_close_range:
+        return syscall_result((long)close_range_impl((unsigned int)arg0, (unsigned int)arg1,
+                                                     (unsigned int)arg2));
     case __NR_dup:
         return syscall_result((long)dup_impl((int)arg0));
     case __NR_dup3:
@@ -1211,6 +1219,11 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_prlimit64((int32_t)arg0, (int)arg1,
                                  (const uint64_t *)(uintptr_t)arg2,
                                  (uint64_t *)(uintptr_t)arg3);
+    case __NR_times:
+        return syscall_result(times_impl((struct linux_tms_kernel *)(uintptr_t)arg0));
+    case __NR_getrusage:
+        return syscall_result((long)linux_getrusage_impl((int)arg0,
+                                                         (struct linux_rusage_kernel *)(uintptr_t)arg1));
     case __NR_ptrace:
         return syscall_result(ptrace_impl(arg0, (__kernel_pid_t)arg1,
                                           (void *)(uintptr_t)arg2,

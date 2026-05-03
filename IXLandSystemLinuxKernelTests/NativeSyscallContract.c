@@ -3,6 +3,7 @@
 #include <asm/unistd.h>
 #include <asm/ioctls.h>
 #include <asm/statfs.h>
+#include <linux/close_range.h>
 #include <linux/fcntl.h>
 #include <linux/futex.h>
 #include <linux/capability.h>
@@ -13,6 +14,7 @@
 #include <linux/random.h>
 #include <linux/stat.h>
 #include <linux/statfs.h>
+#include <linux/times.h>
 #include <linux/time_types.h>
 #include <linux/utsname.h>
 #include <linux/xattr.h>
@@ -112,6 +114,25 @@
 #ifndef F_OK
 #define F_OK 0
 #endif
+
+struct linux_rusage_contract {
+    struct __kernel_old_timeval ru_utime;
+    struct __kernel_old_timeval ru_stime;
+    __kernel_long_t ru_maxrss;
+    __kernel_long_t ru_ixrss;
+    __kernel_long_t ru_idrss;
+    __kernel_long_t ru_isrss;
+    __kernel_long_t ru_minflt;
+    __kernel_long_t ru_majflt;
+    __kernel_long_t ru_nswap;
+    __kernel_long_t ru_inblock;
+    __kernel_long_t ru_oublock;
+    __kernel_long_t ru_msgsnd;
+    __kernel_long_t ru_msgrcv;
+    __kernel_long_t ru_nsignals;
+    __kernel_long_t ru_nvcsw;
+    __kernel_long_t ru_nivcsw;
+};
 
 extern int link_impl(const char *oldpath, const char *newpath);
 extern int unlink_impl(const char *pathname);
@@ -4259,6 +4280,8 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     };
     struct __kernel_old_timeval tv;
     struct __kernel_old_itimerval timer;
+    struct tms tms_value;
+    struct linux_rusage_contract usage;
     struct new_utsname uts;
     uint64_t block_set = 1ULL << (2 - 1);
     uint64_t old_set = 0;
@@ -4328,6 +4351,20 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     ret = syscall_dispatch_impl(__NR_getrandom, (long)(uintptr_t)random_buf,
                                 sizeof(random_buf), GRND_NONBLOCK, 0, 0, 0);
     if (ret != (long)sizeof(random_buf)) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    memset(&tms_value, 0xff, sizeof(tms_value));
+    ret = syscall_dispatch_impl(__NR_times, (long)(uintptr_t)&tms_value, 0, 0, 0, 0, 0);
+    if (ret < 0 || tms_value.tms_utime < 0 || tms_value.tms_stime < 0 ||
+        tms_value.tms_cutime < 0 || tms_value.tms_cstime < 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+    memset(&usage, 0xff, sizeof(usage));
+    ret = syscall_dispatch_impl(__NR_getrusage, 0, (long)(uintptr_t)&usage, 0, 0, 0, 0);
+    if (ret != 0 || usage.ru_utime.tv_usec < 0 || usage.ru_utime.tv_usec >= 1000000L ||
+        usage.ru_stime.tv_usec < 0 || usage.ru_stime.tv_usec >= 1000000L) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         return -1;
     }
@@ -4606,6 +4643,27 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         errno = ret < 0 ? (int)-ret : ENODATA;
         goto out;
     }
+    ret = syscall_dispatch_impl(__NR_close_range, dupfd, dupfd, CLOSE_RANGE_CLOEXEC, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, dupfd, F_GETFD, 0, 0, 0, 0);
+    if (ret != FD_CLOEXEC) {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_close_range, cloexec_fd, cloexec_fd, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, cloexec_fd, F_GETFD, 0, 0, 0, 0);
+    if (ret != -EBADF) {
+        errno = ret < 0 ? (int)-ret : EBADF;
+        goto out;
+    }
+    cloexec_fd = -1;
 
     ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)payload, 10, 0, 0, 0);
     if (ret != 10) {
@@ -5003,6 +5061,9 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_getitimer,
         __NR_setitimer,
         __NR_getrandom,
+        __NR_times,
+        __NR_getrusage,
+        __NR_close_range,
         __NR_execve,
         __NR_wait4,
         __NR_waitid,
@@ -5080,6 +5141,9 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_getitimer, SYSCALL_CAPABILITY_TIME},
         {__NR_setitimer, SYSCALL_CAPABILITY_TIME},
         {__NR_getrandom, SYSCALL_CAPABILITY_RANDOM},
+        {__NR_times, SYSCALL_CAPABILITY_RESOURCE},
+        {__NR_getrusage, SYSCALL_CAPABILITY_RESOURCE},
+        {__NR_close_range, SYSCALL_CAPABILITY_FD},
         {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
     };
     static const struct planned_syscall_gap planned_gaps[] = {
