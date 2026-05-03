@@ -788,6 +788,140 @@ out:
     return ret;
 }
 
+int procfs_namespace_contract_proc_task_tid_fd_maps_and_stat_are_thread_targeted(void) {
+    struct task_struct *parent;
+    struct task_struct *thread = NULL;
+    void *mapped = (void *)-1;
+    uint64_t base;
+    int fd = -1;
+    int info_fd = -1;
+    char path[160] = {0};
+    char link_target[MAX_PATH];
+    char content[4096];
+    char tid_name[16] = {0};
+    long nread;
+    int ret = -1;
+
+    reset_procfs_namespace_state();
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    fd = open_impl("/dev/null", O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0) {
+        return -1;
+    }
+    thread = task_create_child_with_flags_impl(parent, CLONE_THREAD);
+    if (!thread) {
+        close_impl(fd);
+        return -1;
+    }
+    memset(thread->comm, 0, sizeof(thread->comm));
+    memcpy(thread->comm, "tid-deep", 9);
+    set_current(thread);
+    mapped = mmap_impl(NULL, 4096, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    set_current(parent);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        goto out;
+    }
+    base = (uint64_t)(uintptr_t)mapped;
+
+    proc_pid_file_path(path, sizeof(path), parent->pid, "/task/");
+    append_positive_decimal(path, sizeof(path), thread->pid);
+    if (strlen(path) + 5 >= sizeof(path)) {
+        errno = ENAMETOOLONG;
+        goto out;
+    }
+    memcpy(path + strlen(path), "/stat", 6);
+    if (read_file_content(path, content, sizeof(content)) != 0 ||
+        !contains(content, "(tid-deep)")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), parent->pid, "/task/");
+    append_positive_decimal(path, sizeof(path), thread->pid);
+    if (strlen(path) + 5 >= sizeof(path)) {
+        errno = ENAMETOOLONG;
+        goto out;
+    }
+    memcpy(path + strlen(path), "/maps", 6);
+    if (read_file_content(path, content, sizeof(content)) != 0) {
+        goto out;
+    }
+    append_positive_decimal(tid_name, sizeof(tid_name), thread->pid);
+    (void)tid_name;
+    if (!contains(content, "[anon]")) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), parent->pid, "/task/");
+    append_positive_decimal(path, sizeof(path), thread->pid);
+    if (strlen(path) + 4 >= sizeof(path)) {
+        errno = ENAMETOOLONG;
+        goto out;
+    }
+    memcpy(path + strlen(path), "/fd/", 5);
+    append_positive_decimal(path, sizeof(path), fd);
+    if (read_link_content(path, link_target, sizeof(link_target)) != 0 ||
+        strcmp(link_target, "/dev/null") != 0) {
+        errno = ENOTCONN;
+        goto out;
+    }
+
+    memset(path, 0, sizeof(path));
+    proc_pid_file_path(path, sizeof(path), parent->pid, "/task/");
+    append_positive_decimal(path, sizeof(path), thread->pid);
+    if (strlen(path) + 8 >= sizeof(path)) {
+        errno = ENAMETOOLONG;
+        goto out;
+    }
+    memcpy(path + strlen(path), "/fdinfo/", 9);
+    append_positive_decimal(path, sizeof(path), fd);
+    info_fd = open_impl(path, O_RDONLY, 0);
+    if (info_fd < 0) {
+        goto out;
+    }
+    nread = read_impl(info_fd, content, sizeof(content) - 1);
+    if (nread <= 0) {
+        goto out;
+    }
+    content[nread] = '\0';
+    if (!contains(content, "flags:\t")) {
+        errno = ERANGE;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        close_impl(info_fd);
+        close_impl(fd);
+        if ((long)(uintptr_t)mapped >= 0) {
+            set_current(thread ? thread : parent);
+            munmap_impl(mapped, 4096);
+            set_current(parent);
+        } else {
+            set_current(parent);
+        }
+        if (thread) {
+            task_unlink_child_impl(parent, thread);
+            free_task(thread);
+        }
+        reset_procfs_namespace_state();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void) {
     struct task_struct *parent;
     struct task_struct *child = NULL;

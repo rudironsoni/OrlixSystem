@@ -1564,6 +1564,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"child mount namespace detached refs should survive child root/cwd pins and reap after child release, errno %d", errno);
 }
 
+- (void)testLazyDetachPropagatesNestedSharedSlaveTree {
+    extern int vfs_contract_lazy_detach_propagates_nested_shared_slave_tree(void);
+    XCTAssertEqual(vfs_contract_lazy_detach_propagates_nested_shared_slave_tree(), 0,
+                   @"lazy detach should propagate nested shared/slave mount removal without leaking detached refs, errno %d", errno);
+}
+
 - (void)testUmount2DetachDetachesBusyMountFromNamespace {
     extern int vfs_contract_umount2_detach_detaches_busy_mount_from_namespace(void);
     XCTAssertEqual(vfs_contract_umount2_detach_detaches_busy_mount_from_namespace(), 0,

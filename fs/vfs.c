@@ -4479,12 +4479,17 @@ int vfs_proc_fd_num_for_path(const char *vpath, const char *leaf) {
     char *endptr;
     long fd_num;
     size_t leaf_len;
+    int32_t tid;
 
     if (!vpath || !leaf) {
         return -EINVAL;
     }
 
-    suffix = vfs_proc_current_task_suffix(vpath, mapped, sizeof(mapped));
+    if (vfs_proc_task_tid_for_path(vpath, &tid, &suffix) == 0) {
+        (void)tid;
+    } else {
+        suffix = vfs_proc_current_task_suffix(vpath, mapped, sizeof(mapped));
+    }
     if (!suffix) {
         return -ENOENT;
     }

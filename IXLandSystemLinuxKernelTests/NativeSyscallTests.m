@@ -177,6 +177,10 @@
     XCTAssertEqual(native_syscall_contract_mprotect_file_smaps_vmflags_follow_permission_runs(), 0, @"errno %d", errno);
 }
 
+- (void)testVmaSplitChainPreservesPermissionRuns {
+    XCTAssertEqual(native_syscall_contract_vma_split_chain_preserves_permission_runs(), 0, @"errno %d", errno);
+}
+
 - (void)testCloneWithoutVmPreservesSharedFileMappings {
     XCTAssertEqual(native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(), 0, @"errno %d", errno);
 }

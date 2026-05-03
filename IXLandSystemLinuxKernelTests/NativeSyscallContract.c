@@ -3101,6 +3101,96 @@ out:
     return result;
 }
 
+int native_syscall_contract_vma_split_chain_preserves_permission_runs(void) {
+    struct task_struct *task = get_current();
+    void *mapped = (void *)-1;
+    void *target = (void *)-1;
+    void *moved = (void *)-1;
+    uint64_t base;
+    uint64_t new_base;
+    char maps[8192];
+    char first[32];
+    char second[32];
+    char moved_first[32];
+    char moved_second[32];
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)mapped < 0) {
+        errno = -(int)(long)(uintptr_t)mapped;
+        return -1;
+    }
+    base = (uint64_t)(uintptr_t)mapped;
+    if (syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)(base + 4096),
+                              4096, PROT_READ, 0, 0, 0) != 0 ||
+        syscall_dispatch_impl(__NR_mprotect, (long)(uintptr_t)(base + 8192),
+                              4096, PROT_READ | PROT_EXEC, 0, 0, 0) != 0 ||
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)base, 4096, 0, 0, 0, 0) != 0) {
+        goto out;
+    }
+    if (format_maps_range(first, sizeof(first), base + 4096, base + 8192) != 0 ||
+        format_maps_range(second, sizeof(second), base + 8192, base + 12288) != 0 ||
+        read_file_into_buffer("/proc/self/maps", maps, sizeof(maps)) != 0) {
+        goto out;
+    }
+    if (!strstr(maps, first) || !strstr(maps, "r--p") ||
+        !strstr(maps, second) || !strstr(maps, "r-xp")) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    target = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 8192,
+                                                      PROT_READ | PROT_WRITE,
+                                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if ((long)(uintptr_t)target < 0) {
+        errno = -(int)(long)(uintptr_t)target;
+        goto out;
+    }
+    new_base = (uint64_t)(uintptr_t)target;
+    moved = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mremap, (long)(uintptr_t)(base + 4096),
+                                                     8192, 8192,
+                                                     MREMAP_MAYMOVE | MREMAP_FIXED,
+                                                     (long)(uintptr_t)target, 0);
+    if (moved != target) {
+        errno = (long)(uintptr_t)moved < 0 ? -(int)(long)(uintptr_t)moved : EPROTO;
+        goto out;
+    }
+    target = (void *)-1;
+    if (format_maps_range(moved_first, sizeof(moved_first), new_base, new_base + 4096) != 0 ||
+        format_maps_range(moved_second, sizeof(moved_second), new_base + 4096, new_base + 8192) != 0 ||
+        read_file_into_buffer("/proc/self/maps", maps, sizeof(maps)) != 0) {
+        goto out;
+    }
+    if (!strstr(maps, moved_first) || !strstr(maps, "r--p") ||
+        !strstr(maps, moved_second) || !strstr(maps, "r-xp")) {
+        errno = ENOMSG;
+        goto out;
+    }
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if ((long)(uintptr_t)moved >= 0) {
+            syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)moved, 8192, 0, 0, 0, 0);
+        }
+        if ((long)(uintptr_t)target >= 0) {
+            syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)target, 8192, 0, 0, 0, 0);
+        }
+        if ((long)(uintptr_t)mapped >= 0) {
+            syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        }
+        errno = saved_errno;
+    }
+    return result;
+}
+
 int native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child;

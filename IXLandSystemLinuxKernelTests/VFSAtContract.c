@@ -4552,6 +4552,86 @@ out:
     return ret;
 }
 
+int vfs_contract_lazy_detach_propagates_nested_shared_slave_tree(void) {
+    int fd = -1;
+    int peer_fd = -1;
+    int ret = -1;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    vfs_reap_detached_mount_refs();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-a", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-peer-b", 0700)) != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-child-source/file", "lazy-prop") != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-a", NULL,
+              MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-peer-b", NULL,
+              MS_BIND | MS_SHARED, NULL) != 0 ||
+        mount(NULL, "/tmp/vfs-mntns-peer-b", NULL, MS_BIND | MS_REMOUNT | MS_SLAVE, NULL) != 0 ||
+        mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-peer-a/child", NULL,
+              MS_BIND | MS_SHARED, NULL) != 0) {
+        goto out;
+    }
+    peer_fd = open_impl("/tmp/vfs-mntns-peer-b/child/file", O_RDONLY, 0);
+    if (peer_fd < 0) {
+        goto out;
+    }
+    close_impl(peer_fd);
+    peer_fd = -1;
+
+    fd = open_impl("/tmp/vfs-mntns-peer-a/child/file", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    if (umount2("/tmp/vfs-mntns-peer-a/child", MNT_DETACH) != 0 ||
+        vfs_detached_mount_ref_count() == 0) {
+        errno = EBUSY;
+        goto out;
+    }
+    peer_fd = open_impl("/tmp/vfs-mntns-peer-b/child/file", O_RDONLY, 0);
+    if (peer_fd >= 0 || errno != ENOENT) {
+        if (peer_fd >= 0) {
+            close_impl(peer_fd);
+            peer_fd = -1;
+        }
+        errno = ENODATA;
+        goto out;
+    }
+    if (vfs_reap_detached_mount_refs() != 0 || vfs_detached_mount_ref_count() == 0) {
+        errno = ENOMSG;
+        goto out;
+    }
+    if (close_impl(fd) != 0) {
+        fd = -1;
+        goto out;
+    }
+    fd = -1;
+    if (vfs_reap_detached_mount_refs() != 1 || vfs_detached_mount_ref_count() != 0) {
+        errno = ERANGE;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (peer_fd >= 0) {
+            close_impl(peer_fd);
+        }
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        vfs_contract_cleanup_mount_namespace_paths();
+        vfs_reap_detached_mount_refs();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_proc_self_mounts_lists_bind_mount(void) {
     char content[4096];
     int ret = -1;
