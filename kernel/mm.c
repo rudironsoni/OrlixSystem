@@ -834,6 +834,8 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
     dest->flags = source->flags;
     dest->kind = source->kind;
     dest->backing_fd = source->backing_fd;
+    dest->backing_file_identity = source->backing_file_identity;
+    memcpy(dest->backing_path, source->backing_path, sizeof(dest->backing_path));
     dest->backing_offset = source->backing_offset + (start - source->start);
     dest->shared = source->shared;
     dest->shared_mapping = source->shared_mapping;
@@ -937,6 +939,144 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
             dest->dirty_pages[i] = source->dirty_pages[source_page];
         }
     }
+    return 0;
+}
+
+static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
+    uint64_t old_len;
+    uint64_t old_pages;
+    uint64_t new_pages;
+    uint32_t *page_flags;
+    uint8_t *resident_pages;
+    uint8_t *dirty_pages;
+    void *new_image = NULL;
+    struct vm_private_page **private_pages = NULL;
+    struct vm_shared_mapping **shared_pages = NULL;
+
+    if (!vma || new_len == 0 || new_len > SIZE_MAX) {
+        errno = ENOMEM;
+        return -1;
+    }
+    old_len = vma->end - vma->start;
+    if (new_len <= old_len) {
+        return 0;
+    }
+    old_pages = vma->page_count;
+    new_pages = new_len / TASK_VMA_PAGE_SIZE;
+    if ((new_len % TASK_VMA_PAGE_SIZE) != 0) {
+        new_pages++;
+    }
+    if (new_pages <= old_pages || new_pages > SIZE_MAX / sizeof(uint32_t)) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    page_flags = calloc((size_t)new_pages, sizeof(*page_flags));
+    resident_pages = calloc((size_t)new_pages, sizeof(*resident_pages));
+    dirty_pages = calloc((size_t)new_pages, sizeof(*dirty_pages));
+    if (!page_flags || !resident_pages || !dirty_pages) {
+        free(page_flags);
+        free(resident_pages);
+        free(dirty_pages);
+        errno = ENOMEM;
+        return -1;
+    }
+    memcpy(page_flags, vma->page_flags, (size_t)old_pages * sizeof(*page_flags));
+    memcpy(resident_pages, vma->resident_pages, (size_t)old_pages * sizeof(*resident_pages));
+    memcpy(dirty_pages, vma->dirty_pages, (size_t)old_pages * sizeof(*dirty_pages));
+    for (uint64_t i = old_pages; i < new_pages; i++) {
+        page_flags[i] = vma->flags;
+        resident_pages[i] = 1;
+    }
+
+    if (vma->private_pages) {
+        private_pages = calloc((size_t)new_pages, sizeof(*private_pages));
+        if (!private_pages) {
+            free(page_flags);
+            free(resident_pages);
+            free(dirty_pages);
+            errno = ENOMEM;
+            return -1;
+        }
+        memcpy(private_pages, vma->private_pages, (size_t)old_pages * sizeof(*private_pages));
+        for (uint64_t i = old_pages; i < new_pages; i++) {
+            private_pages[i] = mm_private_page_alloc(NULL, 0);
+            if (!private_pages[i]) {
+                for (uint64_t j = old_pages; j < i; j++) {
+                    mm_private_page_put_impl(private_pages[j]);
+                }
+                free(private_pages);
+                free(page_flags);
+                free(resident_pages);
+                free(dirty_pages);
+                return -1;
+            }
+        }
+    } else if (vma->shared_pages && vma->backing_fd >= 0) {
+        shared_pages = calloc((size_t)new_pages, sizeof(*shared_pages));
+        if (!shared_pages) {
+            free(page_flags);
+            free(resident_pages);
+            free(dirty_pages);
+            errno = ENOMEM;
+            return -1;
+        }
+        memcpy(shared_pages, vma->shared_pages, (size_t)old_pages * sizeof(*shared_pages));
+        for (uint64_t i = old_pages; i < new_pages; i++) {
+            uint64_t page_offset = vma->backing_offset + i * TASK_VMA_PAGE_SIZE;
+            struct vm_shared_mapping **page =
+                mm_shared_pages_get_or_create(vma->backing_fd, page_offset, 1);
+            if (!page) {
+                for (uint64_t j = old_pages; j < i; j++) {
+                    mm_shared_mapping_put(shared_pages[j]);
+                }
+                free(shared_pages);
+                free(page_flags);
+                free(resident_pages);
+                free(dirty_pages);
+                return -1;
+            }
+            shared_pages[i] = page[0];
+            free(page);
+        }
+    } else if (vma->shared_mapping) {
+        free(page_flags);
+        free(resident_pages);
+        free(dirty_pages);
+        errno = ENOSYS;
+        return -1;
+    } else {
+        new_image = calloc(1, (size_t)new_len);
+        if (!new_image) {
+            free(page_flags);
+            free(resident_pages);
+            free(dirty_pages);
+            errno = ENOMEM;
+            return -1;
+        }
+        memcpy(new_image, vma->image, (size_t)old_len);
+    }
+
+    free(vma->page_flags);
+    free(vma->resident_pages);
+    free(vma->dirty_pages);
+    vma->page_flags = page_flags;
+    vma->resident_pages = resident_pages;
+    vma->dirty_pages = dirty_pages;
+    if (private_pages) {
+        free(vma->private_pages);
+        vma->private_pages = private_pages;
+    } else if (shared_pages) {
+        free(vma->shared_pages);
+        vma->shared_pages = shared_pages;
+        vma->image = shared_pages[0] ? shared_pages[0]->image : NULL;
+    } else if (new_image) {
+        free(vma->image);
+        vma->image = new_image;
+    }
+    vma->end = vma->start + new_len;
+    vma->image_size = (size_t)new_len;
+    vma->page_count = new_pages;
     return 0;
 }
 
@@ -1073,6 +1213,8 @@ static void mm_free_vma_contents(struct task_vma *vma) {
     if (vma->kind == TASK_VMA_ANON || vma->kind == TASK_VMA_FILE) {
         if (vma->shared_pages) {
             mm_shared_pages_put(vma->shared_pages, vma->page_count);
+        } else if (vma->private_pages) {
+            mm_private_pages_put(vma->private_pages, vma->page_count);
         } else if (vma->shared_mapping) {
             mm_shared_mapping_put(vma->shared_mapping);
         } else {
@@ -1580,6 +1722,40 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         }
         moved_vma.start = new_start;
         moved_vma.end = new_start + new_len;
+        if (munmap_impl(new_address, (size_t)new_len) != 0) {
+            int saved_errno = errno;
+            mm_free_vma_contents(&moved_vma);
+            errno = saved_errno;
+            return (void *)-1;
+        }
+        if (mm_insert_vma_sorted(task->mm, &moved_vma) != 0) {
+            int saved_errno = errno;
+            mm_free_vma_contents(&moved_vma);
+            errno = saved_errno;
+            return (void *)-1;
+        }
+        if (munmap_impl(old_address, (size_t)old_len) != 0) {
+            int saved_errno = errno;
+            mm_remove_exact_vma(task->mm, new_start, new_start + new_len);
+            errno = saved_errno;
+            return (void *)-1;
+        }
+        return new_address;
+    }
+    if ((flags & MREMAP_FIXED) != 0 && new_len > old_len) {
+        struct task_vma moved_vma;
+
+        if (mm_copy_vma_slice((struct task_vma *)found, old_start, old_start + old_len, &moved_vma) != 0) {
+            return (void *)-1;
+        }
+        moved_vma.start = new_start;
+        moved_vma.end = new_start + old_len;
+        if (mm_extend_copied_vma(&moved_vma, new_len) != 0) {
+            int saved_errno = errno;
+            mm_free_vma_contents(&moved_vma);
+            errno = saved_errno;
+            return (void *)-1;
+        }
         if (munmap_impl(new_address, (size_t)new_len) != 0) {
             int saved_errno = errno;
             mm_free_vma_contents(&moved_vma);

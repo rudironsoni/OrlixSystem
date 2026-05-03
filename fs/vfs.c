@@ -528,7 +528,8 @@ static int vfs_mount_propagate_shared_child_locked(struct vfs_mount_namespace *m
         int ret;
 
         bool shared_peer = peer->propagation == MS_SHARED &&
-                           strcmp(peer->source, parent->source) == 0;
+                           parent->peer_group_id != 0 &&
+                           peer->peer_group_id == parent->peer_group_id;
         bool slave_peer = peer->propagation == MS_SLAVE &&
                           parent->peer_group_id != 0 &&
                           peer->master_group_id == parent->peer_group_id;
@@ -629,7 +630,8 @@ static void vfs_umount_propagate_shared_child_locked(struct vfs_mount_namespace 
         int ret;
 
         bool shared_peer = peer->propagation == MS_SHARED &&
-                           strcmp(peer->source, parent->source) == 0;
+                           parent->peer_group_id != 0 &&
+                           peer->peer_group_id == parent->peer_group_id;
         bool slave_peer = peer->propagation == MS_SLAVE &&
                           parent->peer_group_id != 0 &&
                           peer->master_group_id == parent->peer_group_id;
@@ -964,7 +966,8 @@ static int vfs_mount_plan_shared_move_locked(struct vfs_mount_namespace *mnt_ns,
             continue;
         }
         shared_peer = peer->propagation == MS_SHARED &&
-                      strcmp(peer->source, parent->source) == 0;
+                      parent->peer_group_id != 0 &&
+                      peer->peer_group_id == parent->peer_group_id;
         slave_peer = peer->propagation == MS_SLAVE &&
                      parent->peer_group_id != 0 &&
                      peer->master_group_id == parent->peer_group_id;

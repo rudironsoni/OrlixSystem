@@ -24,6 +24,7 @@ extern int task_exec_contract_ambient_capability_survives_plain_exec(void);
 extern int task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(void);
 extern int task_exec_contract_ambient_raise_requires_inheritable_cap(void);
 extern int task_exec_contract_securebits_block_ambient_raise(void);
+extern int task_exec_contract_capability_bounding_drop_blocks_inheritable_and_clears_ambient(void);
 
 @interface TaskExecTests : XCTestCase
 @end
@@ -120,6 +121,10 @@ extern int task_exec_contract_securebits_block_ambient_raise(void);
 
 - (void)testSecurebitsBlockAmbientRaise {
     XCTAssertEqual(task_exec_contract_securebits_block_ambient_raise(), 0, @"errno %d", errno);
+}
+
+- (void)testCapabilityBoundingDropBlocksInheritableAndClearsAmbient {
+    XCTAssertEqual(task_exec_contract_capability_bounding_drop_blocks_inheritable_and_clears_ambient(), 0, @"errno %d", errno);
 }
 
 @end

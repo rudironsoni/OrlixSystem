@@ -714,3 +714,47 @@ int task_exec_contract_securebits_block_ambient_raise(void) {
     cred_reset_to_defaults();
     return 0;
 }
+
+int task_exec_contract_capability_bounding_drop_blocks_inheritable_and_clears_ambient(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+
+    cred_reset_to_defaults();
+    if (capget(&header, data) != 0) {
+        return -1;
+    }
+    data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
+    if (capset(&header, data) != 0 ||
+        prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != 0 ||
+        prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SETUID, 0, 0) != 1) {
+        cred_reset_to_defaults();
+        return -1;
+    }
+    if (prctl_impl(PR_CAPBSET_DROP, CAP_SETUID, 0, 0, 0) != 0 ||
+        prctl_impl(PR_CAPBSET_READ, CAP_SETUID, 0, 0, 0) != 0 ||
+        prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SETUID, 0, 0) != 0) {
+        cred_reset_to_defaults();
+        return -1;
+    }
+    if (capget(&header, data) != 0) {
+        cred_reset_to_defaults();
+        return -1;
+    }
+    data[CAP_SETUID / 32].inheritable &= ~(1U << (CAP_SETUID % 32));
+    if (capset(&header, data) != 0) {
+        cred_reset_to_defaults();
+        return -1;
+    }
+    data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
+    errno = 0;
+    if (capset(&header, data) != -1 || errno != EPERM) {
+        cred_reset_to_defaults();
+        errno = EPROTO;
+        return -1;
+    }
+    cred_reset_to_defaults();
+    return 0;
+}

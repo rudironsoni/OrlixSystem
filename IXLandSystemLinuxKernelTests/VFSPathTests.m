@@ -1498,6 +1498,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"move_mount should propagate moved shared child mounts to peer mount trees, errno %d", errno);
 }
 
+- (void)testCloneNewnsMovePropagatesToRebasedSlaveReceiver {
+    extern int vfs_contract_clone_newns_move_propagates_to_rebased_slave_receiver(void);
+    XCTAssertEqual(vfs_contract_clone_newns_move_propagates_to_rebased_slave_receiver(), 0,
+                   @"move_mount should propagate inside cloned namespaces to rebased slave receivers, errno %d", errno);
+}
+
 - (void)testRecursiveUmountPropagatesNestedSharedSubtree {
     extern int vfs_contract_recursive_umount_propagates_nested_shared_subtree(void);
     XCTAssertEqual(vfs_contract_recursive_umount_propagates_nested_shared_subtree(), 0,
