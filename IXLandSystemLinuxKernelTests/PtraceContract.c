@@ -12,6 +12,9 @@
 #ifdef SIGSTOP
 #undef SIGSTOP
 #endif
+#ifdef SIGTERM
+#undef SIGTERM
+#endif
 #ifdef SIGTRAP
 #undef SIGTRAP
 #endif
@@ -25,6 +28,7 @@
 #include <linux/wait.h>
 
 #include <errno.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -597,6 +601,138 @@ int ptrace_contract_traceexit_records_event_message(void) {
         goto out;
     }
     if (message != 42UL) {
+        errno = ENODATA;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
+        ptrace_release_child(parent, child);
+        ptrace_clear_pending_signal(parent, SIGCHLD);
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int ptrace_contract_signal_delivery_stop_can_be_suppressed(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    int status = 0;
+    int ret = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    if (ptrace_impl(PTRACE_ATTACH, child->pid, NULL, NULL) != 0 ||
+        waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
+        signal_generate_task(child, SIGTERM) != 0 ||
+        waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
+        !WIFSTOPPED(status) || WSTOPSIG(status) != SIGTERM) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (atomic_load(&child->exited) || atomic_load(&child->signaled)) {
+        errno = ENOMSG;
+        goto out;
+    }
+    if (ptrace_impl(PTRACE_CONT, child->pid, NULL, NULL) != 0 ||
+        atomic_load(&child->exited) || atomic_load(&child->signaled) ||
+        signal_is_pending(child, SIGTERM)) {
+        errno = EPROTO;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
+        ptrace_release_child(parent, child);
+        ptrace_clear_pending_signal(parent, SIGCHLD);
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int ptrace_contract_signal_delivery_stop_can_inject_signal(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    int status = 0;
+    int ret = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    if (ptrace_impl(PTRACE_ATTACH, child->pid, NULL, NULL) != 0 ||
+        waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
+        signal_generate_task(child, SIGTERM) != 0 ||
+        waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
+        !WIFSTOPPED(status) || WSTOPSIG(status) != SIGTERM ||
+        ptrace_impl(PTRACE_CONT, child->pid, NULL, (void *)(uintptr_t)SIGTERM) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (!atomic_load(&child->exited) ||
+        !atomic_load(&child->signaled) ||
+        atomic_load(&child->termsig) != SIGTERM) {
+        errno = ENOMSG;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
+        ptrace_release_child(parent, child);
+        ptrace_clear_pending_signal(parent, SIGCHLD);
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int ptrace_contract_event_stop_status_encodes_event(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    int status = 0;
+    int ret = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    if (ptrace_impl(PTRACE_ATTACH, child->pid, NULL, NULL) != 0 ||
+        waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
+        ptrace_impl(PTRACE_SETOPTIONS, child->pid, NULL, (void *)(uintptr_t)PTRACE_O_TRACEEXEC) != 0) {
+        goto out;
+    }
+    set_current(child);
+    if (task_exec_transition_impl("/proc/self/status", "/proc/self/status") != 0) {
+        set_current(parent);
+        goto out;
+    }
+    set_current(parent);
+    if (waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
+        !WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP ||
+        (status >> 16) != PTRACE_EVENT_EXEC) {
         errno = ENODATA;
         goto out;
     }

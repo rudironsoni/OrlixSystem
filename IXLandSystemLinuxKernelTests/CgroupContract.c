@@ -3,12 +3,20 @@
 #include <linux/capability.h>
 #include <linux/fcntl.h>
 #include <linux/sched.h>
+#include <linux/wait.h>
+#ifdef SIGCHLD
+#undef SIGCHLD
+#endif
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
 
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "kernel/cgroup.h"
+#include "kernel/signal.h"
 #include "kernel/task.h"
 
 extern int open_impl(const char *pathname, int flags, unsigned int mode);
@@ -23,6 +31,8 @@ extern int mount_impl(const char *source, const char *target, const char *filesy
                       unsigned long mountflags, const void *data);
 extern int capget(cap_user_header_t header, cap_user_data_t data);
 extern int capset(cap_user_header_t header, const cap_user_data_t data);
+extern void exit_impl(int status);
+extern __kernel_pid_t waitpid_impl(__kernel_pid_t pid, int *wstatus, int options);
 
 static void cgroup_contract_format_pid(int32_t pid, char *buf, unsigned long size);
 
@@ -83,6 +93,22 @@ static int cgroup_contract_write_current_pid(const char *path) {
     }
     cgroup_contract_format_pid(task->pid, pidbuf, sizeof(pidbuf));
     return cgroup_contract_write_file(path, pidbuf);
+}
+
+static void cgroup_contract_clear_pending_signal(struct task_struct *task, int sig) {
+    struct signal_mask_bits mask;
+    int delivered;
+
+    if (!task) {
+        return;
+    }
+    memset(&mask, 0, sizeof(mask));
+    while (signal_dequeue(task, &mask, &delivered) == 1) {
+        if (delivered != sig) {
+            signal_generate_task(task, delivered);
+            break;
+        }
+    }
 }
 
 static void cgroup_contract_format_pid(int32_t pid, char *buf, unsigned long size) {
@@ -887,6 +913,61 @@ int cgroup_contract_nested_cgroup_namespace_rebases_visibility(void) {
 out:
     {
         int saved_errno = errno;
+        cgroup_contract_restore_root();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
+int cgroup_contract_reaped_task_releases_cgroup_membership(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    char pidbuf[32];
+    char buf[128];
+    int status = 0;
+    int ret = -1;
+
+    if (!parent || cgroup_contract_restore_root() != 0) {
+        return -1;
+    }
+    if (cgroup_contract_ignore_exists(mkdir_impl("/sys/fs/cgroup/lifecycle", 0755)) != 0) {
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    cgroup_contract_format_pid(child->pid, pidbuf, sizeof(pidbuf));
+    if (cgroup_contract_write_file("/sys/fs/cgroup/lifecycle/cgroup.procs", pidbuf) != 0 ||
+        cgroup_contract_read_file("/sys/fs/cgroup/lifecycle/pids.current", buf, sizeof(buf)) != 0 ||
+        strcmp(buf, "1\n") != 0) {
+        goto out;
+    }
+    set_current(child);
+    exit_impl(7);
+    set_current(parent);
+    if (waitpid_impl(child->pid, &status, 0) != child->pid) {
+        goto out;
+    }
+    child = NULL;
+    if (cgroup_contract_read_file("/sys/fs/cgroup/lifecycle/pids.current", buf, sizeof(buf)) != 0 ||
+        strcmp(buf, "0\n") != 0 ||
+        cgroup_contract_read_file("/sys/fs/cgroup/lifecycle/cgroup.procs", buf, sizeof(buf)) != 0 ||
+        buf[0] != '\0') {
+        errno = ENODATA;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        if (child) {
+            task_unlink_child_impl(parent, child);
+            free_task(child);
+        }
+        cgroup_contract_clear_pending_signal(parent, SIGCHLD);
         cgroup_contract_restore_root();
         errno = saved_errno;
     }

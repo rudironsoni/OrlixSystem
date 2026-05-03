@@ -1023,7 +1023,9 @@ struct task_struct *alloc_task(void) {
     task->ptrace_attached = false;
     task->ptrace_syscall_trace = false;
     task->ptrace_syscall_exit_next = false;
+    task->ptrace_signal_bypass = false;
     task->ptrace_signal = 0;
+    task->ptrace_signal_stop = 0;
     task->ptrace_options = 0;
     task->ptrace_event = 0;
     task->ptrace_event_message = 0;

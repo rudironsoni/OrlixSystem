@@ -8,6 +8,7 @@
 #define KERNEL_PTRACE_H
 
 #include <asm/posix_types.h>
+#include <stdint.h>
 
 struct task_struct;
 
@@ -22,6 +23,7 @@ void ptrace_note_syscall_exit(long retval);
 void ptrace_note_fork_event(struct task_struct *task, __kernel_pid_t child_pid, int clone_event);
 void ptrace_note_exec_event(struct task_struct *task);
 void ptrace_note_exit_event(struct task_struct *task, int status);
+int ptrace_note_signal_delivery(struct task_struct *task, int32_t sig);
 
 #ifdef __cplusplus
 }

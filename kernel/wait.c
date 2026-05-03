@@ -72,7 +72,8 @@ static int wait_report_status(const struct task_struct *child, enum wait_report_
     case WAIT_REPORT_SIGNALED:
         return atomic_load(&child->termsig) & 0x7f;
     case WAIT_REPORT_STOPPED:
-        return (atomic_load(&child->stopsig) << 8) | 0x7f;
+        return ((int)(child->ptrace_event & 0xffff) << 16) |
+               (atomic_load(&child->stopsig) << 8) | 0x7f;
     case WAIT_REPORT_CONTINUED:
         return 0xffff;
     case WAIT_REPORT_NONE:

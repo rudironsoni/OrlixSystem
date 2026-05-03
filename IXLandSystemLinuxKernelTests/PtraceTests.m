@@ -65,4 +65,16 @@
     XCTAssertEqual(ptrace_contract_traceexit_records_event_message(), 0, @"errno %d", errno);
 }
 
+- (void)testSignalDeliveryStopCanBeSuppressed {
+    XCTAssertEqual(ptrace_contract_signal_delivery_stop_can_be_suppressed(), 0, @"errno %d", errno);
+}
+
+- (void)testSignalDeliveryStopCanInjectSignal {
+    XCTAssertEqual(ptrace_contract_signal_delivery_stop_can_inject_signal(), 0, @"errno %d", errno);
+}
+
+- (void)testEventStopStatusEncodesEvent {
+    XCTAssertEqual(ptrace_contract_event_stop_status_encodes_event(), 0, @"errno %d", errno);
+}
+
 @end

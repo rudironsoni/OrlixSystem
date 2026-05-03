@@ -196,6 +196,8 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         target->ptracer_pid = tracer->pid;
         target->ptrace_attached = true;
         target->ptrace_signal = 0;
+        target->ptrace_signal_stop = 0;
+        target->ptrace_signal_bypass = false;
         target->ptrace_event = 0;
         target->ptrace_event_message = 0;
         kernel_mutex_unlock(&target->lock);
@@ -222,29 +224,49 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         target->ptrace_attached = false;
         target->ptrace_syscall_trace = false;
         target->ptrace_syscall_exit_next = false;
+        target->ptrace_signal_bypass = false;
         target->ptrace_options = 0;
         target->ptrace_event = 0;
         target->ptrace_event_message = 0;
+        target->ptrace_signal_stop = 0;
         kernel_mutex_unlock(&target->lock);
         free_task(target);
         return 0;
     case PTRACE_CONT:
     case PTRACE_SYSCALL:
+    {
+        int32_t resume_signal;
         if (ptrace_get_target(pid, &target) != 0) {
             return -1;
         }
         kernel_mutex_lock(&target->lock);
         target->ptrace_syscall_trace = request == PTRACE_SYSCALL;
-        target->ptrace_signal = (int32_t)(intptr_t)data;
+        target->ptrace_signal = 0;
+        target->ptrace_signal_stop = 0;
+        resume_signal = (int32_t)(intptr_t)data;
         kernel_mutex_unlock(&target->lock);
-        if (data && signal_generate_task(target, (int32_t)(intptr_t)data) != 0) {
+        if (resume_signal != 0) {
+            kernel_mutex_lock(&target->lock);
+            target->ptrace_signal_bypass = true;
+            kernel_mutex_unlock(&target->lock);
+        }
+        if (resume_signal != 0 && signal_generate_task(target, resume_signal) != 0) {
             int saved_errno = errno;
+            kernel_mutex_lock(&target->lock);
+            target->ptrace_signal_bypass = false;
+            kernel_mutex_unlock(&target->lock);
             free_task(target);
             errno = saved_errno;
             return -1;
         }
+        if (resume_signal != 0) {
+            kernel_mutex_lock(&target->lock);
+            target->ptrace_signal_bypass = false;
+            kernel_mutex_unlock(&target->lock);
+        }
         free_task(target);
         return 0;
+    }
     case PTRACE_SETOPTIONS:
         if (ptrace_get_target(pid, &target) != 0) {
             return -1;
@@ -413,4 +435,15 @@ void ptrace_note_exit_event(struct task_struct *task, int status) {
         return;
     }
     ptrace_record_event_stop(task, PTRACE_EVENT_EXIT, (uint64_t)(status & 0xff));
+}
+
+int ptrace_note_signal_delivery(struct task_struct *task, int32_t sig) {
+    if (!task || !task->ptrace_attached || task->ptrace_signal_bypass || sig == SIGKILL) {
+        return 0;
+    }
+    task->ptrace_signal_stop = sig;
+    task->ptrace_event = 0;
+    task->ptrace_event_message = 0;
+    ptrace_report_stop(task, sig);
+    return 1;
 }

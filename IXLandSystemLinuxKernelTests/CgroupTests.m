@@ -112,4 +112,9 @@
                    @"nested cgroup namespaces should rebase procfs and cgroupfs visibility at each root, errno %d", errno);
 }
 
+- (void)testReapedTaskReleasesCgroupMembership {
+    XCTAssertEqual(cgroup_contract_reaped_task_releases_cgroup_membership(), 0,
+                   @"reaped task should be removed from cgroup.procs and pids.current, errno %d", errno);
+}
+
 @end

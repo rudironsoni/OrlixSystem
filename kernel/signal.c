@@ -156,6 +156,7 @@ typedef struct {
 #undef sigset_t
 
 #include "signal.h"
+#include "ptrace.h"
 #include "task.h"
 #include "wait_queue.h"
 
@@ -374,6 +375,10 @@ static int apply_signal_to_task_pending(struct task_struct *task, int32_t sig, i
         return -EINVAL;
 
     if (signal_action_is_ignored(task, sig) && sig != SIGCONT) {
+        return 0;
+    }
+
+    if (ptrace_note_signal_delivery(task, sig) != 0) {
         return 0;
     }
 

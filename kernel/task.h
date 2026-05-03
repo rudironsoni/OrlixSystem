@@ -331,7 +331,9 @@ struct task_struct {
     bool ptrace_attached;
     bool ptrace_syscall_trace;
     bool ptrace_syscall_exit_next;
+    bool ptrace_signal_bypass;
     int32_t ptrace_signal;
+    int32_t ptrace_signal_stop;
     uint64_t ptrace_options;
     uint64_t ptrace_event;
     uint64_t ptrace_event_message;

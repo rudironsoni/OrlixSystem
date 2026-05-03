@@ -13,5 +13,8 @@ int ptrace_contract_peek_poke_data_uses_virtual_memory(void);
 int ptrace_contract_traceclone_records_event_message(void);
 int ptrace_contract_traceexec_records_event_message(void);
 int ptrace_contract_traceexit_records_event_message(void);
+int ptrace_contract_signal_delivery_stop_can_be_suppressed(void);
+int ptrace_contract_signal_delivery_stop_can_inject_signal(void);
+int ptrace_contract_event_stop_status_encodes_event(void);
 
 #endif /* IXLAND_SYSTEM_LINUX_KERNEL_TESTS_PTRACE_CONTRACT_H */
