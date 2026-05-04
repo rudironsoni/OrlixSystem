@@ -696,6 +696,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_rt_sigprocmask:
     case __NR_kill:
     case __NR_tgkill:
+    case __NR_pidfd_send_signal:
         return SYSCALL_CAPABILITY_SIGNAL;
     case __NR_ppoll:
     case __NR_pselect6:
@@ -755,12 +756,11 @@ int syscall_is_implemented_impl(long number) {
 /*
  * Milestone-01 keeps a narrow matrix override for audited process-adjacent
  * syscalls whose repo-truth status is more specific than the coarse
- * implemented-vs-gap inventory. Keep this table scoped to the audited pidfd
- * set until the owning process tranche lands the full Linux-facing behavior.
+ * implemented-vs-gap inventory. Keep this table scoped to audited pidfd gaps
+ * that still remain outside the implemented Linux-facing surface.
  */
 enum syscall_matrix_override_class syscall_matrix_override_class_impl(long number) {
     switch (number) {
-    case __NR_pidfd_send_signal:
     case __NR_pidfd_getfd:
         return SYSCALL_MATRIX_OVERRIDE_KERNEL_OWNED_NEXT_PROCESS;
     default:

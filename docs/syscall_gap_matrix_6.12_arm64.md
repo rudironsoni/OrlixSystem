@@ -283,7 +283,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 292 | `io_pgetevents` | kernel-owned missing:unclassified | package |
 | 293 | `rseq` | kernel-owned missing:unclassified | package |
 | 294 | `kexec_file_load` | kernel-owned missing:unclassified | package |
-| 424 | `pidfd_send_signal` | kernel-owned next:process | next |
+| 424 | `pidfd_send_signal` | implemented:signal | none |
 | 425 | `io_uring_setup` | kernel-owned missing:unclassified | package |
 | 426 | `io_uring_enter` | kernel-owned missing:unclassified | package |
 | 427 | `io_uring_register` | kernel-owned missing:unclassified | package |

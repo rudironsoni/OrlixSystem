@@ -191,7 +191,6 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
         goto fail;
     }
 
-    parent->signal->blocked.sig[idx] |= bit;
     thread->signal->blocked.sig[idx] |= bit;
     signal_contract_clear_queued_signal(thread, signo);
     signal_contract_clear_queued_signal(parent, signo);
@@ -199,6 +198,19 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     if (thread_pidfd < 0) {
         goto fail;
     }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, thread_pidfd, signo, 0, 0, 0, 0);
+    if (ret != 0 ||
+        thread->thread_pending_signals != 0 ||
+        (thread->signal->shared_pending.sig[idx] & bit) != 0 ||
+        (parent->signal->shared_pending.sig[idx] & bit) == 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    signal_contract_clear_queued_signal(thread, signo);
+    signal_contract_clear_queued_signal(parent, signo);
+    parent->signal->blocked.sig[idx] |= bit;
 
     ret = syscall_dispatch_impl(__NR_pidfd_send_signal, thread_pidfd, signo, 0, 0, 0, 0);
     if (ret != 0 ||

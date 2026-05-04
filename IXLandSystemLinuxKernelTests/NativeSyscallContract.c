@@ -5157,6 +5157,12 @@ int native_syscall_contract_dispatches_pidfd_syscalls(void) {
         goto out;
     }
 
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
     clear_pending_signal(parent, SIGCHLD);
     ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK,
                                 (long)(uintptr_t)&block_sigchld,
@@ -5305,9 +5311,9 @@ int native_syscall_contract_classifies_milestone_01_process_surface(void) {
         enum syscall_matrix_override_class override_class;
     };
     #define NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_LIST(X) \
-        X(__NR_unshare, SYSCALL_CAPABILITY_PROCESS)
+        X(__NR_unshare, SYSCALL_CAPABILITY_PROCESS) \
+        X(__NR_pidfd_send_signal, SYSCALL_CAPABILITY_SIGNAL)
     #define NATIVE_SYSCALL_MILESTONE_01_NEXT_LIST(X) \
-        X(__NR_pidfd_send_signal, SYSCALL_MATRIX_OVERRIDE_KERNEL_OWNED_NEXT_PROCESS) \
         X(__NR_pidfd_getfd, SYSCALL_MATRIX_OVERRIDE_KERNEL_OWNED_NEXT_PROCESS)
     enum {
         NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT =
@@ -5326,10 +5332,10 @@ int native_syscall_contract_classifies_milestone_01_process_surface(void) {
             NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT +
             NATIVE_SYSCALL_MILESTONE_01_NEXT_COUNT,
     };
-    _Static_assert(NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT == 1,
-                   "milestone 01 must keep one implemented syscall in the audited process surface");
-    _Static_assert(NATIVE_SYSCALL_MILESTONE_01_NEXT_COUNT == 2,
-                   "milestone 01 must keep two kernel-owned-next pidfd syscalls in the audited process surface");
+    _Static_assert(NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT == 2,
+                   "milestone 01 must keep two implemented syscalls in the audited process surface");
+    _Static_assert(NATIVE_SYSCALL_MILESTONE_01_NEXT_COUNT == 1,
+                   "milestone 01 must keep one kernel-owned-next pidfd syscall in the audited process surface");
     _Static_assert(NATIVE_SYSCALL_MILESTONE_01_AUDITED_COUNT == 3,
                    "milestone 01 audited process surface must stay scoped to the reviewed three-syscall set");
     static const struct required_syscall_class required_classes[] = {
