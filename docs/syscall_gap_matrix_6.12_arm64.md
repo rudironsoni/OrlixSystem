@@ -269,7 +269,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 278 | `getrandom` | implemented:random | none |
 | 279 | `memfd_create` | implemented:fd | none |
 | 280 | `bpf` | kernel-owned missing:unclassified | package |
-| 281 | `execveat` | kernel-owned missing:unclassified | shell |
+| 281 | `execveat` | implemented:process | none |
 | 282 | `userfaultfd` | kernel-owned missing:unclassified | package |
 | 283 | `membarrier` | kernel-owned missing:unclassified | package |
 | 284 | `mlock2` | kernel-owned missing:unclassified | package |

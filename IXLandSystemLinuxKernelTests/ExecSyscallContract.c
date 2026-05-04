@@ -1769,6 +1769,11 @@ int exec_syscall_contract_script_uses_virtual_path_and_native_interpreter(void) 
         return -1;
     }
 
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
     native_registry_clear();
     clear_captured_exec();
     unlink_impl("/tmp/exec-script-launch");
@@ -2026,6 +2031,159 @@ int exec_syscall_contract_fexecve_rejects_invalid_fd(void) {
         return -1;
     }
     return expect_errno(EBADF);
+}
+
+int exec_syscall_contract_execveat_uses_dirfd_relative_path(void) {
+    struct task_struct *task = get_current();
+    char *argv[] = {"execveat-rel", NULL};
+    char *envp[] = {"EXECVEAT=REL", NULL};
+    const char dir[] = "/tmp/execveat-dir";
+    const char path[] = "/tmp/execveat-dir/native-rel";
+    int dirfd = -1;
+    long status;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    clear_captured_exec();
+    unlink_impl(path);
+    rmdir_impl(dir);
+    if (mkdir_impl(dir, 0700) != 0) {
+        goto out;
+    }
+    if (create_exec_file(path, "") != 0) {
+        goto out;
+    }
+    dirfd = open_impl(dir, O_RDONLY | O_DIRECTORY, 0);
+    if (dirfd < 0) {
+        goto out;
+    }
+    if (native_register(path, native_capture_exec) != 0) {
+        goto out;
+    }
+
+    status = syscall_dispatch_impl(__NR_execveat, dirfd, (long)(uintptr_t)"native-rel",
+                                   (long)(uintptr_t)argv, (long)(uintptr_t)envp, 0, 0);
+    if (status != 37) {
+        errno = status < 0 ? (int)-status : EPROTO;
+        goto out;
+    }
+    if (!atomic_load(&task->execed) ||
+        strcmp(task->exe, path) != 0 ||
+        strcmp(task->comm, "execveat-rel") != 0 ||
+        captured_argc != 1 ||
+        strcmp(captured_argv[0], "execveat-rel") != 0 ||
+        strcmp(captured_env0, "EXECVEAT=REL") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    close_if_open(dirfd);
+    unlink_impl(path);
+    rmdir_impl(dir);
+    return result;
+}
+
+int exec_syscall_contract_execveat_empty_path_uses_fd(void) {
+    struct task_struct *task = get_current();
+    char *argv[] = {"execveat-fd", NULL};
+    char *envp[] = {"EXECVEAT=FD", NULL};
+    const char path[] = "/tmp/execveat-fd";
+    int fd = -1;
+    long status;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    clear_captured_exec();
+    unlink_impl(path);
+    if (create_exec_file(path, "") != 0) {
+        goto out;
+    }
+    fd = open_impl(path, O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+    if (native_register(path, native_capture_exec) != 0) {
+        goto out;
+    }
+
+    status = syscall_dispatch_impl(__NR_execveat, fd, (long)(uintptr_t)"",
+                                   (long)(uintptr_t)argv, (long)(uintptr_t)envp,
+                                   AT_EMPTY_PATH, 0);
+    if (status != 37) {
+        errno = status < 0 ? (int)-status : EPROTO;
+        goto out;
+    }
+    if (!atomic_load(&task->execed) ||
+        strcmp(task->exe, path) != 0 ||
+        strcmp(task->comm, "execveat-fd") != 0 ||
+        captured_argc != 1 ||
+        strcmp(captured_argv[0], "execveat-fd") != 0 ||
+        strcmp(captured_env0, "EXECVEAT=FD") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    close_if_open(fd);
+    unlink_impl(path);
+    return result;
+}
+
+int exec_syscall_contract_execveat_nofollow_rejects_symlink(void) {
+    struct task_struct *task = get_current();
+    char *argv[] = {"execveat-link", NULL};
+    const char target[] = "/tmp/execveat-target";
+    const char linkpath[] = "/tmp/execveat-link";
+    long status;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    clear_captured_exec();
+    unlink_impl(linkpath);
+    unlink_impl(target);
+    if (create_exec_file(target, "") != 0) {
+        goto out;
+    }
+    if (symlinkat(target, AT_FDCWD, linkpath) != 0) {
+        goto out;
+    }
+
+    status = syscall_dispatch_impl(__NR_execveat, AT_FDCWD, (long)(uintptr_t)linkpath,
+                                   (long)(uintptr_t)argv, 0, AT_SYMLINK_NOFOLLOW, 0);
+    if (status != -ELOOP) {
+        errno = status < 0 ? (int)-status : EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl(linkpath);
+    unlink_impl(target);
+    return result;
 }
 
 int exec_syscall_contract_elf64_aarch64_exec_loads_virtual_image(void) {

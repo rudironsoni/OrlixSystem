@@ -28,6 +28,9 @@ extern int exec_syscall_contract_script_symlink_records_resolved_target(void);
 extern int exec_syscall_contract_missing_script_interpreter_preserves_state(void);
 extern int exec_syscall_contract_fexecve_uses_fd_path(void);
 extern int exec_syscall_contract_fexecve_rejects_invalid_fd(void);
+extern int exec_syscall_contract_execveat_uses_dirfd_relative_path(void);
+extern int exec_syscall_contract_execveat_empty_path_uses_fd(void);
+extern int exec_syscall_contract_execveat_nofollow_rejects_symlink(void);
 extern int exec_syscall_contract_elf64_aarch64_exec_loads_virtual_image(void);
 extern int exec_syscall_contract_elf_program_headers_create_virtual_segments(void);
 extern int exec_syscall_contract_elf_interp_loads_virtual_loader_image(void);
@@ -174,6 +177,18 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testFexecveRejectsInvalidFd {
     XCTAssertEqual(exec_syscall_contract_fexecve_rejects_invalid_fd(), 0, @"errno %d", errno);
+}
+
+- (void)testExecveatUsesDirfdRelativePath {
+    XCTAssertEqual(exec_syscall_contract_execveat_uses_dirfd_relative_path(), 0, @"errno %d", errno);
+}
+
+- (void)testExecveatEmptyPathUsesFd {
+    XCTAssertEqual(exec_syscall_contract_execveat_empty_path_uses_fd(), 0, @"errno %d", errno);
+}
+
+- (void)testExecveatNofollowRejectsSymlink {
+    XCTAssertEqual(exec_syscall_contract_execveat_nofollow_rejects_symlink(), 0, @"errno %d", errno);
 }
 
 - (void)testElf64Aarch64ExecLoadsVirtualImage {

@@ -46,6 +46,7 @@
 extern int open_impl(const char *pathname, int flags, mode_t mode);
 extern int close_impl(int fd);
 extern ssize_t read_impl(int fd, void *buf, size_t count);
+extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 
 /* Forward declarations for exec variants */
 int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
@@ -1140,27 +1141,42 @@ void exec_reset_signals(struct signal_struct *sighand) {
     memset(&sighand->pending, 0, sizeof(sighand->pending));
 }
 
-int execve(const char *pathname, char *const argv[], char *const envp[]) {
-    char resolved_path[MAX_PATH];
-    if (!pathname) {
-        errno = EFAULT;
+static int exec_path_from_fd(int fd, char *path, size_t path_len) {
+    fd_entry_t *entry;
+    int ret;
+    int saved_errno;
+
+    if (!path || path_len == 0) {
+        errno = EINVAL;
         return -1;
     }
 
-    if (pathname[0] == '\0') {
+    entry = get_fd_entry_impl(fd);
+    if (!entry) {
+        errno = EBADF;
+        return -1;
+    }
+    ret = get_fd_path_impl(entry, path, path_len);
+    saved_errno = errno;
+    put_fd_entry_impl(entry);
+    errno = saved_errno;
+    if (ret != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int execve_resolved_path(const char *resolved_path, char *const argv[], char *const envp[]) {
+    struct task_struct *task;
+
+    if (!resolved_path || resolved_path[0] == '\0') {
         errno = ENOENT;
         return -1;
     }
 
-    struct task_struct *task = get_current();
+    task = get_current();
     if (!task) {
         errno = ESRCH;
-        return -1;
-    }
-
-    int ret = vfs_resolve_virtual_path_task_follow(pathname, resolved_path, sizeof(resolved_path), task->fs, true);
-    if (ret != 0) {
-        errno = -ret;
         return -1;
     }
 
@@ -1287,6 +1303,36 @@ int execve(const char *pathname, char *const argv[], char *const envp[]) {
     return launch_status;
 }
 
+int execve(const char *pathname, char *const argv[], char *const envp[]) {
+    char resolved_path[MAX_PATH];
+    int ret;
+    struct task_struct *task;
+
+    if (!pathname) {
+        errno = EFAULT;
+        return -1;
+    }
+
+    if (pathname[0] == '\0') {
+        errno = ENOENT;
+        return -1;
+    }
+
+    task = get_current();
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    ret = vfs_resolve_virtual_path_task_follow(pathname, resolved_path, sizeof(resolved_path), task->fs, true);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return execve_resolved_path(resolved_path, argv, envp);
+}
+
 int execv(const char *pathname, char *const argv[]) {
     return execve(pathname, argv, environ);
 }
@@ -1335,21 +1381,57 @@ int execvp(const char *file, char *const argv[]) {
 
 int fexecve(int fd, char *const argv[], char *const envp[]) {
     char path[MAX_PATH];
-    fd_entry_t *entry = get_fd_entry_impl(fd);
-    if (!entry) {
-        errno = EBADF;
+    if (exec_path_from_fd(fd, path, sizeof(path)) != 0) {
         return -1;
     }
 
-    int ret = get_fd_path_impl(entry, path, sizeof(path));
-    int saved_errno = errno;
-    put_fd_entry_impl(entry);
-    errno = saved_errno;
+    return execve_resolved_path(path, argv, envp);
+}
+
+int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *const envp[],
+                  int flags) {
+    char resolved_path[MAX_PATH];
+    char link_target[MAX_PATH];
+    int ret;
+
+    if (!pathname) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (flags & ~(AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (pathname[0] == '\0') {
+        if ((flags & AT_EMPTY_PATH) == 0) {
+            errno = ENOENT;
+            return -1;
+        }
+        if (exec_path_from_fd(dirfd, resolved_path, sizeof(resolved_path)) != 0) {
+            return -1;
+        }
+        return execve_resolved_path(resolved_path, argv, envp);
+    }
+
+    ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_path, sizeof(resolved_path),
+                                             (flags & AT_SYMLINK_NOFOLLOW) == 0);
     if (ret != 0) {
+        errno = -ret;
         return -1;
     }
+    if ((flags & AT_SYMLINK_NOFOLLOW) != 0) {
+        ret = (int)readlinkat(dirfd, pathname, link_target, sizeof(link_target));
+        if (ret >= 0) {
+            errno = ELOOP;
+            return -1;
+        }
+        if (errno != EINVAL) {
+            return -1;
+        }
+    }
 
-    return execve(path, argv, envp);
+    return execve_resolved_path(resolved_path, argv, envp);
 }
 
 int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {

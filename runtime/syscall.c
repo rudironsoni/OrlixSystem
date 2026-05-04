@@ -243,6 +243,8 @@ extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
                           const char *newpath, unsigned int flags);
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
+extern int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *const envp[],
+                         int flags);
 extern void exit_impl(int status);
 extern int nanosleep_impl(const struct timespec *req, struct timespec *rem);
 extern int gettimeofday_impl(struct timeval *tv, void *tz);
@@ -620,6 +622,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_gettid:
     case __NR_clone:
     case __NR_execve:
+    case __NR_execveat:
     case __NR_exit:
     case __NR_exit_group:
     case __NR_wait4:
@@ -1409,6 +1412,10 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)execve((const char *)(uintptr_t)arg0,
                                            (char *const *)(uintptr_t)arg1,
                                            (char *const *)(uintptr_t)arg2));
+    case __NR_execveat:
+        return syscall_result((long)execveat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                  (char *const *)(uintptr_t)arg2,
+                                                  (char *const *)(uintptr_t)arg3, (int)arg4));
     case __NR_wait4:
         return syscall_result((long)wait4_impl((__kernel_pid_t)arg0, (int *)(uintptr_t)arg1,
                                                (int)arg2, (void *)(uintptr_t)arg3));
