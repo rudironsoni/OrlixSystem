@@ -10,6 +10,7 @@
 #include <linux/eventfd.h>
 #include <linux/fcntl.h>
 #include <linux/memfd.h>
+#include <linux/pidfd.h>
 #include <linux/time_types.h>
 #include <linux/timerfd.h>
 
@@ -350,7 +351,8 @@ enum fd_type {
     FD_TYPE_MOUNT, /* Virtual detached mount tree */
     FD_TYPE_EVENTFD, /* Virtual event counter */
     FD_TYPE_TIMERFD, /* Virtual timer expiration counter */
-    FD_TYPE_MEMFD /* Anonymous regular file */
+    FD_TYPE_MEMFD, /* Anonymous regular file */
+    FD_TYPE_PIDFD /* Virtual pidfd task handle */
 };
 
 typedef struct synthetic_dir_state {
@@ -390,6 +392,7 @@ typedef struct fd_description {
     uint64_t timerfd_expirations;
     bool timerfd_armed;
     int memfd_seals;
+    struct task_struct *pidfd_task;
     atomic_int refs;
     fs_mutex_t lock;
 } fd_description_t;
@@ -997,6 +1000,44 @@ static fd_description_t *alloc_memfd_description(int real_fd, const char *name, 
     return desc;
 }
 
+static fd_description_t *alloc_pidfd_description(struct task_struct *task, int flags) {
+    fd_description_t *desc;
+
+    if (!task) {
+        errno = ESRCH;
+        return NULL;
+    }
+
+    desc = calloc(1, sizeof(fd_description_t));
+    if (!desc) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    desc->type = FD_TYPE_PIDFD;
+    desc->fd = -1;
+    desc->flags = O_RDONLY | (flags & O_NONBLOCK);
+    desc->mode = 0;
+    desc->offset = 0;
+    desc->is_dir = false;
+    desc->dev_node = SYNTHETIC_DEV_NONE;
+    desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
+    desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
+    desc->pty_index = 0;
+    desc->pty_is_master = false;
+    desc->pipe_endpoint = NULL;
+    desc->epoll_instance = NULL;
+    memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
+    desc->pidfd_task = task;
+    atomic_fetch_add(&task->refs, 1);
+    desc->synthetic_state = NULL;
+    atomic_init(&desc->refs, 1);
+    fs_mutex_init(&desc->lock);
+    memcpy(desc->path, "anon_inode:[pidfd]", sizeof("anon_inode:[pidfd]"));
+    return desc;
+}
+
 static fd_description_t *alloc_mount_fd_description(int flags, const struct vfs_mount_fd *mount_fd) {
     fd_description_t *desc;
     int ret;
@@ -1059,6 +1100,8 @@ static void release_fd_description(fd_description_t *desc) {
             pipe_close_endpoint_impl(desc->pipe_endpoint);
         } else if (desc->type == FD_TYPE_EPOLL) {
             epoll_release_fd_impl(desc->epoll_instance);
+        } else if (desc->type == FD_TYPE_PIDFD && desc->pidfd_task) {
+            free_task(desc->pidfd_task);
         }
         if (desc->synthetic_state) {
             free(desc->synthetic_state);
@@ -1814,6 +1857,21 @@ static int init_memfd_entry_impl(int fd, const char *name, unsigned int flags, i
     return 0;
 }
 
+static int init_pidfd_entry_impl(int fd, struct task_struct *task, int flags) {
+    file_init_impl();
+    fd_entry_t *entry = &fd_table[fd];
+    fs_mutex_lock(&entry->lock);
+    entry->desc = alloc_pidfd_description(task, flags);
+    if (!entry->desc) {
+        fs_mutex_unlock(&entry->lock);
+        return -1;
+    }
+    entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
+    fs_mutex_unlock(&entry->lock);
+    return 0;
+}
+
 int timerfd_create_impl(int clockid, int flags) {
     const int allowed_flags = TFD_CLOEXEC | TFD_NONBLOCK;
     int fd;
@@ -1861,6 +1919,51 @@ int memfd_create_impl(const char *name, unsigned int flags) {
         free_fd_impl(fd);
         return -1;
     }
+    return fd;
+}
+
+int pidfd_create_for_task_impl(struct task_struct *task, int flags) {
+    const int allowed_flags = O_CLOEXEC | O_NONBLOCK;
+    int fd;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+    if ((flags & ~allowed_flags) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    fd = alloc_fd_impl();
+    if (fd < 0) {
+        return -1;
+    }
+    if (init_pidfd_entry_impl(fd, task, flags) != 0) {
+        free_fd_impl(fd);
+        return -1;
+    }
+    return fd;
+}
+
+int pidfd_open_impl(int32_t pid, unsigned int flags) {
+    struct task_struct *task;
+    int fd;
+    unsigned int allowed_flags = PIDFD_NONBLOCK;
+
+    if ((flags & ~allowed_flags) != 0 || (flags & PIDFD_THREAD) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    task = task_lookup(pid);
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    fd = pidfd_create_for_task_impl(task, (flags & PIDFD_NONBLOCK) ? O_NONBLOCK : 0);
+    free_task(task);
     return fd;
 }
 
@@ -2216,6 +2319,37 @@ bool timerfd_read_ready_entry_impl(void *entry) {
 bool get_fd_is_memfd_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     return fd_entry->desc && fd_entry->desc->type == FD_TYPE_MEMFD;
+}
+
+bool get_fd_is_pidfd_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    return fd_entry->desc && fd_entry->desc->type == FD_TYPE_PIDFD;
+}
+
+struct task_struct *pidfd_get_task_entry_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    struct task_struct *task;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_PIDFD ||
+        !fd_entry->desc->pidfd_task) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    task = fd_entry->desc->pidfd_task;
+    atomic_fetch_add(&task->refs, 1);
+    return task;
+}
+
+bool pidfd_read_ready_entry_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_PIDFD ||
+        !fd_entry->desc->pidfd_task) {
+        return false;
+    }
+
+    return atomic_load(&fd_entry->desc->pidfd_task->exited);
 }
 
 int memfd_get_seals_entry_impl(void *entry) {

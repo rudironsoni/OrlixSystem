@@ -13,6 +13,7 @@
 #include <asm-generic/siginfo.h>
 
 #include "signal.h"
+#include "../fs/fdtable.h"
 #include "task.h"
 #include "wait.h"
 
@@ -213,6 +214,8 @@ int waitid_impl(int idtype, __kernel_pid_t id, void *infop_arg, int options, voi
     int selector;
     int status = 0;
     __kernel_pid_t waited;
+    struct task_struct *target_task = NULL;
+    struct task_struct *parent = get_current();
 
     (void)rusage;
     if (!infop) {
@@ -239,12 +242,36 @@ int waitid_impl(int idtype, __kernel_pid_t id, void *infop_arg, int options, voi
     case P_PGID:
         selector = id == 0 ? 0 : -id;
         break;
+    case P_PIDFD: {
+        fd_entry_t *entry;
+
+        entry = get_fd_entry_impl((int)id);
+        if (!entry) {
+            errno = EBADF;
+            return -1;
+        }
+        target_task = pidfd_get_task_entry_impl(entry);
+        put_fd_entry_impl(entry);
+        if (!target_task) {
+            return -1;
+        }
+        if (!parent || target_task->parent != parent) {
+            free_task(target_task);
+            errno = ECHILD;
+            return -1;
+        }
+        selector = target_task->pid;
+        break;
+    }
     default:
         errno = EINVAL;
         return -1;
     }
 
     waited = waitpid_impl(selector, &status, options);
+    if (target_task) {
+        free_task(target_task);
+    }
     if (waited < 0) {
         return -1;
     }

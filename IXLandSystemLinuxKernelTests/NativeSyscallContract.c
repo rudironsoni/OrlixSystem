@@ -10,9 +10,11 @@
 #include <linux/elf.h>
 #include <linux/memfd.h>
 #include <linux/mman.h>
+#include <linux/pidfd.h>
 #include <linux/poll.h>
 #include <linux/prctl.h>
 #include <linux/random.h>
+#include <linux/sched.h>
 #include <linux/stat.h>
 #include <linux/statfs.h>
 #include <linux/times.h>
@@ -172,6 +174,14 @@ static int close_if_open(int fd) {
         }
     }
     return 0;
+}
+
+static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
 static int expect_raw_errno(long ret, int expected) {
@@ -5113,6 +5123,178 @@ int native_syscall_contract_dispatches_exit_and_waitid_syscalls(void) {
     return 0;
 }
 
+int native_syscall_contract_dispatches_pidfd_syscalls(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    struct task_struct *clone_child;
+    struct task_struct *restore;
+    struct clone_args args;
+    struct siginfo info;
+    struct pollfd pfd;
+    struct __kernel_timespec zero_timeout = {0, 0};
+    uint64_t block_sigchld = 1ULL << (SIGCHLD - 1);
+    uint64_t old_sigmask = 0;
+    long ret;
+    int pidfd = -1;
+    int clone_pidfd = -1;
+    int child_pid;
+    int clone_child_pid;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    child_pid = child->pid;
+
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child_pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        errno = pidfd < 0 ? (int)-pidfd : EPROTO;
+        goto out;
+    }
+
+    clear_pending_signal(parent, SIGCHLD);
+    ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK,
+                                (long)(uintptr_t)&block_sigchld,
+                                (long)(uintptr_t)&old_sigmask,
+                                sizeof(block_sigchld), 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    pfd.fd = pidfd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    ret = syscall_dispatch_impl(__NR_ppoll, (long)(uintptr_t)&pfd, 1,
+                                (long)(uintptr_t)&zero_timeout, 0, 0, 0);
+    if (ret != 0 || pfd.revents != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    restore = get_current();
+    set_current(child);
+    ret = syscall_dispatch_impl(__NR_exit, 29, 0, 0, 0, 0, 0);
+    set_current(restore);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    pfd.revents = 0;
+    ret = syscall_dispatch_impl(__NR_ppoll, (long)(uintptr_t)&pfd, 1,
+                                (long)(uintptr_t)&zero_timeout, 0, 0, 0);
+    if (ret != 1 || (pfd.revents & POLLIN) == 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    memset(&info, 0, sizeof(info));
+    ret = syscall_dispatch_impl(__NR_waitid, P_PIDFD, pidfd, (long)(uintptr_t)&info,
+                                WEXITED | WNOWAIT, 0, 0);
+    if (ret != 0 ||
+        info.si_signo != SIGCHLD ||
+        info.si_code != CLD_EXITED ||
+        info.si_pid != child_pid ||
+        info.si_status != 29) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    memset(&info, 0, sizeof(info));
+    ret = syscall_dispatch_impl(__NR_waitid, P_PIDFD, pidfd, (long)(uintptr_t)&info,
+                                WEXITED, 0, 0);
+    if (ret != 0 ||
+        info.si_signo != SIGCHLD ||
+        info.si_code != CLD_EXITED ||
+        info.si_pid != child_pid ||
+        info.si_status != 29) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    clear_pending_signal(parent, SIGCHLD);
+
+    memset(&args, 0, sizeof(args));
+    args.flags = CLONE_PIDFD;
+    args.pidfd = (uintptr_t)&clone_pidfd;
+    ret = syscall_dispatch_impl(__NR_clone3, (long)(uintptr_t)&args, sizeof(args), 0, 0, 0, 0);
+    if (ret <= 0 || clone_pidfd < 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    clone_child_pid = (int)ret;
+    clone_child = task_lookup(clone_child_pid);
+    if (!clone_child) {
+        errno = ESRCH;
+        goto out;
+    }
+
+    pfd.fd = clone_pidfd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    ret = syscall_dispatch_impl(__NR_ppoll, (long)(uintptr_t)&pfd, 1,
+                                (long)(uintptr_t)&zero_timeout, 0, 0, 0);
+    if (ret != 0 || pfd.revents != 0) {
+        free_task(clone_child);
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    restore = get_current();
+    set_current(clone_child);
+    ret = syscall_dispatch_impl(__NR_exit, 31, 0, 0, 0, 0, 0);
+    set_current(restore);
+    if (ret != 0) {
+        free_task(clone_child);
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    free_task(clone_child);
+
+    memset(&info, 0, sizeof(info));
+    ret = syscall_dispatch_impl(__NR_waitid, P_PIDFD, clone_pidfd, (long)(uintptr_t)&info,
+                                WEXITED, 0, 0);
+    if (ret != 0 ||
+        info.si_signo != SIGCHLD ||
+        info.si_code != CLD_EXITED ||
+        info.si_pid != clone_child_pid ||
+        info.si_status != 31) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    clear_pending_signal(parent, SIGCHLD);
+
+    ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_SETMASK,
+                                (long)(uintptr_t)&old_sigmask, 0,
+                                sizeof(old_sigmask), 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    old_sigmask = 0;
+
+    close_if_open(pidfd);
+    close_if_open(clone_pidfd);
+    return 0;
+
+out:
+    if (old_sigmask != 0 || (parent && parent->signal &&
+        (parent->signal->blocked.sig[0] & block_sigchld) != 0)) {
+        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK,
+                              (long)(uintptr_t)&block_sigchld, 0,
+                              sizeof(block_sigchld), 0, 0);
+    }
+    clear_pending_signal(parent, SIGCHLD);
+    close_if_open(pidfd);
+    close_if_open(clone_pidfd);
+    return -1;
+}
+
 int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) {
     struct required_syscall_class {
         long number;
@@ -5252,6 +5434,7 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_timerfd_settime,
         __NR_timerfd_gettime,
         __NR_memfd_create,
+        __NR_pidfd_open,
         __NR_execve,
         __NR_execveat,
         __NR_wait4,
@@ -5343,6 +5526,7 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_timerfd_settime, SYSCALL_CAPABILITY_READINESS},
         {__NR_timerfd_gettime, SYSCALL_CAPABILITY_READINESS},
         {__NR_memfd_create, SYSCALL_CAPABILITY_FD},
+        {__NR_pidfd_open, SYSCALL_CAPABILITY_PROCESS},
         {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
     };
     static const struct planned_syscall_gap planned_gaps[] = {

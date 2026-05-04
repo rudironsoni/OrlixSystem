@@ -159,6 +159,7 @@
 #include <linux/futex.h>
 #include <linux/mount.h>
 #include <linux/mman.h>
+#include <linux/pidfd.h>
 #include <linux/sched.h>
 #include <linux/stat.h>
 #include <linux/time_types.h>
@@ -238,6 +239,7 @@ extern int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimers
                                 struct __kernel_itimerspec *old_value);
 extern int timerfd_gettime_impl(int fd, struct __kernel_itimerspec *curr_value);
 extern int memfd_create_impl(const char *name, unsigned int flags);
+extern int pidfd_open_impl(int32_t pid, unsigned int flags);
 extern int mkdirat_impl(int dirfd, const char *pathname, linux_mode_t mode);
 extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
@@ -628,6 +630,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_wait4:
     case __NR_waitid:
     case __NR_clone3:
+    case __NR_pidfd_open:
     case __NR_getpid:
     case __NR_getppid:
     case __NR_uname:
@@ -815,6 +818,8 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_memfd_create:
         return syscall_result((long)memfd_create_impl((const char *)(uintptr_t)arg0,
                                                       (unsigned int)arg1));
+    case __NR_pidfd_open:
+        return syscall_result((long)pidfd_open_impl((int32_t)arg0, (unsigned int)arg1));
     case __NR_fcntl:
         return syscall_result((long)fcntl_impl((int)arg0, (int)arg1, (int)arg2));
     case __NR_flock:

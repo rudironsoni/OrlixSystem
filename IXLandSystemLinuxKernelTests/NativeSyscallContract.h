@@ -75,6 +75,7 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void);
 int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void);
 int native_syscall_contract_dispatches_statx_syscall(void);
 int native_syscall_contract_dispatches_exit_and_waitid_syscalls(void);
+int native_syscall_contract_dispatches_pidfd_syscalls(void);
 int native_syscall_contract_registers_native_artifact_descriptor(void);
 int native_syscall_contract_execs_sbin_init_through_syscall_surface(void);
 int native_syscall_contract_returns_raw_negative_errno(void);

@@ -31,6 +31,8 @@
 #endif
 #include <asm-generic/resource.h>
 
+extern void poll_notify_readiness_impl(void);
+
 #ifdef SIGCHLD
 #undef SIGCHLD
 #endif
@@ -1312,6 +1314,7 @@ void task_mark_signaled_exit(struct task_struct *task, int32_t sig) {
     atomic_store(&task->continued, false);
     atomic_store(&task->stop_report_pending, false);
     atomic_store(&task->continue_report_pending, false);
+    poll_notify_readiness_impl();
 }
 
 void task_mark_exited(struct task_struct *task, int status) {
@@ -1329,6 +1332,7 @@ void task_mark_exited(struct task_struct *task, int status) {
     atomic_store(&task->continued, false);
     atomic_store(&task->stop_report_pending, false);
     atomic_store(&task->continue_report_pending, false);
+    poll_notify_readiness_impl();
 }
 
 void task_notify_parent_state_change(struct task_struct *task) {

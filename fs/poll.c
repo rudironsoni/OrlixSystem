@@ -114,6 +114,17 @@ short poll_fd_revents_impl(int fd, short events, int *is_virtual) {
         return revents;
     }
 
+    if (get_fd_is_pidfd_impl(entry)) {
+        if (is_virtual) {
+            *is_virtual = 1;
+        }
+        if ((events & (POLLIN | POLLRDNORM)) && pidfd_read_ready_entry_impl(entry)) {
+            revents |= events & (POLLIN | POLLRDNORM);
+        }
+        put_fd_entry_impl(entry);
+        return revents;
+    }
+
     if (get_fd_is_synthetic_pty_impl(entry)) {
         unsigned int pty_index = get_fd_synthetic_pty_index_impl(entry);
         bool is_master = get_fd_is_synthetic_pty_master_impl(entry);

@@ -293,7 +293,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 431 | `fsconfig` | kernel-owned missing:unclassified | package |
 | 432 | `fsmount` | kernel-owned missing:unclassified | package |
 | 433 | `fspick` | kernel-owned missing:unclassified | package |
-| 434 | `pidfd_open` | kernel-owned missing:unclassified | package |
+| 434 | `pidfd_open` | implemented:process | none |
 | 435 | `clone3` | implemented:process | none |
 | 436 | `close_range` | implemented:fd | none |
 | 437 | `openat2` | implemented:fd | none |
