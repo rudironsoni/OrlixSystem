@@ -11,9 +11,8 @@
 #include <linux/mount.h>
 #include <linux/sched.h>
 #include <linux/stat.h>
-#include <linux/statfs.h>
-#include <linux/umount.h>
 #include <linux/xattr.h>
+#include <linux/fs.h>
 #include <asm/unistd.h>
 #include <asm/statfs.h>
 
@@ -21,6 +20,7 @@
 #include <string.h>
 
 #include "fs/vfs.h"
+#include "linux_umount2_flags.h"
 #include "kernel/cred_internal.h"
 #include "kernel/task.h"
 #include "runtime/syscall.h"
@@ -6706,14 +6706,14 @@ int vfs_contract_statfs_reports_virtual_proc_and_tmpfs(void) {
 
     memset(&st, 0, sizeof(st));
     if (statfs("/proc", &st) != 0 || st.f_type != PROC_SUPER_MAGIC ||
-        st.f_bsize != 4096 || (st.f_flags & ST_VALID) == 0) {
+        st.f_bsize != 4096 || (st.f_flags & MS_REMOUNT) == 0) {
         errno = ENODATA;
         return -1;
     }
 
     memset(&st, 0, sizeof(st));
     if (statfs("/tmp", &st) != 0 || st.f_type != TMPFS_MAGIC ||
-        st.f_bsize != 4096 || (st.f_flags & ST_VALID) == 0) {
+        st.f_bsize != 4096 || (st.f_flags & MS_REMOUNT) == 0) {
         errno = ENODATA;
         return -1;
     }
@@ -6724,7 +6724,7 @@ int vfs_contract_statfs_reports_virtual_proc_and_tmpfs(void) {
     }
     memset(&st, 0, sizeof(st));
     if (fstatfs(fd, &st) == 0 && st.f_type == PROC_SUPER_MAGIC &&
-        (st.f_flags & ST_VALID) != 0) {
+        (st.f_flags & MS_REMOUNT) != 0) {
         ret = 0;
     } else {
         errno = ENODATA;
@@ -6755,8 +6755,8 @@ int vfs_contract_statfs_reports_mount_attribute_flags(void) {
 
     memset(&st, 0, sizeof(st));
     if (statfs(target, &st) != 0 ||
-        (st.f_flags & (ST_VALID | ST_RDONLY | ST_NOSUID | ST_NODEV | ST_NOEXEC)) !=
-            (ST_VALID | ST_RDONLY | ST_NOSUID | ST_NODEV | ST_NOEXEC)) {
+        (st.f_flags & (MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC)) !=
+            (MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC)) {
         errno = ENODATA;
         goto out;
     }
@@ -6769,8 +6769,8 @@ int vfs_contract_statfs_reports_mount_attribute_flags(void) {
 
     memset(&st, 0, sizeof(st));
     if (statfs(target, &st) != 0 ||
-        (st.f_flags & (ST_VALID | ST_RDONLY | ST_NOSUID)) != (ST_VALID | ST_RDONLY | ST_NOSUID) ||
-        (st.f_flags & (ST_NODEV | ST_NOEXEC)) != 0) {
+        (st.f_flags & (MS_REMOUNT | MS_RDONLY | MS_NOSUID)) != (MS_REMOUNT | MS_RDONLY | MS_NOSUID) ||
+        (st.f_flags & (MS_NODEV | MS_NOEXEC)) != 0) {
         errno = ENOMSG;
         goto out;
     }

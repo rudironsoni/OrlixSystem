@@ -48,7 +48,7 @@ Current top-level ownership is organized around the implemented subsystems in th
 - `internal/ios/` — private host mediation seams only
 - `IXLandSystemLinuxKernelTests/` — Linux-facing syscall and contract proof
 - `IXLandSystemHostBridgeTests/` — private host-bridge seam proof
-- `third_party/linux/uapi/6.12/arm64/include/` — vendored Linux UAPI truth
+- `third_party/linux/6.12/arm64/uapi/include/` — vendored Linux UAPI truth
 - `project.yml` — authoritative XcodeGen project specification
 
 ## Architecture Direction
@@ -66,13 +66,14 @@ That includes:
 
 Darwin and iOS APIs are private implementation details and must not define the Linux-facing contract.
 
-## Linux ABI and Header Policy
+## Linux Header Policy
 
-Vendored Linux 6.12 arm64 exported UAPI is the only Linux ABI truth in this repo.
+Vendored generated Linux headers from upstream Linux are the only Linux header truth in this repo.
 
 Location:
 
-- `third_party/linux/uapi/6.12/arm64/include`
+- tuple root: `third_party/linux/6.12/arm64/`
+- UAPI: `third_party/linux/6.12/arm64/uapi/include`
 
 Allowed include forms:
 
@@ -83,7 +84,7 @@ Allowed include forms:
 Forbidden include forms:
 
 - path traversal into vendored headers
-- includes containing `third_party/linux/uapi`
+- includes containing `third_party/linux/`
 - includes containing `6.12`
 - includes containing `arm64`
 

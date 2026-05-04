@@ -34,6 +34,7 @@
 #include "kernel/init.h"
 #include "kernel/cred_internal.h"
 #include "runtime/native/registry.h"
+#include "linux_umount2_flags.h"
 
 /* Linux UAPI test support - semantic helpers only */
 #include "IXLandSystemLinuxKernelTests/LinuxUAPITestSupport.h"

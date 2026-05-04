@@ -41,7 +41,7 @@ Wrong-direction changes are forbidden:
 - Do not move host mechanics into Linux-owner paths.
 - Do not excuse Darwin/iOS leakage in Linux-owner code as an environmental fact.
 - If Darwin/iOS types, headers, macros, constants, process APIs, fd APIs, wait APIs, signal APIs, or filesystem semantics appear in Linux-owner code, treat that as an agent implementation error.
-- Fix such leakage by restoring the architecture boundary: Linux UAPI/ABI truth in Linux-owner code, private host mediation only under `internal/ios/**`.
+- Fix such leakage by restoring the architecture boundary: Linux header truth (UAPI + kernel-internal generated headers) in Linux-owner code, private host mediation only under `internal/ios/**`.
 - Never describe Linux-owner files as “not needing Darwin” as if Darwin was a valid option there. Darwin is not a Linux-owner dependency.
 
 ## 3) Narrow Subsystem Seams Only
@@ -119,7 +119,11 @@ IXLandSystem ownership:
 - syscall/runtime ABI entry points
 - tasks, signals, wait, fdtable, VFS, mounts, pipes, PTY, poll/select/epoll, procfs/devfs, credentials, namespaces, cgroups, seccomp, ptrace, netlink
 - vendored Linux UAPI consumption
-- generated Linux-source ABI supplements under `third_party/linux/abi/<version>/<arch>/include` only when the needed Linux-source ABI fragment is missing from vendored UAPI and used by IXLandSystem
+  - Vendored generated Linux headers are the only source of truth:
+    - tuple root: `third_party/linux/<version>/<arch>/`
+    - UAPI: `third_party/linux/<version>/<arch>/uapi/include`
+    - srctree: `third_party/linux/<version>/<arch>/srctree/**`
+    - objtree: `third_party/linux/<version>/<arch>/objtree/**`
 
 IXLandMLibC ownership:
 - libc ABI headers and typedef surfaces
@@ -147,8 +151,7 @@ Do not implement libc sysdeps inside IXLandSystem.
 Do not create kernel-owned replacements for libc typedef headers such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `sigevent`, `sigval`, `socklen_t`, `statvfs`, or `suseconds_t`.
 
 The Linux header vendoring pipeline must treat mlibc `abis/linux` as a coverage reference:
-- map headers already present in vendored Linux UAPI to UAPI
-- generate Linux-source ABI supplement headers for kernel-owned gaps
+- map headers already present in vendored generated Linux headers to the correct surface (UAPI vs kernel-internal)
 - classify libc-owned surfaces as IXLandMLibC-owned
 - fail on unclassified surfaces instead of silently inventing kernel headers
 
@@ -188,7 +191,7 @@ Forbidden implementation behavior:
 - narrowing behavior to one current test case instead of modeling the Linux-facing rule
 
 Required implementation behavior:
-- use vendored Linux UAPI or Linux ABI supplements for kernel/userspace ABI truth
+- use vendored generated Linux headers for kernel/userspace contract truth
 - keep libc-owned typedef/API surfaces out of IXLandSystem and in IXLandMLibC
 - model the real virtual-kernel behavior in the owning subsystem
 - make host mediation explicit under `internal/ios/**` only
@@ -204,7 +207,7 @@ Additional hard rule:
   Darwin/iOS in the first place. If such a dependency appears, fix the boundary
   instead of explaining it away.
 - Do not downgrade Linux ABI types to local fixed-width convenience types when
-  vendored Linux UAPI or Linux ABI supplements provide the contract type.
+  vendored generated Linux headers provide the contract type.
 - Laziness is not an implementation strategy: do not choose shallow stubs,
   renamed adapters, local typedefs, or narrow test-shaped behavior when the
   kernel capability requires real subsystem semantics.

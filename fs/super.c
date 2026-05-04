@@ -11,8 +11,6 @@
 #include <linux/fcntl.h>
 #include <linux/magic.h>
 #include <linux/mount.h>
-#include <linux/statfs.h>
-
 #include "fdtable.h"
 #include "vfs.h"
 
@@ -68,19 +66,20 @@ static int vfs_fill_statfs(const char *resolved_path, struct statfs *buf) {
     buf->f_ffree = 32768;
     buf->f_namelen = 255;
     buf->f_frsize = 4096;
-    buf->f_flags = ST_VALID;
+    /* Linux statfs(2) f_flags are defined by libc; values match MS_* in Linux headers. */
+    buf->f_flags = MS_REMOUNT;
     mount_flags = vfs_mount_flags_for_path(resolved_path);
     if ((mount_flags & MS_RDONLY) != 0) {
-        buf->f_flags |= ST_RDONLY;
+        buf->f_flags |= MS_RDONLY;
     }
     if ((mount_flags & MS_NOSUID) != 0) {
-        buf->f_flags |= ST_NOSUID;
+        buf->f_flags |= MS_NOSUID;
     }
     if ((mount_flags & MS_NODEV) != 0) {
-        buf->f_flags |= ST_NODEV;
+        buf->f_flags |= MS_NODEV;
     }
     if ((mount_flags & MS_NOEXEC) != 0) {
-        buf->f_flags |= ST_NOEXEC;
+        buf->f_flags |= MS_NOEXEC;
     }
     return 0;
 }

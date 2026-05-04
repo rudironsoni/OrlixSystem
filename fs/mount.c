@@ -12,10 +12,11 @@
 #include <string.h>
 
 #include <linux/fcntl.h>
+#include <linux/fs.h>
 #include <linux/mount.h>
 #include <linux/stat.h>
-#include <linux/umount.h>
 
+#include "linux_umount2_flags.h"
 #include "vfs.h"
 
 extern int vfs_mount(const char *source, const char *target,

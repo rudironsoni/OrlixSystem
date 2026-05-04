@@ -18,7 +18,7 @@
 // Forbidden includes:
 //   - <unistd.h>, <signal.h>, <sys/wait.h> (public POSIX)
 //   - <asm-generic/signal.h>, <asm-generic/signal-defs.h> (Linux UAPI in .m)
-//   - path traversal into third_party/linux/uapi
+//   - path traversal into third_party/linux
 //   - manual extern declarations for public POSIX names
 //   - calling public names like getpgid(), setpgid(), killpg(), waitpid()
 //

@@ -16,7 +16,7 @@
 #include <linux/random.h>
 #include <linux/sched.h>
 #include <linux/stat.h>
-#include <linux/statfs.h>
+#include <linux/mount.h>
 #include <linux/times.h>
 #include <linux/time_types.h>
 #include <linux/utsname.h>
@@ -4831,7 +4831,7 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     memset(&fsfs, 0, sizeof(fsfs));
     ret = syscall_dispatch_impl(__NR_fstatfs, fd, (long)(uintptr_t)&fsfs, 0, 0, 0, 0);
     if (ret != 0 || fsfs.f_type == 0 || fsfs.f_bsize != 4096 ||
-        fsfs.f_namelen != 255 || (fsfs.f_flags & ST_VALID) == 0) {
+        fsfs.f_namelen != 255 || (fsfs.f_flags & MS_REMOUNT) == 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
@@ -4915,7 +4915,7 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     ret = syscall_dispatch_impl(__NR_statfs, (long)(uintptr_t)renamed,
                                 (long)(uintptr_t)&sfs, 0, 0, 0, 0);
     if (ret != 0 || sfs.f_type == 0 || sfs.f_bsize != 4096 ||
-        sfs.f_namelen != 255 || (sfs.f_flags & ST_VALID) == 0) {
+        sfs.f_namelen != 255 || (sfs.f_flags & MS_REMOUNT) == 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
