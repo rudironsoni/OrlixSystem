@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
-LINUX_VERSION ?=
-LINUX_ARCH ?=
+LINUX_VERSION ?= 6.12
+LINUX_ARCH ?= arm64
 LINUX_KERNEL_SERIES ?=
 LINUX_TARBALL_URL ?=
 LINUX_VENDOR_ROOT ?= third_party/linux
@@ -22,10 +22,6 @@ vendor-linux-headers:
 	linux_make="$(LINUX_MAKE)"; \
 	llvm_bin="$(LINUX_LLVM_BIN)"; \
 	linux_sed="$(LINUX_SED)"; \
-	if [ -z "$$linux_version" ] || [ -z "$$linux_arch" ]; then \
-		echo "usage: make vendor-linux-headers LINUX_VERSION=<version> LINUX_ARCH=<arch>" >&2; \
-		exit 2; \
-	fi; \
 	case "$$linux_arch" in \
 		arm64) ;; \
 		*) echo "unsupported Linux arch: $$linux_arch" >&2; exit 1 ;; \
@@ -96,168 +92,91 @@ vendor-linux-headers:
 			exit 1; \
 		fi; \
 	}; \
-	copy_tree() { \
-		local src="$$1"; \
-		local dest="$$2"; \
-		require_dir "$$src"; \
-		mkdir -p "$$dest"; \
-		cp -R "$$src/." "$$dest"; \
-	}; \
-	write_umount_abi_header() { \
-		local source_file="$$1"; \
-		local out_file="$$2"; \
-		local tmp_defs="$$tmp/umount-defines.h"; \
-		awk '/^#define[[:space:]]+(MNT_FORCE|MNT_DETACH|MNT_EXPIRE|UMOUNT_NOFOLLOW|UMOUNT_UNUSED)[[:space:]]+/ { print }' "$$source_file" > "$$tmp_defs"; \
-		if [ ! -s "$$tmp_defs" ]; then \
-			echo "failed to derive linux/umount.h ABI supplement from: $$source_file" >&2; \
-			exit 1; \
-		fi; \
-		{ \
-			echo "/* SPDX-License-Identifier: GPL-2.0 */"; \
-			echo "#ifndef _LINUX_UMOUNT_H"; \
-			echo "#define _LINUX_UMOUNT_H"; \
-			echo; \
-			cat "$$tmp_defs"; \
-			echo; \
-			echo "#endif"; \
-		} > "$$out_file"; \
-	}; \
-	write_statfs_abi_header() { \
-		local source_file="$$1"; \
-		local out_file="$$2"; \
-		local tmp_defs="$$tmp/statfs-defines.h"; \
-		awk '/^#define[[:space:]]+ST_(RDONLY|NOSUID|NODEV|NOEXEC|SYNCHRONOUS|VALID|MANDLOCK|NOATIME|NODIRATIME|RELATIME|NOSYMFOLLOW)[[:space:]]+/ { print }' "$$source_file" > "$$tmp_defs"; \
-		if [ ! -s "$$tmp_defs" ]; then \
-			echo "failed to derive linux/statfs.h ABI supplement from: $$source_file" >&2; \
-			exit 1; \
-		fi; \
-		{ \
-			echo "/* SPDX-License-Identifier: GPL-2.0 */"; \
-			echo "#ifndef _LINUX_STATFS_H"; \
-			echo "#define _LINUX_STATFS_H"; \
-			echo; \
-			cat "$$tmp_defs"; \
-			echo; \
-			echo "#endif"; \
-		} > "$$out_file"; \
-	}; \
-	write_include_paths() { \
-		local kheaders_root_rel="$$vendor_root/kheaders/$$linux_version/$$linux_arch"; \
-		local mk_file="$$1/include-paths.mk"; \
-		local xcconfig_file="$$1/include-paths.xcconfig"; \
-		printf '%s\n' \
-			"LINUX_KHEADERS_ROOT := $$kheaders_root_rel" \
-			"LINUX_KHEADERS_CPPFLAGS := \\" \
-			"  -I\$$(LINUX_KHEADERS_ROOT)/objtree/arch/$$linux_arch/include/generated \\" \
-			"  -I\$$(LINUX_KHEADERS_ROOT)/srctree/arch/$$linux_arch/include \\" \
-			"  -I\$$(LINUX_KHEADERS_ROOT)/objtree/include \\" \
-			"  -I\$$(LINUX_KHEADERS_ROOT)/srctree/include" \
-			> "$$mk_file"; \
-		printf '%s\n' \
-			"LINUX_KHEADERS_ROOT = \$$(SRCROOT)/$$vendor_root/kheaders/$$linux_version/$$linux_arch" \
-			"LINUX_KHEADERS_SEARCH_PATHS = \$$(LINUX_KHEADERS_ROOT)/objtree/arch/$$linux_arch/include/generated \$$(LINUX_KHEADERS_ROOT)/srctree/arch/$$linux_arch/include \$$(LINUX_KHEADERS_ROOT)/objtree/include \$$(LINUX_KHEADERS_ROOT)/srctree/include" \
-			> "$$xcconfig_file"; \
-	}; \
-	write_provenance() { \
-		local kheaders_root="$$1"; \
-		local tarball_sha="$$2"; \
-		local generated_at; \
-		generated_at="$$(LC_ALL=C date -u +"%Y-%m-%dT%H:%M:%SZ")"; \
-		printf '%s\n' \
-			"{" \
-			"  \"linux_version\": \"$$linux_version\"," \
-			"  \"linux_arch\": \"$$linux_arch\"," \
-			"  \"kernel_series\": \"$$kernel_series\"," \
-			"  \"tarball_url\": \"$$tarball_url\"," \
-			"  \"source_release_name\": \"linux-$$linux_version\"," \
-			"  \"generated_at_utc\": \"$$generated_at\"," \
-			"  \"generator_script\": \"Makefile:vendor-linux-headers\"," \
-			"  \"make_targets_run\": [" \
-			"    \"defconfig\"," \
-			"    \"olddefconfig\"," \
-			"    \"prepare\"," \
-			"    \"modules_prepare\"," \
-			"    \"headers_install\"" \
-			"  ]," \
-			"  \"uapi_root\": \"$$vendor_root/uapi/$$linux_version/$$linux_arch\"," \
-			"  \"kheaders_root\": \"$$vendor_root/kheaders/$$linux_version/$$linux_arch\"," \
-			"  \"abi_root\": \"$$vendor_root/abi/$$linux_version/$$linux_arch\"," \
-			"  \"downloaded_tarball_sha256\": \"$$tarball_sha\"," \
-			"  \"git_commit\": null" \
-			"}" \
-			> "$$kheaders_root/provenance.json"; \
-	}; \
+		copy_tree() { \
+			local src="$$1"; \
+			local dest="$$2"; \
+			require_dir "$$src"; \
+			mkdir -p "$$dest"; \
+			cp -R "$$src/." "$$dest"; \
+		}; \
+		write_source_json() { \
+			local tuple_root="$$1"; \
+			local tarball_sha="$$2"; \
+			printf '%s\n' \
+				"{" \
+				"  \"linux_version\": \"$$linux_version\"," \
+				"  \"linux_arch\": \"$$linux_arch\"," \
+				"  \"kernel_series\": \"$$kernel_series\"," \
+				"  \"tarball_url\": \"$$tarball_url\"," \
+				"  \"tarball_sha256\": \"$$tarball_sha\"," \
+				"  \"generated_by\": \"Makefile:vendor-linux-headers\"," \
+				"  \"make_targets\": [" \
+				"    \"defconfig\"," \
+				"    \"olddefconfig\"," \
+				"    \"prepare\"," \
+				"    \"modules_prepare\"," \
+				"    \"headers_install\"" \
+				"  ]" \
+				"}" \
+				> "$$tuple_root/source.json"; \
+		}; \
 	write_readme() { \
 		local out_file="$$1"; \
 		printf '%s\n' \
 			"# Vendored Linux Headers" \
 			"" \
-			"IXLandSystem vendors three distinct Linux-shaped header surfaces under third_party/linux:" \
+			"This tuple was generated from upstream Linux sources." \
+			"Do not edit vendored files manually." \
 			"" \
-			"- \`uapi/<version>/<arch>/include\`: exported userspace headers from Linux \`headers_install\`." \
-			"- \`kheaders/<version>/<arch>/srctree\` and \`objtree\`: Linux source and generated kernel-internal header roots." \
-			"- \`abi/<version>/<arch>/include\`: IXLandSystem-owned ABI supplement headers derived from Linux source when required outside exported UAPI." \
-			"" \
-			"Regenerate the vendored tree with:" \
+			"Regenerate with:" \
 			"" \
 			"\`\`\`sh" \
 			"make vendor-linux-headers LINUX_VERSION=<version> LINUX_ARCH=<arch>" \
 			"\`\`\`" \
 			"" \
-			"Do not hand-edit vendored Linux headers. Regenerate them from pristine upstream Linux sources through the Makefile pipeline." \
+			"Surfaces:" \
+			"" \
+			"- \`uapi/include\`: output from \`make headers_install\`." \
+			"- \`srctree\`: copied from extracted Linux source include roots." \
+			"- \`objtree\`: copied from generated Linux build include roots (O=<objtree>)." \
 			> "$$out_file"; \
-	}; \
-	write_manifest() { \
-		local stage_vendor_root="$$1"; \
-		local manifest_file="$$2"; \
-		local tmp_list="$$tmp/manifest-files.txt"; \
-		local rel_path; \
-		local abs_path; \
-		: > "$$tmp_list"; \
-		find "$$stage_vendor_root/uapi/$$linux_version/$$linux_arch" -type f -print >> "$$tmp_list"; \
-		find "$$stage_vendor_root/kheaders/$$linux_version/$$linux_arch" -type f ! -name manifest.sha256 -print >> "$$tmp_list"; \
-		find "$$stage_vendor_root/abi/$$linux_version/$$linux_arch" -type f -print >> "$$tmp_list"; \
-		LC_ALL=C sort "$$tmp_list" | while IFS= read -r abs_path; do \
-			rel_path="$${abs_path#$$stage_vendor_root/}"; \
-			printf '%s  %s\n' "$$(shasum -a 256 "$$abs_path" | awk '{print $$1}')" "$$vendor_root/$$rel_path"; \
-		done > "$$manifest_file"; \
-	}; \
-	validate_vendor_tree() { \
-		local stage_vendor_root="$$1"; \
-		local uapi_root="$$stage_vendor_root/uapi/$$linux_version/$$linux_arch/include"; \
-		local kheaders_root="$$stage_vendor_root/kheaders/$$linux_version/$$linux_arch"; \
-		local abi_root="$$stage_vendor_root/abi/$$linux_version/$$linux_arch/include"; \
-		local generated_asm_dir="$$kheaders_root/objtree/arch/$$linux_arch/include/generated/asm"; \
-		require_file "$$uapi_root/linux/wait.h"; \
-		require_file "$$uapi_root/asm/signal.h"; \
-		require_file "$$uapi_root/asm-generic/errno-base.h"; \
-		require_file "$$uapi_root/linux/futex.h"; \
-		require_file "$$uapi_root/linux/seccomp.h"; \
-		if [ -z "$$(find "$$uapi_root" -type f -print -quit)" ]; then \
-			echo "empty UAPI root: $$uapi_root" >&2; \
-			exit 1; \
-		fi; \
-		require_file "$$kheaders_root/srctree/include/linux/fs.h"; \
-		require_file "$$kheaders_root/srctree/include/linux/sched.h"; \
-		require_file "$$kheaders_root/srctree/arch/$$linux_arch/include/asm/unistd.h"; \
-		require_file "$$kheaders_root/objtree/include/generated/autoconf.h"; \
-		require_file "$$kheaders_root/objtree/include/generated/utsrelease.h"; \
-		if [ -z "$$(find "$$kheaders_root/srctree/include" -type f -print -quit)" ]; then \
-			echo "empty kernel srctree include root: $$kheaders_root/srctree/include" >&2; \
-			exit 1; \
-		fi; \
-		require_dir "$$generated_asm_dir"; \
-		if [ -z "$$(find "$$generated_asm_dir" -type f -print -quit)" ]; then \
-			echo "missing generated arch asm headers under: $$generated_asm_dir" >&2; \
-			exit 1; \
-		fi; \
-		require_file "$$abi_root/linux/statfs.h"; \
-		require_file "$$abi_root/linux/umount.h"; \
-		if [ -z "$$(find "$$abi_root" -type f -print -quit)" ]; then \
-			echo "empty ABI root: $$abi_root" >&2; \
-			exit 1; \
-		fi; \
-	}; \
+		}; \
+		write_manifest() { \
+			local tuple_root="$$1"; \
+			local manifest_file="$$2"; \
+			local rel; \
+			( \
+				cd "$$tuple_root"; \
+				find . -type f ! -name manifest.sha256 -print \
+					| LC_ALL=C sort \
+					| while IFS= read -r rel; do \
+						rel="$${rel#./}"; \
+						printf '%s  %s\n' "$$(shasum -a 256 "$$tuple_root/$$rel" | awk '{print $$1}')" "$$rel"; \
+					done \
+			) > "$$manifest_file"; \
+		}; \
+		validate_vendor_tree() { \
+			local tuple_root="$$1"; \
+			local uapi_root="$$tuple_root/uapi/include"; \
+			local srctree_root="$$tuple_root/srctree"; \
+			local objtree_root="$$tuple_root/objtree"; \
+			if [ -z "$$(find "$$tuple_root" -type f -print -quit)" ]; then \
+				echo "empty tuple root: $$tuple_root" >&2; \
+				exit 1; \
+			fi; \
+			require_file "$$uapi_root/linux/wait.h"; \
+			require_file "$$uapi_root/asm/signal.h"; \
+			require_file "$$uapi_root/asm-generic/errno-base.h"; \
+			require_file "$$uapi_root/linux/futex.h"; \
+			require_file "$$uapi_root/linux/seccomp.h"; \
+			require_file "$$srctree_root/include/linux/fs.h"; \
+			require_file "$$srctree_root/include/linux/sched.h"; \
+			require_dir "$$srctree_root/arch/$$linux_arch/include"; \
+			require_file "$$objtree_root/include/generated/autoconf.h"; \
+			require_file "$$objtree_root/include/generated/utsrelease.h"; \
+			require_dir "$$objtree_root/include/config"; \
+			require_dir "$$objtree_root/arch/$$linux_arch/include/generated"; \
+		}; \
 	tarball="$$tmp/linux-$$linux_version.tar.xz"; \
 	src="$$tmp/linux-$$linux_version"; \
 	obj="$$tmp/obj-$$linux_version-$$linux_arch"; \
@@ -269,12 +188,12 @@ vendor-linux-headers:
 	mkdir -p "$$host_compat_include" "$$host_tool_bin" "$$uapi_out" "$$stage_vendor_root"; \
 	curl -fL --retry 5 --retry-delay 1 --retry-all-errors "$$tarball_url" -o "$$tarball"; \
 	tarball_sha="$$(shasum -a 256 "$$tarball" | awk '{print $$1}')"; \
-	tar -xf "$$tarball" -C "$$tmp"; \
-	require_dir "$$src"; \
-	cp "$$repo_root/scripts/linux_host_compat/elf.h" "$$host_compat_include/elf.h"; \
-	cp "$$repo_root/scripts/linux_host_compat/endian.h" "$$host_compat_include/endian.h"; \
-	cp "$$repo_root/scripts/linux_host_compat/byteswap.h" "$$host_compat_include/byteswap.h"; \
-	cp "$$repo_root/scripts/linux_host_compat/linux_arm_elf_compat.h" "$$host_compat_include/linux_arm_elf_compat.h"; \
+		tar -xf "$$tarball" -C "$$tmp"; \
+		require_dir "$$src"; \
+		cp "$$repo_root/build_support/linux_host_compat/include/elf.h" "$$host_compat_include/elf.h"; \
+		cp "$$repo_root/build_support/linux_host_compat/include/endian.h" "$$host_compat_include/endian.h"; \
+		cp "$$repo_root/build_support/linux_host_compat/include/byteswap.h" "$$host_compat_include/byteswap.h"; \
+		cp "$$repo_root/build_support/linux_host_compat/include/linux_arm_elf_compat.h" "$$host_compat_include/linux_arm_elf_compat.h"; \
 	perl -0pi -e 's/#include "modpost.h"/#define _UUID_T\n#define uuid_t int\n#include "modpost.h"\n#undef uuid_t/' "$$src/scripts/mod/file2alias.c"; \
 	linux_make_env+=("HOSTCFLAGS=-I$$host_compat_include -include $$host_compat_include/linux_arm_elf_compat.h"); \
 	if [ -n "$$linux_sed" ]; then \
@@ -292,37 +211,38 @@ vendor-linux-headers:
 	require_dir "$$uapi_out/include"; \
 	require_dir "$$src/include"; \
 	require_dir "$$src/arch/$$linux_arch/include"; \
-	require_dir "$$obj/include/generated"; \
-	require_dir "$$obj/include/config"; \
-	require_dir "$$obj/arch/$$linux_arch/include/generated"; \
-	uapi_dest="$$stage_vendor_root/uapi/$$linux_version/$$linux_arch/include"; \
-	kheaders_root="$$stage_vendor_root/kheaders/$$linux_version/$$linux_arch"; \
-	abi_dest="$$stage_vendor_root/abi/$$linux_version/$$linux_arch/include/linux"; \
-	copy_tree "$$uapi_out/include" "$$uapi_dest"; \
-	if [ -d "$$uapi_dest/include" ] && [ ! -d "$$uapi_dest/linux" ]; then \
-		normalized_uapi="$$tmp/uapi-normalized"; \
-		mkdir -p "$$normalized_uapi"; \
-		cp -R "$$uapi_dest/include/." "$$normalized_uapi"; \
-		rm -rf "$$uapi_dest"; \
-		mkdir -p "$$uapi_dest"; \
-		cp -R "$$normalized_uapi/." "$$uapi_dest"; \
-	fi; \
-	copy_tree "$$src/include" "$$kheaders_root/srctree/include"; \
-	copy_tree "$$src/arch/$$linux_arch/include" "$$kheaders_root/srctree/arch/$$linux_arch/include"; \
-	copy_tree "$$obj/include/generated" "$$kheaders_root/objtree/include/generated"; \
-	copy_tree "$$obj/include/config" "$$kheaders_root/objtree/include/config"; \
-	copy_tree "$$obj/arch/$$linux_arch/include/generated" "$$kheaders_root/objtree/arch/$$linux_arch/include/generated"; \
-	mkdir -p "$$abi_dest"; \
-	write_statfs_abi_header "$$src/include/linux/statfs.h" "$$abi_dest/statfs.h"; \
-	write_umount_abi_header "$$src/include/linux/fs.h" "$$abi_dest/umount.h"; \
-	write_include_paths "$$kheaders_root"; \
-	write_provenance "$$kheaders_root" "$$tarball_sha"; \
-	write_manifest "$$stage_vendor_root" "$$kheaders_root/manifest.sha256"; \
-	validate_vendor_tree "$$stage_vendor_root"; \
-	write_readme "$$stage_vendor_root/README.md"; \
-	mkdir -p "$$final_vendor_root"; \
-	rsync -a --delete "$$stage_vendor_root/" "$$final_vendor_root/"; \
-	echo "vendored roots:"; \
-	echo "  $$final_vendor_root/uapi/$$linux_version/$$linux_arch"; \
-	echo "  $$final_vendor_root/kheaders/$$linux_version/$$linux_arch"; \
-	echo "  $$final_vendor_root/abi/$$linux_version/$$linux_arch"
+		require_dir "$$obj/include/generated"; \
+		require_dir "$$obj/include/config"; \
+		require_dir "$$obj/arch/$$linux_arch/include/generated"; \
+		tuple_stage="$$stage_vendor_root/$$linux_version/$$linux_arch"; \
+		uapi_dest="$$tuple_stage/uapi/include"; \
+		srctree_root="$$tuple_stage/srctree"; \
+		objtree_root="$$tuple_stage/objtree"; \
+		copy_tree "$$uapi_out/include" "$$uapi_dest"; \
+		if [ -d "$$uapi_dest/include" ] && [ ! -d "$$uapi_dest/linux" ]; then \
+			normalized_uapi="$$tmp/uapi-normalized"; \
+			mkdir -p "$$normalized_uapi"; \
+			cp -R "$$uapi_dest/include/." "$$normalized_uapi"; \
+			rm -rf "$$uapi_dest"; \
+			mkdir -p "$$uapi_dest"; \
+			cp -R "$$normalized_uapi/." "$$uapi_dest"; \
+		fi; \
+		copy_tree "$$src/include" "$$srctree_root/include"; \
+		copy_tree "$$src/arch/$$linux_arch/include" "$$srctree_root/arch/$$linux_arch/include"; \
+		copy_tree "$$obj/include/generated" "$$objtree_root/include/generated"; \
+		copy_tree "$$obj/include/config" "$$objtree_root/include/config"; \
+		copy_tree "$$obj/arch/$$linux_arch/include/generated" "$$objtree_root/arch/$$linux_arch/include/generated"; \
+		write_readme "$$tuple_stage/README.md"; \
+		write_source_json "$$tuple_stage" "$$tarball_sha"; \
+		write_manifest "$$tuple_stage" "$$tuple_stage/manifest.sha256"; \
+		validate_vendor_tree "$$tuple_stage"; \
+		final_tuple_root="$$final_vendor_root/$$linux_version/$$linux_arch"; \
+		rm -rf "$$final_tuple_root"; \
+		mkdir -p "$$(dirname "$$final_tuple_root")"; \
+		rsync -a --delete "$$tuple_stage/" "$$final_tuple_root/"; \
+		echo "vendored Linux tuple:"; \
+		echo "  $$vendor_root/$$linux_version/$$linux_arch"; \
+		echo "surfaces:"; \
+		echo "  uapi/include"; \
+		echo "  srctree"; \
+		echo "  objtree"

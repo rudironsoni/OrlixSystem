@@ -1,10 +1,10 @@
 # Vendored Linux Headers
 
-IXLandSystem vendors three distinct Linux-shaped header surfaces under third_party/linux:
+IXLandSystem vendors three distinct Linux-shaped header surfaces under `third_party/linux/<version>/<arch>/`:
 
-- `uapi/<version>/<arch>/include`: exported userspace headers from Linux `headers_install`.
-- `kheaders/<version>/<arch>/srctree` and `objtree`: Linux source and generated kernel-internal header roots.
-- `abi/<version>/<arch>/include`: IXLandSystem-owned ABI supplement headers derived from Linux source when required outside exported UAPI.
+- `uapi/include`: exported userspace headers from Linux `headers_install`.
+- `srctree`: Linux source include roots copied from the extracted Linux tarball.
+- `objtree`: Linux build include roots copied from the generated O=<objtree> output.
 
 Regenerate the vendored tree with:
 

@@ -23,7 +23,7 @@
 **Files:**
 - Modify: `runtime/syscall.c`
 - Modify: `docs/syscall_gap_matrix_6.12_arm64.md`
-- Reference: vendored Linux headers under `third_party/linux/uapi/6.12/arm64/include`
+- Reference: vendored Linux headers under `third_party/linux/6.12/arm64/uapi/include`
 - Test: `IXLandSystemLinuxKernelTests/NativeSyscallContract.c`
 - Test: `IXLandSystemLinuxKernelTests/NativeSyscallTests.m`
 

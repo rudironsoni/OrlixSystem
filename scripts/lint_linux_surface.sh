@@ -585,28 +585,9 @@ echo "   ✓ No host event ownership vocabulary"
 
 echo ""
 echo "=== Check 36: Linux vendor headers layout ==="
+echo "rationale: Linux-facing headers must be vendored in a single tuple root (uapi/srctree/objtree) with no legacy category roots or ABI side-trees."
 bash ./scripts/lint_linux_vendor_headers.sh
 echo "   ✓ Linux vendor header layout holds"
-
-echo ""
-echo "=== Check 36: Linux ABI supplement path mirrors UAPI layout ==="
-BAD_LINUX_ABI_PATH=$(find third_party/linux/abi -path '*/generated/*' -print 2>/dev/null || true)
-if [ -n "$BAD_LINUX_ABI_PATH" ]; then
-    echo "FAIL: Linux ABI supplement must not use generated path segments:"
-    echo "$BAD_LINUX_ABI_PATH"
-    exit 1
-fi
-LINUX_UAPI_VERSION=$(sed -n "s/.*LINUX_UAPI_VERSION: '\([^']*\)'.*/\1/p" project.yml | head -n1)
-LINUX_UAPI_ARCH=$(sed -n "s/.*LINUX_UAPI_ARCH: \([^[:space:]]*\).*/\1/p" project.yml | head -n1)
-if [ -z "$LINUX_UAPI_VERSION" ] || [ -z "$LINUX_UAPI_ARCH" ]; then
-    echo "FAIL: Unable to determine Linux version/arch from project.yml"
-    exit 1
-fi
-if [ -d third_party/linux/abi ] && [ ! -d "third_party/linux/abi/${LINUX_UAPI_VERSION}/${LINUX_UAPI_ARCH}/include" ]; then
-    echo "FAIL: Linux ABI supplement must mirror third_party/linux/uapi/${LINUX_UAPI_VERSION}/${LINUX_UAPI_ARCH}/include"
-    exit 1
-fi
-echo "   ✓ Linux ABI supplement path mirrors UAPI layout"
 
 echo ""
 echo "=== All checks passed ==="

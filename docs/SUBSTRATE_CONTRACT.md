@@ -30,13 +30,14 @@ Decision rule:
 
 If a change makes IXLandSystem less suitable as a Linux-oriented syscall, header, or runtime target, it is the wrong change.
 
-## Linux ABI Truth
+## Linux Header Truth
 
-Vendored Linux 6.12 arm64 exported UAPI is the only Linux ABI truth in this repo.
+Vendored generated Linux headers from upstream Linux are the only Linux header truth in this repo.
 
 Location:
 
-- `third_party/linux/uapi/6.12/arm64/include`
+- tuple root: `third_party/linux/6.12/arm64/`
+- UAPI: `third_party/linux/6.12/arm64/uapi/include`
 
 Allowed vendored include forms:
 
@@ -46,7 +47,7 @@ Allowed vendored include forms:
 
 Forbidden vendored include forms:
 
-- includes containing `third_party/linux/uapi`
+- includes containing `third_party/linux/`
 - includes containing `6.12`
 - includes containing `arm64`
 - `../` traversal into vendored headers

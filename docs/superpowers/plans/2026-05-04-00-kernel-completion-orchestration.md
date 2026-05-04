@@ -137,7 +137,7 @@ Expected: the shared scheme is green, including `IXLandSystemLinuxKernelTests` a
 
 **Files:**
 - Modify: `docs/syscall_gap_matrix_6.12_arm64.md`
-- Reference: vendored Linux headers under `third_party/linux/uapi/6.12/arm64/include`
+- Reference: vendored Linux headers under `third_party/linux/6.12/arm64/uapi/include`
 - Reference: `runtime/syscall.c`
 
 - [ ] Apply this task to milestone implementation tranches `01` through `07` when they change syscall surface, Linux-owner source, or LinuxKernel tests. Orchestration-only Task `00` documentation work does not regenerate the matrix or run these audits unless it also changes one of those milestone-owned surfaces.
