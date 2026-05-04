@@ -17,6 +17,7 @@
 #include "pty.h"
 #include "vfs.h"
 #include "kernel/cgroup.h"
+#include "kernel/net/socket.h"
 #include "kernel/task.h"
 
 /* Linux-owner type for file offsets (matches __kernel_off_t) */
@@ -67,6 +68,16 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         }
         put_fd_entry_impl(entry);
         return ret;
+    }
+
+    if (get_fd_is_socket_impl(entry)) {
+        struct ix_socket *sock = get_fd_socket_impl(entry);
+        int flags = 0;
+        if ((get_fd_flags_impl(entry) & O_NONBLOCK) != 0) {
+            flags |= MSG_DONTWAIT;
+        }
+        put_fd_entry_impl(entry);
+        return ix_socket_recv_impl(sock, buf, count, flags);
     }
 
     if (get_fd_is_eventfd_impl(entry)) {
@@ -309,6 +320,16 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
         }
         put_fd_entry_impl(entry);
         return ret;
+    }
+
+    if (get_fd_is_socket_impl(entry)) {
+        struct ix_socket *sock = get_fd_socket_impl(entry);
+        int flags = 0;
+        if ((get_fd_flags_impl(entry) & O_NONBLOCK) != 0) {
+            flags |= MSG_DONTWAIT;
+        }
+        put_fd_entry_impl(entry);
+        return ix_socket_send_impl(sock, buf, count, flags);
     }
 
     if (get_fd_is_eventfd_impl(entry)) {

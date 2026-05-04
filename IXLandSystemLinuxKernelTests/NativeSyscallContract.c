@@ -5591,13 +5591,6 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
     };
     static const struct planned_syscall_gap planned_gaps[] = {
-        {__NR_socket, SYSCALL_GAP_NETWORK},
-        {__NR_socketpair, SYSCALL_GAP_NETWORK},
-        {__NR_connect, SYSCALL_GAP_NETWORK},
-        {__NR_sendto, SYSCALL_GAP_NETWORK},
-        {__NR_recvfrom, SYSCALL_GAP_NETWORK},
-        {__NR_sendmsg, SYSCALL_GAP_NETWORK},
-        {__NR_recvmsg, SYSCALL_GAP_NETWORK},
         {__NR_recvmmsg, SYSCALL_GAP_NETWORK},
         {__NR_sendmmsg, SYSCALL_GAP_NETWORK},
     };

@@ -33,10 +33,12 @@
 - (void)testEpollCreateReturnsFd { XCTAssertEqual(epoll_contract_create_returns_fd(), 0, @"errno %d", errno); }
 - (void)testEpollCreate1CloexecSetsFdCloexec { XCTAssertEqual(epoll_contract_create1_cloexec_sets_fd_cloexec(), 0, @"errno %d", errno); }
 - (void)testEpollCtlAddPipeReadEnd { XCTAssertEqual(epoll_contract_ctl_add_pipe_read_end(), 0, @"errno %d", errno); }
+- (void)testEpollCtlAddSocketpairReadEnd { XCTAssertEqual(epoll_contract_ctl_add_socketpair_read_end(), 0, @"errno %d", errno); }
 - (void)testEpollCtlAddDuplicateReturnsExist { XCTAssertEqual(epoll_contract_ctl_add_duplicate_returns_exist(), 0, @"errno %d", errno); }
 - (void)testEpollCtlModUpdatesEvents { XCTAssertEqual(epoll_contract_ctl_mod_updates_events(), 0, @"errno %d", errno); }
 - (void)testEpollCtlDelRemovesEvents { XCTAssertEqual(epoll_contract_ctl_del_removes_events(), 0, @"errno %d", errno); }
 - (void)testEpollWaitPipeReadableAfterWrite { XCTAssertEqual(epoll_contract_wait_pipe_readable_after_write(), 0, @"errno %d", errno); }
+- (void)testEpollWaitSocketpairReadableAfterWrite { XCTAssertEqual(epoll_contract_wait_socketpair_readable_after_write(), 0, @"errno %d", errno); }
 - (void)testEpollWaitBlocksUntilPipeWrite { XCTAssertEqual(epoll_contract_wait_blocks_until_pipe_write(), 0, @"errno %d", errno); }
 - (void)testEpollWaitTimeoutReturnsZero { XCTAssertEqual(epoll_contract_wait_timeout_returns_zero(), 0, @"errno %d", errno); }
 - (void)testEpollWaitSignalInterruptReturnsIntr { XCTAssertEqual(epoll_contract_wait_signal_interrupt_returns_intr(), 0, @"errno %d", errno); }

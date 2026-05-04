@@ -172,6 +172,7 @@
 #include <string.h>
 #include <sys/poll.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -192,6 +193,22 @@
 #include "../kernel/wait.h"
 
 extern int openat_impl(int dirfd, const char *pathname, int flags, linux_mode_t mode);
+extern int socket(int domain, int type, int protocol);
+extern int socketpair(int domain, int type, int protocol, int sv[2]);
+extern int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+extern int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+extern int listen(int sockfd, int backlog);
+extern int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+extern int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags);
+extern int shutdown(int sockfd, int how);
+extern ssize_t sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen);
+extern ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen);
+extern ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags);
+extern ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags);
+extern int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+extern int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+extern int setsockopt(int sockfd, int level, int optname, const void *optval, socklen_t optlen);
+extern int getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
 extern ssize_t read_impl(int fd, void *buf, size_t count);
 extern ssize_t write_impl(int fd, const void *buf, size_t count);
 struct iovec;
@@ -734,6 +751,23 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_tgkill:
     case __NR_pidfd_send_signal:
         return SYSCALL_CAPABILITY_SIGNAL;
+    case __NR_socket:
+    case __NR_socketpair:
+    case __NR_connect:
+    case __NR_bind:
+    case __NR_listen:
+    case __NR_accept:
+    case __NR_accept4:
+    case __NR_shutdown:
+    case __NR_sendto:
+    case __NR_recvfrom:
+    case __NR_sendmsg:
+    case __NR_recvmsg:
+    case __NR_getsockname:
+    case __NR_getpeername:
+    case __NR_setsockopt:
+    case __NR_getsockopt:
+        return SYSCALL_CAPABILITY_NETWORK;
     case __NR_ppoll:
     case __NR_pselect6:
     case __NR_epoll_create1:
@@ -808,13 +842,6 @@ enum syscall_gap_priority syscall_gap_priority_impl(long number) {
     }
 
     switch (number) {
-    case __NR_socket:
-    case __NR_socketpair:
-    case __NR_connect:
-    case __NR_sendto:
-    case __NR_recvfrom:
-    case __NR_sendmsg:
-    case __NR_recvmsg:
     case __NR_recvmmsg:
     case __NR_sendmmsg:
         return SYSCALL_GAP_NETWORK;
@@ -878,6 +905,46 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)openat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                 (int)how->flags, (linux_mode_t)how->mode));
     }
+    case __NR_socket:
+        return syscall_result((long)socket((int)arg0, (int)arg1, (int)arg2));
+    case __NR_socketpair:
+        return syscall_result((long)socketpair((int)arg0, (int)arg1, (int)arg2, (int *)(uintptr_t)arg3));
+    case __NR_connect:
+        return syscall_result((long)connect((int)arg0, (const struct sockaddr *)(uintptr_t)arg1, (socklen_t)arg2));
+    case __NR_bind:
+        return syscall_result((long)bind((int)arg0, (const struct sockaddr *)(uintptr_t)arg1, (socklen_t)arg2));
+    case __NR_listen:
+        return syscall_result((long)listen((int)arg0, (int)arg1));
+    case __NR_accept:
+        return syscall_result((long)accept((int)arg0, (struct sockaddr *)(uintptr_t)arg1,
+                                          (socklen_t *)(uintptr_t)arg2));
+    case __NR_accept4:
+        return syscall_result((long)accept4((int)arg0, (struct sockaddr *)(uintptr_t)arg1,
+                                           (socklen_t *)(uintptr_t)arg2, (int)arg3));
+    case __NR_shutdown:
+        return syscall_result((long)shutdown((int)arg0, (int)arg1));
+    case __NR_sendto:
+        return syscall_result((long)sendto((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2, (int)arg3,
+                                          (const struct sockaddr *)(uintptr_t)arg4, (socklen_t)arg5));
+    case __NR_recvfrom:
+        return syscall_result((long)recvfrom((int)arg0, (void *)(uintptr_t)arg1, (size_t)arg2, (int)arg3,
+                                            (struct sockaddr *)(uintptr_t)arg4, (socklen_t *)(uintptr_t)arg5));
+    case __NR_sendmsg:
+        return syscall_result((long)sendmsg((int)arg0, (const struct msghdr *)(uintptr_t)arg1, (int)arg2));
+    case __NR_recvmsg:
+        return syscall_result((long)recvmsg((int)arg0, (struct msghdr *)(uintptr_t)arg1, (int)arg2));
+    case __NR_getsockname:
+        return syscall_result((long)getsockname((int)arg0, (struct sockaddr *)(uintptr_t)arg1,
+                                               (socklen_t *)(uintptr_t)arg2));
+    case __NR_getpeername:
+        return syscall_result((long)getpeername((int)arg0, (struct sockaddr *)(uintptr_t)arg1,
+                                               (socklen_t *)(uintptr_t)arg2));
+    case __NR_setsockopt:
+        return syscall_result((long)setsockopt((int)arg0, (int)arg1, (int)arg2, (const void *)(uintptr_t)arg3,
+                                              (socklen_t)arg4));
+    case __NR_getsockopt:
+        return syscall_result((long)getsockopt((int)arg0, (int)arg1, (int)arg2, (void *)(uintptr_t)arg3,
+                                              (socklen_t *)(uintptr_t)arg4));
     case __NR_close:
         return syscall_result((long)close_impl((int)arg0));
     case __NR_close_range:

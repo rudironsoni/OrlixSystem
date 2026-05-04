@@ -10,6 +10,7 @@
 #include "internal/ios/fs/poll_host.h"
 #include "pipe.h"
 #include "pty.h"
+#include "kernel/net/socket.h"
 #include "../kernel/wait_queue.h"
 #include "../kernel/task.h"
 
@@ -87,6 +88,15 @@ short poll_fd_revents_impl(int fd, short events, int *is_virtual) {
         }
         put_fd_entry_impl(entry);
         return pipe_poll_revents_impl(endpoint, events);
+    }
+
+    if (get_fd_is_socket_impl(entry)) {
+        struct ix_socket *sock = get_fd_socket_impl(entry);
+        if (is_virtual) {
+            *is_virtual = 1;
+        }
+        put_fd_entry_impl(entry);
+        return ix_socket_poll_revents_impl(sock, events);
     }
 
     if (get_fd_is_eventfd_impl(entry)) {

@@ -37,6 +37,8 @@
 - (void)testPollMultipleFdsWakesWhenSecondPipeBecomesReady { XCTAssertEqual(readiness_contract_poll_multiple_fds_wakes_when_second_pipe_becomes_ready(), 0, @"errno %d", errno); }
 - (void)testPollPipeHupAfterWriterClose { XCTAssertEqual(readiness_contract_poll_pipe_hup_after_writer_close(), 0, @"errno %d", errno); }
 - (void)testPollPipeWriteEndErrAfterReaderClose { XCTAssertEqual(readiness_contract_poll_pipe_write_end_err_after_reader_close(), 0, @"errno %d", errno); }
+- (void)testPollSocketpairBlocksUntilPeerWrites { XCTAssertEqual(readiness_contract_poll_socketpair_blocks_until_peer_writes(), 0, @"errno %d", errno); }
+- (void)testPollSocketpairHupAfterPeerClose { XCTAssertEqual(readiness_contract_poll_socketpair_hup_after_peer_close(), 0, @"errno %d", errno); }
 - (void)testEventfd2CounterReadWriteAndPoll { XCTAssertEqual(readiness_contract_eventfd2_counter_read_write_and_poll(), 0, @"errno %d", errno); }
 - (void)testTimerfdRelativeExpirationReadAndPoll { XCTAssertEqual(readiness_contract_timerfd_relative_expiration_read_and_poll(), 0, @"errno %d", errno); }
 - (void)testPollPtyMasterBlocksUntilSlaveWrites { XCTAssertEqual(readiness_contract_poll_pty_master_blocks_until_slave_writes(), 0, @"errno %d", errno); }
