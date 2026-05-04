@@ -3,6 +3,7 @@
 #include <linux/eventfd.h>
 #include <linux/fcntl.h>
 #include <linux/poll.h>
+#include <linux/socket.h>
 #include <linux/time_types.h>
 #include <linux/timerfd.h>
 
@@ -18,6 +19,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <poll.h>
+#include <sys/socket.h>
 #include <sys/select.h>
 #include <sys/time.h>
 
@@ -540,6 +542,82 @@ out:
 
 int readiness_contract_poll_pipe_blocks_until_writer_writes(void) {
     return run_pipe_wake_case(poll_thread, 0);
+}
+
+static int run_socketpair_wake_case(void *(*thread_main)(void *)) {
+    int fds[2] = {-1, -1};
+    struct readiness_thread_case ctx;
+    kernel_thread_t thread;
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    long ret = 0;
+
+    ret = syscall_dispatch_impl(__NR_socketpair, AF_UNIX, SOCK_STREAM, 0, (long)(uintptr_t)fds, 0, 0);
+    if (ret != 0) {
+        return ret < 0 ? (int)-ret : EIO;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        ret = errno ? errno : ENOMEM;
+        goto out;
+    }
+
+    case_init(&ctx, fds[0], 0);
+    ctx.task = child;
+    if (kernel_thread_create(&thread, NULL, thread_main, &ctx) != 0) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    kernel_thread_detach(thread);
+    case_wait_started(&ctx);
+    if (write_impl(fds[1], "x", 1) != 1) {
+        ret = errno ? errno : EIO;
+        goto out_destroy;
+    }
+    ret = case_wait_done(&ctx);
+out_destroy:
+    case_destroy(&ctx);
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+out:
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return (int)ret;
+}
+
+int readiness_contract_poll_socketpair_blocks_until_peer_writes(void) {
+    return run_socketpair_wake_case(poll_thread);
+}
+
+int readiness_contract_poll_socketpair_hup_after_peer_close(void) {
+    int fds[2] = {-1, -1};
+    struct pollfd pfd;
+    long ret;
+    int out = 0;
+
+    ret = syscall_dispatch_impl(__NR_socketpair, AF_UNIX, SOCK_STREAM, 0, (long)(uintptr_t)fds, 0, 0);
+    if (ret != 0) {
+        return ret < 0 ? (int)-ret : EIO;
+    }
+
+    if (close_impl(fds[1]) != 0) {
+        out = errno ? errno : EIO;
+        goto out_close;
+    }
+    fds[1] = -1;
+
+    memset(&pfd, 0, sizeof(pfd));
+    pfd.fd = fds[0];
+    pfd.events = POLLIN;
+    if (poll_impl(&pfd, 1, 0) != 1 || (pfd.revents & POLLHUP) == 0) {
+        out = errno ? errno : EIO;
+    }
+
+out_close:
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return out;
 }
 
 int readiness_contract_poll_pipe_timeout_returns_zero(void) {

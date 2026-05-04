@@ -118,6 +118,10 @@ targets:
       group: kernel
     - path: kernel/net/network.c
       group: kernel/net
+    - path: kernel/net/socket.c
+      group: kernel/net
+    - path: kernel/net/socket.h
+      group: kernel/net
     - path: kernel/pid.c
       group: kernel
     - path: kernel/ptrace.c

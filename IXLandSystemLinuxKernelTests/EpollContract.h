@@ -4,10 +4,12 @@
 int epoll_contract_create_returns_fd(void);
 int epoll_contract_create1_cloexec_sets_fd_cloexec(void);
 int epoll_contract_ctl_add_pipe_read_end(void);
+int epoll_contract_ctl_add_socketpair_read_end(void);
 int epoll_contract_ctl_add_duplicate_returns_exist(void);
 int epoll_contract_ctl_mod_updates_events(void);
 int epoll_contract_ctl_del_removes_events(void);
 int epoll_contract_wait_pipe_readable_after_write(void);
+int epoll_contract_wait_socketpair_readable_after_write(void);
 int epoll_contract_wait_blocks_until_pipe_write(void);
 int epoll_contract_wait_timeout_returns_zero(void);
 int epoll_contract_wait_signal_interrupt_returns_intr(void);

@@ -3,6 +3,7 @@
 #include <linux/eventpoll.h>
 #include <linux/fcntl.h>
 #include <linux/poll.h>
+#include <linux/socket.h>
 
 #ifdef SIGUSR1
 #undef SIGUSR1
@@ -15,6 +16,7 @@
 #include <errno.h>
 #include <stddef.h>
 #include <string.h>
+#include <sys/socket.h>
 
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
@@ -395,6 +397,30 @@ int epoll_contract_ctl_add_pipe_read_end(void) {
     return ret;
 }
 
+int epoll_contract_ctl_add_socketpair_read_end(void) {
+    int epfd = -1, fds[2] = {-1, -1};
+    long sret;
+    int ret = 0;
+
+    epfd = epoll_create1_impl(0);
+    if (epfd < 0) {
+        return errno;
+    }
+    sret = syscall_dispatch_impl(__NR_socketpair, AF_UNIX, SOCK_STREAM, 0, (long)(uintptr_t)fds, 0, 0);
+    if (sret != 0) {
+        ret = sret < 0 ? (int)-sret : EIO;
+        goto out;
+    }
+    if (add_pipe_read(epfd, fds[0], 11) != 0) {
+        ret = errno ? errno : EIO;
+    }
+out:
+    close_if_open(epfd);
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
+    return ret;
+}
+
 int epoll_contract_ctl_add_duplicate_returns_exist(void) {
     int epfd = -1, fds[2] = {-1, -1}, ret = 0;
     epfd = epoll_create1_impl(0);
@@ -456,6 +482,34 @@ int epoll_contract_wait_pipe_readable_after_write(void) {
     if (epoll_wait_impl(epfd, &event, 1, 0) != 1 || (event.events & EPOLLIN) == 0 || event.data != 99) ret = errno ? errno : EIO;
 out:
     close_if_open(epfd); close_if_open(fds[0]); close_if_open(fds[1]);
+    return ret;
+}
+
+int epoll_contract_wait_socketpair_readable_after_write(void) {
+    int epfd = -1, fds[2] = {-1, -1}, ret = 0;
+    struct epoll_event event;
+    long sret;
+
+    epfd = epoll_create1_impl(0);
+    if (epfd < 0) {
+        return errno;
+    }
+    sret = syscall_dispatch_impl(__NR_socketpair, AF_UNIX, SOCK_STREAM, 0, (long)(uintptr_t)fds, 0, 0);
+    if (sret != 0) {
+        ret = sret < 0 ? (int)-sret : EIO;
+        goto out;
+    }
+    if (add_pipe_read(epfd, fds[0], 99) != 0 || write_impl(fds[1], "x", 1) != 1) {
+        ret = errno ? errno : EIO;
+        goto out;
+    }
+    if (epoll_wait_impl(epfd, &event, 1, 0) != 1 || (event.events & EPOLLIN) == 0 || event.data != 99) {
+        ret = errno ? errno : EIO;
+    }
+out:
+    close_if_open(epfd);
+    close_if_open(fds[0]);
+    close_if_open(fds[1]);
     return ret;
 }
 

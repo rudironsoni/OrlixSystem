@@ -29,6 +29,9 @@
 #include "pty.h"
 #include "../kernel/task.h"
 
+struct ix_socket;
+extern void ix_socket_release_impl(struct ix_socket *sock);
+
 static void retain_fd_description(struct fd_description *desc);
 static void release_fd_description(struct fd_description *desc);
 static struct file *copy_file_descriptor(struct file *file);
@@ -347,6 +350,7 @@ enum fd_type {
     FD_TYPE_SYNTHETIC_PROC_FILE, /* Synthetic proc file (no host backing) */
     FD_TYPE_SYNTHETIC_PTY, /* Synthetic PTY endpoint */
     FD_TYPE_PIPE, /* Virtual pipe endpoint */
+    FD_TYPE_SOCKET, /* Virtual socket endpoint */
     FD_TYPE_EPOLL, /* Virtual epoll instance */
     FD_TYPE_MOUNT, /* Virtual detached mount tree */
     FD_TYPE_EVENTFD, /* Virtual event counter */
@@ -382,6 +386,7 @@ typedef struct fd_description {
     unsigned int pty_index;
     bool pty_is_master;
     struct pipe_endpoint *pipe_endpoint;
+    struct ix_socket *socket;
     struct epoll_instance *epoll_instance;
     struct vfs_mount_fd mount_fd;
     uint64_t eventfd_counter;
@@ -793,6 +798,43 @@ static fd_description_t *alloc_pipe_fd_description(int flags, struct pipe_endpoi
     return desc;
 }
 
+static fd_description_t *alloc_socket_fd_description(int flags, struct ix_socket *socket) {
+    fd_description_t *desc;
+
+    if (!socket) {
+        errno = EINVAL;
+        return NULL;
+    }
+
+    desc = calloc(1, sizeof(fd_description_t));
+    if (!desc) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    desc->type = FD_TYPE_SOCKET;
+    desc->fd = -1;
+    desc->flags = flags;
+    desc->mode = 0;
+    desc->offset = 0;
+    desc->is_dir = false;
+    desc->dev_node = SYNTHETIC_DEV_NONE;
+    desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
+    desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
+    desc->pty_index = 0;
+    desc->pty_is_master = false;
+    desc->pipe_endpoint = NULL;
+    desc->socket = socket;
+    desc->epoll_instance = NULL;
+    memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
+    desc->synthetic_state = NULL;
+    atomic_init(&desc->refs, 1);
+    fs_mutex_init(&desc->lock);
+    memcpy(desc->path, "socket:[0]", sizeof("socket:[0]"));
+    return desc;
+}
+
 static fd_description_t *alloc_epoll_fd_description(int flags, struct epoll_instance *instance) {
     fd_description_t *desc;
 
@@ -1098,6 +1140,8 @@ static void release_fd_description(fd_description_t *desc) {
             pty_close_end_impl(desc->pty_index, desc->pty_is_master);
         } else if (desc->type == FD_TYPE_PIPE) {
             pipe_close_endpoint_impl(desc->pipe_endpoint);
+        } else if (desc->type == FD_TYPE_SOCKET) {
+            ix_socket_release_impl(desc->socket);
         } else if (desc->type == FD_TYPE_EPOLL) {
             epoll_release_fd_impl(desc->epoll_instance);
         } else if (desc->type == FD_TYPE_PIDFD && desc->pidfd_task) {
@@ -1854,6 +1898,21 @@ int init_pipe_fd_entry_impl(int fd, int flags, struct pipe_endpoint *endpoint) {
     return 0;
 }
 
+int init_socket_fd_entry_impl(int fd, int flags, struct ix_socket *socket) {
+    file_init_impl();
+    fd_entry_t *entry = &fd_table[fd];
+    fs_mutex_lock(&entry->lock);
+    entry->desc = alloc_socket_fd_description(flags, socket);
+    if (!entry->desc) {
+        fs_mutex_unlock(&entry->lock);
+        return -1;
+    }
+    entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
+    fs_mutex_unlock(&entry->lock);
+    return 0;
+}
+
 int init_epoll_fd_entry_impl(int fd, int flags, struct epoll_instance *instance) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
@@ -2092,6 +2151,16 @@ bool get_fd_is_pipe_impl(void *entry) {
 struct pipe_endpoint *get_fd_pipe_endpoint_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     return fd_entry->desc ? fd_entry->desc->pipe_endpoint : NULL;
+}
+
+bool get_fd_is_socket_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    return fd_entry->desc && fd_entry->desc->type == FD_TYPE_SOCKET;
+}
+
+struct ix_socket *get_fd_socket_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    return fd_entry->desc ? fd_entry->desc->socket : NULL;
 }
 
 bool get_fd_is_epoll_impl(void *entry) {
