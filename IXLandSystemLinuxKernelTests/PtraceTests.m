@@ -57,6 +57,10 @@
     XCTAssertEqual(ptrace_contract_traceclone_records_event_message(), 0, @"errno %d", errno);
 }
 
+- (void)testClone3SetTidTracecloneRecordsRequestedPid {
+    XCTAssertEqual(ptrace_contract_clone3_set_tid_traceclone_records_requested_pid(), 0, @"errno %d", errno);
+}
+
 - (void)testTraceexecRecordsEventMessage {
     XCTAssertEqual(ptrace_contract_traceexec_records_event_message(), 0, @"errno %d", errno);
 }

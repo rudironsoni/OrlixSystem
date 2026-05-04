@@ -84,6 +84,72 @@ static int validate_clone_namespace_flags(uint64_t flags) {
     return 0;
 }
 
+struct unshare_state_snapshot {
+    bool had_current;
+    bool new_pid_namespace_pending;
+    struct fs_struct *fs;
+    struct uts_namespace *uts_ns;
+    struct cgroup *cgroup_ns_root;
+    uint64_t cgroup_ns_id;
+    uint64_t cgroup_ns_owner_user_ns_id;
+    struct cred cred;
+};
+
+static void unshare_snapshot_state(struct task_struct *task, struct unshare_state_snapshot *snapshot) {
+    memset(snapshot, 0, sizeof(*snapshot));
+    if (!task) {
+        return;
+    }
+    snapshot->had_current = true;
+    snapshot->new_pid_namespace_pending = atomic_load(&task->new_pid_namespace_pending);
+    snapshot->fs = task->fs;
+    snapshot->uts_ns = task->uts_ns ? uts_get(task->uts_ns) : NULL;
+    snapshot->cgroup_ns_root = task->cgroup_ns_root ? cgroup_get(task->cgroup_ns_root) : NULL;
+    snapshot->cgroup_ns_id = task->cgroup_ns_id;
+    snapshot->cgroup_ns_owner_user_ns_id = task->cgroup_ns_owner_user_ns_id;
+    if (task->cred) {
+        snapshot->cred = *task->cred;
+    }
+}
+
+static void unshare_restore_state(struct task_struct *task, const struct unshare_state_snapshot *snapshot) {
+    if (!task || !snapshot || !snapshot->had_current) {
+        return;
+    }
+    atomic_store(&task->new_pid_namespace_pending, snapshot->new_pid_namespace_pending);
+    if (task->cred) {
+        *task->cred = snapshot->cred;
+    }
+    if (task->uts_ns != snapshot->uts_ns) {
+        if (task->uts_ns) {
+            uts_put(task->uts_ns);
+        }
+        task->uts_ns = snapshot->uts_ns ? uts_get(snapshot->uts_ns) : NULL;
+    }
+    if (task->cgroup_ns_root != snapshot->cgroup_ns_root) {
+        if (task->cgroup_ns_root) {
+            cgroup_put(task->cgroup_ns_root);
+        }
+        task->cgroup_ns_root = snapshot->cgroup_ns_root ? cgroup_get(snapshot->cgroup_ns_root) : NULL;
+    }
+    task->cgroup_ns_id = snapshot->cgroup_ns_id;
+    task->cgroup_ns_owner_user_ns_id = snapshot->cgroup_ns_owner_user_ns_id;
+}
+
+static void unshare_release_snapshot(struct unshare_state_snapshot *snapshot) {
+    if (!snapshot || !snapshot->had_current) {
+        return;
+    }
+    if (snapshot->uts_ns) {
+        uts_put(snapshot->uts_ns);
+        snapshot->uts_ns = NULL;
+    }
+    if (snapshot->cgroup_ns_root) {
+        cgroup_put(snapshot->cgroup_ns_root);
+        snapshot->cgroup_ns_root = NULL;
+    }
+}
+
 static int task_apply_clone_namespace_flags(struct task_struct *task, uint64_t flags) {
     uint64_t masked = flags & ~0xffULL;
     struct uts_namespace *new_uts;
@@ -439,6 +505,7 @@ int32_t clone_impl(uint64_t flags) {
 
 int32_t clone3_impl(const struct clone_args *args, size_t size) {
     int32_t child_pid;
+    int32_t original_child_pid;
     int32_t requested_tid = 0;
     int pidfd = -1;
     int *pidfd_ptr = NULL;
@@ -543,12 +610,17 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
         errno = ESRCH;
         return -1;
     }
+    original_child_pid = child->pid;
     if (args->set_tid_size == 1) {
         if (child_creates_new_pidns) {
             child->ns_pid = requested_tid;
         } else if (task_reassign_pid_impl(child, requested_tid) != 0) {
             clone3_release_child_failure(parent, child);
             return -1;
+        }
+        if (child->pid != original_child_pid) {
+            ptrace_rewrite_fork_event_message(parent, original_child_pid, child->pid,
+                                              (args->flags & CLONE_THREAD) != 0);
         }
         child_pid = child->pid;
     }
@@ -585,30 +657,30 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
 
 int unshare_impl(uint64_t flags) {
     struct task_struct *task = get_current();
+    struct unshare_state_snapshot snapshot;
     struct fs_struct *old_fs = NULL;
     uint64_t namespace_flags = flags;
-    bool pidns_pending_set = false;
 
     if (!task) {
         errno = ESRCH;
         return -1;
     }
+    unshare_snapshot_state(task, &snapshot);
     if ((namespace_flags & CLONE_NEWNS) != 0 || (namespace_flags & CLONE_NEWUSER) != 0) {
         namespace_flags |= CLONE_FS;
     }
     if (validate_clone_namespace_flags(namespace_flags & ~(uint64_t)CLONE_FS) != 0) {
+        unshare_release_snapshot(&snapshot);
         return -1;
     }
     if ((namespace_flags & CLONE_NEWPID) != 0) {
         atomic_store(&task->new_pid_namespace_pending, true);
         namespace_flags &= ~(uint64_t)CLONE_NEWPID;
-        pidns_pending_set = true;
     }
     if ((namespace_flags & CLONE_FS) != 0) {
         if (!task->fs) {
-            if (pidns_pending_set) {
-                atomic_store(&task->new_pid_namespace_pending, false);
-            }
+            unshare_restore_state(task, &snapshot);
+            unshare_release_snapshot(&snapshot);
             errno = ESRCH;
             return -1;
         }
@@ -616,9 +688,8 @@ int unshare_impl(uint64_t flags) {
         task->fs = dup_fs_struct(old_fs);
         if (!task->fs) {
             task->fs = old_fs;
-            if (pidns_pending_set) {
-                atomic_store(&task->new_pid_namespace_pending, false);
-            }
+            unshare_restore_state(task, &snapshot);
+            unshare_release_snapshot(&snapshot);
             errno = ENOMEM;
             return -1;
         }
@@ -628,14 +699,14 @@ int unshare_impl(uint64_t flags) {
             free_fs_struct(task->fs);
             task->fs = old_fs;
         }
-        if (pidns_pending_set) {
-            atomic_store(&task->new_pid_namespace_pending, false);
-        }
+        unshare_restore_state(task, &snapshot);
+        unshare_release_snapshot(&snapshot);
         return -1;
     }
     if (old_fs) {
         free_fs_struct(old_fs);
     }
+    unshare_release_snapshot(&snapshot);
     return 0;
 }
 

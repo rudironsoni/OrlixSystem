@@ -433,6 +433,22 @@ void ptrace_note_fork_event(struct task_struct *task, __kernel_pid_t child_pid, 
     ptrace_record_event_stop(task, event, (uint64_t)child_pid);
 }
 
+void ptrace_rewrite_fork_event_message(struct task_struct *task, __kernel_pid_t old_child_pid,
+                                       __kernel_pid_t new_child_pid, int clone_event) {
+    uint64_t expected_event;
+
+    if (!task || !task->ptrace_attached) {
+        return;
+    }
+    expected_event = clone_event ? PTRACE_EVENT_CLONE : PTRACE_EVENT_FORK;
+    kernel_mutex_lock(&task->lock);
+    if (task->ptrace_event == expected_event &&
+        task->ptrace_event_message == (uint64_t)old_child_pid) {
+        task->ptrace_event_message = (uint64_t)new_child_pid;
+    }
+    kernel_mutex_unlock(&task->lock);
+}
+
 void ptrace_note_exec_event(struct task_struct *task) {
     if (!task || !task->ptrace_attached ||
         (task->ptrace_options & PTRACE_O_TRACEEXEC) == 0) {

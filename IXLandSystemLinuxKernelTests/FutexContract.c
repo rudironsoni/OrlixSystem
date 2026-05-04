@@ -30,6 +30,7 @@ extern int futex(int *uaddr, int futex_op, int val,
 extern void exit_impl(int status);
 extern int capget(cap_user_header_t header, cap_user_data_t data);
 extern int capset(cap_user_header_t header, const cap_user_data_t data);
+extern int unshare_impl(uint64_t flags);
 
 struct futex_wait_thread {
     int *word;
@@ -434,6 +435,8 @@ int futex_contract_clone3_set_tid_supports_repo_pid_model(void) {
     int invalid_size_tids[2] = {0};
     int invalid_ns_pid = 2;
     int one_pid = 1;
+    int pending_invalid_ns_pid = 2;
+    int pending_one_pid = 1;
     long ret;
     int result = -1;
     bool caps_modified = false;
@@ -520,6 +523,38 @@ int futex_contract_clone3_set_tid_supports_repo_pid_model(void) {
     memset(&args, 0, sizeof(args));
     args.flags = CLONE_NEWPID;
     args.set_tid = (uint64_t)(uintptr_t)&one_pid;
+    args.set_tid_size = 1;
+    ret = syscall_dispatch_impl(__NR_clone3, (long)(uintptr_t)&args, sizeof(args), 0, 0, 0, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        goto out;
+    }
+    child = task_lookup((int32_t)ret);
+    if (!child) {
+        errno = ESRCH;
+        goto out;
+    }
+    if (child->ns_pid != 1 || child->pid_ns_level != parent->pid_ns_level + 1) {
+        errno = EPROTO;
+        goto out;
+    }
+    futex_release_lookup_child(parent, &child);
+
+    if (unshare_impl(CLONE_NEWPID) != 0) {
+        goto out;
+    }
+
+    memset(&args, 0, sizeof(args));
+    args.set_tid = (uint64_t)(uintptr_t)&pending_invalid_ns_pid;
+    args.set_tid_size = 1;
+    ret = syscall_dispatch_impl(__NR_clone3, (long)(uintptr_t)&args, sizeof(args), 0, 0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    memset(&args, 0, sizeof(args));
+    args.set_tid = (uint64_t)(uintptr_t)&pending_one_pid;
     args.set_tid_size = 1;
     ret = syscall_dispatch_impl(__NR_clone3, (long)(uintptr_t)&args, sizeof(args), 0, 0, 0, 0);
     if (ret < 0) {

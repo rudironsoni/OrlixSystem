@@ -519,6 +519,82 @@ out:
     return ret;
 }
 
+int ptrace_contract_clone3_set_tid_traceclone_records_requested_pid(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child;
+    struct task_struct *grandchild = NULL;
+    struct clone_args args;
+    unsigned long message = 0;
+    int requested_pid = 0;
+    int status = 0;
+    long ret;
+    int result = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    if (ptrace_impl(PTRACE_ATTACH, child->pid, NULL, NULL) != 0 ||
+        waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
+        ptrace_impl(PTRACE_SETOPTIONS, child->pid, NULL, (void *)(uintptr_t)PTRACE_O_TRACEFORK) != 0) {
+        goto out;
+    }
+
+    for (int candidate = 64; candidate < 512; candidate++) {
+        struct task_struct *existing = task_lookup(candidate);
+        if (!existing) {
+            requested_pid = candidate;
+            break;
+        }
+        free_task(existing);
+    }
+    if (requested_pid == 0) {
+        errno = EAGAIN;
+        goto out;
+    }
+
+    memset(&args, 0, sizeof(args));
+    args.set_tid = (uint64_t)(uintptr_t)&requested_pid;
+    args.set_tid_size = 1;
+
+    set_current(child);
+    ret = syscall_dispatch_impl(__NR_clone3, (long)(uintptr_t)&args, sizeof(args), 0, 0, 0, 0);
+    set_current(parent);
+    if (ret != requested_pid) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    grandchild = task_lookup((int32_t)ret);
+    if (waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
+        !WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP ||
+        ptrace_impl(PTRACE_GETEVENTMSG, child->pid, NULL, &message) != 0 ||
+        message != (unsigned long)requested_pid) {
+        errno = ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        set_current(parent);
+        if (grandchild) {
+            task_unlink_child_impl(child, grandchild);
+            free_task(grandchild);
+            free_task(grandchild);
+        }
+        ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
+        ptrace_release_child(parent, child);
+        ptrace_clear_pending_signal(parent, SIGCHLD);
+        errno = saved_errno;
+    }
+    return result;
+}
+
 int ptrace_contract_traceexec_records_event_message(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child;

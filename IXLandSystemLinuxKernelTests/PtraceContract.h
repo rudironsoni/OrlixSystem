@@ -11,6 +11,7 @@ int ptrace_contract_attach_stop_is_waitpid_visible(void);
 int ptrace_contract_syscall_stop_is_waitpid_visible(void);
 int ptrace_contract_peek_poke_data_uses_virtual_memory(void);
 int ptrace_contract_traceclone_records_event_message(void);
+int ptrace_contract_clone3_set_tid_traceclone_records_requested_pid(void);
 int ptrace_contract_traceexec_records_event_message(void);
 int ptrace_contract_traceexit_records_event_message(void);
 int ptrace_contract_signal_delivery_stop_can_be_suppressed(void);
