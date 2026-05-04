@@ -156,6 +156,11 @@ def row_for(
     gaps: dict[str, str],
     overrides: dict[str, str],
 ) -> str:
+    if name in implemented and name in overrides:
+        raise ValueError(
+            f"syscall {name} is both implemented and override-classified; "
+            "narrow the classification machinery"
+        )
     if name in overrides:
         classification, priority = OVERRIDE_LABELS.get(
             overrides[name],

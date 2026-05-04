@@ -5362,8 +5362,8 @@ int native_syscall_contract_classifies_milestone_01_process_surface(void) {
     }
 
     ret = syscall_dispatch_impl(__NR_unshare, CLONE_FS, 0, 0, 0, 0, 0);
-    if (ret != -ENOSYS) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
+    if (ret >= 0) {
+        errno = EPROTO;
         return -1;
     }
 
