@@ -297,7 +297,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 435 | `clone3` | implemented:process | none |
 | 436 | `close_range` | implemented:fd | none |
 | 437 | `openat2` | implemented:fd | none |
-| 438 | `pidfd_getfd` | kernel-owned next:process | next |
+| 438 | `pidfd_getfd` | implemented:process | none |
 | 439 | `faccessat2` | implemented:fd | none |
 | 440 | `process_madvise` | kernel-owned missing:unclassified | package |
 | 441 | `epoll_pwait2` | kernel-owned missing:unclassified | package |

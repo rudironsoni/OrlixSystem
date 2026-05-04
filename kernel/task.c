@@ -22,6 +22,7 @@
 #include <time.h>
 
 #include <linux/fcntl.h>
+#include <linux/capability.h>
 #include <linux/elf.h>
 #include <linux/mount.h>
 #include <linux/sched.h>
@@ -133,6 +134,38 @@ static uint64_t task_start_time_since_boot_ns(void) {
         return 1;
     }
     return now - boot;
+}
+
+int task_pidfd_getfd_access_impl(struct task_struct *target) {
+    struct task_struct *caller = get_current();
+    struct task_struct *live_target;
+
+    if (!caller || !target || !caller->cred || !target->cred) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    if (caller == target || caller->tgid == target->tgid) {
+        if (atomic_load(&target->exited)) {
+            errno = ESRCH;
+            return -1;
+        }
+        return 0;
+    }
+
+    live_target = task_lookup(target->pid);
+    if (!live_target) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (atomic_load(&live_target->exited)) {
+        free_task(live_target);
+        errno = ESRCH;
+        return -1;
+    }
+    free_task(live_target);
+
+    return ptrace_may_access_task_impl(caller, target);
 }
 
 int task_hash(int32_t pid) {

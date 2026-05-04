@@ -51,6 +51,18 @@ static bool ptrace_may_attach(const struct task_struct *tracer, const struct tas
     return target->exec_dumpable && ptrace_same_credential_domain(tracer_cred, target_cred);
 }
 
+int ptrace_may_access_task_impl(const struct task_struct *tracer, const struct task_struct *target) {
+    if (!tracer || !target || !tracer->cred || !target->cred) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (!ptrace_may_attach(tracer, target)) {
+        errno = EPERM;
+        return -1;
+    }
+    return 0;
+}
+
 static bool ptrace_is_tracer(const struct task_struct *tracer, const struct task_struct *target) {
     return tracer && target && target->ptrace_attached && target->ptracer_pid == tracer->pid;
 }

@@ -5306,15 +5306,10 @@ int native_syscall_contract_classifies_milestone_01_process_surface(void) {
         long number;
         enum syscall_capability_class capability_class;
     };
-    struct audited_syscall_repo_truth {
-        long number;
-        enum syscall_matrix_override_class override_class;
-    };
     #define NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_LIST(X) \
         X(__NR_unshare, SYSCALL_CAPABILITY_PROCESS) \
-        X(__NR_pidfd_send_signal, SYSCALL_CAPABILITY_SIGNAL)
-    #define NATIVE_SYSCALL_MILESTONE_01_NEXT_LIST(X) \
-        X(__NR_pidfd_getfd, SYSCALL_MATRIX_OVERRIDE_KERNEL_OWNED_NEXT_PROCESS)
+        X(__NR_pidfd_send_signal, SYSCALL_CAPABILITY_SIGNAL) \
+        X(__NR_pidfd_getfd, SYSCALL_CAPABILITY_PROCESS)
     enum {
         NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT =
     #define NATIVE_SYSCALL_MILESTONE_01_COUNT_IMPLEMENTED(number, capability_class) + 1
@@ -5322,20 +5317,11 @@ int native_syscall_contract_classifies_milestone_01_process_surface(void) {
     #undef NATIVE_SYSCALL_MILESTONE_01_COUNT_IMPLEMENTED
     };
     enum {
-        NATIVE_SYSCALL_MILESTONE_01_NEXT_COUNT =
-    #define NATIVE_SYSCALL_MILESTONE_01_COUNT_NEXT(number, override_class) + 1
-            0 NATIVE_SYSCALL_MILESTONE_01_NEXT_LIST(NATIVE_SYSCALL_MILESTONE_01_COUNT_NEXT)
-    #undef NATIVE_SYSCALL_MILESTONE_01_COUNT_NEXT
-    };
-    enum {
         NATIVE_SYSCALL_MILESTONE_01_AUDITED_COUNT =
-            NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT +
-            NATIVE_SYSCALL_MILESTONE_01_NEXT_COUNT,
+            NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT,
     };
-    _Static_assert(NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT == 2,
-                   "milestone 01 must keep two implemented syscalls in the audited process surface");
-    _Static_assert(NATIVE_SYSCALL_MILESTONE_01_NEXT_COUNT == 1,
-                   "milestone 01 must keep one kernel-owned-next pidfd syscall in the audited process surface");
+    _Static_assert(NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_COUNT == 3,
+                   "milestone 01 must keep three implemented syscalls in the audited process surface");
     _Static_assert(NATIVE_SYSCALL_MILESTONE_01_AUDITED_COUNT == 3,
                    "milestone 01 audited process surface must stay scoped to the reviewed three-syscall set");
     static const struct required_syscall_class required_classes[] = {
@@ -5343,12 +5329,6 @@ int native_syscall_contract_classifies_milestone_01_process_surface(void) {
         NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_LIST(NATIVE_SYSCALL_MILESTONE_01_EMIT_IMPLEMENTED)
     #undef NATIVE_SYSCALL_MILESTONE_01_EMIT_IMPLEMENTED
     };
-    static const struct audited_syscall_repo_truth next_syscalls[] = {
-    #define NATIVE_SYSCALL_MILESTONE_01_EMIT_NEXT(number, override_class) {number, override_class},
-        NATIVE_SYSCALL_MILESTONE_01_NEXT_LIST(NATIVE_SYSCALL_MILESTONE_01_EMIT_NEXT)
-    #undef NATIVE_SYSCALL_MILESTONE_01_EMIT_NEXT
-    };
-    #undef NATIVE_SYSCALL_MILESTONE_01_NEXT_LIST
     #undef NATIVE_SYSCALL_MILESTONE_01_IMPLEMENTED_LIST
     long ret;
 
@@ -5371,19 +5351,6 @@ int native_syscall_contract_classifies_milestone_01_process_surface(void) {
     if (ret >= 0) {
         errno = EPROTO;
         return -1;
-    }
-
-    for (size_t i = 0; i < sizeof(next_syscalls) / sizeof(next_syscalls[0]); i++) {
-        if (syscall_is_implemented_impl(next_syscalls[i].number) ||
-            syscall_matrix_override_class_impl(next_syscalls[i].number) != next_syscalls[i].override_class) {
-            errno = ENOTSUP;
-            return -1;
-        }
-        ret = syscall_dispatch_impl(next_syscalls[i].number, 0, 0, 0, 0, 0, 0);
-        if (ret != -ENOSYS) {
-            errno = ret < 0 ? (int)-ret : EPROTO;
-            return -1;
-        }
     }
 
     return 0;

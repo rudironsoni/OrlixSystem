@@ -240,6 +240,8 @@ extern int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimers
 extern int timerfd_gettime_impl(int fd, struct __kernel_itimerspec *curr_value);
 extern int memfd_create_impl(const char *name, unsigned int flags);
 extern int pidfd_open_impl(int32_t pid, unsigned int flags);
+extern int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flags);
+extern int task_pidfd_getfd_access_impl(struct task_struct *target);
 extern int mkdirat_impl(int dirfd, const char *pathname, linux_mode_t mode);
 extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
@@ -429,6 +431,40 @@ static long syscall_pidfd_send_signal(int pidfd, int32_t sig, const void *info,
     result = signal_send_process(target, sig);
     free_task(target);
     return result < 0 ? (long)result : 0;
+}
+
+static long syscall_pidfd_getfd(int pidfd, int targetfd, unsigned int flags) {
+    fd_entry_t *entry;
+    struct task_struct *target;
+    int dupfd;
+
+    if (flags != 0) {
+        return -EINVAL;
+    }
+
+    entry = get_fd_entry_impl(pidfd);
+    if (!entry) {
+        return -EBADF;
+    }
+    if (!get_fd_is_pidfd_impl(entry)) {
+        put_fd_entry_impl(entry);
+        return -EBADF;
+    }
+
+    target = pidfd_get_task_entry_impl(entry);
+    put_fd_entry_impl(entry);
+    if (!target) {
+        return errno == 0 ? -ESRCH : -(long)errno;
+    }
+    if (task_pidfd_getfd_access_impl(target) != 0) {
+        long err = errno == 0 ? EPERM : errno;
+        free_task(target);
+        return -err;
+    }
+
+    dupfd = pidfd_getfd_impl(target, targetfd, flags);
+    free_task(target);
+    return dupfd < 0 ? -(long)errno : (long)dupfd;
 }
 
 static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) {
@@ -665,6 +701,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_unshare:
     case __NR_clone3:
     case __NR_pidfd_open:
+    case __NR_pidfd_getfd:
     case __NR_getpid:
     case __NR_getppid:
     case __NR_uname:
@@ -755,13 +792,11 @@ int syscall_is_implemented_impl(long number) {
 /*
  * Milestone-01 keeps a narrow matrix override for audited process-adjacent
  * syscalls whose repo-truth status is more specific than the coarse
- * implemented-vs-gap inventory. Keep this table scoped to audited pidfd gaps
- * that still remain outside the implemented Linux-facing surface.
+ * implemented-vs-gap inventory. Keep this table scoped to audited gaps that
+ * still remain outside the implemented Linux-facing surface.
  */
 enum syscall_matrix_override_class syscall_matrix_override_class_impl(long number) {
     switch (number) {
-    case __NR_pidfd_getfd:
-        return SYSCALL_MATRIX_OVERRIDE_KERNEL_OWNED_NEXT_PROCESS;
     default:
         return SYSCALL_MATRIX_OVERRIDE_NONE;
     }
@@ -1066,6 +1101,8 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_pidfd_send_signal:
         return syscall_pidfd_send_signal((int)arg0, (int32_t)arg1,
                                          (const void *)(uintptr_t)arg2, (unsigned int)arg3);
+    case __NR_pidfd_getfd:
+        return syscall_pidfd_getfd((int)arg0, (int)arg1, (unsigned int)arg2);
     case __NR_ioctl:
         return syscall_result((long)ioctl_impl((int)arg0, (unsigned long)arg1, (void *)(uintptr_t)arg2));
     case __NR_getdents64:

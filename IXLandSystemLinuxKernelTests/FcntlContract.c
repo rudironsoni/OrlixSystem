@@ -1,4 +1,11 @@
 #include <linux/fcntl.h>
+#include <asm-generic/unistd.h>
+#ifdef SIGCHLD
+#undef SIGCHLD
+#endif
+#define __ASSEMBLY__ 1
+#include <asm-generic/signal.h>
+#undef __ASSEMBLY__
 
 #include <errno.h>
 #include <stdbool.h>
@@ -6,7 +13,10 @@
 #include <string.h>
 
 #include "fs/fdtable.h"
+#include "kernel/cred_internal.h"
+#include "kernel/signal.h"
 #include "kernel/task.h"
+#include "runtime/syscall.h"
 
 extern int open_impl(const char *pathname, int flags, linux_mode_t mode);
 extern int dup_impl(int oldfd);
@@ -35,6 +45,15 @@ static int close_if_open(int fd) {
         return close_impl(fd);
     }
     return 0;
+}
+
+static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
 static int append_decimal(char *buf, size_t buf_size, int value) {
@@ -819,4 +838,378 @@ out:
     }
     close_if_open(parent_fd);
     return result;
+}
+
+int fcntl_contract_pidfd_getfd_duplicates_target_descriptor(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    int child_fd = -1;
+    int pidfd = -1;
+    int dupfd = -1;
+    int result = -1;
+    int dup_fd_flags;
+    linux_off_t offset;
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    saved = get_current();
+    set_current(child);
+    child_fd = open_impl("/etc/passwd", O_RDONLY, 0);
+    if (child_fd < 0) {
+        set_current(saved);
+        goto out;
+    }
+    if (lseek_impl(child_fd, 9, SEEK_SET) != 9) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        errno = -pidfd;
+        goto out;
+    }
+
+    dupfd = (int)syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, child_fd, 0, 0, 0, 0);
+    if (dupfd < 0) {
+        errno = -dupfd;
+        goto out;
+    }
+
+    dup_fd_flags = fcntl_impl(dupfd, F_GETFD, 0);
+    if (dup_fd_flags != FD_CLOEXEC) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    if (lseek_impl(child_fd, 17, SEEK_SET) != 17) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    offset = lseek_impl(dupfd, 0, SEEK_CUR);
+    if (offset != 17) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    set_current(parent);
+    close_if_open(dupfd);
+    close_if_open(pidfd);
+    if (child) {
+        set_current(child);
+        close_if_open(child_fd);
+        set_current(parent);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    set_current(parent);
+    return result;
+}
+
+int fcntl_contract_pidfd_getfd_rejects_permission_mismatch(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *caller = NULL;
+    struct task_struct *saved;
+    int child_fd = -1;
+    int pidfd = -1;
+    int result = -1;
+    long ret;
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+    caller = task_create_child_impl(parent);
+    if (!caller) {
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    child_fd = open_impl("/etc/passwd", O_RDONLY, 0);
+    if (child_fd < 0 || setresuid_impl(1001, 1001, 1001) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(caller);
+    if (setresuid_impl(1000, 1000, 1000) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    set_current(caller);
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        set_current(saved);
+        errno = -pidfd;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, child_fd, 0, 0, 0, 0);
+    set_current(saved);
+    if (ret != -EPERM) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    set_current(parent);
+    if (caller) {
+        set_current(caller);
+        close_if_open(pidfd);
+        set_current(parent);
+        task_unlink_child_impl(parent, caller);
+        free_task(caller);
+    } else {
+        close_if_open(pidfd);
+    }
+    if (child) {
+        set_current(child);
+        close_if_open(child_fd);
+        set_current(parent);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    set_current(parent);
+    return result;
+}
+
+int fcntl_contract_pidfd_getfd_allows_ptrace_eligible_sibling(void) {
+    struct task_struct *parent;
+    struct task_struct *target = NULL;
+    struct task_struct *caller = NULL;
+    struct task_struct *saved;
+    int target_fd = -1;
+    int pidfd = -1;
+    int dupfd = -1;
+    int result = -1;
+    linux_off_t offset;
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    target = task_create_child_impl(parent);
+    if (!target) {
+        return -1;
+    }
+    caller = task_create_child_impl(parent);
+    if (!caller) {
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(target);
+    if (setresgid_impl(1000, 1000, 1000) != 0 ||
+        setresuid_impl(1000, 1000, 1000) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    target_fd = open_impl("/etc/passwd", O_RDONLY, 0);
+    if (target_fd < 0 || lseek_impl(target_fd, 13, SEEK_SET) != 13) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(caller);
+    if (setresgid_impl(2000, 1000, 2000) != 0 ||
+        setresuid_impl(2000, 1000, 2000) != 0) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    set_current(caller);
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, target->pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        set_current(saved);
+        errno = -pidfd;
+        goto out;
+    }
+    dupfd = (int)syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, target_fd, 0, 0, 0, 0);
+    set_current(saved);
+    if (dupfd < 0) {
+        errno = -dupfd;
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(target);
+    if (lseek_impl(target_fd, 21, SEEK_SET) != 21) {
+        set_current(saved);
+        goto out;
+    }
+    set_current(saved);
+
+    set_current(caller);
+    offset = lseek_impl(dupfd, 0, SEEK_CUR);
+    set_current(saved);
+    if (offset != 21) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    set_current(parent);
+    if (caller) {
+        set_current(caller);
+        close_if_open(dupfd);
+        close_if_open(pidfd);
+        set_current(parent);
+        task_unlink_child_impl(parent, caller);
+        free_task(caller);
+    } else {
+        close_if_open(dupfd);
+        close_if_open(pidfd);
+    }
+    if (target) {
+        set_current(target);
+        close_if_open(target_fd);
+        set_current(parent);
+        task_unlink_child_impl(parent, target);
+        free_task(target);
+    }
+    set_current(parent);
+    return result;
+}
+
+int fcntl_contract_pidfd_getfd_rejects_bad_targets(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    int child_fd = -1;
+    int pidfd = -1;
+    int nullfd = -1;
+    int result = -1;
+    long ret;
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    saved = get_current();
+    set_current(child);
+    child_fd = open_impl("/etc/passwd", O_RDONLY, 0);
+    set_current(saved);
+    if (child_fd < 0) {
+        goto out;
+    }
+
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        errno = -pidfd;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_getfd, -1, child_fd, 0, 0, 0, 0);
+    if (ret != -EBADF) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    nullfd = open_impl("/dev/null", O_RDONLY, 0);
+    if (nullfd < 0) {
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_pidfd_getfd, nullfd, child_fd, 0, 0, 0, 0);
+    if (ret != -EBADF) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, child_fd + 1, 0, 0, 0, 0);
+    if (ret != -EBADF) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    saved = get_current();
+    set_current(child);
+    ret = syscall_dispatch_impl(__NR_exit, 41, 0, 0, 0, 0, 0);
+    set_current(saved);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, child_fd, 0, 0, 0, 0);
+    if (ret != -ESRCH) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    clear_pending_signal(parent, SIGCHLD);
+
+    result = 0;
+
+out:
+    set_current(parent);
+    close_if_open(nullfd);
+    close_if_open(pidfd);
+    clear_pending_signal(parent, SIGCHLD);
+    if (child) {
+        set_current(child);
+        close_if_open(child_fd);
+        set_current(parent);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    set_current(parent);
+    return result;
+}
+
+void fcntl_contract_reset_pidfd_test_state(void) {
+    struct task_struct *child;
+
+    if (!init_task) {
+        return;
+    }
+
+    set_current(init_task);
+    clear_pending_signal(init_task, SIGCHLD);
+
+    while ((child = init_task->children) != NULL) {
+        task_unlink_child_impl(init_task, child);
+        free_task(child);
+    }
+
+    set_current(init_task);
+    clear_pending_signal(init_task, SIGCHLD);
 }

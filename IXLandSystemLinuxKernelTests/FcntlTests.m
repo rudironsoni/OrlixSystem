@@ -24,6 +24,11 @@ extern int fcntl_contract_setfl_append_affects_duplicated_fd_status(void);
 extern int fcntl_contract_proc_self_fdinfo_reflects_close_on_exec_per_descriptor(void);
 extern int fcntl_contract_proc_self_fdinfo_reflects_nonblock_after_setfl(void);
 extern int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void);
+extern int fcntl_contract_pidfd_getfd_duplicates_target_descriptor(void);
+extern int fcntl_contract_pidfd_getfd_rejects_permission_mismatch(void);
+extern int fcntl_contract_pidfd_getfd_allows_ptrace_eligible_sibling(void);
+extern int fcntl_contract_pidfd_getfd_rejects_bad_targets(void);
+extern void fcntl_contract_reset_pidfd_test_state(void);
 
 @interface FcntlTests : XCTestCase
 @end
@@ -34,6 +39,7 @@ extern int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void);
     [super setUp];
     XCTAssertEqual(start_kernel(), 0, @"start_kernel must succeed before LinuxKernel fcntl tests");
     XCTAssertTrue(kernel_is_booted(), @"kernel must be booted before LinuxKernel fcntl tests");
+    fcntl_contract_reset_pidfd_test_state();
     for (int fd = 3; fd < 256; fd++) {
         close_impl(fd);
     }
@@ -43,6 +49,7 @@ extern int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void);
     for (int fd = 3; fd < 256; fd++) {
         close_impl(fd);
     }
+    fcntl_contract_reset_pidfd_test_state();
     [super tearDown];
 }
 
@@ -128,6 +135,22 @@ extern int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void);
 
 - (void)testChildDup2DoesNotReplaceParentDescriptor {
     XCTAssertEqual(fcntl_contract_child_dup2_does_not_replace_parent_descriptor(), 0, @"errno %d", errno);
+}
+
+- (void)testPidfdGetfdDuplicatesTargetDescriptor {
+    XCTAssertEqual(fcntl_contract_pidfd_getfd_duplicates_target_descriptor(), 0, @"errno %d", errno);
+}
+
+- (void)testPidfdGetfdRejectsPermissionMismatch {
+    XCTAssertEqual(fcntl_contract_pidfd_getfd_rejects_permission_mismatch(), 0, @"errno %d", errno);
+}
+
+- (void)testPidfdGetfdAllowsPtraceEligibleSibling {
+    XCTAssertEqual(fcntl_contract_pidfd_getfd_allows_ptrace_eligible_sibling(), 0, @"errno %d", errno);
+}
+
+- (void)testPidfdGetfdRejectsBadTargets {
+    XCTAssertEqual(fcntl_contract_pidfd_getfd_rejects_bad_targets(), 0, @"errno %d", errno);
 }
 
 @end

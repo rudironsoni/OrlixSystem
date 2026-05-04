@@ -1519,6 +1519,98 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     return newfd;
 }
 
+int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flags) {
+    struct task_struct *current;
+    struct files_struct *source_files;
+    struct files_struct *dest_files;
+    struct file *source_file;
+    struct file *new_file;
+    fd_description_t *desc;
+    int newfd = -1;
+    bool same_files;
+
+    if (flags != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!target || targetfd < 0) {
+        errno = target ? EBADF : ESRCH;
+        return -1;
+    }
+    if (atomic_load(&target->exited)) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    current = get_current();
+    if (!current || !current->files || !target->files) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    source_files = target->files;
+    dest_files = current->files;
+    if ((size_t)targetfd >= source_files->max_fds) {
+        errno = EBADF;
+        return -1;
+    }
+
+    same_files = source_files == dest_files;
+    if (same_files) {
+        fs_mutex_lock(&source_files->lock);
+    } else if (source_files < dest_files) {
+        fs_mutex_lock(&source_files->lock);
+        fs_mutex_lock(&dest_files->lock);
+    } else {
+        fs_mutex_lock(&dest_files->lock);
+        fs_mutex_lock(&source_files->lock);
+    }
+
+    source_file = source_files->fd[targetfd];
+    if (!source_file || !source_file->private_data) {
+        errno = EBADF;
+        goto out_unlock;
+    }
+
+    for (size_t i = 0; i < dest_files->max_fds; i++) {
+        if (!dest_files->fd[i]) {
+            newfd = (int)i;
+            break;
+        }
+    }
+    if (newfd < 0) {
+        errno = EMFILE;
+        goto out_unlock;
+    }
+
+    new_file = alloc_file();
+    if (!new_file) {
+        errno = ENOMEM;
+        goto out_unlock;
+    }
+
+    desc = (fd_description_t *)source_file->private_data;
+    retain_fd_description(desc);
+    new_file->fd = newfd;
+    new_file->real_fd = source_file->real_fd;
+    new_file->flags = source_file->flags;
+    new_file->fd_flags = FD_CLOEXEC;
+    new_file->pos = (linux_off_t)desc->offset;
+    memcpy(new_file->path, source_file->path, sizeof(new_file->path));
+    new_file->private_data = desc;
+    dest_files->fd[newfd] = new_file;
+
+out_unlock:
+    if (same_files) {
+        fs_mutex_unlock(&source_files->lock);
+    } else {
+        fs_mutex_unlock(&source_files->lock);
+        fs_mutex_unlock(&dest_files->lock);
+    }
+
+    return newfd;
+}
+
 int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
     fd_description_t *old_desc;
     struct task_struct *task;
