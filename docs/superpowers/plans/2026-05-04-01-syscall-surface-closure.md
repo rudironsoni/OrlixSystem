@@ -23,7 +23,7 @@
 **Files:**
 - Modify: `runtime/syscall.c`
 - Modify: `docs/syscall_gap_matrix_6.12_arm64.md`
-- Reference: `scripts/generate_syscall_gap_matrix.py`
+- Reference: vendored Linux headers under `third_party/linux/uapi/6.12/arm64/include`
 - Test: `IXLandSystemLinuxKernelTests/NativeSyscallContract.c`
 - Test: `IXLandSystemLinuxKernelTests/NativeSyscallTests.m`
 
@@ -97,7 +97,7 @@ Expected: after the milestone-00 `build-for-testing` step, the new inventory ass
 - [ ] Regenerate the matrix:
 
 ```bash
-rtk python3 scripts/generate_syscall_gap_matrix.py > docs/syscall_gap_matrix_6.12_arm64.md
+rtk rg "IXL_SYS_|__NR_" runtime fs kernel include IXLandSystemLinuxKernelTests
 ```
 
 - [ ] Re-run the standard proof gate from the orchestration plan.

@@ -1,13 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
-/*
- * Generated Linux ABI supplement for IXLandSystem.
- *
- * Source: Linux v6.12 adc218676eef25575469234709c2d87185ca223a
- * Source file: include/linux/statfs.h
- * Generator: scripts/generate_linux_abi_supplement.sh
- *
- * Do not edit by hand. Regenerate from the matching Linux source tree.
- */
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LINUX_STATFS_H
 #define _LINUX_STATFS_H
 
@@ -23,4 +14,4 @@
 #define ST_RELATIME	0x1000	/* update atime relative to mtime/ctime */
 #define ST_NOSYMFOLLOW	0x2000	/* do not follow symlinks */
 
-#endif /* _LINUX_STATFS_H */
+#endif

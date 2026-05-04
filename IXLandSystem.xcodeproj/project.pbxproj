@@ -32,6 +32,7 @@
 		3655BF1DA2D2D3DA3FAF986A /* time.c in Sources */ = {isa = PBXBuildFile; fileRef = F5240B1F3DC3BDF0ED535D3B /* time.c */; };
 		3DEC101077E32C26F85507A0 /* TaskGroupTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 767A8483185FE320714CA54E /* TaskGroupTests.m */; };
 		4477D70515F164ECC40AD643 /* SeccompContract.c in Sources */ = {isa = PBXBuildFile; fileRef = AAD8C2616AC6CE42EE595303 /* SeccompContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
+		475B99248B0F3B211A7AFED9 /* LinuxKHeadersCompileSmoke.c in Sources */ = {isa = PBXBuildFile; fileRef = 2D6F6B0D6F90C89B7E50FE00 /* LinuxKHeadersCompileSmoke.c */; settings = {COMPILER_FLAGS = "-D__KERNEL__ -I$(LINUX_KHEADERS_OBJTREE_ROOT)/arch/$(LINUX_UAPI_ARCH)/include/generated -I$(LINUX_KHEADERS_OBJTREE_ROOT)/arch/$(LINUX_UAPI_ARCH)/include/generated/uapi -I$(LINUX_KHEADERS_SRCTREE_ROOT)/arch/$(LINUX_UAPI_ARCH)/include -I$(LINUX_KHEADERS_SRCTREE_ROOT)/arch/$(LINUX_UAPI_ARCH)/include/uapi -I$(LINUX_KHEADERS_OBJTREE_ROOT)/include/generated/uapi -I$(LINUX_KHEADERS_OBJTREE_ROOT)/include -I$(LINUX_KHEADERS_SRCTREE_ROOT)/include/uapi -I$(LINUX_KHEADERS_SRCTREE_ROOT)/include"; }; };
 		4A3CD24DAD0E84942B97064B /* libIXLandSystem.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5E96E95F0B83F5CC63E21913 /* libIXLandSystem.a */; };
 		4A59A63F162BBE7A75E78E88 /* NativeSyscallTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 149AD324E25B3578773D3650 /* NativeSyscallTests.m */; };
 		4F010A787D2ACDD5E950B529 /* pty.c in Sources */ = {isa = PBXBuildFile; fileRef = 68380C402AE8EF749A28C843 /* pty.c */; };
@@ -188,6 +189,7 @@
 		2B33B8D1CDFE2966D44963A8 /* syscall.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = syscall.c; sourceTree = "<group>"; };
 		2B7DCCA60C2DAD2E5D6A3677 /* CgroupContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CgroupContract.h; sourceTree = "<group>"; };
 		2C1E780A747EEBBBE69D1254 /* ExecFdContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ExecFdContract.c; sourceTree = "<group>"; };
+		2D6F6B0D6F90C89B7E50FE00 /* LinuxKHeadersCompileSmoke.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = LinuxKHeadersCompileSmoke.c; sourceTree = "<group>"; };
 		32C8785EC40C73B387D6237A /* fdtable.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fdtable.c; sourceTree = "<group>"; };
 		346402DCD55DB2CE76AAB72C /* PtraceTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PtraceTests.m; sourceTree = "<group>"; };
 		34B9032309DC6260A8D72D8F /* ptrace.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ptrace.c; sourceTree = "<group>"; };
@@ -471,6 +473,7 @@
 				B6A8D5B76A1301B4F60794A7 /* KernelBootTests.m */,
 				0B9F6B902F768AA6DE216541 /* KernelInitContract.c */,
 				53E3EED8E60498770B580706 /* KernelInitTests.m */,
+				2D6F6B0D6F90C89B7E50FE00 /* LinuxKHeadersCompileSmoke.c */,
 				825904975D6668A8AB125E98 /* LinuxUAPICompileSmoke.c */,
 				9A8678E28B73B73210D86FAB /* LinuxUAPITestSupport.c */,
 				CAE358DF2C68D021887020F5 /* LinuxUAPITestSupport.h */,
@@ -706,6 +709,7 @@
 				DA3E8236801C67CD00707E6D /* KernelBootTests.m in Sources */,
 				CF529097BA476D3414418B65 /* KernelInitContract.c in Sources */,
 				6B765327CCF9FE19CB035CA0 /* KernelInitTests.m in Sources */,
+				475B99248B0F3B211A7AFED9 /* LinuxKHeadersCompileSmoke.c in Sources */,
 				B1AD6A278B1352C350774FB6 /* LinuxUAPICompileSmoke.c in Sources */,
 				13FB5E5B82FE3B5C5391A96B /* LinuxUAPITestSupport.c in Sources */,
 				F76416F9EEADCF919B8C0FA1 /* NamespaceContract.c in Sources */,
@@ -912,6 +916,10 @@
 				LINUX_ABI_INCLUDE_ROOT = "$(LINUX_ABI_ROOT)/include";
 				LINUX_ABI_ROOT = "$(LINUX_ABI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
 				LINUX_ABI_VENDOR_ROOT = "$(LINUX_VENDOR_ROOT)/abi";
+				LINUX_KHEADERS_OBJTREE_ROOT = "$(LINUX_KHEADERS_ROOT)/objtree";
+				LINUX_KHEADERS_ROOT = "$(LINUX_KHEADERS_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
+				LINUX_KHEADERS_SRCTREE_ROOT = "$(LINUX_KHEADERS_ROOT)/srctree";
+				LINUX_KHEADERS_VENDOR_ROOT = "$(LINUX_VENDOR_ROOT)/kheaders";
 				LINUX_UAPI_ARCH = arm64;
 				LINUX_UAPI_INCLUDE_ROOT = "$(LINUX_UAPI_ROOT)/include";
 				LINUX_UAPI_ROOT = "$(LINUX_UAPI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
@@ -1109,6 +1117,10 @@
 				LINUX_ABI_INCLUDE_ROOT = "$(LINUX_ABI_ROOT)/include";
 				LINUX_ABI_ROOT = "$(LINUX_ABI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
 				LINUX_ABI_VENDOR_ROOT = "$(LINUX_VENDOR_ROOT)/abi";
+				LINUX_KHEADERS_OBJTREE_ROOT = "$(LINUX_KHEADERS_ROOT)/objtree";
+				LINUX_KHEADERS_ROOT = "$(LINUX_KHEADERS_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";
+				LINUX_KHEADERS_SRCTREE_ROOT = "$(LINUX_KHEADERS_ROOT)/srctree";
+				LINUX_KHEADERS_VENDOR_ROOT = "$(LINUX_VENDOR_ROOT)/kheaders";
 				LINUX_UAPI_ARCH = arm64;
 				LINUX_UAPI_INCLUDE_ROOT = "$(LINUX_UAPI_ROOT)/include";
 				LINUX_UAPI_ROOT = "$(LINUX_UAPI_VENDOR_ROOT)/$(LINUX_UAPI_VERSION)/$(LINUX_UAPI_ARCH)";

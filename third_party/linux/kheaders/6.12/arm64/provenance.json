@@ -1,0 +1,21 @@
+{
+  "linux_version": "6.12",
+  "linux_arch": "arm64",
+  "kernel_series": "v6.x",
+  "tarball_url": "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.12.tar.xz",
+  "source_release_name": "linux-6.12",
+  "generated_at_utc": "2026-05-04T18:40:12Z",
+  "generator_script": "scripts/vendor_linux_headers.sh",
+  "make_targets_run": [
+    "defconfig",
+    "olddefconfig",
+    "prepare",
+    "modules_prepare",
+    "headers_install"
+  ],
+  "uapi_root": "third_party/linux/uapi/6.12/arm64",
+  "kheaders_root": "third_party/linux/kheaders/6.12/arm64",
+  "abi_root": "third_party/linux/abi/6.12/arm64",
+  "downloaded_tarball_sha256": "b1a2562be56e42afb3f8489d4c2a7ac472ac23098f1ef1c1e40da601f54625eb",
+  "git_commit": null
+}

@@ -137,7 +137,7 @@ Expected: the shared scheme is green, including `IXLandSystemLinuxKernelTests` a
 
 **Files:**
 - Modify: `docs/syscall_gap_matrix_6.12_arm64.md`
-- Reference: `scripts/generate_syscall_gap_matrix.py`
+- Reference: vendored Linux headers under `third_party/linux/uapi/6.12/arm64/include`
 - Reference: `runtime/syscall.c`
 
 - [ ] Apply this task to milestone implementation tranches `01` through `07` when they change syscall surface, Linux-owner source, or LinuxKernel tests. Orchestration-only Task `00` documentation work does not regenerate the matrix or run these audits unless it also changes one of those milestone-owned surfaces.
@@ -145,7 +145,7 @@ Expected: the shared scheme is green, including `IXLandSystemLinuxKernelTests` a
 - [ ] Regenerate the syscall matrix after every syscall-surface change that lands within milestone tranches `01` through `07`; do not defer regeneration to a later milestone checkpoint:
 
 ```bash
-rtk python3 scripts/generate_syscall_gap_matrix.py > docs/syscall_gap_matrix_6.12_arm64.md
+rtk rg "IXL_SYS_|__NR_" runtime fs kernel include IXLandSystemLinuxKernelTests
 ```
 
 Expected: touched syscalls move out of `missing:unclassified` into `implemented:*`, `explicit unsupported policy:*`, `libc-owned:*`, or `future backend:*`.

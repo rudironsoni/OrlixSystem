@@ -119,7 +119,7 @@ IXLandSystem ownership:
 - syscall/runtime ABI entry points
 - tasks, signals, wait, fdtable, VFS, mounts, pipes, PTY, poll/select/epoll, procfs/devfs, credentials, namespaces, cgroups, seccomp, ptrace, netlink
 - vendored Linux UAPI consumption
-- generated Linux-source ABI supplements under `third_party/linux/abi/6.12/arm64/include` only when the needed Linux-source ABI fragment is missing from vendored UAPI and used by IXLandSystem
+- generated Linux-source ABI supplements under `third_party/linux/abi/<version>/<arch>/include` only when the needed Linux-source ABI fragment is missing from vendored UAPI and used by IXLandSystem
 
 IXLandMLibC ownership:
 - libc ABI headers and typedef surfaces
@@ -146,7 +146,7 @@ Do not vendor mlibc `abis`, `sysdeps`, or `options` into IXLandSystem.
 Do not implement libc sysdeps inside IXLandSystem.
 Do not create kernel-owned replacements for libc typedef headers such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `sigevent`, `sigval`, `socklen_t`, `statvfs`, or `suseconds_t`.
 
-`scripts/generate_linux_abi_supplement.sh` must treat mlibc `abis/linux` as a coverage reference:
+The Linux header vendoring pipeline must treat mlibc `abis/linux` as a coverage reference:
 - map headers already present in vendored Linux UAPI to UAPI
 - generate Linux-source ABI supplement headers for kernel-owned gaps
 - classify libc-owned surfaces as IXLandMLibC-owned
