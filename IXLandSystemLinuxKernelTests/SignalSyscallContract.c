@@ -133,11 +133,13 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     struct task_struct *thread = NULL;
     struct signal_mask_bits saved_parent_blocked;
     long ret;
+    int32_t thread_pid;
     int pidfd = -1;
     int thread_pidfd = -1;
     const int signo = SIGUSR1;
     const int idx = (signo - 1) >> 6;
     const uint64_t bit = 1ULL << ((signo - 1) & 63);
+    int32_t dequeued = 0;
 
     if (!parent || !parent->signal) {
         errno = ESRCH;
@@ -181,17 +183,25 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto fail;
     }
+    errno = 0;
+    if (do_kill(child->pid, signo) != -1 || errno != EPERM) {
+        errno = EPROTO;
+        goto fail;
+    }
 
     cred_reset_to_defaults();
     saved_parent_blocked = parent->signal->blocked;
 
-    thread = task_create_child_with_flags_impl(parent, CLONE_THREAD);
+    thread_pid = clone_impl(CLONE_THREAD | CLONE_VM | CLONE_SIGHAND);
+    if (thread_pid < 0) {
+        goto fail;
+    }
+    thread = task_lookup(thread_pid);
     if (!thread || !thread->signal) {
-        errno = thread ? EPROTO : errno;
+        errno = thread ? EPROTO : ESRCH;
         goto fail;
     }
 
-    thread->signal->blocked.sig[idx] |= bit;
     signal_contract_clear_queued_signal(thread, signo);
     signal_contract_clear_queued_signal(parent, signo);
     thread_pidfd = pidfd_open_impl(thread->pid, 0);
@@ -202,20 +212,9 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     ret = syscall_dispatch_impl(__NR_pidfd_send_signal, thread_pidfd, signo, 0, 0, 0, 0);
     if (ret != 0 ||
         thread->thread_pending_signals != 0 ||
-        (thread->signal->shared_pending.sig[idx] & bit) != 0 ||
-        (parent->signal->shared_pending.sig[idx] & bit) == 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto fail;
-    }
-
-    signal_contract_clear_queued_signal(thread, signo);
-    signal_contract_clear_queued_signal(parent, signo);
-    parent->signal->blocked.sig[idx] |= bit;
-
-    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, thread_pidfd, signo, 0, 0, 0, 0);
-    if (ret != 0 ||
-        thread->thread_pending_signals != 0 ||
-        (thread->signal->shared_pending.sig[idx] & bit) == 0) {
+        parent->thread_pending_signals != 0 ||
+        signal_dequeue(parent, NULL, &dequeued) != 1 ||
+        dequeued != signo) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto fail;
     }

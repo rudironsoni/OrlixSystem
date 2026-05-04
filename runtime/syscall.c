@@ -240,7 +240,6 @@ extern int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimers
 extern int timerfd_gettime_impl(int fd, struct __kernel_itimerspec *curr_value);
 extern int memfd_create_impl(const char *name, unsigned int flags);
 extern int pidfd_open_impl(int32_t pid, unsigned int flags);
-extern int signal_pidfd_send(struct task_struct *target, int32_t sig);
 extern int mkdirat_impl(int dirfd, const char *pathname, linux_mode_t mode);
 extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
@@ -427,7 +426,7 @@ static long syscall_pidfd_send_signal(int pidfd, int32_t sig, const void *info,
         return errno == 0 ? -ESRCH : -(long)errno;
     }
 
-    result = signal_pidfd_send(target, sig);
+    result = signal_send_process(target, sig);
     free_task(target);
     return result < 0 ? (long)result : 0;
 }

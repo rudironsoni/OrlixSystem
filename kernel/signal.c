@@ -493,7 +493,7 @@ int signal_generate_process(struct task_struct *target, int32_t sig) {
     return result;
 }
 
-int signal_pidfd_send(struct task_struct *target, int32_t sig) {
+int signal_send_process(struct task_struct *target, int32_t sig) {
     struct task_struct *sender = get_current();
 
     if (!target || sig < 0 || sig > KERNEL_SIG_NUM) {
@@ -955,13 +955,7 @@ int do_kill(int32_t pid, int32_t sig) {
         return -1;
     }
 
-    if (sig == 0) {
-        /* Just check if process exists */
-        free_task(task);
-        return 0;
-    }
-
-    result = signal_generate_process(task, sig);
+    result = signal_send_process(task, sig);
     free_task(task);
     /* Convert internal error codes to errno + return -1 */
     if (result < 0) {

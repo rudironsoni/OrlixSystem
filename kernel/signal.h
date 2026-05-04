@@ -122,6 +122,7 @@ void signal_wake_task(struct task_struct *task, bool group_wide);
 int signal_generate_task(struct task_struct *target, int32_t sig);
 int signal_generate_task_info(struct task_struct *target, int32_t sig, int32_t code, uint64_t addr);
 int signal_generate_process(struct task_struct *target, int32_t sig);
+int signal_send_process(struct task_struct *target, int32_t sig);
 int signal_generate_pgrp(int32_t pgid, int32_t sig);
 int signal_generate_orphaned_pgrp(int32_t pgid);
 
