@@ -253,6 +253,20 @@ int fcntl_impl(int fd, int cmd, ...) {
         fdtable_sync_current_task_fd_impl(fd);
         return 0;
     }
+    case F_GET_SEALS:
+        if (fcntl_get_entry_or_badf(fd, &entry) != 0) {
+            return -1;
+        }
+        result = memfd_get_seals_entry_impl(entry);
+        put_fd_entry_impl(entry);
+        return result;
+    case F_ADD_SEALS:
+        if (fcntl_get_entry_or_badf(fd, &entry) != 0) {
+            return -1;
+        }
+        result = memfd_add_seals_entry_impl(entry, arg);
+        put_fd_entry_impl(entry);
+        return result;
     default:
         errno = EINVAL;
         return -1;

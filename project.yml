@@ -50,6 +50,10 @@ targets:
       group: internal/ios/fs
     - path: internal/ios/fs/path_host.h
       group: internal/ios/fs
+    - path: internal/ios/fs/memfd_host.c
+      group: internal/ios/fs
+    - path: internal/ios/fs/memfd_host.h
+      group: internal/ios/fs
     - path: internal/ios/fs/backing_paths.m
       group: internal/ios/fs
     - path: fs/inode.c

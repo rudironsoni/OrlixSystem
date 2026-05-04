@@ -9,6 +9,7 @@
 #include <linux/close_range.h>
 #include <linux/eventfd.h>
 #include <linux/fcntl.h>
+#include <linux/memfd.h>
 #include <linux/time_types.h>
 #include <linux/timerfd.h>
 
@@ -21,6 +22,7 @@
 #define STDERR_FILENO 2
 #endif
 #include "internal/ios/fs/file_io_host.h"
+#include "internal/ios/fs/memfd_host.h"
 #include "eventpoll.h"
 #include "pipe.h"
 #include "pty.h"
@@ -347,7 +349,8 @@ enum fd_type {
     FD_TYPE_EPOLL, /* Virtual epoll instance */
     FD_TYPE_MOUNT, /* Virtual detached mount tree */
     FD_TYPE_EVENTFD, /* Virtual event counter */
-    FD_TYPE_TIMERFD /* Virtual timer expiration counter */
+    FD_TYPE_TIMERFD, /* Virtual timer expiration counter */
+    FD_TYPE_MEMFD /* Anonymous regular file */
 };
 
 typedef struct synthetic_dir_state {
@@ -386,6 +389,7 @@ typedef struct fd_description {
     uint64_t timerfd_next_ns;
     uint64_t timerfd_expirations;
     bool timerfd_armed;
+    int memfd_seals;
     atomic_int refs;
     fs_mutex_t lock;
 } fd_description_t;
@@ -395,6 +399,7 @@ typedef struct fd_description {
 static fd_entry_t fd_table[NR_OPEN_DEFAULT];
 static fs_mutex_t fd_table_lock = FS_MUTEX_INITIALIZER;
 static atomic_int fd_table_initialized = 0;
+static atomic_ullong fdtable_next_virtual_identity = 1;
 static __thread fd_entry_t fd_task_local_entry;
 
 static bool fdtable_task_has_file(struct task_struct *task, int fd) {
@@ -950,6 +955,48 @@ static fd_description_t *alloc_timerfd_description(int clockid, int flags) {
     return desc;
 }
 
+static fd_description_t *alloc_memfd_description(int real_fd, const char *name, unsigned int flags) {
+    fd_description_t *desc;
+    int ret;
+
+    desc = calloc(1, sizeof(fd_description_t));
+    if (!desc) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    desc->type = FD_TYPE_MEMFD;
+    desc->fd = real_fd;
+    desc->flags = O_RDWR;
+    desc->mode = 0600;
+    desc->offset = 0;
+    desc->file_identity = (uint64_t)atomic_fetch_add(&fdtable_next_virtual_identity, 1);
+    desc->mount_ns_id = fdtable_current_mount_namespace_id();
+    desc->is_dir = false;
+    desc->dev_node = SYNTHETIC_DEV_NONE;
+    desc->proc_file = SYNTHETIC_PROC_FILE_NONE;
+    desc->proc_file_fd_num = -1;
+    desc->proc_file_target_pid = -1;
+    desc->pty_index = 0;
+    desc->pty_is_master = false;
+    desc->pipe_endpoint = NULL;
+    desc->epoll_instance = NULL;
+    memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
+    desc->synthetic_state = NULL;
+    desc->memfd_seals = (flags & MFD_ALLOW_SEALING) ? 0 : F_SEAL_SEAL;
+    atomic_init(&desc->refs, 1);
+    fs_mutex_init(&desc->lock);
+    ret = snprintf(desc->path, sizeof(desc->path), "/memfd:%s", name ? name : "");
+    if (ret < 0 || (size_t)ret >= sizeof(desc->path)) {
+        fs_mutex_destroy(&desc->lock);
+        host_close_impl(real_fd);
+        free(desc);
+        errno = ENAMETOOLONG;
+        return NULL;
+    }
+    return desc;
+}
+
 static fd_description_t *alloc_mount_fd_description(int flags, const struct vfs_mount_fd *mount_fd) {
     fd_description_t *desc;
     int ret;
@@ -1004,7 +1051,7 @@ static void release_fd_description(fd_description_t *desc) {
         return;
     }
     if (atomic_fetch_sub(&desc->refs, 1) == 1) {
-        if (desc->type == FD_TYPE_HOST) {
+        if (desc->type == FD_TYPE_HOST || desc->type == FD_TYPE_MEMFD) {
             host_close_impl(desc->fd);
         } else if (desc->type == FD_TYPE_SYNTHETIC_PTY) {
             pty_close_end_impl(desc->pty_index, desc->pty_is_master);
@@ -1752,6 +1799,21 @@ static int init_timerfd_entry_impl(int fd, int clockid, int flags) {
     return 0;
 }
 
+static int init_memfd_entry_impl(int fd, const char *name, unsigned int flags, int real_fd) {
+    file_init_impl();
+    fd_entry_t *entry = &fd_table[fd];
+    fs_mutex_lock(&entry->lock);
+    entry->desc = alloc_memfd_description(real_fd, name, flags);
+    if (!entry->desc) {
+        fs_mutex_unlock(&entry->lock);
+        return -1;
+    }
+    entry->fd_flags = (flags & MFD_CLOEXEC) ? FD_CLOEXEC : 0;
+    fdtable_sync_task_file_locked(fd, entry);
+    fs_mutex_unlock(&entry->lock);
+    return 0;
+}
+
 int timerfd_create_impl(int clockid, int flags) {
     const int allowed_flags = TFD_CLOEXEC | TFD_NONBLOCK;
     int fd;
@@ -1766,6 +1828,36 @@ int timerfd_create_impl(int clockid, int flags) {
         return -1;
     }
     if (init_timerfd_entry_impl(fd, clockid, flags) != 0) {
+        free_fd_impl(fd);
+        return -1;
+    }
+    return fd;
+}
+
+int memfd_create_impl(const char *name, unsigned int flags) {
+    unsigned int allowed_flags = MFD_CLOEXEC | MFD_ALLOW_SEALING;
+    int fd;
+    int real_fd;
+
+    if (!name) {
+        errno = EFAULT;
+        return -1;
+    }
+    if ((flags & ~allowed_flags) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    real_fd = host_memfd_create_backing_impl();
+    if (real_fd < 0) {
+        return -1;
+    }
+    fd = alloc_fd_impl();
+    if (fd < 0) {
+        host_close_impl(real_fd);
+        return -1;
+    }
+    if (init_memfd_entry_impl(fd, name, flags, real_fd) != 0) {
         free_fd_impl(fd);
         return -1;
     }
@@ -2119,6 +2211,106 @@ bool timerfd_read_ready_entry_impl(void *entry) {
     ready = desc->timerfd_expirations > 0;
     fs_mutex_unlock(&desc->lock);
     return ready;
+}
+
+bool get_fd_is_memfd_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    return fd_entry->desc && fd_entry->desc->type == FD_TYPE_MEMFD;
+}
+
+int memfd_get_seals_entry_impl(void *entry) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    int seals;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_MEMFD) {
+        errno = EINVAL;
+        return -1;
+    }
+    fs_mutex_lock(&fd_entry->desc->lock);
+    seals = fd_entry->desc->memfd_seals;
+    fs_mutex_unlock(&fd_entry->desc->lock);
+    return seals;
+}
+
+int memfd_add_seals_entry_impl(void *entry, int seals) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    fd_description_t *desc;
+    int allowed_seals = F_SEAL_SEAL | F_SEAL_SHRINK | F_SEAL_GROW |
+                        F_SEAL_WRITE | F_SEAL_FUTURE_WRITE | F_SEAL_EXEC;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_MEMFD) {
+        errno = EINVAL;
+        return -1;
+    }
+    if ((seals & ~allowed_seals) != 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    desc = fd_entry->desc;
+    fs_mutex_lock(&desc->lock);
+    if ((desc->memfd_seals & F_SEAL_SEAL) != 0) {
+        fs_mutex_unlock(&desc->lock);
+        errno = EPERM;
+        return -1;
+    }
+    desc->memfd_seals |= seals;
+    fs_mutex_unlock(&desc->lock);
+    return 0;
+}
+
+int memfd_write_allowed_entry_impl(void *entry, linux_off_t offset, size_t count) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    fd_description_t *desc;
+    (void)offset;
+    (void)count;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_MEMFD) {
+        return 0;
+    }
+    desc = fd_entry->desc;
+    fs_mutex_lock(&desc->lock);
+    if ((desc->memfd_seals & (F_SEAL_WRITE | F_SEAL_FUTURE_WRITE)) != 0) {
+        fs_mutex_unlock(&desc->lock);
+        errno = EPERM;
+        return -1;
+    }
+    fs_mutex_unlock(&desc->lock);
+    return 0;
+}
+
+int memfd_truncate_allowed_entry_impl(void *entry, linux_off_t length) {
+    fd_entry_t *fd_entry = (fd_entry_t *)entry;
+    fd_description_t *desc;
+    struct linux_stat st;
+
+    if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_MEMFD) {
+        return 0;
+    }
+    if (host_fstat_impl(get_real_fd_impl(entry), &st) != 0) {
+        errno = EIO;
+        return -1;
+    }
+
+    desc = fd_entry->desc;
+    fs_mutex_lock(&desc->lock);
+    if ((desc->memfd_seals & F_SEAL_GROW) != 0 && length > (linux_off_t)st.st_size) {
+        fs_mutex_unlock(&desc->lock);
+        errno = EPERM;
+        return -1;
+    }
+    if ((desc->memfd_seals & F_SEAL_SHRINK) != 0 && length < (linux_off_t)st.st_size) {
+        fs_mutex_unlock(&desc->lock);
+        errno = EPERM;
+        return -1;
+    }
+    if ((desc->memfd_seals & (F_SEAL_WRITE | F_SEAL_FUTURE_WRITE)) != 0) {
+        fs_mutex_unlock(&desc->lock);
+        errno = EPERM;
+        return -1;
+    }
+    fs_mutex_unlock(&desc->lock);
+    return 0;
 }
 
 void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file) {

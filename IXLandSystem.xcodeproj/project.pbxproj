@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		03546A15F1A189A7F8418CFD /* mount.c in Sources */ = {isa = PBXBuildFile; fileRef = C741BE27F9BDB9CD9023EF4F /* mount.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_ABI_INCLUDE_ROOT)"; }; };
 		03A76FCCC01827AE23273C39 /* RootfsBootstrapTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 84669BD046B2E072890F45A9 /* RootfsBootstrapTests.m */; };
+		04F79AADF75A1059C2FF7430 /* memfd_host.c in Sources */ = {isa = PBXBuildFile; fileRef = 0A878354EA6C805950B4E72B /* memfd_host.c */; };
 		0B59B8C18B35C87BE0659D6D /* ReadinessTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 3ED2A30FC6E7984CB380A319 /* ReadinessTests.m */; };
 		0BF178D86A3C666E8174EFB1 /* exit.c in Sources */ = {isa = PBXBuildFile; fileRef = 5885A2D3F39790AAC62634D5 /* exit.c */; };
 		1086E084384918CFDB1A2E8C /* PipeTests.m in Sources */ = {isa = PBXBuildFile; fileRef = CA618FEAE8F896CFDE663429 /* PipeTests.m */; };
@@ -125,6 +126,7 @@
 		EAD31A9F0FBB70834677A1B4 /* ProcfsNamespaceTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 609076A6FA0ED286E55F6E97 /* ProcfsNamespaceTests.m */; };
 		EDF4855E5B361A767449505F /* path_host.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = C3EB2A52FF9C382BD464F1DD /* path_host.h */; };
 		EF0C8EAAC745BFABEF5C11CD /* NamespaceTests.m in Sources */ = {isa = PBXBuildFile; fileRef = FA4DF50460C3F73B826F998F /* NamespaceTests.m */; };
+		F6CD3D1C13A0DB0DB86FC220 /* memfd_host.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 44E40B1129F8ED989D3D56E4 /* memfd_host.h */; };
 		F76416F9EEADCF919B8C0FA1 /* NamespaceContract.c in Sources */ = {isa = PBXBuildFile; fileRef = E879B79AB28AE5918F99FAE6 /* NamespaceContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT) -I$(LINUX_UAPI_INCLUDE_ROOT)/uapi"; }; };
 		FFE759728F7B2EC121F2D215 /* sync.c in Sources */ = {isa = PBXBuildFile; fileRef = 5D494D6F83176E636A70E6FF /* sync.c */; };
 /* End PBXBuildFile section */
@@ -154,6 +156,7 @@
 			dstSubfolderSpec = 16;
 			files = (
 				D7962EC64A09FB688BF2714B /* backing_io.h in CopyFiles */,
+				F6CD3D1C13A0DB0DB86FC220 /* memfd_host.h in CopyFiles */,
 				EDF4855E5B361A767449505F /* path_host.h in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -166,6 +169,7 @@
 		042E556F1EAD33852492F525 /* HostTestSupport.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HostTestSupport.h; sourceTree = "<group>"; };
 		0869AF46EE225A3EF40ACA99 /* VFSPathHostBridgeTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = VFSPathHostBridgeTests.m; sourceTree = "<group>"; };
 		08ACBEB768F495F5996FAED4 /* PTYSessionTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PTYSessionTests.m; sourceTree = "<group>"; };
+		0A878354EA6C805950B4E72B /* memfd_host.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = memfd_host.c; sourceTree = "<group>"; };
 		0B9F6B902F768AA6DE216541 /* KernelInitContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = KernelInitContract.c; sourceTree = "<group>"; };
 		103229A6A603567EF2426C03 /* FutexContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FutexContract.h; sourceTree = "<group>"; };
 		109291A8E0DB081C632EA1F4 /* ReadinessContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ReadinessContract.c; sourceTree = "<group>"; };
@@ -199,6 +203,7 @@
 		3ED2A30FC6E7984CB380A319 /* ReadinessTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ReadinessTests.m; sourceTree = "<group>"; };
 		402731ED4153CDE2D282C8C4 /* IXLandSystemHostBridgeTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = IXLandSystemHostBridgeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		43308FAA8FF808B4BF22777C /* ioctl.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ioctl.c; sourceTree = "<group>"; };
+		44E40B1129F8ED989D3D56E4 /* memfd_host.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = memfd_host.h; sourceTree = "<group>"; };
 		459682F08054406508BB6491 /* FutexTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FutexTests.m; sourceTree = "<group>"; };
 		45D5CBDA9FFBBD3019E7C208 /* FcntlTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = FcntlTests.m; sourceTree = "<group>"; };
 		487530C52FF6B5875711C259 /* PtraceContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = PtraceContract.c; sourceTree = "<group>"; };
@@ -365,6 +370,8 @@
 				5FD8D142EC818870892A041C /* backing_paths.m */,
 				BA898A59834C42247E34F3A2 /* epoll_bridge.c */,
 				B814A84B3136F79F9CA46B29 /* errno_host.c */,
+				0A878354EA6C805950B4E72B /* memfd_host.c */,
+				44E40B1129F8ED989D3D56E4 /* memfd_host.h */,
 				24774284A6A0B1B645EDD3FD /* open_flags.c */,
 				9400E47E570892E792DD720A /* path_host.c */,
 				C3EB2A52FF9C382BD464F1DD /* path_host.h */,
@@ -760,6 +767,7 @@
 				D01F8EE6B1FF4C363A19D2AF /* inode.c in Sources */,
 				23F96E17A5FB5F9FF02C47D1 /* ioctl.c in Sources */,
 				29E1C2D21F213D5B2A063AFF /* ixland_observability.c in Sources */,
+				04F79AADF75A1059C2FF7430 /* memfd_host.c in Sources */,
 				BC1D0FD1F164A972ABE63848 /* mm.c in Sources */,
 				03546A15F1A189A7F8418CFD /* mount.c in Sources */,
 				10B126B95667913F860EF403 /* namei.c in Sources */,

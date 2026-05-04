@@ -394,6 +394,12 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
         return -1;
     }
 
+    if (get_fd_is_memfd_impl(entry) &&
+        memfd_write_allowed_entry_impl(entry, get_fd_offset_impl((fd_entry_t *)entry), count) != 0) {
+        put_fd_entry_impl(entry);
+        return -1;
+    }
+
     int real_fd = get_real_fd_impl(entry);
     linux_off_t current_size = host_lseek_impl(real_fd, 0, SEEK_END);
     if (current_size < 0) {
@@ -643,6 +649,11 @@ ssize_t pwrite_impl(int fd, const void *buf, size_t count, linux_off_t offset) {
     if (get_fd_is_synthetic_pty_impl(entry)) {
         put_fd_entry_impl(entry);
         errno = EINVAL;
+        return -1;
+    }
+
+    if (get_fd_is_memfd_impl(entry) && memfd_write_allowed_entry_impl(entry, offset, count) != 0) {
+        put_fd_entry_impl(entry);
         return -1;
     }
 

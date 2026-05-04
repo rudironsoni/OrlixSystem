@@ -8,6 +8,7 @@
 #include <linux/futex.h>
 #include <linux/capability.h>
 #include <linux/elf.h>
+#include <linux/memfd.h>
 #include <linux/mman.h>
 #include <linux/poll.h>
 #include <linux/prctl.h>
@@ -4584,10 +4585,12 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     struct statx stx;
     struct statfs sfs;
     struct statfs fsfs;
+    struct linux_stat memfd_st;
     int fd = -1;
     int outfd = -1;
     int lockfd = -1;
     int dupfd = -1;
+    int memfd = -1;
     int cloexec_fd = 77;
     long ret;
 
@@ -4612,6 +4615,74 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
+
+    memfd = (int)syscall_dispatch_impl(__NR_memfd_create, (long)(uintptr_t)"shell-memfd",
+                                       MFD_CLOEXEC | MFD_ALLOW_SEALING, 0, 0, 0, 0);
+    if (memfd < 0) {
+        errno = (int)-memfd;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, memfd, F_GETFD, 0, 0, 0, 0);
+    if (ret != FD_CLOEXEC) {
+        errno = 102;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, memfd, F_GET_SEALS, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = 103;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_write, memfd, (long)(uintptr_t)payload, 10, 0, 0, 0);
+    if (ret != 10) {
+        errno = 104;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_lseek, memfd, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = 105;
+        goto out;
+    }
+    memset(read_buf, 0, sizeof(read_buf));
+    ret = syscall_dispatch_impl(__NR_read, memfd, (long)(uintptr_t)read_buf, 5, 0, 0, 0);
+    if (ret != 5 || strcmp(read_buf, "hello") != 0) {
+        errno = 106;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_ftruncate, memfd, 1, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = 107;
+        goto out;
+    }
+    memset(&memfd_st, 0, sizeof(memfd_st));
+    ret = syscall_dispatch_impl(__NR_fstat, memfd, (long)(uintptr_t)&memfd_st, 0, 0, 0, 0);
+    if (ret != 0 || (memfd_st.st_mode & S_IFMT) != S_IFREG || memfd_st.st_size != 1) {
+        errno = 108;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, memfd, F_ADD_SEALS,
+                                F_SEAL_GROW | F_SEAL_SEAL, 0, 0, 0);
+    if (ret != 0) {
+        errno = 109;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, memfd, F_GET_SEALS, 0, 0, 0, 0);
+    if (ret != (F_SEAL_GROW | F_SEAL_SEAL)) {
+        errno = 110;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_ftruncate, memfd, 8, 0, 0, 0, 0);
+    if (ret != -EPERM) {
+        errno = 111;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, memfd, F_ADD_SEALS, F_SEAL_WRITE, 0, 0, 0);
+    if (ret != -EPERM) {
+        errno = 112;
+        goto out;
+    }
+    close_if_open(memfd);
+    memfd = -1;
+
     ret = syscall_dispatch_impl(__NR_chdir, (long)(uintptr_t)dir, 0, 0, 0, 0, 0);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
@@ -4907,16 +4978,21 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
     return 0;
 
 out:
+    {
+    int saved_errno = errno;
     syscall_dispatch_impl(__NR_chdir, (long)(uintptr_t)"/", 0, 0, 0, 0, 0);
     close_if_open(fd);
     close_if_open(outfd);
     close_if_open(lockfd);
     close_if_open(dupfd);
+    close_if_open(memfd);
     close_if_open(cloexec_fd);
     unlink_impl(copied);
     unlink_impl(file);
     unlink_impl(renamed);
     rmdir_impl(dir);
+    errno = saved_errno;
+    }
     return -1;
 }
 
@@ -5175,6 +5251,7 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_timerfd_create,
         __NR_timerfd_settime,
         __NR_timerfd_gettime,
+        __NR_memfd_create,
         __NR_execve,
         __NR_wait4,
         __NR_waitid,
@@ -5263,6 +5340,7 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_timerfd_create, SYSCALL_CAPABILITY_READINESS},
         {__NR_timerfd_settime, SYSCALL_CAPABILITY_READINESS},
         {__NR_timerfd_gettime, SYSCALL_CAPABILITY_READINESS},
+        {__NR_memfd_create, SYSCALL_CAPABILITY_FD},
         {__NR_prlimit64, SYSCALL_CAPABILITY_RESOURCE},
     };
     static const struct planned_syscall_gap planned_gaps[] = {

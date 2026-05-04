@@ -267,7 +267,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 276 | `renameat2` | implemented:fd | none |
 | 277 | `seccomp` | kernel-owned missing:unclassified | package |
 | 278 | `getrandom` | implemented:random | none |
-| 279 | `memfd_create` | kernel-owned missing:unclassified | shell |
+| 279 | `memfd_create` | implemented:fd | none |
 | 280 | `bpf` | kernel-owned missing:unclassified | package |
 | 281 | `execveat` | kernel-owned missing:unclassified | shell |
 | 282 | `userfaultfd` | kernel-owned missing:unclassified | package |

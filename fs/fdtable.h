@@ -167,6 +167,7 @@ int timerfd_create_impl(int clockid, int flags);
 int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimerspec *new_value,
                          struct __kernel_itimerspec *old_value);
 int timerfd_gettime_impl(int fd, struct __kernel_itimerspec *curr_value);
+int memfd_create_impl(const char *name, unsigned int flags);
 
 bool get_fd_is_synthetic_dev_impl(void *entry);
 synthetic_dev_node_t get_fd_synthetic_dev_node_impl(void *entry);
@@ -188,6 +189,11 @@ bool get_fd_is_timerfd_impl(void *entry);
 long timerfd_read_entry_impl(void *entry, void *buf, size_t count);
 long timerfd_write_entry_impl(void *entry, const void *buf, size_t count);
 bool timerfd_read_ready_entry_impl(void *entry);
+bool get_fd_is_memfd_impl(void *entry);
+int memfd_get_seals_entry_impl(void *entry);
+int memfd_add_seals_entry_impl(void *entry, int seals);
+int memfd_write_allowed_entry_impl(void *entry, linux_off_t offset, size_t count);
+int memfd_truncate_allowed_entry_impl(void *entry, linux_off_t length);
 
 enum synthetic_proc_file {
     SYNTHETIC_PROC_FILE_NONE = 0,

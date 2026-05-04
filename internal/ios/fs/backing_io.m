@@ -100,7 +100,7 @@ int host_fstat_impl(int fd, struct linux_stat *statbuf) {
         return -host_errno_to_linux_errno(EFAULT);
     }
 
-    ret = syscall(SYS_fstat, fd, &host_stat);
+    ret = syscall(SYS_fstat64, fd, &host_stat);
     if (ret < 0) {
         int host_errno = errno;
         return -host_errno_to_linux_errno(host_errno);

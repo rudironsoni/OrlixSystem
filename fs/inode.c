@@ -316,6 +316,10 @@ int ftruncate_impl(int fd, linux_off_t length) {
         errno = EINVAL;
         return -1;
     }
+    if (get_fd_is_memfd_impl(entry) && memfd_truncate_allowed_entry_impl(entry, length) != 0) {
+        put_fd_entry_impl(entry);
+        return -1;
+    }
     real_fd = get_real_fd_impl(entry);
     put_fd_entry_impl(entry);
     if (real_fd < 0) {

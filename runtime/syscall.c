@@ -237,6 +237,7 @@ extern int timerfd_create_impl(int clockid, int flags);
 extern int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimerspec *new_value,
                                 struct __kernel_itimerspec *old_value);
 extern int timerfd_gettime_impl(int fd, struct __kernel_itimerspec *curr_value);
+extern int memfd_create_impl(const char *name, unsigned int flags);
 extern int mkdirat_impl(int dirfd, const char *pathname, linux_mode_t mode);
 extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
@@ -604,6 +605,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_copy_file_range:
     case __NR_openat2:
     case __NR_utimensat:
+    case __NR_memfd_create:
         return SYSCALL_CAPABILITY_FD;
     case __NR_brk:
     case __NR_mmap:
@@ -807,6 +809,9 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_timerfd_gettime:
         return syscall_result((long)timerfd_gettime_impl((int)arg0,
                                                          (struct __kernel_itimerspec *)(uintptr_t)arg1));
+    case __NR_memfd_create:
+        return syscall_result((long)memfd_create_impl((const char *)(uintptr_t)arg0,
+                                                      (unsigned int)arg1));
     case __NR_fcntl:
         return syscall_result((long)fcntl_impl((int)arg0, (int)arg1, (int)arg2));
     case __NR_flock:
