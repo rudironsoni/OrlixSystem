@@ -55,7 +55,8 @@ static unsigned long clone_namespace_flags(void) {
 
 static unsigned long clone_supported_flags(void) {
     return clone_namespace_flags() | CLONE_FS | CLONE_VM | CLONE_SIGHAND | CLONE_THREAD |
-           CLONE_PARENT_SETTID | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID;
+           CLONE_PARENT_SETTID | CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID |
+           CLONE_INTO_CGROUP;
 }
 
 static int validate_clone_namespace_flags(uint64_t flags) {
@@ -138,6 +139,62 @@ static int task_apply_clone_namespace_flags(struct task_struct *task, uint64_t f
     }
 
     return 0;
+}
+
+static int clone3_resolve_cgroup_target(int fd, char *cgroup_path, size_t cgroup_path_len) {
+    fd_entry_t *entry;
+    char virtual_path[MAX_PATH];
+    synthetic_dir_class_t dir_class;
+    enum cgroupfs_node_type type = CGROUPFS_NODE_NONE;
+    int ret;
+    int saved_errno;
+
+    if (!cgroup_path || cgroup_path_len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    entry = get_fd_entry_impl(fd);
+    if (!entry) {
+        errno = EBADF;
+        return -1;
+    }
+    if (!get_fd_is_synthetic_dir_impl(entry)) {
+        put_fd_entry_impl(entry);
+        errno = ENOTDIR;
+        return -1;
+    }
+    dir_class = get_fd_synthetic_dir_class_impl(entry);
+    ret = get_fd_path_impl(entry, virtual_path, sizeof(virtual_path));
+    saved_errno = errno;
+    put_fd_entry_impl(entry);
+    errno = saved_errno;
+    if (ret != 0) {
+        errno = ENOENT;
+        return -1;
+    }
+    if (dir_class != SYNTHETIC_DIR_CGROUPFS) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    if (cgroupfs_resolve_path(virtual_path, cgroup_path, cgroup_path_len, &type) != 0) {
+        errno = ENOENT;
+        return -1;
+    }
+    if (type != CGROUPFS_NODE_DIR) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    return 0;
+}
+
+static void clone3_release_child_failure(struct task_struct *parent, struct task_struct *child) {
+    if (!parent || !child) {
+        return;
+    }
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    free_task(child);
 }
 
 /* Child thread entry point */
@@ -380,7 +437,10 @@ int32_t clone_impl(uint64_t flags) {
 
 int32_t clone3_impl(const struct clone_args *args, size_t size) {
     int32_t child_pid;
+    struct task_struct *parent;
     struct task_struct *child;
+    char cgroup_path[MAX_PATH];
+    bool use_clone_into_cgroup = false;
 
     if (!args) {
         errno = EFAULT;
@@ -394,11 +454,25 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
         errno = EINVAL;
         return -1;
     }
-    if (args->set_tid || args->set_tid_size || args->cgroup || args->pidfd) {
+    if (args->set_tid || args->set_tid_size || args->pidfd) {
         errno = ENOSYS;
         return -1;
     }
+    if ((args->flags & CLONE_INTO_CGROUP) != 0) {
+        if (clone3_resolve_cgroup_target((int)args->cgroup, cgroup_path, sizeof(cgroup_path)) != 0) {
+            return -1;
+        }
+        use_clone_into_cgroup = true;
+    } else if (args->cgroup != 0) {
+        errno = EINVAL;
+        return -1;
+    }
 
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
     child_pid = clone_impl(args->flags);
     if (child_pid < 0) {
         return -1;
@@ -408,11 +482,19 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
         errno = ESRCH;
         return -1;
     }
+    if (use_clone_into_cgroup) {
+        int ret = cgroup_attach_task_path(child, cgroup_path);
+        if (ret != 0) {
+            clone3_release_child_failure(parent, child);
+            errno = -ret;
+            return -1;
+        }
+    }
 
     if ((args->flags & CLONE_PARENT_SETTID) != 0) {
         int *parent_tid = (int *)(uintptr_t)args->parent_tid;
         if (!parent_tid) {
-            free_task(child);
+            clone3_release_child_failure(parent, child);
             errno = EFAULT;
             return -1;
         }
@@ -421,7 +503,7 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
     if ((args->flags & CLONE_CHILD_SETTID) != 0) {
         int *child_tid = (int *)(uintptr_t)args->child_tid;
         if (!child_tid) {
-            free_task(child);
+            clone3_release_child_failure(parent, child);
             errno = EFAULT;
             return -1;
         }
@@ -429,7 +511,7 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
     }
     if ((args->flags & CLONE_CHILD_CLEARTID) != 0) {
         if (!args->child_tid) {
-            free_task(child);
+            clone3_release_child_failure(parent, child);
             errno = EFAULT;
             return -1;
         }

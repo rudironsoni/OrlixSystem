@@ -4,6 +4,7 @@
 #include <linux/fcntl.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
+#include <asm/unistd.h>
 #ifdef SIGCHLD
 #undef SIGCHLD
 #endif
@@ -18,6 +19,7 @@
 #include "kernel/cgroup.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
+#include "runtime/syscall.h"
 
 extern int open_impl(const char *pathname, int flags, unsigned int mode);
 extern long read_impl(int fd, void *buf, unsigned long count);
@@ -972,4 +974,64 @@ out:
         errno = saved_errno;
     }
     return ret;
+}
+
+int cgroup_contract_clone3_into_cgroup_moves_child(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct clone_args args;
+    const char *group_path = "/sys/fs/cgroup/clone3-workers";
+    int cgroup_fd = -1;
+    long ret;
+    int result = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+    if (cgroup_contract_restore_root() != 0) {
+        return -1;
+    }
+    if (cgroup_contract_ignore_exists(mkdir_impl(group_path, 0755)) != 0) {
+        goto out;
+    }
+    cgroup_fd = open_impl(group_path, O_RDONLY | O_DIRECTORY, 0);
+    if (cgroup_fd < 0) {
+        goto out;
+    }
+
+    memset(&args, 0, sizeof(args));
+    args.flags = CLONE_INTO_CGROUP;
+    args.cgroup = (uint64_t)cgroup_fd;
+    ret = syscall_dispatch_impl(__NR_clone3, (long)(uintptr_t)&args, sizeof(args), 0, 0, 0, 0);
+    if (ret < 0) {
+        errno = (int)-ret;
+        goto out;
+    }
+    child = task_lookup((int32_t)ret);
+    if (!child) {
+        errno = ESRCH;
+        goto out;
+    }
+    if (strcmp(task_cgroup_path(child), "/clone3-workers") != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+    result = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (child) {
+            task_unlink_child_impl(parent, child);
+            free_task(child);
+            free_task(child);
+        }
+        if (cgroup_fd >= 0) {
+            close_impl(cgroup_fd);
+        }
+        rmdir_impl(group_path);
+        errno = saved_errno;
+    }
+    return result;
 }

@@ -117,4 +117,9 @@
                    @"reaped task should be removed from cgroup.procs and pids.current, errno %d", errno);
 }
 
+- (void)testClone3IntoCgroupMovesChild {
+    XCTAssertEqual(cgroup_contract_clone3_into_cgroup_moves_child(), 0,
+                   @"clone3 with CLONE_INTO_CGROUP should place the child into the target cgroup, errno %d", errno);
+}
+
 @end
