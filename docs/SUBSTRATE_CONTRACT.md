@@ -36,7 +36,7 @@ Vendored Linux 6.12 arm64 exported UAPI is the only Linux ABI truth in this repo
 
 Location:
 
-- `third_party/linux-uapi/6.12/arm64/include`
+- `third_party/linux/uapi/6.12/arm64/include`
 
 Allowed vendored include forms:
 
@@ -46,7 +46,7 @@ Allowed vendored include forms:
 
 Forbidden vendored include forms:
 
-- includes containing `third_party/linux-uapi`
+- includes containing `third_party/linux/uapi`
 - includes containing `6.12`
 - includes containing `arm64`
 - `../` traversal into vendored headers

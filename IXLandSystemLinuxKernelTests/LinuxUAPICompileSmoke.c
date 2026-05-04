@@ -21,7 +21,7 @@
  *   - pthread.h
  *   - kernel/task.h or kernel/signal.h (private headers)
  *   - Darwin signal/wait/unistd headers
- *   - path traversal into third_party/linux-uapi
+ *   - path traversal into third_party/linux/uapi
  */
 
 #include <linux/wait.h>

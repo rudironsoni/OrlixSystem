@@ -585,14 +585,14 @@ echo "   ✓ No host event ownership vocabulary"
 
 echo ""
 echo "=== Check 36: Linux ABI supplement path mirrors UAPI layout ==="
-BAD_LINUX_ABI_PATH=$(find third_party/linux-abi -path '*/generated/*' -print 2>/dev/null || true)
+BAD_LINUX_ABI_PATH=$(find third_party/linux/abi -path '*/generated/*' -print 2>/dev/null || true)
 if [ -n "$BAD_LINUX_ABI_PATH" ]; then
     echo "FAIL: Linux ABI supplement must not use generated path segments:"
     echo "$BAD_LINUX_ABI_PATH"
     exit 1
 fi
-if [ -d third_party/linux-abi ] && [ ! -d third_party/linux-abi/6.12/arm64/include ]; then
-    echo "FAIL: Linux ABI supplement must mirror third_party/linux-uapi/6.12/arm64/include"
+if [ -d third_party/linux/abi ] && [ ! -d third_party/linux/abi/6.12/arm64/include ]; then
+    echo "FAIL: Linux ABI supplement must mirror third_party/linux/uapi/6.12/arm64/include"
     exit 1
 fi
 echo "   ✓ Linux ABI supplement path mirrors UAPI layout"

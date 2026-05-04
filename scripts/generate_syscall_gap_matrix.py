@@ -86,7 +86,7 @@ def repo_root() -> Path:
 
 
 def syscall_macros(root: Path) -> list[tuple[str, int]]:
-    include = root / "third_party/linux-uapi/6.12/arm64/include"
+    include = root / "third_party/linux/uapi/6.12/arm64/include"
     output = subprocess.check_output(
         [
             "clang",

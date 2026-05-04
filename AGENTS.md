@@ -119,7 +119,7 @@ IXLandSystem ownership:
 - syscall/runtime ABI entry points
 - tasks, signals, wait, fdtable, VFS, mounts, pipes, PTY, poll/select/epoll, procfs/devfs, credentials, namespaces, cgroups, seccomp, ptrace, netlink
 - vendored Linux UAPI consumption
-- generated Linux-source ABI supplements under `third_party/linux-abi/6.12/arm64/include` only when the needed Linux-source ABI fragment is missing from vendored UAPI and used by IXLandSystem
+- generated Linux-source ABI supplements under `third_party/linux/abi/6.12/arm64/include` only when the needed Linux-source ABI fragment is missing from vendored UAPI and used by IXLandSystem
 
 IXLandMLibC ownership:
 - libc ABI headers and typedef surfaces

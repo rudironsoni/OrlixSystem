@@ -16,7 +16,7 @@ fi
 linux_src=$1
 abi_version=6.12
 abi_arch=arm64
-out_root="third_party/linux-abi/${abi_version}/${abi_arch}/include"
+out_root="third_party/linux/abi/${abi_version}/${abi_arch}/include"
 commit=$(git -C "$linux_src" rev-parse HEAD)
 tag=$(git -C "$linux_src" describe --tags --exact-match HEAD 2>/dev/null || true)
 generated_files=()
@@ -177,7 +177,7 @@ validate_mlibc_surface_manifest() {
     local header
     local mapped_path
     local missing=0
-    local uapi_root="third_party/linux-uapi/${abi_version}/${abi_arch}/include"
+    local uapi_root="third_party/linux/uapi/${abi_version}/${abi_arch}/include"
 
     for header in "${mlibc_linux_surface_headers[@]}"; do
         if mapped_path=$(spec_value_for_key "$header" "${uapi_surface_specs[@]}"); then
