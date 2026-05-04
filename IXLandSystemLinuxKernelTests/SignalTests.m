@@ -21,6 +21,8 @@
 #include "kernel/signal.h"
 #include "kernel/task.h"
 
+extern int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void);
+
 /* Declare library init function */
 extern int library_init(const void *config);
 extern int library_is_initialized(void);
@@ -351,6 +353,13 @@ extern int library_is_initialized(void);
 
     // Restore
     do_sigprocmask(2, &oldmask, NULL);
+}
+
+#pragma mark - H. pidfd Signal Syscall Contract
+
+- (void)testPidfdSendSignalUsesProcessDirectedLinuxSemantics {
+    XCTAssertEqual(signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(), 0,
+                   @"errno %d", errno);
 }
 
 @end

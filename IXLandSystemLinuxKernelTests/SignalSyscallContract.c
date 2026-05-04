@@ -5,6 +5,7 @@
 #include <asm/ucontext.h>
 #include <asm/unistd.h>
 #include <linux/mman.h>
+#include <linux/sched.h>
 #include <linux/signal.h>
 
 #include <errno.h>
@@ -14,6 +15,7 @@
 
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
+#include "kernel/cred_internal.h"
 #include "kernel/task.h"
 
 extern void free(void *);
@@ -101,6 +103,141 @@ static struct signal_mask_bits signal_contract_mask_all_except(int signo) {
         mask.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
     }
     return mask;
+}
+
+static void signal_contract_set_task_identity(struct task_struct *task, uint32_t uid) {
+    if (!task || !task->cred) {
+        return;
+    }
+
+    task->cred->uid = uid;
+    task->cred->euid = uid;
+    task->cred->suid = uid;
+    task->cred->fsuid = uid;
+    task->cred->gid = uid;
+    task->cred->egid = uid;
+    task->cred->sgid = uid;
+    task->cred->fsgid = uid;
+
+    if (uid != 0) {
+        task->cred->cap_permitted = 0;
+        task->cred->cap_effective = 0;
+        task->cred->cap_inheritable = 0;
+        task->cred->cap_ambient = 0;
+    }
+}
+
+int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct task_struct *thread = NULL;
+    struct signal_mask_bits saved_parent_blocked;
+    long ret;
+    int pidfd = -1;
+    int thread_pidfd = -1;
+    const int signo = SIGUSR1;
+    const int idx = (signo - 1) >> 6;
+    const uint64_t bit = 1ULL << ((signo - 1) & 63);
+
+    if (!parent || !parent->signal) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    saved_parent_blocked = parent->signal->blocked;
+
+    child = task_create_child_impl(parent);
+    if (!child || !child->signal) {
+        errno = child ? EPROTO : errno;
+        goto fail;
+    }
+
+    child->signal->blocked.sig[idx] |= bit;
+    signal_contract_clear_queued_signal(child, signo);
+    pidfd = pidfd_open_impl(child->pid, 0);
+    if (pidfd < 0) {
+        goto fail;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, signo, 0, 0, 0, 0);
+    if (ret != 0 ||
+        child->thread_pending_signals != 0 ||
+        (child->signal->shared_pending.sig[idx] & bit) == 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, -1, signo, 0, 0, 0, 0);
+    if (ret != -EBADF) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    signal_contract_clear_queued_signal(child, signo);
+    signal_contract_set_task_identity(child, 2000);
+    signal_contract_set_task_identity(parent, 1000);
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, signo, 0, 0, 0, 0);
+    if (ret != -EPERM) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    cred_reset_to_defaults();
+    saved_parent_blocked = parent->signal->blocked;
+
+    thread = task_create_child_with_flags_impl(parent, CLONE_THREAD);
+    if (!thread || !thread->signal) {
+        errno = thread ? EPROTO : errno;
+        goto fail;
+    }
+
+    parent->signal->blocked.sig[idx] |= bit;
+    thread->signal->blocked.sig[idx] |= bit;
+    signal_contract_clear_queued_signal(thread, signo);
+    signal_contract_clear_queued_signal(parent, signo);
+    thread_pidfd = pidfd_open_impl(thread->pid, 0);
+    if (thread_pidfd < 0) {
+        goto fail;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, thread_pidfd, signo, 0, 0, 0, 0);
+    if (ret != 0 ||
+        thread->thread_pending_signals != 0 ||
+        (thread->signal->shared_pending.sig[idx] & bit) == 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    close_impl(thread_pidfd);
+    close_impl(pidfd);
+    signal_contract_clear_queued_signal(thread, signo);
+    signal_contract_clear_queued_signal(child, signo);
+    signal_contract_clear_queued_signal(parent, signo);
+    parent->signal->blocked = saved_parent_blocked;
+    free_task(thread);
+    free_task(child);
+    cred_reset_to_defaults();
+    return 0;
+
+fail:
+    if (thread_pidfd >= 0) {
+        close_impl(thread_pidfd);
+    }
+    if (pidfd >= 0) {
+        close_impl(pidfd);
+    }
+    if (thread) {
+        signal_contract_clear_queued_signal(thread, signo);
+        free_task(thread);
+    }
+    if (child) {
+        signal_contract_clear_queued_signal(child, signo);
+        free_task(child);
+    }
+    signal_contract_clear_queued_signal(parent, signo);
+    parent->signal->blocked = saved_parent_blocked;
+    cred_reset_to_defaults();
+    return -1;
 }
 
 int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void) {

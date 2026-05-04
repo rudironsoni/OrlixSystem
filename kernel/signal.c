@@ -133,6 +133,7 @@
 #undef SIG_ERR
 #endif
 #include <linux/types.h>
+#include <linux/capability.h>
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
@@ -156,6 +157,7 @@ typedef struct {
 #undef sigset_t
 
 #include "signal.h"
+#include "cred_internal.h"
 #include "ptrace.h"
 #include "task.h"
 #include "wait_queue.h"
@@ -418,6 +420,28 @@ static int apply_signal_to_task(struct task_struct *task, int32_t sig, int32_t c
     return apply_signal_to_task_pending(task, sig, code, addr, false);
 }
 
+static bool signal_sender_may_target(const struct task_struct *sender,
+                                     const struct task_struct *target) {
+    uint64_t target_user_ns_id;
+
+    if (!sender || !target || !sender->cred || !target->cred) {
+        return false;
+    }
+    if (sender->pid == target->pid) {
+        return true;
+    }
+
+    target_user_ns_id = cred_user_namespace_id(target->cred);
+    if (cred_has_cap_in_user_namespace(sender->cred, target_user_ns_id, CAP_KILL)) {
+        return true;
+    }
+
+    return sender->cred->euid == target->cred->uid ||
+           sender->cred->euid == target->cred->suid ||
+           sender->cred->uid == target->cred->uid ||
+           sender->cred->uid == target->cred->suid;
+}
+
 int signal_generate_task(struct task_struct *target, int32_t sig) {
     return signal_generate_task_info(target, sig, 0, 0);
 }
@@ -467,6 +491,28 @@ int signal_generate_process(struct task_struct *target, int32_t sig) {
     result = apply_signal_to_task_pending(selected, sig, 0, 0, true);
     kernel_mutex_unlock(&selected->lock);
     return result;
+}
+
+int signal_pidfd_send(struct task_struct *target, int32_t sig) {
+    struct task_struct *sender = get_current();
+
+    if (!target || sig < 0 || sig > KERNEL_SIG_NUM) {
+        return -EINVAL;
+    }
+    if (!sender) {
+        return -ESRCH;
+    }
+    if (atomic_load(&target->exited)) {
+        return -ESRCH;
+    }
+    if (!signal_sender_may_target(sender, target)) {
+        return -EPERM;
+    }
+    if (sig == 0) {
+        return 0;
+    }
+
+    return signal_generate_process(target, sig);
 }
 
 int signal_generate_pgrp(int32_t pgid, int32_t sig) {
