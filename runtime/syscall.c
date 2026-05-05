@@ -192,6 +192,11 @@
 #include "../kernel/uts.h"
 #include "../kernel/wait.h"
 
+extern int mount_impl(const char *source, const char *target,
+                      const char *filesystemtype, unsigned long mountflags,
+                      const void *data);
+extern int umount2_impl(const char *target, int flags);
+
 extern int openat_impl(int dirfd, const char *pathname, int flags, linux_mode_t mode);
 extern int socket(int domain, int type, int protocol);
 extern int socketpair(int domain, int type, int protocol, int sv[2]);
@@ -783,6 +788,8 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_open_tree:
     case __NR_move_mount:
     case __NR_pivot_root:
+    case __NR_mount:
+    case __NR_umount2:
     case __NR_listmount:
     case __NR_statmount:
         return SYSCALL_CAPABILITY_MOUNT;
@@ -1386,6 +1393,14 @@ static long syscall_dispatch_inner_impl(long number,
                                                   (unsigned int)arg2,
                                                   (struct mount_attr *)(uintptr_t)arg3,
                                                   (size_t)arg4));
+    case __NR_mount:
+        return syscall_result((long)mount_impl((const char *)(uintptr_t)arg0,
+                                              (const char *)(uintptr_t)arg1,
+                                              (const char *)(uintptr_t)arg2,
+                                              (unsigned long)arg3,
+                                              (const void *)(uintptr_t)arg4));
+    case __NR_umount2:
+        return syscall_result((long)umount2_impl((const char *)(uintptr_t)arg0, (int)arg1));
     case __NR_open_tree:
         return syscall_result((long)open_tree((int)arg0, (const char *)(uintptr_t)arg1,
                                               (unsigned int)arg2));

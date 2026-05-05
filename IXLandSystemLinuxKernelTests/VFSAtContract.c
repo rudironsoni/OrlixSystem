@@ -1376,6 +1376,58 @@ int vfs_contract_bind_mount_rejects_non_bind_mount(void) {
     return 0;
 }
 
+int vfs_contract_mount_syscall_bind_mount_and_umount2_work(void) {
+    int ret = -1;
+    long sret;
+
+    vfs_contract_cleanup_mount_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-syscall-bind-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-syscall-bind-target", 0700)) != 0) {
+        goto out;
+    }
+    if (vfs_contract_write_file("/tmp/vfs-syscall-bind-source/file", "source") != 0 ||
+        vfs_contract_write_file("/tmp/vfs-syscall-bind-target/file", "target") != 0) {
+        goto out;
+    }
+
+    /* Prove syscall-facing mount() routes to the Linux-owned mount stack (not ENOSYS). */
+    sret = syscall_dispatch_impl(__NR_mount,
+                                 (long)(uintptr_t)"/tmp/vfs-syscall-bind-source",
+                                 (long)(uintptr_t)"/tmp/vfs-syscall-bind-target",
+                                 0,
+                                 (long)MS_BIND,
+                                 0,
+                                 0);
+    if (sret != 0) {
+        errno = sret < 0 ? (int)-sret : EPROTO;
+        goto out;
+    }
+
+    if (vfs_contract_read_file_exact("/tmp/vfs-syscall-bind-target/file", "source") != 0) {
+        goto out;
+    }
+
+    /* Prove syscall-facing umount2() routes to vfs_umount* variants. */
+    sret = syscall_dispatch_impl(__NR_umount2,
+                                 (long)(uintptr_t)"/tmp/vfs-syscall-bind-target",
+                                 0,
+                                 0, 0, 0, 0);
+    if (sret != 0) {
+        errno = sret < 0 ? (int)-sret : EPROTO;
+        goto out;
+    }
+
+    if (vfs_contract_read_file_exact("/tmp/vfs-syscall-bind-target/file", "target") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    vfs_contract_cleanup_mount_paths();
+    return ret;
+}
+
 int vfs_contract_mount_namespace_shared_across_task_dup(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child = NULL;
