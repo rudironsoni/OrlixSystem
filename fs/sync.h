@@ -9,12 +9,14 @@ extern "C" {
 #define FS_COND_STORAGE_SIZE 64
 
 typedef struct fs_mutex {
-    char storage[FS_MUTEX_STORAGE_SIZE];
+    /* Storage is cast to pthread types in internal/ios (Darwin bridge). Ensure alignment
+     * matches pthread requirements (>= 8) to avoid misaligned atomic accesses. */
+    _Alignas(8) char storage[FS_MUTEX_STORAGE_SIZE];
     int initialized;
 } fs_mutex_t;
 
 typedef struct fs_cond {
-    char storage[FS_COND_STORAGE_SIZE];
+    _Alignas(8) char storage[FS_COND_STORAGE_SIZE];
     int initialized;
 } fs_cond_t;
 

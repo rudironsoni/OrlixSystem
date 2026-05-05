@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "../../../kernel/sync.h"
+#include "../../../kernel/task.h"
 
 /* ============================================================================
  * MUTEX - Darwin pthread implementation
@@ -213,7 +214,10 @@ static void *kernel_thread_trampoline(void *arg) {
     void *(*start_routine)(void *) = args[0];
     void *real_arg = args[1];
     free(arg);
-    return start_routine(real_arg);
+    void *ret = start_routine(real_arg);
+    /* Drop the per-thread "current task" reference if one was installed. */
+    set_current(NULL);
+    return ret;
 }
 
 int kernel_thread_create(kernel_thread_t *thread, const kernel_thread_attr_t *attr,

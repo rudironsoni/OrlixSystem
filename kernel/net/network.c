@@ -30,7 +30,9 @@ static int socket_flags_from_type(int type, int *base_type_out, int *fd_flags_ou
     base_type = type;
 
     *base_type_out = base_type;
-    *fd_flags_out = fd_flags;
+    /* Virtual sockets are full-duplex; model them as read/write at the fd layer
+     * so generic read/write paths accept the descriptor. */
+    *fd_flags_out = O_RDWR | fd_flags;
     return 0;
 }
 

@@ -1216,6 +1216,12 @@ int alloc_fd_impl(void) {
             fd_table[i].used = true;
             fd_table[i].desc = NULL;
             fd_table[i].fd_flags = 0;
+            /* Reserve the fd in the current task immediately to prevent another
+             * thread from reclaiming it as "unused" before it is initialized
+             * with a description. This mirrors the Linux idea that a newly
+             * allocated fd becomes part of the task's table atomically with
+             * allocation. */
+            fdtable_sync_task_file_locked(i, &fd_table[i]);
             fs_mutex_unlock(&fd_table_lock);
             return i;
         }

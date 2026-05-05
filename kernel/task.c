@@ -177,10 +177,24 @@ struct task_struct *get_current(void) {
 }
 
 void set_current(struct task_struct *task) {
-    current_task = task;
-    if (task && task->cred) {
-        set_current_cred(task->cred);
+    if (task == current_task) {
+        return;
     }
+
+    /* Hold a task reference for as long as it is installed as the current task
+     * on a host thread. This prevents other threads from freeing a task while
+     * it's still in active use (e.g. readiness wait paths using task->wait_lock).
+     *
+     * The reference is released when switching away, and on thread exit via the
+     * kernel thread trampoline. */
+    if (task) {
+        atomic_fetch_add(&task->refs, 1);
+    }
+    if (current_task) {
+        free_task(current_task);
+    }
+    current_task = task;
+    set_current_cred(task ? task->cred : NULL);
 }
 
 static void task_clear_exec_strings(struct task_struct *task) {
@@ -1517,6 +1531,8 @@ int task_init(void) {
     /* Fast path: already initialized */
     if (atomic_load(&task_initialized) && init_task) {
         if (!current_task) {
+            /* Hold a reference for the thread-local current task binding. */
+            atomic_fetch_add(&init_task->refs, 1);
             current_task = init_task;
             fdtable_sync_current_task_from_static_impl();
         }
@@ -1567,6 +1583,8 @@ int task_init(void) {
             return -1;
         }
 
+        /* Hold a reference for the thread-local current task binding. */
+        atomic_fetch_add(&init_task->refs, 1);
         current_task = init_task;
         fdtable_sync_current_task_from_static_impl();
         atomic_store(&task_initialized, true);
@@ -1577,12 +1595,21 @@ int task_init(void) {
 }
 
 void task_deinit(void) {
+    /* Drop the thread-local current-task reference (if any) so teardown can
+     * actually free tasks like init_task. current_task is TLS but shutdown runs
+     * on a specific host thread; we must release that thread's reference. */
+    if (current_task) {
+        struct task_struct *task = current_task;
+        current_task = NULL;
+        set_current_cred(NULL);
+        free_task(task);
+    }
     if (init_task) {
-        free_task(init_task);
+        struct task_struct *task = init_task;
         init_task = NULL;
+        free_task(task);
     }
     cgroup_deinit();
-    current_task = NULL;
     atomic_store(&task_boot_time_ns, 0);
     atomic_store(&task_initialized, false);
 }

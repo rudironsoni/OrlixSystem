@@ -139,6 +139,9 @@ int start_kernel(void) {
 
     /* Fast path: already booted */
     if (atomic_load(&kernel_booted) && atomic_load(&library_initialized)) {
+        /* Ensure the calling host thread has a current task bound. The kernel
+         * boot state is global, but current-task binding is per host thread. */
+        (void)task_init();
         return 0;
     }
 

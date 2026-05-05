@@ -18,32 +18,34 @@ extern "C" {
 #define KERNEL_COND_WAIT_TIMED_OUT 1
 
 typedef struct kernel_mutex {
-    char storage[KERNEL_MUTEX_STORAGE_SIZE];
+    /* Storage is cast to pthread types in internal/ios (Darwin bridge). Ensure alignment
+     * matches pthread requirements (>= 8) to avoid misaligned atomic accesses. */
+    _Alignas(8) char storage[KERNEL_MUTEX_STORAGE_SIZE];
     int initialized;
 } kernel_mutex_t;
 
 typedef struct kernel_cond {
-    char storage[KERNEL_COND_STORAGE_SIZE];
+    _Alignas(8) char storage[KERNEL_COND_STORAGE_SIZE];
     int initialized;
 } kernel_cond_t;
 
 typedef struct kernel_thread {
-    char storage[KERNEL_THREAD_STORAGE_SIZE];
+    _Alignas(8) char storage[KERNEL_THREAD_STORAGE_SIZE];
     int initialized;
 } kernel_thread_t;
 
 typedef struct kernel_thread_attr {
-    char storage[KERNEL_THREAD_ATTR_STORAGE_SIZE];
+    _Alignas(8) char storage[KERNEL_THREAD_ATTR_STORAGE_SIZE];
     int initialized;
 } kernel_thread_attr_t;
 
 typedef struct kernel_once {
-    char storage[KERNEL_ONCE_STORAGE_SIZE];
+    _Alignas(8) char storage[KERNEL_ONCE_STORAGE_SIZE];
     int initialized;
 } kernel_once_t;
 
 typedef struct kernel_sigset {
-    char storage[KERNEL_SIGSET_STORAGE_SIZE];
+    _Alignas(8) char storage[KERNEL_SIGSET_STORAGE_SIZE];
     int initialized;
 } kernel_sigset_t;
 
