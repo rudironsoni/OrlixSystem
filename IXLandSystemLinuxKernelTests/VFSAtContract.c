@@ -3062,6 +3062,51 @@ out:
     return ret;
 }
 
+int vfs_contract_umount2_syscall_detach_detaches_busy_mount_from_namespace(void) {
+    int fd = -1;
+    int ret = -1;
+    long sret;
+
+    vfs_contract_cleanup_mount_namespace_paths();
+    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-source", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-source/dir", 0700)) != 0 ||
+        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0 ||
+        vfs_contract_write_file("/tmp/vfs-mntns-source/dir/file", "detach") != 0 ||
+        mount("/tmp/vfs-mntns-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    fd = open_impl("/tmp/vfs-mntns-target/dir/file", O_RDONLY, 0);
+    if (fd < 0) {
+        goto out;
+    }
+
+    sret = syscall_dispatch_impl(__NR_umount2, (long)(uintptr_t)"/tmp/vfs-mntns-target",
+                                 (long)MNT_DETACH, 0, 0, 0, 0);
+    if (sret != 0 ||
+        open_impl("/tmp/vfs-mntns-target/dir/file", O_RDONLY, 0) != -1 ||
+        errno != ENOENT) {
+        errno = sret < 0 ? (int)-sret : ENODATA;
+        goto out;
+    }
+    if (vfs_detached_mount_ref_count() == 0) {
+        errno = ENOMSG;
+        goto out;
+    }
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        if (fd >= 0) {
+            close_impl(fd);
+        }
+        vfs_contract_cleanup_mount_namespace_paths();
+        vfs_reap_detached_mount_refs();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_umount2_rejects_unused_linux_umount_flag(void) {
     int ret = -1;
 
