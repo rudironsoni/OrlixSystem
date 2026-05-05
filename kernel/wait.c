@@ -6,6 +6,7 @@
 
 #include <linux/types.h>
 #include <asm/posix_types.h>
+#include <linux/sched.h>
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
@@ -115,6 +116,10 @@ __kernel_pid_t waitpid_impl(__kernel_pid_t pid, int *wstatus, int options) {
 
         child = parent->children;
         while (child) {
+            if ((child->clone_flags & CLONE_THREAD) != 0) {
+                child = child->next_sibling;
+                continue;
+            }
             if (wait_child_matches_selector(parent, child, pid)) {
                 matched_any_child = true;
                 report_kind = wait_child_report_kind(child, options);
