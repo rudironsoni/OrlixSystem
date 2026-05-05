@@ -88,6 +88,7 @@ bin/ixland-cc
 
 # Git worktrees (local development only)
 .worktrees/
+.worktree/
 
 # Backup files
 .old-backup/
