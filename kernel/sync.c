@@ -49,14 +49,11 @@ __attribute__((visibility("default"))) int futex(int *uaddr, int futex_op, int v
 const struct timespec *timeout, int *uaddr2, int val3) {
 int timeout_ms;
 
-(void)uaddr2;
-(void)val3;
-
 timeout_ms = futex_timeout_ms(timeout);
 if (timeout_ms == -2) {
 return -1;
 }
-return futex_op_impl(uaddr, futex_op, val, timeout_ms);
+return futex_op_impl(uaddr, futex_op, val, timeout_ms, uaddr2, val3);
 }
 
 __attribute__((visibility("default"))) int set_robust_list(void *head, unsigned long len) {

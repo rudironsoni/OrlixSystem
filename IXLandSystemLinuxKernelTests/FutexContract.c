@@ -40,6 +40,18 @@ struct futex_wait_thread {
     struct task_struct *task;
 };
 
+struct futex_wait_op_thread {
+    int *uaddr;
+    int op;
+    int val;
+    struct timespec timeout;
+    int *uaddr2;
+    int val3;
+    atomic_int ready;
+    int rc;
+    int saved_errno;
+};
+
 static void futex_clear_pending_signal(struct task_struct *task, int sig) {
     int32_t dequeued = 0;
 
@@ -75,6 +87,15 @@ static void *futex_wait_thread_main(void *arg) {
     }
     atomic_store(&ctx->ready, 1);
     ctx->rc = futex(ctx->word, FUTEX_WAIT_PRIVATE, 0, &timeout, NULL, 0);
+    ctx->saved_errno = errno;
+    return NULL;
+}
+
+static void *futex_wait_op_thread_main(void *arg) {
+    struct futex_wait_op_thread *ctx = (struct futex_wait_op_thread *)arg;
+
+    atomic_store(&ctx->ready, 1);
+    ctx->rc = futex(ctx->uaddr, ctx->op, ctx->val, &ctx->timeout, ctx->uaddr2, ctx->val3);
     ctx->saved_errno = errno;
     return NULL;
 }
@@ -147,6 +168,131 @@ int futex_contract_wake_releases_waiter(void) {
     }
     pthread_join(thread, NULL);
     if (ret != 1 || ctx.rc != 0 || ctx.saved_errno != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
+int futex_contract_wake_bitset_only_wakes_matching_waiter(void) {
+    pthread_t t1;
+    pthread_t t2;
+    struct futex_wait_op_thread w1;
+    struct futex_wait_op_thread w2;
+    int word = 0;
+    long ret;
+
+    memset(&w1, 0, sizeof(w1));
+    memset(&w2, 0, sizeof(w2));
+
+    w1.uaddr = &word;
+    w1.op = FUTEX_WAIT_BITSET_PRIVATE;
+    w1.val = 0;
+    w1.timeout.tv_sec = 0;
+    w1.timeout.tv_nsec = 200000000; /* 200ms */
+    w1.uaddr2 = NULL;
+    w1.val3 = 0x00000001;
+    atomic_init(&w1.ready, 0);
+    w1.rc = -1;
+    w1.saved_errno = 0;
+
+    w2.uaddr = &word;
+    w2.op = FUTEX_WAIT_BITSET_PRIVATE;
+    w2.val = 0;
+    w2.timeout.tv_sec = 0;
+    w2.timeout.tv_nsec = 200000000; /* 200ms */
+    w2.uaddr2 = NULL;
+    w2.val3 = 0x00000002;
+    atomic_init(&w2.ready, 0);
+    w2.rc = -1;
+    w2.saved_errno = 0;
+
+    if (pthread_create(&t1, NULL, futex_wait_op_thread_main, &w1) != 0) {
+        errno = ECHILD;
+        return -1;
+    }
+    if (pthread_create(&t2, NULL, futex_wait_op_thread_main, &w2) != 0) {
+        pthread_join(t1, NULL);
+        errno = ECHILD;
+        return -1;
+    }
+    while (atomic_load(&w1.ready) == 0 || atomic_load(&w2.ready) == 0) {
+        /* spin */
+    }
+
+    ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word,
+                                FUTEX_WAKE_BITSET_PRIVATE, 1, 0,
+                                0, 0x00000001);
+
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+
+    if (ret != 1) {
+        errno = EPROTO;
+        return -1;
+    }
+
+    /* exactly one waiter should have been woken, the other should time out */
+    if (!((w1.rc == 0 && w1.saved_errno == 0 && w2.rc == -1 && w2.saved_errno == ETIMEDOUT) ||
+          (w2.rc == 0 && w2.saved_errno == 0 && w1.rc == -1 && w1.saved_errno == ETIMEDOUT))) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
+int futex_contract_requeue_moves_waiter_to_new_uaddr(void) {
+    pthread_t thread;
+    struct futex_wait_thread ctx;
+    int word1 = 0;
+    int word2 = 0;
+    long ret;
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.word = &word1;
+    atomic_init(&ctx.ready, 0);
+    ctx.rc = -1;
+    ctx.saved_errno = 0;
+    ctx.task = NULL;
+
+    if (pthread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
+        errno = ECHILD;
+        return -1;
+    }
+    while (atomic_load(&ctx.ready) == 0) {
+        /* spin */
+    }
+
+    ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word1,
+                                FUTEX_REQUEUE_PRIVATE, 0,
+                                1 /* nr_requeue */, (long)(uintptr_t)&word2, 0);
+    if (ret != 1) {
+        pthread_join(thread, NULL);
+        errno = EPROTO;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word2,
+                                FUTEX_WAKE_PRIVATE, 1, 0, 0, 0);
+    pthread_join(thread, NULL);
+
+    if (ret != 1 || ctx.rc != 0 || ctx.saved_errno != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
+int futex_contract_cmp_requeue_rejects_mismatch(void) {
+    int word1 = 123;
+    int word2 = 0;
+    long ret;
+
+    ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word1,
+                                FUTEX_CMP_REQUEUE_PRIVATE, 0,
+                                1 /* nr_requeue */, (long)(uintptr_t)&word2,
+                                999 /* cmpval mismatch */);
+    if (ret != -EAGAIN) {
         errno = EPROTO;
         return -1;
     }

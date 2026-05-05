@@ -999,7 +999,7 @@ static long syscall_dispatch_inner_impl(long number,
         if (!arg0) {
             return -EFAULT;
         }
-        if (op == FUTEX_WAIT && arg3) {
+        if ((op == FUTEX_WAIT || op == FUTEX_WAIT_BITSET) && arg3) {
             timeout_ms = ppoll_timeout_ms((const struct __kernel_timespec *)(uintptr_t)arg3);
             if (timeout_ms == -2) {
                 return -(long)errno;
@@ -1010,6 +1010,14 @@ static long syscall_dispatch_inner_impl(long number,
         }
         if (op == FUTEX_WAKE) {
             return syscall_result((long)futex_wake_impl((int *)(uintptr_t)arg0, (int)arg2));
+        }
+        if (op == FUTEX_WAIT_BITSET || op == FUTEX_WAKE_BITSET || op == FUTEX_REQUEUE ||
+            op == FUTEX_CMP_REQUEUE) {
+            if (op == FUTEX_REQUEUE || op == FUTEX_CMP_REQUEUE) {
+                timeout_ms = (int)arg3;
+            }
+            return syscall_result((long)futex_op_impl((int *)(uintptr_t)arg0, (int)arg1, (int)arg2,
+                                                     timeout_ms, (int *)(uintptr_t)arg4, (int)arg5));
         }
         return -ENOSYS;
     }

@@ -169,6 +169,17 @@ int kernel_cond_broadcast(kernel_cond_t *cond) {
     return pthread_cond_broadcast(pcond);
 }
 
+int kernel_cond_signal(kernel_cond_t *cond) {
+    if (!cond) {
+        return -EINVAL;
+    }
+    if (!cond->initialized) {
+        return -EINVAL;
+    }
+    pthread_cond_t *pcond = (pthread_cond_t *)cond->storage;
+    return pthread_cond_signal(pcond);
+}
+
 /* ============================================================================
  * THREAD - Darwin pthread implementation
  * ============================================================================ */

@@ -63,6 +63,7 @@ int kernel_cond_init(kernel_cond_t *cond);
 int kernel_cond_destroy(kernel_cond_t *cond);
 int kernel_cond_wait(kernel_cond_t *cond, kernel_mutex_t *mutex);
 int kernel_cond_timedwait_ms(kernel_cond_t *cond, kernel_mutex_t *mutex, int timeout_ms);
+int kernel_cond_signal(kernel_cond_t *cond);
 int kernel_cond_broadcast(kernel_cond_t *cond);
 
 int kernel_thread_attr_init(kernel_thread_attr_t *attr);

@@ -35,6 +35,18 @@ extern int library_is_initialized(void);
     XCTAssertEqual(futex_contract_wake_releases_waiter(), 0, @"errno %d", errno);
 }
 
+- (void)testFutexWakeBitsetOnlyWakesMatchingWaiter {
+    XCTAssertEqual(futex_contract_wake_bitset_only_wakes_matching_waiter(), 0, @"errno %d", errno);
+}
+
+- (void)testFutexRequeueMovesWaiterToNewUaddr {
+    XCTAssertEqual(futex_contract_requeue_moves_waiter_to_new_uaddr(), 0, @"errno %d", errno);
+}
+
+- (void)testFutexCmpRequeueRejectsMismatch {
+    XCTAssertEqual(futex_contract_cmp_requeue_rejects_mismatch(), 0, @"errno %d", errno);
+}
+
 - (void)testFutexInterruptedWaitRecordsRestart {
     XCTAssertEqual(futex_contract_interrupted_wait_records_restart(), 0, @"errno %d", errno);
 }

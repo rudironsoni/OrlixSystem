@@ -147,6 +147,15 @@ void wait_queue_wake_all_locked(struct wait_queue_head *queue) {
     kernel_cond_broadcast(wait_queue_cond_ptr(queue));
 }
 
+void wait_queue_wake_n_locked(struct wait_queue_head *queue, int n) {
+    if (!queue || n <= 0) {
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        kernel_cond_signal(wait_queue_cond_ptr(queue));
+    }
+}
+
 void wait_queue_wake_all(struct wait_queue_head *queue) {
     if (!queue) {
         return;

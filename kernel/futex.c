@@ -16,8 +16,20 @@
 struct futex_bucket {
     uintptr_t uaddr;
     int used;
-    int waiters;
     struct wait_queue_head wait;
+    struct futex_waiter *waiter_list;
+    int waiters;
+};
+
+struct futex_waiter {
+    struct futex_waiter *next;
+    struct futex_bucket *bucket;
+    int *wait_uaddr;
+    int expected;
+    int check_expected;
+    uint32_t bitset;
+    int woken;
+    int requeued;
 };
 
 static struct wait_queue_head futex_table_lock;
@@ -64,13 +76,42 @@ static struct futex_bucket *futex_find_bucket_locked(uintptr_t uaddr, int create
     }
     free_bucket->uaddr = uaddr;
     free_bucket->used = 1;
+    free_bucket->waiter_list = NULL;
     free_bucket->waiters = 0;
     return free_bucket;
 }
 
-int futex_wait_impl(int *uaddr, int expected, int timeout_ms) {
+static void futex_waiter_add_locked(struct futex_bucket *bucket, struct futex_waiter *w) {
+    if (!bucket || !w) {
+        return;
+    }
+    w->next = bucket->waiter_list;
+    bucket->waiter_list = w;
+    bucket->waiters++;
+}
+
+static void futex_waiter_remove_locked(struct futex_bucket *bucket, struct futex_waiter *w) {
+    if (!bucket || !w) {
+        return;
+    }
+    struct futex_waiter **pp = &bucket->waiter_list;
+    while (*pp) {
+        if (*pp == w) {
+            *pp = w->next;
+            w->next = NULL;
+            if (bucket->waiters > 0) {
+                bucket->waiters--;
+            }
+            return;
+        }
+        pp = &(*pp)->next;
+    }
+}
+
+static int futex_wait_common_impl(int *uaddr, int expected, int timeout_ms, uint32_t bitset) {
     struct futex_bucket *bucket;
     int ret;
+    struct futex_waiter waiter;
 
     if (!uaddr) {
         errno = EFAULT;
@@ -97,46 +138,90 @@ int futex_wait_impl(int *uaddr, int expected, int timeout_ms) {
         return -1;
     }
 
+    memset(&waiter, 0, sizeof(waiter));
+    waiter.bucket = bucket;
+    waiter.wait_uaddr = uaddr;
+    waiter.expected = expected;
+    waiter.check_expected = 1;
+    waiter.bitset = bitset ? bitset : FUTEX_BITSET_MATCH_ANY;
+
     wait_queue_lock(&bucket->wait);
     if (atomic_load((_Atomic int *)uaddr) != expected) {
         wait_queue_unlock(&bucket->wait);
         errno = EAGAIN;
         return -1;
     }
-    bucket->waiters++;
-    if (timeout_ms < 0) {
-        ret = wait_queue_wait_locked_interruptible(&bucket->wait);
-    } else {
-        ret = wait_queue_wait_locked_interruptible_timeout(&bucket->wait, timeout_ms);
-    }
-    if (bucket->waiters > 0) {
-        bucket->waiters--;
-    }
-    wait_queue_unlock(&bucket->wait);
+    futex_waiter_add_locked(bucket, &waiter);
+    while (1) {
+        if (timeout_ms < 0) {
+            ret = wait_queue_wait_locked_interruptible(&bucket->wait);
+        } else {
+            ret = wait_queue_wait_locked_interruptible_timeout(&bucket->wait, timeout_ms);
+        }
 
-    if (ret == -EINTR) {
-        task_restart_record_impl(get_current(), TASK_RESTART_FUTEX_WAIT,
-                                 (uint64_t)(uintptr_t)uaddr,
-                                 (uint64_t)(int64_t)expected,
-                                 (uint64_t)(int64_t)timeout_ms,
-                                 0, 0, 0);
-        errno = EINTR;
-        return -1;
+        if (ret == -EINTR || ret == -ETIMEDOUT) {
+            futex_waiter_remove_locked(bucket, &waiter);
+            wait_queue_unlock(&bucket->wait);
+            if (ret == -EINTR) {
+                task_restart_record_impl(get_current(), TASK_RESTART_FUTEX_WAIT,
+                                         (uint64_t)(uintptr_t)uaddr,
+                                         (uint64_t)(int64_t)expected,
+                                         (uint64_t)(int64_t)timeout_ms,
+                                         0, 0, 0);
+                errno = EINTR;
+            } else {
+                errno = ETIMEDOUT;
+            }
+            return -1;
+        }
+
+        if (waiter.woken) {
+            futex_waiter_remove_locked(bucket, &waiter);
+            wait_queue_unlock(&bucket->wait);
+            return 0;
+        }
+
+	        if (waiter.requeued && waiter.bucket != bucket) {
+	            struct futex_bucket *old_bucket = bucket;
+	            struct futex_bucket *new_bucket = waiter.bucket;
+	            wait_queue_unlock(&old_bucket->wait);
+	            bucket = new_bucket;
+	            wait_queue_lock(&bucket->wait);
+	            continue;
+	        }
+
+	        /* If we were woken while not yet waiting on the new bucket, do not miss it. */
+	        if (waiter.woken) {
+	            futex_waiter_remove_locked(bucket, &waiter);
+	            wait_queue_unlock(&bucket->wait);
+	            return 0;
+	        }
+
+	        /* Spurious wakeups: keep waiting as long as the expected value matches. */
+	        if (waiter.check_expected && atomic_load((_Atomic int *)waiter.wait_uaddr) != waiter.expected) {
+	            futex_waiter_remove_locked(bucket, &waiter);
+	            wait_queue_unlock(&bucket->wait);
+            errno = EAGAIN;
+            return -1;
+        }
     }
-    if (ret == -ETIMEDOUT) {
-        errno = ETIMEDOUT;
-        return -1;
-    }
-    if (ret != 0) {
+}
+
+int futex_wait_impl(int *uaddr, int expected, int timeout_ms) {
+    return futex_wait_common_impl(uaddr, expected, timeout_ms, FUTEX_BITSET_MATCH_ANY);
+}
+
+static int futex_wait_bitset_impl(int *uaddr, int expected, int timeout_ms, uint32_t bitset) {
+    if (bitset == 0) {
         errno = EINVAL;
         return -1;
     }
-    return 0;
+    return futex_wait_common_impl(uaddr, expected, timeout_ms, bitset);
 }
 
 int futex_wake_impl(int *uaddr, int max_wake) {
     struct futex_bucket *bucket;
-    int woken;
+    int woken = 0;
 
     if (!uaddr) {
         errno = EFAULT;
@@ -162,7 +247,13 @@ int futex_wake_impl(int *uaddr, int max_wake) {
     }
 
     wait_queue_lock(&bucket->wait);
-    woken = bucket->waiters < max_wake ? bucket->waiters : max_wake;
+    for (struct futex_waiter *w = bucket->waiter_list; w && woken < max_wake; w = w->next) {
+        if (w->woken) {
+            continue;
+        }
+        w->woken = 1;
+        woken++;
+    }
     if (woken > 0) {
         wait_queue_wake_all_locked(&bucket->wait);
     }
@@ -170,7 +261,130 @@ int futex_wake_impl(int *uaddr, int max_wake) {
     return woken;
 }
 
-int futex_op_impl(int *uaddr, int futex_op, int val, int timeout_ms) {
+static int futex_wake_bitset_impl(int *uaddr, int max_wake, uint32_t bitset) {
+    struct futex_bucket *bucket;
+    int woken = 0;
+
+    if (!uaddr) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (bitset == 0 || max_wake < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (max_wake == 0) {
+        return 0;
+    }
+    if (futex_table_init_once() != 0) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    wait_queue_lock(&futex_table_lock);
+    bucket = futex_find_bucket_locked((uintptr_t)uaddr, 0);
+    wait_queue_unlock(&futex_table_lock);
+    if (!bucket) {
+        return 0;
+    }
+
+    wait_queue_lock(&bucket->wait);
+    for (struct futex_waiter *w = bucket->waiter_list; w && woken < max_wake; w = w->next) {
+        if (w->woken) {
+            continue;
+        }
+        if ((w->bitset & bitset) == 0) {
+            continue;
+        }
+        w->woken = 1;
+        woken++;
+    }
+    if (woken > 0) {
+        wait_queue_wake_all_locked(&bucket->wait);
+    }
+    wait_queue_unlock(&bucket->wait);
+    return woken;
+}
+
+static int futex_requeue_impl(int *uaddr, int nr_wake, int nr_requeue, int *uaddr2, int use_cmp,
+                              int cmpval) {
+    struct futex_bucket *src;
+    struct futex_bucket *dst;
+    int moved = 0;
+    int woken = 0;
+
+    if (!uaddr || !uaddr2) {
+        errno = EFAULT;
+        return -1;
+    }
+    if (nr_wake < 0 || nr_requeue < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (futex_table_init_once() != 0) {
+        errno = ENOMEM;
+        return -1;
+    }
+    if (use_cmp && atomic_load((_Atomic int *)uaddr) != cmpval) {
+        errno = EAGAIN;
+        return -1;
+    }
+
+    wait_queue_lock(&futex_table_lock);
+    src = futex_find_bucket_locked((uintptr_t)uaddr, 0);
+    dst = futex_find_bucket_locked((uintptr_t)uaddr2, 1);
+    wait_queue_unlock(&futex_table_lock);
+
+    if (!dst) {
+        errno = ENOMEM;
+        return -1;
+    }
+    if (!src) {
+        return 0;
+    }
+
+    struct futex_bucket *first = src < dst ? src : dst;
+    struct futex_bucket *second = src < dst ? dst : src;
+    wait_queue_lock(&first->wait);
+    if (second != first) {
+        wait_queue_lock(&second->wait);
+    }
+
+    for (struct futex_waiter *w = src->waiter_list; w && woken < nr_wake; w = w->next) {
+        if (w->woken) {
+            continue;
+        }
+        w->woken = 1;
+        woken++;
+    }
+
+    struct futex_waiter *w = src->waiter_list;
+    while (w && moved < nr_requeue) {
+        struct futex_waiter *next = w->next;
+        if (!w->woken) {
+            futex_waiter_remove_locked(src, w);
+            w->bucket = dst;
+            w->wait_uaddr = uaddr2;
+            w->check_expected = 0;
+            w->requeued = 1;
+            futex_waiter_add_locked(dst, w);
+            moved++;
+        }
+        w = next;
+    }
+
+    if (woken > 0 || moved > 0) {
+        wait_queue_wake_all_locked(&src->wait);
+    }
+
+    if (second != first) {
+        wait_queue_unlock(&second->wait);
+    }
+    wait_queue_unlock(&first->wait);
+    return woken + moved;
+}
+
+int futex_op_impl(int *uaddr, int futex_op, int val, int timeout_ms, int *uaddr2, int val3) {
     int op = futex_op & FUTEX_CMD_MASK;
 
     if (op == FUTEX_WAIT) {
@@ -178,6 +392,18 @@ int futex_op_impl(int *uaddr, int futex_op, int val, int timeout_ms) {
     }
     if (op == FUTEX_WAKE) {
         return futex_wake_impl(uaddr, val);
+    }
+    if (op == FUTEX_WAIT_BITSET) {
+        return futex_wait_bitset_impl(uaddr, val, timeout_ms, (uint32_t)val3);
+    }
+    if (op == FUTEX_WAKE_BITSET) {
+        return futex_wake_bitset_impl(uaddr, val, (uint32_t)val3);
+    }
+    if (op == FUTEX_REQUEUE) {
+        return futex_requeue_impl(uaddr, val, timeout_ms, uaddr2, 0, 0);
+    }
+    if (op == FUTEX_CMP_REQUEUE) {
+        return futex_requeue_impl(uaddr, val, timeout_ms, uaddr2, 1, val3);
     }
     errno = ENOSYS;
     return -1;
