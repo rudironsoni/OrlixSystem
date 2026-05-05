@@ -90,6 +90,11 @@ bin/ixland-cc
 .worktrees/
 .worktree/
 
+# Shell prompt / zsh runtime caches (must not land in repo root)
+omp.cache
+zsh.*.omp.cache
+init.*.zsh
+
 # Backup files
 .old-backup/
 
