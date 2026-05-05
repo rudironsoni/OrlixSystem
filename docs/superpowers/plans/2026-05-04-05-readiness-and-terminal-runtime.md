@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
 **Goal:** Harden readiness and terminal semantics until interactive shells and job-control userspace can rely on consistent Linux-shaped behavior rather than narrow ioctl-only success.
 
 **Architecture:** Treat readiness as one shared kernel service across fd classes and treat terminal control as an interaction between PTY state, sessions, process groups, and signal delivery. The tranche first closes cross-fd polling inconsistencies, then completes controlling-tty and job-control semantics so PTYs behave like Linux terminals under shell workloads.
@@ -16,6 +27,12 @@
 - readiness across pipes, PTYs, proc/dev nodes, timerfd, eventfd, pidfd, and future sockets
 - controlling-tty and foreground-process-group semantics
 - `TIOCSPGRP`, `TIOCGPGRP`, `TIOCNOTTY`, hangup, and restart interaction
+
+## Readiness Invariants (Required)
+
+- Readiness must be one shared Linux-owned service across fd classes (pipes, PTYs, proc/dev nodes, timerfd/eventfd/pidfd, and sockets).
+- Virtual sockets exist; socketpair semantics are first-class readiness targets (poll/epoll must treat them like Linux, not host poll).
+- Socket fds are full-duplex and must be accepted by generic read/write dispatch (fd access mode must not cause EBADF for valid sockets).
 
 ### Task 1: Normalize Readiness Across Fd Classes
 

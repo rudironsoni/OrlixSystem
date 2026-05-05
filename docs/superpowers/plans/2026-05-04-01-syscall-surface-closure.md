@@ -2,11 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
 **Goal:** Classify the milestone-01 audited process-adjacent syscall subset and close the specific dispatch and policy gaps that block later milestones from staying Linux-shaped.
 
 **Architecture:** Treat `runtime/syscall.c` as the public Linux syscall gate and make the matrix authoritative for the audited milestone-01 subset instead of claiming repo-wide syscall closure. Finish the small but high-leverage process and pidfd gaps first, then tighten explicit unsupported or future-backend policy so later milestones inherit a clean syscall boundary.
 
-**Tech Stack:** `runtime/syscall.c`, `kernel/task.c`, `kernel/fork.c`, `kernel/signal.c`, `kernel/ptrace.c`, `fs/fdtable.c`, LinuxKernel syscall contracts, syscall matrix generator.
+**Tech Stack:** `runtime/syscall.c`, `kernel/task.c`, `kernel/fork.c`, `kernel/signal.c`, `kernel/ptrace.c`, `fs/fdtable.c`, LinuxKernel syscall contracts, syscall gap matrix maintenance.
 
 ---
 
@@ -16,14 +27,13 @@
 - `pidfd_getfd`
 - `clone3` `set_tid`
 - `unshare(CLONE_FS)` policy
-- matrix regeneration and audited inventory-contract updates
+- syscall gap matrix updates and audited inventory-contract updates
 
 ### Task 1: Audit And Reclassify The Syscall Matrix
 
 **Files:**
 - Modify: `runtime/syscall.c`
 - Modify: `docs/syscall_gap_matrix_6.12_arm64.md`
-- Reference: vendored Linux headers under `third_party/linux/6.12/arm64/uapi/include`
 - Test: `IXLandSystemLinuxKernelTests/NativeSyscallContract.c`
 - Test: `IXLandSystemLinuxKernelTests/NativeSyscallTests.m`
 
@@ -32,7 +42,7 @@
 - [ ] Run the focused inventory proof:
 
 ```bash
-rtk xcodebuild test-without-building \
+xcodebuild test-without-building \
   -project IXLandSystem.xcodeproj \
   -scheme IXLandSystem-6.12-arm64 \
   -sdk iphonesimulator \
@@ -43,7 +53,7 @@ rtk xcodebuild test-without-building \
 
 Expected: after the milestone-00 `build-for-testing` step, the new inventory assertions fail before dispatch changes land.
 
-- [ ] Update `runtime/syscall.c` classification comments and dispatch tables so the matrix generator stops producing stale classification for the audited syscall set without claiming full-matrix or full-subsystem closure in milestone 01.
+- [ ] Update `runtime/syscall.c` classification comments and dispatch tables so `docs/syscall_gap_matrix_6.12_arm64.md` can be updated to non-stale classification for the audited syscall set without claiming full-matrix or full-subsystem closure in milestone 01.
 
 ### Task 2: Close `pidfd_send_signal`
 
@@ -89,16 +99,14 @@ Expected: after the milestone-00 `build-for-testing` step, the new inventory ass
 - [ ] Implement either Linux-owner `CLONE_FS` unshare support or a deliberate `-EINVAL` or `-EOPNOTSUPP` policy that is documented in the matrix and tests.
 - [ ] Re-run the task and exec suite until both the new behavior and existing clone and exec paths remain green.
 
-### Task 5: Regenerate Matrix And Run Two-Tier Proof
+### Task 5: Update Matrix And Run Two-Tier Proof
 
 **Files:**
 - Modify: `docs/syscall_gap_matrix_6.12_arm64.md`
 
-- [ ] Regenerate the matrix:
-
-```bash
-rtk rg "IXL_SYS_|__NR_" runtime fs kernel include IXLandSystemLinuxKernelTests
-```
+- [ ] Update `docs/syscall_gap_matrix_6.12_arm64.md` explicitly (there is no generator today). Each updated classification must cite:
+  - the syscall number/name in `runtime/syscall.c`, and
+  - the LinuxKernel test(s) that prove the new classification.
 
 - [ ] Re-run the standard proof gate from the orchestration plan.
 - [ ] Run the focused syscall simulator tests for milestone-01 first, then run the full shared-scheme simulator suite before any milestone-finished claim.

@@ -2,7 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Refactor `make vendor-linux-headers` to generate a Linux-shaped tuple under `third_party/linux/<version>/<arch>/` with only upstream Linux material (`uapi/`, `srctree/`, `objtree/`), removing any fake “ABI/supplement” generation, and moving host-build compatibility headers out of `scripts/`.
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
+**Goal:** Refactor `make vendor-linux-headers` to generate a Linux-shaped tuple under `third_party/linux/<version>/<arch>/` with only upstream Linux material (`uapi/`, `srctree/`, `objtree/`), removing any repo-authored Linux-looking header side-trees, and moving host-build compatibility headers out of `scripts/`.
 
 **Architecture:** Keep the Makefile-driven vendoring flow (curl/tar + Linux `make` in a temp objtree) and copy only three Linux header surfaces into a tuple root. Host-build compatibility headers live under `build_support/` and are used only for building Linux host tools during vendoring.
 
@@ -14,19 +25,18 @@
 
 **Modify**
 - `Makefile` (rewrite `vendor-linux-headers` staging/layout/metadata/validation/final replacement)
-- `project.yml` (new tuple-root variables; remove ABI variables and include flags)
-- `scripts/lint_linux_vendor_headers.sh` (validate new tuple layout; forbid `abi/`, `kheaders/`, category roots)
+- `project.yml` (new tuple-root variables; remove legacy variables and include flags that reference non-tuple roots)
+- `scripts/lint_linux_vendor_headers.sh` (validate new tuple layout; forbid legacy category roots and extra side-trees)
 - `scripts/lint_linux_surface.sh` (remove references to old header roots; keep discipline)
-- `AGENTS.md` (remove “ABI supplement” phrasing; clarify `uapi/srctree/objtree` as the only concepts)
+- `AGENTS.md` (clarify `uapi/srctree/objtree` as the only concepts)
 
 **Move**
 - `scripts/linux_host_compat/{elf.h,endian.h,byteswap.h,linux_arm_elf_compat.h}`
   -> `build_support/linux_host_compat/include/`
 
 **Delete (repo cleanup)**
-- `third_party/linux/uapi/<version>/<arch>/...`
-- `third_party/linux/kheaders/<version>/<arch>/...`
-- Any `third_party/linux/**/abi/**` (must not exist; no `abi` directory anywhere under `third_party/linux`)
+- Any legacy category-root layouts that existed before the tuple root (keep only `third_party/linux/<version>/<arch>/{uapi,srctree,objtree}`).
+- Any extra vendored header side-trees that are not upstream Linux material.
 
 **Generated (by Makefile)**
 - `third_party/linux/<version>/<arch>/{README.md,source.json,manifest.sha256}`
@@ -72,11 +82,9 @@ test ! -d scripts/linux_host_compat
 **Files:**
 - Modify: `Makefile`
 
-- [ ] **Step 1: Remove all “kheaders category root” staging**
+- [ ] **Step 1: Remove all legacy category-root staging**
 
-Replace:
-- `stage_vendor_root/uapi/<ver>/<arch>/...`
-- `stage_vendor_root/kheaders/<ver>/<arch>/...`
+Replace any category-root staging layouts with tuple-root staging:
 
 With tuple-root staging:
 ```bash
@@ -98,13 +106,9 @@ copy_tree "$obj/include/config" "$objtree_root/include/config"
 copy_tree "$obj/arch/$linux_arch/include/generated" "$objtree_root/arch/$linux_arch/include/generated"
 ```
 
-- [ ] **Step 3: Remove forbidden “ABI/supplement” machinery**
+- [ ] **Step 3: Remove forbidden fake header-generation machinery**
 
-Delete from Makefile entirely:
-- `write_umount_abi_header`
-- `write_statfs_abi_header`
-- any `abi_dest` variables and validations
-- any “supplement” / “generated-abi” / “provenance” / “include_paths” outputs
+Delete from Makefile entirely any code that writes repo-authored Linux-looking headers or generates non-upstream header side-trees.
 
 No replacement mechanism is allowed.
 
@@ -167,7 +171,7 @@ surfaces:
 
 ---
 
-### Task 3: Update `project.yml` to Tuple Variables and Remove ABI Flags
+### Task 3: Update `project.yml` to Tuple Variables and Remove Legacy Flags
 
 **Files:**
 - Modify: `project.yml`
@@ -186,15 +190,9 @@ LINUX_SRCTREE_ROOT: $(LINUX_ROOT)/srctree
 LINUX_OBJTREE_ROOT: $(LINUX_ROOT)/objtree
 ```
 
-- [ ] **Step 2: Remove**
+ - [ ] **Step 2: Remove legacy variables**
 
-Remove:
-- `LINUX_UAPI_VERSION`
-- `LINUX_UAPI_ARCH`
-- `LINUX_UAPI_VENDOR_ROOT`
-- `LINUX_ABI_VENDOR_ROOT`
-- `LINUX_ABI_ROOT`
-- `LINUX_ABI_INCLUDE_ROOT`
+Remove legacy variables that reference non-tuple vendor roots or per-surface version/arch splits.
 
 - [ ] **Step 3: Include flags discipline**
 
@@ -220,10 +218,7 @@ Do not add srctree/objtree include paths globally unless the whole target needs 
 
 Update to require:
 - `third_party/linux/<version>/<arch>/{uapi,srctree,objtree}`
-and fail on any:
-- `third_party/linux/abi/**`
-- `third_party/linux/uapi/<version>/<arch>`
-- `third_party/linux/kheaders/<version>/<arch>`
+and fail on any legacy category-root layouts or extra side-trees under `third_party/linux/`.
 
 - [ ] **Step 2: Surface lint**
 
@@ -234,19 +229,19 @@ Replace references to old include roots/variables; keep Darwin/iOS leakage check
 ### Task 5: Repo Cleanup + Include Fixups
 
 **Files:**
-- Delete old trees under `third_party/linux/uapi/...` and `third_party/linux/kheaders/...`
-- Modify any product/test sources that included the old fake ABI or old category roots.
+- Delete any legacy category-root vendored header layouts (keep tuple-root only).
+- Modify any product/test sources that included headers via legacy non-tuple include roots.
 
 - [ ] **Step 1: Search for old vocabulary**
 
 Run:
 ```bash
-rg -n "LINUX_ABI|third_party/linux/abi|third_party/linux/kheaders|third_party/linux/uapi|write_(umount|statfs)_abi_header|supplement|generated-abi|provenance|scripts/linux_host_compat"
+rg -n "third_party/linux/|scripts/linux_host_compat|LINUX_"
 ```
 
 - [ ] **Step 2: Replace includes**
 
-If any file included fake `linux/statfs.h` or `linux/umount.h` from an ABI include root:
+If any file included repo-authored Linux-looking headers from a now-deleted legacy include root:
 - Prefer including the real upstream header reachable via `srctree`/`objtree` include paths, or
 - Move IXLandSystem-specific declarations into a project-owned header outside `third_party/linux`.
 
@@ -256,7 +251,7 @@ No hand-copied constants, no fake Linux-looking headers.
 
 ### Task 6: Generate Tuple + Proof (Required Before Commit)
 
-- [ ] **Step 1: Regenerate**
+- [ ] **Step 1: Generate Vendored Tuple**
 
 Run:
 ```bash
@@ -310,10 +305,9 @@ git push
 ## Self-Review Checklist (Plan Coverage)
 
 - [ ] Tuple layout only under `third_party/linux/<version>/<arch>/` with `uapi/srctree/objtree`.
-- [ ] No `third_party/linux/**/abi/**` and no category roots.
+- [ ] No legacy category roots or extra vendored header side-trees exist; tuple-root only.
 - [ ] Host compat headers relocated to `build_support/...` and used only during vendoring.
 - [ ] `source.json`, `README.md`, `manifest.sha256` generated and validated.
-- [ ] `project.yml` updated: no ABI vars, no ABI include flags, no global srctree/objtree unless required.
+- [ ] `project.yml` updated: no legacy variables or include flags referencing non-tuple roots; no global srctree/objtree unless required.
 - [ ] Lints updated without weakening; they enforce the new truth.
 - [ ] Proof commands run and succeed before commit.
-

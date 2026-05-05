@@ -2,11 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
 **Goal:** Finish the remaining IXLandSystem kernel milestones in a fixed dependency order without violating the Linux-owner versus host-mediation boundary.
 
 **Architecture:** Drive the remaining work as seven bounded subsystem tranches with one orchestration plan enforcing sequencing, proof, and rollback rules. Every milestone proves Linux-visible behavior through focused LinuxKernel contracts first, adds focused HostBridge seam proof only when `internal/ios/**` changes, and refuses completion claims until the full shared-scheme simulator suite and branch-state checks are green.
 
-**Tech Stack:** C and Objective-C kernel/runtime code, vendored Linux UAPI 6.12 arm64, XcodeGen, XcodeBuildMCP CLI, LinuxKernel contract tests, HostBridge seam tests, syscall gap matrix generation.
+**Tech Stack:** C and Objective-C kernel/runtime code, vendored generated Linux headers (Linux 6.12 arm64 tuple), XcodeGen, `xcodebuild` (authoritative), XcodeBuildMCP (optional convenience), LinuxKernel contract tests, HostBridge seam tests, syscall gap matrix maintenance.
 
 ---
 
@@ -28,7 +39,7 @@
 - Linux semantic ownership stays in `fs/`, `kernel/`, `runtime/`, and `include/`.
 - Host mechanics stay private under `internal/ios/**`; no ambient host vocabulary leaks into Linux-owner files.
 - LinuxKernel tests prove Linux-visible behavior with syscall-facing contracts and C UAPI checks only.
-- HostBridge tests are supplemental seam proof only; they never count as Linux semantics proof.
+- HostBridge tests are secondary seam proof only; they never count as Linux semantics proof.
 - No milestone is complete on lint alone, on build alone, or on one narrow green test.
 - Each milestone ends with the two-tier simulator proof gate: tranche-focused simulator tests first, then the full shared-scheme simulator suite, followed by commit, push, and `HEAD == origin/main`.
 
@@ -63,7 +74,7 @@
 - [ ] Run Linux-owner lint first:
 
 ```bash
-rtk bash ./scripts/lint_linux_surface.sh
+bash ./scripts/lint_linux_surface.sh
 ```
 
 Expected: exit status `0` and no new Linux-owner host-leak findings.
@@ -71,7 +82,7 @@ Expected: exit status `0` and no new Linux-owner host-leak findings.
 - [ ] Regenerate the project before simulator proof:
 
 ```bash
-rtk xcodegen generate --project .
+xcodegen generate --project .
 ```
 
 Expected: `IXLandSystem.xcodeproj` regenerates without errors.
@@ -79,7 +90,7 @@ Expected: `IXLandSystem.xcodeproj` regenerates without errors.
 - [ ] Build for testing on iPhone 17 through the AGENTS-authoritative simulator flow:
 
 ```bash
-rtk xcodebuild build-for-testing \
+xcodebuild build-for-testing \
   -project IXLandSystem.xcodeproj \
   -scheme IXLandSystem-6.12-arm64 \
   -sdk iphonesimulator \
@@ -92,7 +103,7 @@ Expected: build succeeds with no new warnings that indicate boundary regressions
 - [ ] For milestone work that changes kernel behavior, run tranche-focused simulator tests after `build-for-testing` succeeds. Use focused LinuxKernel tests as the primary subsystem proof, and add focused HostBridge tests only when the active tranche changes an `internal/ios/**` seam:
 
 ```bash
-rtk xcodebuild test-without-building \
+xcodebuild test-without-building \
   -project IXLandSystem.xcodeproj \
   -scheme IXLandSystem-6.12-arm64 \
   -sdk iphonesimulator \
@@ -106,13 +117,15 @@ Expected: the focused simulator selection proves the active tranche locally befo
 - [ ] Before any milestone-finished claim, run the full shared-scheme simulator suite after the focused tranche proof passes:
 
 ```bash
-rtk xcodebuild test-without-building \
+xcodebuild test-without-building \
   -project IXLandSystem.xcodeproj \
   -scheme IXLandSystem-6.12-arm64 \
   -sdk iphonesimulator \
   -configuration Debug \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
+
+Note: Prefer XcodeBuildMCP for ergonomics, but if `xcodebuildmcp simulator test` stalls or fails to return a definitive pass/fail, fall back to raw `xcodebuild test` for authoritative proof logs.
 
 Expected: the shared scheme is green, including `IXLandSystemLinuxKernelTests` and `IXLandSystemHostBridgeTests`. Focused LinuxKernel proof remains the primary Linux-semantics evidence, but shared-scheme green is still mandatory for milestone completion. Orchestration-only or documentation-only Task `00` work is exempt from both simulator test bullets only when lint and project generation are green, the simulator step has been attempted with the AGENTS-required command, and the only blocker is documented simulator infrastructure unavailability; a real `build-for-testing` failure does not satisfy this exception.
 
@@ -128,7 +141,7 @@ Expected: the shared scheme is green, including `IXLandSystemLinuxKernelTests` a
 - [ ] Keep LinuxKernel test ownership clean: Objective-C test files must not include Linux UAPI headers, and LinuxKernel tests must not include `internal/ios/**` or host-only proof helpers.
 - [ ] Run the focused contract test alone and capture the failing symptom.
 - [ ] Implement the minimal Linux-owner code needed to satisfy the contract in milestone-owned Linux paths under `fs/`, `kernel/`, `runtime/`, or `include/`.
-- [ ] If host mediation is required, add or adjust only a narrow subsystem-owned seam under `internal/ios/**`; do not move Linux semantic decisions, Linux-visible ABI truth, or Darwin-shaped behavior into that seam.
+- [ ] If host mediation is required, add or adjust only a narrow subsystem-owned seam under `internal/ios/**`; do not move Linux semantic decisions, Linux header truth (vendored generated Linux headers), or Darwin-shaped behavior into that seam.
 - [ ] Re-run the focused test until it passes.
 - [ ] Re-run the full shared-scheme simulator suite before any milestone-finished claim or proof-backed commit.
 - [ ] Re-run lint and simulator build if the implementation touched shared headers, syscall dispatch, or broad subsystem paths.
@@ -137,23 +150,16 @@ Expected: the shared scheme is green, including `IXLandSystemLinuxKernelTests` a
 
 **Files:**
 - Modify: `docs/syscall_gap_matrix_6.12_arm64.md`
-- Reference: vendored Linux headers under `third_party/linux/6.12/arm64/uapi/include`
 - Reference: `runtime/syscall.c`
 
 - [ ] Apply this task to milestone implementation tranches `01` through `07` when they change syscall surface, Linux-owner source, or LinuxKernel tests. Orchestration-only Task `00` documentation work does not regenerate the matrix or run these audits unless it also changes one of those milestone-owned surfaces.
 
-- [ ] Regenerate the syscall matrix after every syscall-surface change that lands within milestone tranches `01` through `07`; do not defer regeneration to a later milestone checkpoint:
-
-```bash
-rtk rg "IXL_SYS_|__NR_" runtime fs kernel include IXLandSystemLinuxKernelTests
-```
-
-Expected: touched syscalls move out of `missing:unclassified` into `implemented:*`, `explicit unsupported policy:*`, `libc-owned:*`, or `future backend:*`.
+- [ ] Update the syscall gap matrix after every syscall-surface change that lands within milestone tranches `01` through `07`. There is no generator today; update `docs/syscall_gap_matrix_6.12_arm64.md` explicitly and cite the syscall/tests that prove the new classification.
 
 - [ ] Audit only the changed milestone Linux-owner files for Darwin or iOS names. Pass the explicit changed-file list under `fs/`, `kernel/`, `runtime/`, and `include/`; do not scan untouched trees:
 
 ```bash
-rtk rg -n "darwin|TargetConditionals|Foundation|NS[A-Z]|dispatch_|pthread_|mach_|__APPLE__|TARGET_OS_" <changed-linux-owner-files>
+rg -n "darwin|TargetConditionals|Foundation|NS[A-Z]|dispatch_|pthread_|mach_|__APPLE__|TARGET_OS_" <changed-linux-owner-files>
 ```
 
 Expected: no new matches introduced by the milestone.
@@ -161,7 +167,7 @@ Expected: no new matches introduced by the milestone.
 - [ ] Audit only the changed milestone LinuxKernel test files for forbidden host-only families such as `internal/ios/**`, `TargetConditionals`, `dispatch`, `pthread`, `mach`, `Foundation`, and `NS*`, plus branded helper families forbidden by `AGENTS.md`; do not scan untouched test files:
 
 ```bash
-rtk rg -n "internal/ios/|TargetConditionals|dispatch_|pthread_|mach_|Foundation|NS[A-Z]|ixland_test_|IX_|TEST_" <changed-linuxkernel-test-files>
+rg -n "internal/ios/|TargetConditionals|dispatch_|pthread_|mach_|Foundation|NS[A-Z]|ixland_test_|IX_|TEST_" <changed-linuxkernel-test-files>
 ```
 
 Expected: no LinuxKernel test picks up new host-only headers or branded helpers.
@@ -178,8 +184,8 @@ Expected: no LinuxKernel test picks up new host-only headers or branded helpers.
 - [ ] Verify branch synchronization:
 
 ```bash
-rtk git rev-parse HEAD
-rtk git rev-parse origin/main
+git rev-parse HEAD
+git rev-parse origin/main
 ```
 
 Expected: both hashes match only when the milestone is actually complete on `main`. For the default milestone-branch flow, run this after the proof-backed branch is merged or fast-forwarded onto `main` and local `HEAD` is updated to that same tip. For an explicit user-approved direct-to-`main` exception, the same hash match is still required before completion is recorded.

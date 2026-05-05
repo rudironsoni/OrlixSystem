@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
 **Goal:** Replace the remaining VFS and mount `-ENOSYS` gaps with Linux-shaped behavior and deepen `/proc` and `/dev` coverage so real userspace sees stable filesystem-facing kernel state.
 
 **Architecture:** Finish missing VFS entrypoints in the Linux-owner filesystem stack, then extend mount lifecycle and namespace visibility without moving semantic decisions into host mediation. Procfs and devfs work follows the same rule: Linux-visible node shape and metadata live in `fs/` and supporting kernel code, while any host storage mediation stays narrow and private.
@@ -21,6 +32,15 @@
 - mount and `umount2` lifecycle parity
 - procfs task, fd, fdinfo, stat, and status stability
 - `devpts`, `/dev/tty`, and controlling-terminal device visibility
+
+## Storage And Mount Policy (Product Contract)
+
+- `/etc`, `/usr`, `/var/lib`, and `/home` are Linux-visible paths backed by explicit persistent app-private storage (or an explicit bundled-image backend where intended).
+- `/var/cache` is cache-backed.
+- `/tmp` is temporary-directory-backed.
+- The app Documents directory is a mounted subtree (if present), not the Linux root truth.
+- External/security-scoped folders enter only via explicit virtual mountpoints.
+- Raw host paths must not become canonical Linux-visible paths.
 
 ### Task 1: Close The Missing VFS Entry Points
 
