@@ -147,4 +147,8 @@ static void reset_wait_job_control_test_kernel_state(void) {
     XCTAssertEqual(wait_job_control_contract_waitpid_signal_interrupt_records_restart(), 0, @"errno %d", errno);
 }
 
+- (void)testCloneThreadIsNotWaitable {
+    XCTAssertEqual(wait_job_control_contract_clone_thread_is_not_waitable(), 0, @"errno %d", errno);
+}
+
 @end
