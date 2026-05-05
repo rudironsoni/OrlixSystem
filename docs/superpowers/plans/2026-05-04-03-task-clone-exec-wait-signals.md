@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
 **Goal:** Finish Linux-visible task lifecycle, signal-delivery, wait-status, and ptrace parity needed for process-heavy userspace beyond shell-base.
 
 **Architecture:** Consolidate process semantics in the task, fork, wait, signal, and ptrace owners, with `runtime/syscall.c` exposing only Linux-shaped entry points. The tranche closes lifecycle and stop-state gaps by writing contract-first tests for thread-group behavior, wait encoding, restart semantics, and ptrace events, then filling the minimal Linux-owner implementations.
@@ -18,6 +29,12 @@
 - stop, continue, and default-action parity
 - `SA_RESTART` and restart metadata
 - ptrace stop and event lifecycle
+
+## Linux-Shaped Runtime Model Notes
+
+- PIDs/PGIDs/SIDs are IXLand task identities; do not bind Linux-visible identity to host processes.
+- Signals are IXLand-owned queues/masks/delivery; do not delegate Linux signal semantics to Darwin signals.
+- Ptrace supervision is over IXLand tasks only; it must not imply host-process ptrace behavior.
 
 ### Task 1: Tighten `clone3` And Thread-Group Parity
 

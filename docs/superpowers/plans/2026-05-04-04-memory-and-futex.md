@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
 **Goal:** Complete the remaining VM and futex semantics needed for Linux-oriented libc and package progress beyond shell-base.
 
 **Architecture:** Keep address-space, mapping, and fault semantics in the MM owner and grow futex coverage only through Linux-visible operations that userspace depends on. The tranche pairs VM contracts with procfs reporting checks so the kernel’s memory accounting, signal faults, and futex wait queues stay coherent from both syscall and `/proc` viewpoints.
@@ -18,6 +29,10 @@
 - `brk` and VMA accounting parity
 - futex requeue, compare-requeue, and bitset paths
 - proc `maps`, `smaps`, and `mincore` coherence
+
+## Futex Boundary Rule
+
+- Futex Linux-facing semantics live in Linux-owner sync code. If host primitives are required for waiting, quarantine host mechanics behind a narrow `internal/ios/**` seam; do not make pthread/Darwin behavior the semantic baseline.
 
 ### Task 1: Close The Remaining MM `ENOSYS` Paths
 
@@ -79,5 +94,5 @@
 
 - [ ] Re-run lint, project generation, and the AGENTS-authoritative simulator `build-for-testing` flow.
 - [ ] Run the focused VM or futex or proc simulator suites for tranche-local proof, then run the full shared-scheme simulator suite before any milestone-finished claim.
-- [ ] Regenerate the syscall matrix if the futex or VM syscall surface changed.
+- [ ] Update `docs/syscall_gap_matrix_6.12_arm64.md` explicitly if the futex or VM syscall surface changed (there is no generator today).
 - [ ] Commit and push only after the proof gate passes and branch synchronization is verified.

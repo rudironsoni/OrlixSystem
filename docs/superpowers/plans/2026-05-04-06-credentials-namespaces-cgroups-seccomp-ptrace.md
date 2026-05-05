@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
 **Goal:** Finish the security and isolation tranches that IXLandSystem already owns so credentials, namespaces, cgroups, seccomp, and ptrace expose coherent Linux-visible behavior.
 
 **Architecture:** Keep identity, isolation, and policy state in the credential, namespace, cgroup, seccomp, and ptrace owners, with procfs reflecting that state without importing host vocabulary. The tranche closes lifecycle, reporting, and policy holes by writing contract-first tests for visible state transitions and then filling only the Linux-owner behavior needed by the owned syscall surface.
@@ -19,6 +30,12 @@
 - cgroup lifecycle, accounting, migration, and namespace views
 - seccomp policy completeness for owned scope
 - ptrace scope and explicit unsupported policy where required
+
+## Runtime Model Notes
+
+- Namespaces/cgroups are IXLand runtime object graphs; they must not imply host iOS namespaces/cgroups.
+- Seccomp is an IXLand syscall-dispatch policy engine; it is not host seccomp.
+- Ptrace supervises IXLand tasks only; it must not imply host process control.
 
 ### Task 1: Complete Credential Depth
 
@@ -88,5 +105,5 @@
 
 - [ ] Re-run lint, project generation, and the AGENTS-authoritative simulator `build-for-testing` flow.
 - [ ] Run the focused credential or namespace or cgroup or seccomp or ptrace simulator suites for tranche-local proof, then run the full shared-scheme simulator suite before any milestone-finished claim.
-- [ ] Regenerate the syscall matrix if credential or policy syscall classifications changed.
+- [ ] Update `docs/syscall_gap_matrix_6.12_arm64.md` explicitly if credential or policy syscall classifications changed (there is no generator today).
 - [ ] Commit and push only after the proof gate passes and branch synchronization is verified.

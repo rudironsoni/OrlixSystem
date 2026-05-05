@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Product North Star (Non-Negotiable)
+
+- IXLandSystem is a Linux-shaped kernel/runtime substrate hosted inside an iOS app sandbox.
+- Public contracts are Linux-shaped; iOS is private host environment only.
+- Linux semantics live in `fs/`, `kernel/`, `runtime/`, `include/`.
+- Host mechanics live only in `internal/ios/**`, behind narrow subsystem-owned seams.
+- Do not treat Darwin behavior as Linux truth; do not invent Linux-looking headers/constants/types.
+- Linux header truth comes only from vendored generated Linux headers:
+  - tuple root: `third_party/linux/<version>/<arch>/`
+  - surfaces: `uapi/include`, `srctree`, `objtree`
+
 **Goal:** Introduce Linux-owned virtual networking objects and syscall coverage so local userspace can rely on loopback, Unix-socket-style communication, and pollable socket semantics.
 
 **Architecture:** Build sockets as kernel-owned virtual objects under `kernel/net/` and integrate them with fd and readiness infrastructure before considering any narrow outbound host bridge. The milestone deliberately prioritizes local userspace compatibility, socket readiness, and Linux-visible addressing rules over host-transparent networking, with any unavoidable host mediation isolated under a subsystem-specific `internal/ios/**` seam.
@@ -24,8 +35,8 @@
 
 **Files:**
 - Modify: `kernel/net/network.c`
-- Create: `kernel/net/socket.c`
-- Create: `kernel/net/socket.h`
+- Modify: `kernel/net/socket.c`
+- Modify: `kernel/net/socket.h`
 - Modify: `fs/fdtable.c`
 - Modify: `runtime/syscall.c`
 - Test: `IXLandSystemLinuxKernelTests/NativeSyscallContract.c`
@@ -35,6 +46,9 @@
 - [ ] Run the focused syscall suite and confirm the current future-backend or missing behavior.
 - [ ] Implement the minimal virtual socket object model and fd registration needed for local kernel ownership.
 - [ ] Re-run syscall tests until basic socket allocation and teardown are green.
+
+Notes:
+- Local Unix-domain-like and loopback semantics are IXLand-owned. Any outbound host networking (if ever required) must be a later, explicit, narrow `internal/ios/**` seam and must not become the baseline.
 
 ### Task 2: Add Local Communication And Readiness
 
@@ -86,7 +100,7 @@
 - Reference: `docs/superpowers/plans/2026-05-04-00-kernel-completion-orchestration.md`
 
 - [ ] Audit networking files for accidental host vocabulary leakage; if outbound bridging is truly required, isolate it under a new subsystem-specific `internal/ios/**` seam and add HostBridge proof for that seam only.
-- [ ] Regenerate the syscall matrix so socket-related entries move from `future backend:*` or `missing:*` to accurate final classifications.
+- [ ] Update `docs/syscall_gap_matrix_6.12_arm64.md` explicitly so socket-related entries move from `future backend:*` or `missing:*` to accurate final classifications (there is no generator today).
 - [ ] Re-run lint, project generation, and the AGENTS-authoritative simulator `build-for-testing` flow.
 - [ ] Run the focused networking or readiness simulator suites for tranche-local proof, then run the full shared-scheme simulator suite before any milestone-finished claim.
 - [ ] Commit and push only after the proof gate passes and branch synchronization is verified.
