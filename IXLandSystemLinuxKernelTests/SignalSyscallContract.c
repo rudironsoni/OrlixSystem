@@ -251,6 +251,101 @@ fail:
     return -1;
 }
 
+int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct signal_mask_bits saved_parent_blocked;
+    long ret;
+    int pidfd = -1;
+    const int signo = SIGUSR1;
+    const int idx = (signo - 1) >> 6;
+    const uint64_t bit = 1ULL << ((signo - 1) & 63);
+
+    if (!parent || !parent->signal) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    saved_parent_blocked = parent->signal->blocked;
+
+    child = task_create_child_impl(parent);
+    if (!child || !child->signal) {
+        errno = child ? EPROTO : errno;
+        goto fail;
+    }
+
+    child->signal->blocked.sig[idx] |= bit;
+    signal_contract_clear_queued_signal(child, signo);
+    pidfd = pidfd_open_impl(child->pid, 0);
+    if (pidfd < 0) {
+        goto fail;
+    }
+
+    /* Linux: sig==0 performs permission/existence checks but does not queue a signal. */
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, 0, 0, 0, 0, 0);
+    if (ret != 0 ||
+        child->thread_pending_signals != 0 ||
+        (child->signal->shared_pending.sig[idx] & bit) != 0 ||
+        signal_contract_queued_count(child, signo) != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    /* Invalid signal numbers must be rejected. */
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, -1, 0, 0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, KERNEL_SIG_NUM + 1, 0, 0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    /* Unsupported parameters must be rejected (current kernel does not support siginfo delivery here). */
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, signo, (long)(uintptr_t)1, 0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, signo, 0, 1, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    /* sig==0 must still enforce permissions (kill(0)-style). */
+    signal_contract_set_task_identity(child, 2000);
+    signal_contract_set_task_identity(parent, 1000);
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, 0, 0, 0, 0, 0);
+    if (ret != -EPERM) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto fail;
+    }
+
+    close_impl(pidfd);
+    signal_contract_clear_queued_signal(child, signo);
+    signal_contract_clear_queued_signal(parent, signo);
+    parent->signal->blocked = saved_parent_blocked;
+    free_task(child);
+    cred_reset_to_defaults();
+    return 0;
+
+fail:
+    if (pidfd >= 0) {
+        close_impl(pidfd);
+    }
+    if (child) {
+        signal_contract_clear_queued_signal(child, signo);
+        free_task(child);
+    }
+    signal_contract_clear_queued_signal(parent, signo);
+    parent->signal->blocked = saved_parent_blocked;
+    cred_reset_to_defaults();
+    return -1;
+}
+
 int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void) {
     struct sigaction act;
     struct sigaction oldact;

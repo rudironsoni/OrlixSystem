@@ -1195,6 +1195,105 @@ out:
     return result;
 }
 
+int fcntl_contract_pidfd_getfd_rejects_nonzero_flags(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    struct task_struct *saved;
+    int child_fd = -1;
+    int pidfd = -1;
+    int result = -1;
+    long ret;
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    saved = get_current();
+    set_current(child);
+    child_fd = open_impl("/etc/passwd", O_RDONLY, 0);
+    set_current(saved);
+    if (child_fd < 0) {
+        goto out;
+    }
+
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        errno = -pidfd;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, child_fd, 1, 0, 0, 0);
+    if (ret != -EINVAL) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    set_current(parent);
+    close_if_open(pidfd);
+    if (child) {
+        set_current(child);
+        close_if_open(child_fd);
+        set_current(parent);
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    set_current(parent);
+    return result;
+}
+
+int fcntl_contract_pidfd_getfd_rejects_negative_targetfd(void) {
+    struct task_struct *parent;
+    struct task_struct *child = NULL;
+    int pidfd = -1;
+    int result = -1;
+    long ret;
+
+    parent = get_current();
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        errno = -pidfd;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, -1, 0, 0, 0, 0);
+    if (ret != -EBADF) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    set_current(parent);
+    close_if_open(pidfd);
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    set_current(parent);
+    return result;
+}
+
 void fcntl_contract_reset_pidfd_test_state(void) {
     struct task_struct *child;
 

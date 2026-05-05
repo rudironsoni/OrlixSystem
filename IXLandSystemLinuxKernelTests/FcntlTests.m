@@ -28,6 +28,8 @@ extern int fcntl_contract_pidfd_getfd_duplicates_target_descriptor(void);
 extern int fcntl_contract_pidfd_getfd_rejects_permission_mismatch(void);
 extern int fcntl_contract_pidfd_getfd_allows_ptrace_eligible_sibling(void);
 extern int fcntl_contract_pidfd_getfd_rejects_bad_targets(void);
+extern int fcntl_contract_pidfd_getfd_rejects_nonzero_flags(void);
+extern int fcntl_contract_pidfd_getfd_rejects_negative_targetfd(void);
 extern void fcntl_contract_reset_pidfd_test_state(void);
 
 @interface FcntlTests : XCTestCase
@@ -151,6 +153,14 @@ extern void fcntl_contract_reset_pidfd_test_state(void);
 
 - (void)testPidfdGetfdRejectsBadTargets {
     XCTAssertEqual(fcntl_contract_pidfd_getfd_rejects_bad_targets(), 0, @"errno %d", errno);
+}
+
+- (void)testPidfdGetfdRejectsNonzeroFlags {
+    XCTAssertEqual(fcntl_contract_pidfd_getfd_rejects_nonzero_flags(), 0, @"errno %d", errno);
+}
+
+- (void)testPidfdGetfdRejectsNegativeTargetfd {
+    XCTAssertEqual(fcntl_contract_pidfd_getfd_rejects_negative_targetfd(), 0, @"errno %d", errno);
 }
 
 @end

@@ -22,6 +22,7 @@
 #include "kernel/task.h"
 
 extern int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void);
+extern int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void);
 
 /* Declare library init function */
 extern int library_init(const void *config);
@@ -359,6 +360,11 @@ extern int library_is_initialized(void);
 
 - (void)testPidfdSendSignalUsesProcessDirectedLinuxSemantics {
     XCTAssertEqual(signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(), 0,
+                   @"errno %d", errno);
+}
+
+- (void)testPidfdSendSignalRejectsInvalidParameters {
+    XCTAssertEqual(signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(), 0,
                    @"errno %d", errno);
 }
 
