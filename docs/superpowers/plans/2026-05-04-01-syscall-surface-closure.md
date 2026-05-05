@@ -29,6 +29,23 @@
 - `unshare(CLONE_FS)` policy
 - syscall gap matrix updates and audited inventory-contract updates
 
+## Repo Truth Preflight (Required Before Any “Close X” Work)
+
+Do not assume this tranche is incomplete just because the plan says “Close …”. Before writing new code, prove what is already implemented and what is missing.
+
+**Open and inspect (do not rely on grep-only):**
+- `runtime/syscall.c` dispatch cases for the tranche syscalls
+- the owning implementation entrypoints they call (for example `kernel/` + `fs/` owners)
+- the existing LinuxKernel contract(s) that prove each syscall path
+
+- [ ] For each syscall in `Tranche Scope`, confirm it is not stubbed (`-ENOSYS`) in `runtime/syscall.c` and the owning implementation.
+- [ ] Confirm there is an explicit LinuxKernel contract assertion that would fail if the behavior regressed. If the syscall is implemented but under-proved, treat the next work as “contract expansion”, not “implementation”.
+- [ ] Sanity grep only the touched/owning files for stubs and “future” markers:
+
+```bash
+rg -n "ENOSYS|TODO|unimplemented|future backend" runtime/syscall.c kernel fs -S
+```
+
 ### Task 1: Audit And Reclassify The Syscall Matrix
 
 **Files:**
@@ -42,16 +59,16 @@
 - [ ] Run the focused inventory proof:
 
 ```bash
-xcodebuild test-without-building \
-  -project IXLandSystem.xcodeproj \
-  -scheme IXLandSystem-6.12-arm64 \
-  -sdk iphonesimulator \
-  -configuration Debug \
-  -destination 'platform=iOS Simulator,name=iPhone 17' \
-  -only-testing:IXLandSystemLinuxKernelTests/NativeSyscallTests
+xcodebuildmcp simulator test \
+  --project-path IXLandSystem.xcodeproj \
+  --scheme "IXLandSystem-6.12-arm64" \
+  --simulator-name "iPhone 17" \
+  --configuration Debug \
+  --derived-data-path /Volumes/1TB/Xcode/DerivedData \
+  --extra-args=-only-testing:IXLandSystemLinuxKernelTests/NativeSyscallTests
 ```
 
-Expected: after the milestone-00 `build-for-testing` step, the new inventory assertions fail before dispatch changes land.
+Expected: inventory assertions accurately reflect repo truth. If they already pass, do not “force” failure; move on to edge-case contract expansion.
 
 - [ ] Update `runtime/syscall.c` classification comments and dispatch tables so `docs/syscall_gap_matrix_6.12_arm64.md` can be updated to non-stale classification for the audited syscall set without claiming full-matrix or full-subsystem closure in milestone 01.
 
@@ -65,8 +82,8 @@ Expected: after the milestone-00 `build-for-testing` step, the new inventory ass
 - Test: `IXLandSystemLinuxKernelTests/SignalTests.m`
 
 - [ ] Add a failing contract that covers sending a signal through a pidfd, invalid pidfd handling, permission checks, and thread-group versus task targeting semantics.
-- [ ] Run the focused signal tests and confirm `-ENOSYS` or current policy failure is visible.
-- [ ] Implement the Linux-owner pidfd signal path using existing task lookup and signal-delivery rules instead of duplicating host concepts.
+- [ ] Run the focused signal tests and capture the failing behavior (if any). If the syscall is already implemented, expand the contract to cover missing edge cases instead of rewriting the implementation.
+- [ ] If implementation changes are required: implement the Linux-owner pidfd signal path using existing task lookup and signal-delivery rules instead of duplicating host concepts.
 - [ ] Re-run the signal suite until the pidfd path passes and ordinary `kill`/`tgkill` behavior remains green.
 
 ### Task 3: Close `pidfd_getfd`
@@ -80,7 +97,7 @@ Expected: after the milestone-00 `build-for-testing` step, the new inventory ass
 
 - [ ] Add a failing contract for `pidfd_getfd` that checks target-task descriptor lookup, permission rejection, close-on-exec propagation, and bad-target error paths.
 - [ ] Run the focused fd suite and capture the failing status.
-- [ ] Implement descriptor duplication through the existing fdtable semantics so the result behaves like a Linux-shaped duplicate, not a host fd alias.
+- [ ] If required: implement descriptor duplication through the existing fdtable semantics so the result behaves like a Linux-shaped duplicate, not a host fd alias. If already implemented, expand the contract to cover any missing edge cases first.
 - [ ] Re-run the fd suite and verify no regression in `dup`, `dup3`, or `fcntl` duplication behavior.
 
 ### Task 4: Finish `clone3` `set_tid` And `unshare(CLONE_FS)` Policy
@@ -95,8 +112,8 @@ Expected: after the milestone-00 `build-for-testing` step, the new inventory ass
 
 - [ ] Add failing `clone3` coverage for `set_tid` validation, parent and child bookkeeping, and incompatible flag combinations.
 - [ ] Add failing `unshare(CLONE_FS)` coverage that makes the intended policy explicit instead of leaving the syscall unclassified.
-- [ ] Implement `clone3` `set_tid` in the task and fork paths with Linux-visible validation rules.
-- [ ] Implement either Linux-owner `CLONE_FS` unshare support or a deliberate `-EINVAL` or `-EOPNOTSUPP` policy that is documented in the matrix and tests.
+- [ ] If required: implement `clone3` `set_tid` in the task and fork paths with Linux-visible validation rules. If already implemented, extend tests for the missing validation/edge coverage.
+- [ ] Ensure `unshare(CLONE_FS)` is either implemented or has an explicit policy return (`-EINVAL` or `-EOPNOTSUPP`) that is documented in the matrix and proved by tests (no “silent” behavior).
 - [ ] Re-run the task and exec suite until both the new behavior and existing clone and exec paths remain green.
 
 ### Task 5: Update Matrix And Run Two-Tier Proof
