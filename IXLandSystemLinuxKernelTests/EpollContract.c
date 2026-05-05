@@ -340,6 +340,190 @@ out:
     return -1;
 }
 
+int epoll_contract_edge_trigger_reports_once_until_pipe_drained(void) {
+    errno = 0;
+    int epfd = -1;
+    int pipefds[2] = {-1, -1};
+    struct epoll_event ev;
+    struct epoll_event events[1];
+    char byte = 'x';
+    long ret;
+    int rc;
+
+    if (pipe_impl(pipefds) != 0) {
+        errno = 1101;
+        return -1;
+    }
+    epfd = epoll_create1_impl(0);
+    if (epfd < 0) {
+        errno = 1102;
+        goto out;
+    }
+
+    memset(&ev, 0, sizeof(ev));
+    ev.events = EPOLLIN | EPOLLET;
+    ev.data = 0x11111111ULL;
+    if (epoll_ctl_impl(epfd, EPOLL_CTL_ADD, pipefds[0], &ev) != 0) {
+        errno = 1103;
+        goto out;
+    }
+
+    ret = write_impl(pipefds[1], &byte, 1);
+    if (ret != 1) {
+        errno = 1104;
+        goto out;
+    }
+
+    memset(events, 0, sizeof(events));
+    rc = epoll_wait_impl(epfd, events, 1, 0);
+    if (rc != 1 || (events[0].events & EPOLLIN) == 0 || events[0].data != 0x11111111ULL) {
+        errno = 1105;
+        goto out;
+    }
+
+    /* Edge-triggered: without draining, no new event should be reported. */
+    memset(events, 0, sizeof(events));
+    rc = epoll_wait_impl(epfd, events, 1, 0);
+    if (rc != 0) {
+        errno = 1106;
+        goto out;
+    }
+
+    ret = read_impl(pipefds[0], &byte, 1);
+    if (ret != 1) {
+        errno = 1107;
+        goto out;
+    }
+
+    /* Allow the implementation to observe readiness clearing before the next edge. */
+    memset(events, 0, sizeof(events));
+    rc = epoll_wait_impl(epfd, events, 1, 0);
+    if (rc != 0) {
+        errno = 1110;
+        goto out;
+    }
+
+    ret = write_impl(pipefds[1], &byte, 1);
+    if (ret != 1) {
+        errno = 1108;
+        goto out;
+    }
+
+    memset(events, 0, sizeof(events));
+    rc = epoll_wait_impl(epfd, events, 1, 0);
+    if (rc != 1 || (events[0].events & EPOLLIN) == 0) {
+        errno = 1109;
+        goto out;
+    }
+
+    close_if_open(epfd);
+    close_if_open(pipefds[0]);
+    close_if_open(pipefds[1]);
+    return 0;
+
+out:
+    close_if_open(epfd);
+    close_if_open(pipefds[0]);
+    close_if_open(pipefds[1]);
+    return -1;
+}
+
+int epoll_contract_oneshot_suppresses_events_until_rearmed(void) {
+    int epfd = -1;
+    int pipefds[2] = {-1, -1};
+    struct epoll_event ev;
+    struct epoll_event events[1];
+    char byte = 'y';
+    long ret;
+    int rc;
+
+    if (pipe_impl(pipefds) != 0) {
+        return -1;
+    }
+    epfd = epoll_create1_impl(0);
+    if (epfd < 0) {
+        goto out;
+    }
+
+    memset(&ev, 0, sizeof(ev));
+    ev.events = EPOLLIN | EPOLLONESHOT;
+    ev.data = 0x22222222ULL;
+    if (epoll_ctl_impl(epfd, EPOLL_CTL_ADD, pipefds[0], &ev) != 0) {
+        goto out;
+    }
+
+    ret = write_impl(pipefds[1], &byte, 1);
+    if (ret != 1) {
+        errno = ret < 0 ? errno : EPROTO;
+        goto out;
+    }
+
+    memset(events, 0, sizeof(events));
+    rc = epoll_wait_impl(epfd, events, 1, 0);
+    if (rc != 1 || (events[0].events & EPOLLIN) == 0 || events[0].data != 0x22222222ULL) {
+        errno = rc < 0 ? errno : EPROTO;
+        goto out;
+    }
+
+    /* Drain. */
+    ret = read_impl(pipefds[0], &byte, 1);
+    if (ret != 1) {
+        errno = ret < 0 ? errno : EPROTO;
+        goto out;
+    }
+
+    /* Without rearm, oneshot stays disabled. */
+    ret = write_impl(pipefds[1], &byte, 1);
+    if (ret != 1) {
+        errno = ret < 0 ? errno : EPROTO;
+        goto out;
+    }
+    memset(events, 0, sizeof(events));
+    rc = epoll_wait_impl(epfd, events, 1, 0);
+    if (rc != 0) {
+        errno = rc < 0 ? errno : EPROTO;
+        goto out;
+    }
+
+    /* Rearm via MOD. */
+    memset(&ev, 0, sizeof(ev));
+    ev.events = EPOLLIN | EPOLLONESHOT;
+    ev.data = 0x22222222ULL;
+    if (epoll_ctl_impl(epfd, EPOLL_CTL_MOD, pipefds[0], &ev) != 0) {
+        goto out;
+    }
+
+    /* Drain any queued byte from the suppressed write, then write again. */
+    ret = read_impl(pipefds[0], &byte, 1);
+    if (ret != 1) {
+        errno = ret < 0 ? errno : EPROTO;
+        goto out;
+    }
+    ret = write_impl(pipefds[1], &byte, 1);
+    if (ret != 1) {
+        errno = ret < 0 ? errno : EPROTO;
+        goto out;
+    }
+
+    memset(events, 0, sizeof(events));
+    rc = epoll_wait_impl(epfd, events, 1, 0);
+    if (rc != 1 || (events[0].events & EPOLLIN) == 0) {
+        errno = rc < 0 ? errno : EPROTO;
+        goto out;
+    }
+
+    close_if_open(epfd);
+    close_if_open(pipefds[0]);
+    close_if_open(pipefds[1]);
+    return 0;
+
+out:
+    close_if_open(epfd);
+    close_if_open(pipefds[0]);
+    close_if_open(pipefds[1]);
+    return -1;
+}
+
 static void epoll_mask_case_mark_done(struct epoll_mask_case *ctx, int result) {
     kernel_mutex_lock(&ctx->lock);
     ctx->result = result;

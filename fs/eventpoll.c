@@ -18,6 +18,8 @@
 typedef struct epitem {
     int fd;
     struct epoll_event event;
+    __poll_t last_ready_events;
+    bool oneshot_disabled;
     struct epitem *next;
 } epitem_t;
 
@@ -80,18 +82,45 @@ static epitem_t *epoll_find_item(struct epoll_instance *instance, int fd) {
     return NULL;
 }
 
+static __poll_t epoll_mask_requested_events(__poll_t events) {
+    /* EPOLLET/EPOLLONESHOT are behavior modifiers, not readiness bits. */
+    return events & ~((__poll_t)EPOLLET | (__poll_t)EPOLLONESHOT);
+}
+
 static int epoll_copy_ready(struct epoll_instance *instance, struct epoll_event *events, int maxevents) {
     int ready = 0;
 
     fs_mutex_lock(&instance->lock);
     for (epitem_t *item = instance->items; item && ready < maxevents; item = item->next) {
+        if (item->oneshot_disabled) {
+            continue;
+        }
         int is_virtual = 0;
-        short revents = poll_fd_revents_impl(item->fd, (short)item->event.events, &is_virtual);
+        __poll_t requested = epoll_mask_requested_events(item->event.events);
+        short revents = poll_fd_revents_impl(item->fd, (short)requested, &is_virtual);
         if (revents == 0) {
+            /* Reset edge state once readiness clears so next transition can be observed. */
+            item->last_ready_events = 0;
             continue;
         }
 
-        events[ready].events = (__poll_t)revents;
+        __poll_t current = (__poll_t)revents;
+        if ((item->event.events & EPOLLET) != 0) {
+            __poll_t newly_ready = current & ~item->last_ready_events;
+            item->last_ready_events = current;
+            if (newly_ready == 0) {
+                continue;
+            }
+            current = newly_ready;
+        } else {
+            item->last_ready_events = current;
+        }
+
+        if ((item->event.events & EPOLLONESHOT) != 0) {
+            item->oneshot_disabled = true;
+        }
+
+        events[ready].events = current;
         events[ready].data = item->event.data;
         ready++;
     }
@@ -213,6 +242,8 @@ int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event) {
         }
         item->fd = fd;
         item->event = *event;
+        item->last_ready_events = 0;
+        item->oneshot_disabled = false;
         item->next = instance->items;
         instance->items = item;
         break;
@@ -230,6 +261,8 @@ int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event) {
             return -1;
         }
         item->event = *event;
+        item->last_ready_events = 0;
+        item->oneshot_disabled = false;
         break;
     case EPOLL_CTL_DEL: {
         epitem_t **cursor = &instance->items;
