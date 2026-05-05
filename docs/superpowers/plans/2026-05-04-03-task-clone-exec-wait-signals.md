@@ -23,12 +23,17 @@
 
 ## Tranche Scope
 
-- `clone3` edge cases beyond basic creation
+- `clone3` edge cases beyond basic creation:
+  - thread-group creation (`CLONE_THREAD`) and thread-group identity invariants
+  - parent/child TID bookkeeping (`set_tid`, `clear_tid`, `parent_tid`, `child_tid`)
+  - `pidfd` interactions (return value, lifetime, close semantics)
+  - invalid flag combinations and Linux-shaped errno
 - parent and child lifecycle separation
 - wait status encoding and parent notifications
 - stop, continue, and default-action parity
 - `SA_RESTART` and restart metadata
 - ptrace stop and event lifecycle
+- exec lifecycle and ptrace-on-exec parity (Linux-owned exec state transitions; no host-shaped exec semantics)
 
 ## Linux-Shaped Runtime Model Notes
 
@@ -50,6 +55,11 @@
 - [ ] Implement the minimal task and fork changes needed for Linux-shaped thread-group semantics.
 - [ ] Re-run task-group tests until clone, thread-group, and pidfd-adjacent behavior remain green.
 
+**Acceptance (contract must fail if regressed):**
+- thread-group IDs and per-thread TIDs remain Linux-shaped under `CLONE_THREAD`
+- `clone3` rejects invalid flag combos with Linux-shaped errno (not “best effort”)
+- `pidfd` behavior is stable enough for poll/close/lifetime tests (even if minimal)
+
 ### Task 2: Complete Wait Status And Parent Notification Rules
 
 **Files:**
@@ -64,6 +74,11 @@
 - [ ] Implement wait-state and notification fixes in the owning kernel paths.
 - [ ] Re-run the wait and job-control suite until encoding and lifecycle parity match the contract.
 
+**Acceptance (contract must fail if regressed):**
+- exit vs signal-death status encoding matches Linux bit layout expectations
+- stop/continue and ptrace-stop statuses are unambiguous and round-trip in wait APIs
+- parent notifications and reaping order produce deterministic, Linux-shaped results
+
 ### Task 3: Finish Signal Default Actions And Restart Semantics
 
 **Files:**
@@ -76,6 +91,11 @@
 - [ ] Run the focused signal suite to confirm the current failure mode before implementation.
 - [ ] Implement the minimal signal-owner changes needed to preserve Linux restart and mask semantics.
 - [ ] Re-run the signal tests and confirm existing `rt_sigaction`, `rt_sigprocmask`, `tgkill`, and `sigaltstack` paths stay green.
+
+**Acceptance (contract must fail if regressed):**
+- pending vs blocked delivery ordering remains Linux-shaped
+- default actions do not silently “do nothing” when Linux requires a state change
+- `SA_RESTART` changes observable syscall interruption outcomes (where applicable)
 
 ### Task 4: Expand Ptrace Event Lifecycle
 
@@ -92,13 +112,40 @@
 - [ ] Implement ptrace events and wait integration in Linux-owner code only.
 - [ ] Re-run the ptrace suite until the new event lifecycle and old ptrace behavior both pass.
 
-### Task 5: Full Tranche Proof
+**Acceptance (contract must fail if regressed):**
+- ptrace events affect wait status exactly (not “side-channel” state)
+- exec/clone/exit ptrace events fire only for IXLand tasks (never host processes)
+
+### Task 5: Add Explicit Exec Lifecycle Coverage (Linux-Owned)
+
+**Why:** The tranche title includes **Exec**, and ptrace event parity depends on a correct, Linux-owned exec lifecycle. This task pins down exec invariants before any ptrace-on-exec claim.
+
+**Files:**
+- Modify: `kernel/task.c`
+- Modify: `runtime/syscall.c`
+- Modify: (as needed) `kernel/exec.c` (or the owning exec implementation file if named differently)
+- Test: `IXLandSystemLinuxKernelTests/TaskExecContract.c`
+- Test: `IXLandSystemLinuxKernelTests/TaskExecTests.m` (or extend existing exec tests if present)
+
+- [ ] Add failing coverage for exec lifecycle invariants: thread-group exec rules, signal disposition behavior across exec, and wait/ptrace observable state transitions.
+- [ ] Run focused exec tests and capture exact mismatches before implementation.
+- [ ] Implement minimal Linux-owner exec lifecycle fixes (no `internal/ios/**` dependencies).
+- [ ] Re-run exec tests until green and confirm ptrace-on-exec tests depend on these invariants (no duplication).
+
+**Acceptance (contract must fail if regressed):**
+- exec transitions update the task/thread-group state in Linux-shaped ways observable via wait/ptrace
+- exec does not “leak” host concepts into Linux-owner task identity or signal semantics
+
+### Task 6: Full Tranche Proof (Required Before Commit/Push)
 
 **Files:**
 - Reference: `docs/superpowers/plans/2026-05-04-00-kernel-completion-orchestration.md`
 
-- [ ] Re-run lint, project generation, and the AGENTS-authoritative simulator `build-for-testing` flow.
-- [ ] Run the focused task or wait or signal or ptrace simulator suites for tranche-local proof, then run the full shared-scheme simulator suite before any milestone-finished claim.
+- [ ] Re-run lint, project generation, and the authoritative simulator `build-for-testing` flow:
+  - `rtk bash ./scripts/lint_linux_surface.sh`
+  - `rtk xcodegen generate --project .`
+  - `rtk proxy /bin/zsh -lc "xcodebuild build-for-testing -project IXLandSystem.xcodeproj -scheme IXLandSystem-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /Volumes/1TB/Xcode/DerivedData 2>&1 | xcsift -f toon"`
+- [ ] Run the focused simulator suites for tranche-local proof (clone/wait/signal/ptrace/exec), then run the full shared-scheme simulator suite before any tranche-finished claim.
 - [ ] Confirm LinuxKernel tests still avoid `internal/ios/**`.
 - [ ] Run the orchestration plan’s scope-closure audit: verify each `Tranche Scope` bullet has both (a) an owning implementation in `kernel/` / `runtime/` and (b) an explicit contract assertion that would fail if the behavior disappeared.
 - [ ] Commit and push only after the proof gate and branch-synchronization checks succeed.
