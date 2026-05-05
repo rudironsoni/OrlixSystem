@@ -1190,11 +1190,22 @@ static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
             free(page);
         }
     } else if (vma->shared_mapping) {
-        free(page_flags);
-        free(resident_pages);
-        free(dirty_pages);
-        errno = ENOSYS;
-        return -1;
+        if (vma->backing_fd < 0) {
+            free(page_flags);
+            free(resident_pages);
+            free(dirty_pages);
+            errno = EBADF;
+            return -1;
+        }
+        shared_pages = mm_shared_pages_get_or_create(vma->backing_fd, vma->backing_offset, new_pages);
+        if (!shared_pages) {
+            int saved_errno = errno;
+            free(page_flags);
+            free(resident_pages);
+            free(dirty_pages);
+            errno = saved_errno;
+            return -1;
+        }
     } else {
         new_image = calloc(1, (size_t)new_len);
         if (!new_image) {
@@ -1219,6 +1230,11 @@ static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
     } else if (shared_pages) {
         free(vma->shared_pages);
         vma->shared_pages = shared_pages;
+        if (vma->shared_mapping) {
+            mm_shared_mapping_put(vma->shared_mapping);
+            vma->shared_mapping = NULL;
+            vma->shared_mapping_offset = 0;
+        }
         vma->image = shared_pages[0] ? shared_pages[0]->image : NULL;
     } else if (new_image) {
         free(vma->image);
@@ -2356,6 +2372,16 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                 shared_pages[i] = page[0];
                 free(page);
             }
+        } else if (vma->shared_mapping && vma->backing_fd >= 0) {
+            shared_pages = mm_shared_pages_get_or_create(vma->backing_fd, vma->backing_offset, new_pages);
+            if (!shared_pages) {
+                int saved_errno = errno;
+                free(page_flags);
+                free(resident_pages);
+                free(dirty_pages);
+                errno = saved_errno;
+                return (void *)-1;
+            }
         } else {
            free(page_flags);
             free(resident_pages);
@@ -2375,6 +2401,11 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         } else if (shared_pages) {
             free(vma->shared_pages);
             vma->shared_pages = shared_pages;
+            if (vma->shared_mapping) {
+                mm_shared_mapping_put(vma->shared_mapping);
+                vma->shared_mapping = NULL;
+                vma->shared_mapping_offset = 0;
+            }
             vma->image = shared_pages[0] ? shared_pages[0]->image : NULL;
         } else {
             free(vma->image);
