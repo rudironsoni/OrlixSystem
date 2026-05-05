@@ -86,6 +86,9 @@ bin/ixland-cc
 # Vendor source (regenerated from kernel)
 .vendor-src/
 
+# Git worktrees (local development only)
+.worktrees/
+
 # Backup files
 .old-backup/
 
