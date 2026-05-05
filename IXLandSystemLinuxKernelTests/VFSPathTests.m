@@ -1277,6 +1277,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"non-bind mount should remain unsupported without host mount semantics, errno %d", errno);
 }
 
+- (void)testMountAndUmount2SyscallsRouteToLinuxOwnedMountStack {
+    extern int vfs_contract_mount_syscall_bind_mount_and_umount2_work(void);
+    XCTAssertEqual(vfs_contract_mount_syscall_bind_mount_and_umount2_work(), 0,
+                   @"__NR_mount/__NR_umount2 should route to IXLand mount semantics (not ENOSYS), errno %d", errno);
+}
+
 - (void)testMountNamespaceSharedAcrossTaskDup {
     extern int vfs_contract_mount_namespace_shared_across_task_dup(void);
     XCTAssertEqual(vfs_contract_mount_namespace_shared_across_task_dup(), 0,

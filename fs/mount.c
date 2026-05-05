@@ -93,7 +93,7 @@ int mount_impl(const char *source, const char *target,
  * UMOUNT - Virtual unmount from IXLand namespace
  * ============================================================================ */
 
-static int umount_impl(const char *target) {
+int umount_impl(const char *target) {
     if (!target) {
         errno = EFAULT;
         return -1;
@@ -116,7 +116,7 @@ static int umount_impl(const char *target) {
  * UMOUNT2 - Virtual unmount with flags
  * ============================================================================ */
 
-static int umount2_impl(const char *target, int flags) {
+int umount2_impl(const char *target, int flags) {
     if (!target) {
         errno = EFAULT;
         return -1;
