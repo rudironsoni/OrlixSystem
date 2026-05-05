@@ -1649,6 +1649,12 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
                    @"umount2 MNT_DETACH should detach busy mount from virtual namespace, errno %d", errno);
 }
 
+- (void)testUmount2SyscallDetachDetachesBusyMountFromNamespace {
+    extern int vfs_contract_umount2_syscall_detach_detaches_busy_mount_from_namespace(void);
+    XCTAssertEqual(vfs_contract_umount2_syscall_detach_detaches_busy_mount_from_namespace(), 0,
+                   @"__NR_umount2(MNT_DETACH) should route to IXLand detach semantics, errno %d", errno);
+}
+
 - (void)testUmount2RejectsUnusedLinuxUmountFlag {
     extern int vfs_contract_umount2_rejects_unused_linux_umount_flag(void);
     XCTAssertEqual(vfs_contract_umount2_rejects_unused_linux_umount_flag(), 0,
