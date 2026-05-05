@@ -3,6 +3,49 @@
 #include <errno.h>
 
 #include "FutexContract.h"
+#include "kernel/init.h"
+#include "kernel/signal.h"
+#include "kernel/task.h"
+
+static void reset_futex_test_kernel_state(void) {
+    struct task_struct *child;
+
+    XCTAssertEqual(start_kernel(), 0, @"start_kernel must succeed before futex tests");
+    XCTAssertTrue(kernel_is_booted(), @"kernel must be booted before futex tests");
+    XCTAssertNotEqual(init_task, NULL, @"init_task must exist before futex tests");
+
+    if (!init_task) {
+        return;
+    }
+
+    set_current(init_task);
+    init_task->parent = NULL;
+    init_task->ppid = 0;
+    init_task->exit_status = 0;
+    init_task->thread_pending_signals = 0;
+    atomic_store(&init_task->exited, false);
+    atomic_store(&init_task->signaled, false);
+    atomic_store(&init_task->termsig, 0);
+    atomic_store(&init_task->stopped, false);
+    atomic_store(&init_task->state, TASK_RUNNING);
+    atomic_store(&init_task->continued, false);
+    atomic_store(&init_task->stop_report_pending, false);
+    atomic_store(&init_task->continue_report_pending, false);
+
+    if (init_task->signal) {
+        memset(&init_task->signal->blocked, 0, sizeof(init_task->signal->blocked));
+        memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
+        memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));
+    }
+
+    while ((child = init_task->children) != NULL) {
+        task_unlink_child_impl(init_task, child);
+        child->parent = NULL;
+        child->ppid = 0;
+    }
+
+    set_current(init_task);
+}
 
 extern int library_init(const void *config);
 extern int library_is_initialized(void);
@@ -17,6 +60,12 @@ extern int library_is_initialized(void);
     if (!library_is_initialized()) {
         library_init(NULL);
     }
+    reset_futex_test_kernel_state();
+}
+
+- (void)tearDown {
+    reset_futex_test_kernel_state();
+    [super tearDown];
 }
 
 - (void)testFutexWaitMismatchReturnsAgain {

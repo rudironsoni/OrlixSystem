@@ -1,5 +1,6 @@
 #include <asm/ioctls.h>
 #include <asm/unistd.h>
+#include <linux/sched.h>
 #include <linux/fcntl.h>
 #include <linux/wait.h>
 #define __ASSEMBLY__ 1
@@ -25,6 +26,7 @@ extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
+extern int32_t clone_impl(uint64_t flags);
 
 #ifndef WIFEXITED
 #define WIFEXITED(status) (((status) & 0x7f) == 0)
@@ -940,4 +942,43 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
         return -1;
     }
     return 0;
+}
+
+int wait_job_control_contract_clone_thread_is_not_waitable(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    int32_t child_pid;
+    int status = 0;
+    int result = -1;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child_pid = clone_impl(CLONE_VM | CLONE_THREAD | CLONE_SIGHAND);
+    if (child_pid < 0) {
+        return -1;
+    }
+    child = task_lookup(child_pid);
+    if (!child) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    errno = 0;
+    if (waitpid_impl(child_pid, &status, WNOHANG) != -1 || errno != ECHILD) {
+        errno = EPROTO;
+        goto out;
+    }
+    result = 0;
+
+out: {
+        int saved_errno = errno;
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+        free_task(child);
+        errno = saved_errno;
+    }
+    return result;
 }
