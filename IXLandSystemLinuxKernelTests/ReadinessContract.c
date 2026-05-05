@@ -3,6 +3,7 @@
 #include <linux/eventfd.h>
 #include <linux/fcntl.h>
 #include <linux/poll.h>
+#include <linux/pidfd.h>
 #include <linux/socket.h>
 #include <linux/time_types.h>
 #include <linux/timerfd.h>
@@ -36,9 +37,26 @@ extern int select_impl(int nfds, fd_set *readfds, fd_set *writefds, fd_set *erro
 extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int signal_generate_task(struct task_struct *target, int32_t sig);
+extern void exit_impl(int status);
 
 static int close_if_open(int fd) {
     return fd >= 0 ? close_impl(fd) : 0;
+}
+
+static void clear_pending_signal(struct task_struct *task, int sig) {
+    int32_t dequeued = 0;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    while (signal_dequeue(task, NULL, &dequeued) > 0) {
+        if (dequeued == sig) {
+            break;
+        }
+    }
+    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
 int readiness_contract_eventfd2_counter_read_write_and_poll(void) {
@@ -339,22 +357,6 @@ static int case_wait_done(struct readiness_thread_case *ctx) {
     result = ctx->result;
     kernel_mutex_unlock(&ctx->lock);
     return result;
-}
-
-static void clear_pending_signal(struct task_struct *task, int sig) {
-    int32_t dequeued = 0;
-
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    while (signal_dequeue(task, NULL, &dequeued) > 0) {
-        if (dequeued == sig) {
-            break;
-        }
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
 static void pselect_case_init(struct pselect_mask_case *ctx, int fd, struct task_struct *task) {
@@ -1040,4 +1042,67 @@ out:
     close_if_open(dev_dir);
     close_if_open(zero_fd);
     return result;
+}
+
+int readiness_contract_poll_pidfd_readable_after_task_exit(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct task_struct *restore;
+    struct pollfd pfd;
+    struct __kernel_timespec timeout = {0, 0};
+    int pidfd = -1;
+    long ret;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        errno = (int)-pidfd;
+        goto out;
+    }
+
+    memset(&pfd, 0, sizeof(pfd));
+    pfd.fd = pidfd;
+    pfd.events = POLLIN;
+    ret = syscall_dispatch_impl(__NR_ppoll, (long)(uintptr_t)&pfd, 1, (long)(uintptr_t)&timeout, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    restore = get_current();
+    set_current(child);
+    exit_impl(0);
+    set_current(restore);
+
+    memset(&pfd, 0, sizeof(pfd));
+    pfd.fd = pidfd;
+    pfd.events = POLLIN;
+    ret = syscall_dispatch_impl(__NR_ppoll, (long)(uintptr_t)&pfd, 1, (long)(uintptr_t)&timeout, 0, 0, 0);
+    if (ret != 1 || (pfd.revents & POLLIN) == 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    clear_pending_signal(parent, SIGCHLD);
+    close_if_open(pidfd);
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    return 0;
+
+out:
+    close_if_open(pidfd);
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    return -1;
 }

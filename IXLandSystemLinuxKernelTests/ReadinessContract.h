@@ -25,5 +25,6 @@ int readiness_contract_pselect6_pipe_uses_shared_readiness_engine(void);
 int readiness_contract_pselect6_mask_blocks_signal_until_pipe_ready_and_restores(void);
 int readiness_contract_proc_and_dev_fds_report_readiness(void);
 int readiness_contract_synthetic_dirs_and_dev_zero_report_readiness(void);
+int readiness_contract_poll_pidfd_readable_after_task_exit(void);
 
 #endif

@@ -21,5 +21,6 @@ int epoll_contract_fdinfo_reports_flags(void);
 int epoll_contract_syscall_surface_wait_pipe_readable(void);
 int epoll_contract_pwait_mask_blocks_signal_until_pipe_ready(void);
 int epoll_contract_fdinfo_reports_watched_descriptor(void);
+int epoll_contract_wait_pidfd_readable_after_task_exit(void);
 
 #endif

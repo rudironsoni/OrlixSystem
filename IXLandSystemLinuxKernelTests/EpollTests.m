@@ -50,5 +50,6 @@
 - (void)testEpollSyscallSurfaceWaitPipeReadable { XCTAssertEqual(epoll_contract_syscall_surface_wait_pipe_readable(), 0, @"errno %d", errno); }
 - (void)testEpollPwaitMaskBlocksSignalUntilPipeReady { XCTAssertEqual(epoll_contract_pwait_mask_blocks_signal_until_pipe_ready(), 0, @"errno %d", errno); }
 - (void)testEpollFdinfoReportsWatchedDescriptor { XCTAssertEqual(epoll_contract_fdinfo_reports_watched_descriptor(), 0, @"errno %d", errno); }
+- (void)testEpollWaitPidfdReadableAfterTaskExit { XCTAssertEqual(epoll_contract_wait_pidfd_readable_after_task_exit(), 0, @"errno %d", errno); }
 
 @end

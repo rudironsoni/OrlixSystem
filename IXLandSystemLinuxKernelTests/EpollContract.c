@@ -2,6 +2,7 @@
 #include <asm/unistd.h>
 #include <linux/eventpoll.h>
 #include <linux/fcntl.h>
+#include <linux/pidfd.h>
 #include <linux/poll.h>
 #include <linux/socket.h>
 
@@ -35,6 +36,7 @@ extern int epoll_create1_impl(int flags);
 extern int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event);
 extern int epoll_wait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout);
 extern int signal_generate_task(struct task_struct *target, int32_t sig);
+extern void exit_impl(int status);
 
 static int close_if_open(int fd) {
     return fd >= 0 ? close_impl(fd) : 0;
@@ -262,6 +264,80 @@ static void epoll_mask_case_mark_started(struct epoll_mask_case *ctx) {
     ctx->started = 1;
     kernel_cond_broadcast(&ctx->cond);
     kernel_mutex_unlock(&ctx->lock);
+}
+
+int epoll_contract_wait_pidfd_readable_after_task_exit(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    struct task_struct *restore;
+    struct epoll_event ev;
+    struct epoll_event events[1];
+    int epfd = -1;
+    int pidfd = -1;
+    int ret;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = task_create_child_impl(parent);
+    if (!child) {
+        return -1;
+    }
+
+    pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
+    if (pidfd < 0) {
+        errno = (int)-pidfd;
+        goto out;
+    }
+
+    epfd = epoll_create1_impl(0);
+    if (epfd < 0) {
+        goto out;
+    }
+
+    memset(&ev, 0, sizeof(ev));
+    ev.events = EPOLLIN;
+    ev.data = 0xdeadbeefU;
+    if (epoll_ctl_impl(epfd, EPOLL_CTL_ADD, pidfd, &ev) != 0) {
+        goto out;
+    }
+
+    memset(events, 0, sizeof(events));
+    ret = epoll_wait_impl(epfd, events, 1, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? errno : EPROTO;
+        goto out;
+    }
+
+    restore = get_current();
+    set_current(child);
+    exit_impl(0);
+    set_current(restore);
+
+    memset(events, 0, sizeof(events));
+    ret = epoll_wait_impl(epfd, events, 1, 0);
+    if (ret != 1 || (events[0].events & EPOLLIN) == 0 || events[0].data != 0xdeadbeefU) {
+        errno = ret < 0 ? errno : EPROTO;
+        goto out;
+    }
+
+    clear_pending_signal(parent, SIGCHLD);
+    close_if_open(epfd);
+    close_if_open(pidfd);
+    task_unlink_child_impl(parent, child);
+    free_task(child);
+    return 0;
+
+out:
+    close_if_open(epfd);
+    close_if_open(pidfd);
+    if (child) {
+        task_unlink_child_impl(parent, child);
+        free_task(child);
+    }
+    return -1;
 }
 
 static void epoll_mask_case_mark_done(struct epoll_mask_case *ctx, int result) {
