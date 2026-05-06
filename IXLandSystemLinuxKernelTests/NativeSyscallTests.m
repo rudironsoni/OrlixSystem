@@ -306,6 +306,10 @@
     XCTAssertEqual(native_syscall_contract_dispatches_statx_syscall(), 0, @"errno %d", errno);
 }
 
+- (void)testDispatchesLinkatSymlinkatAndChrootSyscalls {
+    XCTAssertEqual(native_syscall_contract_dispatches_linkat_symlinkat_and_chroot_syscalls(), 0, @"errno %d", errno);
+}
+
 - (void)testDispatchesExitAndWaitidSyscalls {
     XCTAssertEqual(native_syscall_contract_dispatches_exit_and_waitid_syscalls(), 0, @"errno %d", errno);
 }

@@ -40,8 +40,8 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 33 | `mknodat` | kernel-owned missing:unclassified | package |
 | 34 | `mkdirat` | implemented:fd | none |
 | 35 | `unlinkat` | implemented:fd | none |
-| 36 | `symlinkat` | kernel-owned missing:unclassified | package |
-| 37 | `linkat` | kernel-owned missing:unclassified | package |
+| 36 | `symlinkat` | implemented:fd | none |
+| 37 | `linkat` | implemented:fd | none |
 | 38 | `renameat` | implemented:fd | none |
 | 39 | `umount2` | kernel-owned missing:unclassified | package |
 | 40 | `mount` | kernel-owned missing:unclassified | package |
@@ -55,7 +55,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 48 | `faccessat` | implemented:fd | none |
 | 49 | `chdir` | implemented:fd | none |
 | 50 | `fchdir` | implemented:fd | none |
-| 51 | `chroot` | kernel-owned missing:unclassified | package |
+| 51 | `chroot` | implemented:fd | none |
 | 52 | `fchmod` | implemented:fd | none |
 | 53 | `fchmodat` | implemented:fd | none |
 | 54 | `fchownat` | implemented:fd | none |

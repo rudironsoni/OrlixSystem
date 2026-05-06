@@ -273,6 +273,9 @@ extern int fstatfs_impl(int fd, struct statfs *buf);
 extern linux_mode_t umask_impl(linux_mode_t mask);
 extern int ioctl_impl(int fd, unsigned long request, void *arg);
 extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
+extern int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);
+extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
+extern int chroot(const char *path);
 extern int dup_impl(int oldfd);
 extern int dup3_impl(int oldfd, int newfd, int flags);
 extern int close_range_impl(unsigned int first, unsigned int last, unsigned int flags);
@@ -709,10 +712,13 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_ftruncate:
     case __NR_mkdirat:
     case __NR_unlinkat:
+    case __NR_linkat:
+    case __NR_symlinkat:
     case __NR_renameat:
     case __NR_renameat2:
     case __NR_chdir:
     case __NR_fchdir:
+    case __NR_chroot:
     case __NR_umask:
     case __NR_fchmod:
     case __NR_fchmodat:
@@ -1315,6 +1321,13 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_unlinkat:
         return syscall_result((long)unlinkat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                   (int)arg2));
+    case __NR_linkat:
+        return syscall_result((long)linkat((int)arg0, (const char *)(uintptr_t)arg1,
+                                           (int)arg2, (const char *)(uintptr_t)arg3,
+                                           (int)arg4));
+    case __NR_symlinkat:
+        return syscall_result((long)symlinkat((const char *)(uintptr_t)arg0, (int)arg1,
+                                              (const char *)(uintptr_t)arg2));
     case __NR_renameat:
         return syscall_result((long)renameat2_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                    (int)arg2, (const char *)(uintptr_t)arg3, 0));
@@ -1349,6 +1362,8 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)chdir_impl((const char *)(uintptr_t)arg0));
     case __NR_fchdir:
         return syscall_result((long)fchdir_impl((int)arg0));
+    case __NR_chroot:
+        return syscall_result((long)chroot((const char *)(uintptr_t)arg0));
     case __NR_umask:
         return (long)umask_impl((linux_mode_t)arg0);
     case __NR_fchmod:

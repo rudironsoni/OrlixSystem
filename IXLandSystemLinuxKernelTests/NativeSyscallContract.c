@@ -5665,6 +5665,144 @@ out:
     return -1;
 }
 
+int native_syscall_contract_dispatches_linkat_symlinkat_and_chroot_syscalls(void) {
+    struct task_struct *task = get_current();
+    const char *root = "/tmp/native-linkat-chroot-root";
+    char old_root[MAX_PATH];
+    char old_pwd[MAX_PATH];
+    char link_target[32];
+    char cwd[MAX_PATH];
+    char read_buf[16];
+    int dirfd = -1;
+    int fd = -1;
+    long ret;
+
+    if (!task || !task->fs) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    memcpy(old_root, task->fs->root_path, sizeof(old_root));
+    memcpy(old_pwd, task->fs->pwd_path, sizeof(old_pwd));
+    fs_set_root(task->fs, "/");
+    fs_set_pwd(task->fs, "/");
+
+    unlink_impl("/tmp/native-linkat-chroot-root/hardlink");
+    unlink_impl("/tmp/native-linkat-chroot-root/link");
+    unlink_impl("/tmp/native-linkat-chroot-root/source");
+    rmdir_impl(root);
+    ret = syscall_dispatch_impl(__NR_mkdirat, AT_FDCWD, (long)(uintptr_t)root, 0700, 0, 0, 0);
+    if (ret != 0 && ret != -EEXIST) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        return -1;
+    }
+
+    dirfd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)root,
+                                       O_RDONLY | O_DIRECTORY, 0, 0, 0);
+    if (dirfd < 0) {
+        errno = (int)-dirfd;
+        goto out;
+    }
+    fd = (int)syscall_dispatch_impl(__NR_openat, dirfd, (long)(uintptr_t)"source",
+                                    O_CREAT | O_RDWR | O_TRUNC, 0600, 0, 0);
+    if (fd < 0) {
+        errno = (int)-fd;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_write, fd, (long)(uintptr_t)"payload", 7, 0, 0, 0);
+    if (ret != 7) {
+        errno = ret < 0 ? (int)-ret : EIO;
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    ret = syscall_dispatch_impl(__NR_symlinkat, (long)(uintptr_t)"source", dirfd,
+                                (long)(uintptr_t)"link", 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    memset(link_target, 0, sizeof(link_target));
+    ret = syscall_dispatch_impl(__NR_readlinkat, dirfd, (long)(uintptr_t)"link",
+                                (long)(uintptr_t)link_target, sizeof(link_target) - 1, 0, 0);
+    if (ret != 6 || strcmp(link_target, "source") != 0) {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_linkat, dirfd, (long)(uintptr_t)"source",
+                                dirfd, (long)(uintptr_t)"hardlink", 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    fd = (int)syscall_dispatch_impl(__NR_openat, dirfd, (long)(uintptr_t)"hardlink",
+                                    O_RDONLY, 0, 0, 0);
+    if (fd < 0) {
+        errno = (int)-fd;
+        goto out;
+    }
+    memset(read_buf, 0, sizeof(read_buf));
+    ret = syscall_dispatch_impl(__NR_read, fd, (long)(uintptr_t)read_buf, 7, 0, 0, 0);
+    if (ret != 7 || strcmp(read_buf, "payload") != 0) {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
+    close_if_open(fd);
+    fd = -1;
+
+    ret = syscall_dispatch_impl(__NR_chroot, (long)(uintptr_t)root, 0, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    memset(cwd, 0, sizeof(cwd));
+    ret = syscall_dispatch_impl(__NR_getcwd, (long)(uintptr_t)cwd, sizeof(cwd), 0, 0, 0, 0);
+    if (ret <= 0 || strcmp(cwd, "/") != 0) {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
+
+    fd = (int)syscall_dispatch_impl(__NR_openat, AT_FDCWD, (long)(uintptr_t)"/hardlink",
+                                    O_RDONLY, 0, 0, 0);
+    if (fd < 0) {
+        errno = (int)-fd;
+        goto out;
+    }
+    memset(read_buf, 0, sizeof(read_buf));
+    ret = syscall_dispatch_impl(__NR_read, fd, (long)(uintptr_t)read_buf, 7, 0, 0, 0);
+    if (ret != 7 || strcmp(read_buf, "payload") != 0) {
+        errno = ret < 0 ? (int)-ret : ENODATA;
+        goto out;
+    }
+
+    fs_set_root(task->fs, old_root);
+    fs_set_pwd(task->fs, old_pwd);
+    close_if_open(fd);
+    close_if_open(dirfd);
+    unlink_impl("/tmp/native-linkat-chroot-root/hardlink");
+    unlink_impl("/tmp/native-linkat-chroot-root/link");
+    unlink_impl("/tmp/native-linkat-chroot-root/source");
+    rmdir_impl(root);
+    return 0;
+
+out:
+    {
+        int saved_errno = errno;
+        fs_set_root(task->fs, old_root);
+        fs_set_pwd(task->fs, old_pwd);
+        close_if_open(fd);
+        close_if_open(dirfd);
+        unlink_impl("/tmp/native-linkat-chroot-root/hardlink");
+        unlink_impl("/tmp/native-linkat-chroot-root/link");
+        unlink_impl("/tmp/native-linkat-chroot-root/source");
+        rmdir_impl(root);
+        errno = saved_errno;
+    }
+    return -1;
+}
+
 int native_syscall_contract_dispatches_exit_and_waitid_syscalls(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child;
@@ -6007,10 +6145,13 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         __NR_readlinkat,
         __NR_mkdirat,
         __NR_unlinkat,
+        __NR_linkat,
+        __NR_symlinkat,
         __NR_renameat,
         __NR_renameat2,
         __NR_chdir,
         __NR_fchdir,
+        __NR_chroot,
         __NR_umask,
         __NR_fchmod,
         __NR_fchmodat,
@@ -6127,10 +6268,13 @@ int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) 
         {__NR_pipe2, SYSCALL_CAPABILITY_FD},
         {__NR_mkdirat, SYSCALL_CAPABILITY_FD},
         {__NR_unlinkat, SYSCALL_CAPABILITY_FD},
+        {__NR_linkat, SYSCALL_CAPABILITY_FD},
+        {__NR_symlinkat, SYSCALL_CAPABILITY_FD},
         {__NR_renameat, SYSCALL_CAPABILITY_FD},
         {__NR_renameat2, SYSCALL_CAPABILITY_FD},
         {__NR_chdir, SYSCALL_CAPABILITY_FD},
         {__NR_fchdir, SYSCALL_CAPABILITY_FD},
+        {__NR_chroot, SYSCALL_CAPABILITY_FD},
         {__NR_umask, SYSCALL_CAPABILITY_FD},
         {__NR_fchmod, SYSCALL_CAPABILITY_FD},
         {__NR_fchmodat, SYSCALL_CAPABILITY_FD},
