@@ -3,8 +3,8 @@
 IXLandSystem vendors three distinct Linux-shaped header surfaces under `third_party/linux/<version>/<arch>/`:
 
 - `uapi/include`: exported userspace headers from Linux `headers_install`.
-- `srctree`: Linux source include roots copied from the extracted Linux tarball.
-- `objtree`: Linux build include roots copied from the generated O=<objtree> output.
+- `kheaders/source`: copied non-generated Linux kernel source headers.
+- `kheaders/generated`: copied generated Linux kernel build headers from the Linux O= output.
 
 Regenerate the vendored tree with:
 

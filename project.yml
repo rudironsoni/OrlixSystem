@@ -9,18 +9,139 @@ settings:
     LINUX_ROOT: $(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)
     LINUX_UAPI_ROOT: $(LINUX_ROOT)/uapi
     LINUX_UAPI_INCLUDE_ROOT: $(LINUX_UAPI_ROOT)/include
-    LINUX_SRCTREE_ROOT: $(LINUX_ROOT)/srctree
-    LINUX_OBJTREE_ROOT: $(LINUX_ROOT)/objtree
+    LINUX_KHEADERS_ROOT: $(LINUX_ROOT)/kheaders
+    LINUX_KHEADERS_SOURCE_ROOT: $(LINUX_KHEADERS_ROOT)/source
+    LINUX_KHEADERS_GENERATED_ROOT: $(LINUX_KHEADERS_ROOT)/generated
 targets:
-  IXLandSystem:
+  IXLandKernel:
     type: library.static
     platform: iOS
     deploymentTarget:
       iOS: '16.0'
     settings:
       HEADER_SEARCH_PATHS:
-        - $(SRCROOT)/include
-        - $(SRCROOT)
+        - $(SRCROOT)/IXLandKernel
+        - $(SRCROOT)/IXLandKernel/include
+        - $(SRCROOT)/IXLandKernel/internal/private
+        - $(LINUX_UAPI_INCLUDE_ROOT)
+        - $(SRCROOT)/IXLandHostAdapter/include
+      GCC_PREPROCESSOR_DEFINITIONS:
+      - _XOPEN_SOURCE
+      CLANG_ENABLE_OBJC_ARC: true
+      CLANG_WARN_DOCUMENTATION_COMMENTS: true
+      OTHER_CFLAGS:
+      - -fvisibility=hidden
+    sources:
+    - path: IXLandKernel/fs/eventpoll.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/exec.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/fcntl.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/fdtable.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/inode.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/ioctl.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/mount.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/namei.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/open.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/pipe.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/poll.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/pty.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/path.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/read_write.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/readdir.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/stat.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/uio.c
+      group: IXLandKernel/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: IXLandKernel/fs/super.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/vfs.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/fs/xattr.c
+      group: IXLandKernel/fs
+    - path: IXLandKernel/kernel/cgroup.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/cred.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/exit.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/fork.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/futex.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/init.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/mm.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/net/network.c
+      group: IXLandKernel/kernel/net
+    - path: IXLandKernel/kernel/net/socket.c
+      group: IXLandKernel/kernel/net
+    - path: IXLandKernel/kernel/net/socket.h
+      group: IXLandKernel/kernel/net
+    - path: IXLandKernel/kernel/pid.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/ptrace.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/random.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/resource.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/seccomp.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/signal.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/sync.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/sys.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/task.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/time.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/uts.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/wait_queue.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/kernel/wait.c
+      group: IXLandKernel/kernel
+    - path: IXLandKernel/observability/ixland_observability.c
+      group: IXLandKernel/observability
+    - path: IXLandKernel/runtime/aarch64/exec_context.c
+      group: IXLandKernel/runtime/aarch64
+    - path: IXLandKernel/runtime/aarch64/elf_reloc.c
+      group: IXLandKernel/runtime/aarch64
+    - path: IXLandKernel/runtime/syscall.c
+      group: IXLandKernel/runtime
+    - path: IXLandKernel/runtime/native/registry.c
+      group: IXLandKernel/runtime/native
+    dependencies:
+    - target: IXLandHostAdapter
+  IXLandHostAdapter:
+    type: library.static
+    platform: iOS
+    deploymentTarget:
+      iOS: '16.0'
+    settings:
+      HEADER_SEARCH_PATHS:
+        - $(SRCROOT)/IXLandKernel
+        - $(SRCROOT)/IXLandKernel/include
+        - $(SRCROOT)/IXLandKernel/internal/private
         - $(LINUX_UAPI_INCLUDE_ROOT)
       GCC_PREPROCESSOR_DEFINITIONS:
       - _XOPEN_SOURCE
@@ -29,307 +150,213 @@ targets:
       OTHER_CFLAGS:
       - -fvisibility=hidden
     sources:
-    - path: fs/eventpoll.c
-      group: fs
-    - path: fs/exec.c
-      group: fs
-    - path: fs/fcntl.c
-      group: fs
-    - path: fs/fdtable.c
-      group: fs
-    - path: internal/ios/fs/backing_io.m
-      group: internal/ios/fs
-    - path: internal/ios/fs/backing_io.h
-      group: internal/ios/fs
-    - path: internal/ios/fs/errno_host.c
-      group: internal/ios/fs
-    - path: internal/ios/fs/open_flags.c
-      group: internal/ios/fs
-    - path: internal/ios/fs/path_host.c
-      group: internal/ios/fs
-    - path: internal/ios/fs/path_host.h
-      group: internal/ios/fs
-    - path: internal/ios/fs/memfd_host.c
-      group: internal/ios/fs
-    - path: internal/ios/fs/memfd_host.h
-      group: internal/ios/fs
-    - path: internal/ios/fs/backing_paths.m
-      group: internal/ios/fs
-    - path: fs/inode.c
-      group: fs
-    - path: fs/ioctl.c
-      group: fs
-    - path: fs/mount.c
-      group: fs
-    - path: fs/namei.c
-      group: fs
-    - path: fs/open.c
-      group: fs
-    - path: fs/pipe.c
-      group: fs
-    - path: fs/poll.c
-      group: fs
-    - path: fs/pty.c
-      group: fs
-    - path: fs/path.c
-      group: fs
-    - path: fs/read_write.c
-      group: fs
-    - path: fs/readdir.c
-      group: fs
-    - path: internal/ios/fs/epoll_bridge.c
-      group: internal/ios/fs
-    - path: fs/stat.c
-      group: fs
-    - path: fs/uio.c
-      group: fs
-      compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: fs/super.c
-      group: fs
-    - path: fs/vfs.c
-      group: fs
-    - path: fs/xattr.c
-      group: fs
-    - path: kernel/cgroup.c
-      group: kernel
-    - path: kernel/cred.c
-      group: kernel
-    - path: kernel/exit.c
-      group: kernel
-    - path: kernel/fork.c
-      group: kernel
-    - path: kernel/futex.c
-      group: kernel
-    - path: kernel/init.c
-      group: kernel
-    - path: kernel/mm.c
-      group: kernel
-    - path: kernel/net/network.c
-      group: kernel/net
-    - path: kernel/net/socket.c
-      group: kernel/net
-    - path: kernel/net/socket.h
-      group: kernel/net
-    - path: kernel/pid.c
-      group: kernel
-    - path: kernel/ptrace.c
-      group: kernel
-    - path: kernel/random.c
-      group: kernel
-    - path: kernel/resource.c
-      group: kernel
-    - path: kernel/seccomp.c
-      group: kernel
-    - path: kernel/signal.c
-      group: kernel
-    - path: internal/ios/kernel/signal_bridge.c
-      group: internal/ios/kernel
-    - path: kernel/sync.c
-      group: kernel
-    - path: kernel/sys.c
-      group: kernel
-    - path: kernel/task.c
-      group: kernel
-    - path: kernel/time.c
-      group: kernel
-    - path: kernel/uts.c
-      group: kernel
-    - path: kernel/wait_queue.c
-      group: kernel
-    - path: internal/ios/kernel/sync.c
-      group: internal/ios/kernel
-    - path: internal/ios/kernel/clock.c
-      group: internal/ios/kernel
-    - path: internal/ios/fs/sync.c
-      group: internal/ios/fs
-    - path: kernel/wait.c
-      group: kernel
-    - path: observability/ixland_observability.c
-      group: observability
-    - path: runtime/aarch64/exec_context.c
-      group: runtime/aarch64
-    - path: runtime/aarch64/elf_reloc.c
-      group: runtime/aarch64
-    - path: runtime/syscall.c
-      group: runtime
-    - path: runtime/native/registry.c
-      group: runtime/native
-  IXLandSystemLinuxKernelTests:
+    - path: IXLandHostAdapter/internal/ios/fs/backing_io.m
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/backing_io.h
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/errno_host.c
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/open_flags.c
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/path_host.c
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/path_host.h
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/memfd_host.c
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/memfd_host.h
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/backing_paths.m
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/fs/epoll_bridge.c
+      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/internal/ios/kernel/signal_bridge.c
+      group: IXLandHostAdapter/internal/ios/kernel
+    - path: IXLandHostAdapter/internal/ios/kernel/sync.c
+      group: IXLandHostAdapter/internal/ios/kernel
+    - path: IXLandHostAdapter/internal/ios/kernel/clock.c
+      group: IXLandHostAdapter/internal/ios/kernel
+    - path: IXLandHostAdapter/internal/ios/fs/sync.c
+      group: IXLandHostAdapter/internal/ios/fs
+  IXLandKernelTests:
     type: bundle.unit-test
     platform: iOS
     deploymentTarget:
       iOS: '16.0'
     sources:
-    - IXLandSystemLinuxKernelTests/SignalTests.m
-    - IXLandSystemLinuxKernelTests/TaskGroupTests.m
-    - IXLandSystemLinuxKernelTests/CgroupTests.m
-    - IXLandSystemLinuxKernelTests/CredentialTests.m
-    - IXLandSystemLinuxKernelTests/VFSPathTests.m
-    - IXLandSystemLinuxKernelTests/FutexTests.m
-    - IXLandSystemLinuxKernelTests/RootfsBootstrapTests.m
-    - IXLandSystemLinuxKernelTests/KernelBootTests.m
-    - IXLandSystemLinuxKernelTests/KernelInitTests.m
-    - IXLandSystemLinuxKernelTests/PTYSessionTests.m
-    - IXLandSystemLinuxKernelTests/PTYJobControlTests.m
-    - IXLandSystemLinuxKernelTests/WaitJobControlTests.m
-    - IXLandSystemLinuxKernelTests/PipeTests.m
-    - IXLandSystemLinuxKernelTests/ReadinessTests.m
-    - IXLandSystemLinuxKernelTests/EpollTests.m
-    - IXLandSystemLinuxKernelTests/FcntlTests.m
-    - IXLandSystemLinuxKernelTests/ExecFdTests.m
-    - IXLandSystemLinuxKernelTests/ExecSyscallTests.m
-    - IXLandSystemLinuxKernelTests/NativeSyscallTests.m
-    - IXLandSystemLinuxKernelTests/TaskExecTests.m
-    - IXLandSystemLinuxKernelTests/UTSTests.m
-    - IXLandSystemLinuxKernelTests/NamespaceTests.m
-    - IXLandSystemLinuxKernelTests/ProcfsNamespaceTests.m
-    - IXLandSystemLinuxKernelTests/DevfsTests.m
-    - IXLandSystemLinuxKernelTests/SeccompTests.m
-    - IXLandSystemLinuxKernelTests/PtraceTests.m
-    - path: IXLandSystemLinuxKernelTests/LinuxUAPICompileSmoke.c
+    - IXLandKernelTests/SignalTests.m
+    - IXLandKernelTests/TaskGroupTests.m
+    - IXLandKernelTests/CgroupTests.m
+    - IXLandKernelTests/CredentialTests.m
+    - IXLandKernelTests/VFSPathTests.m
+    - IXLandKernelTests/FutexTests.m
+    - IXLandKernelTests/RootfsBootstrapTests.m
+    - IXLandKernelTests/KernelBootTests.m
+    - IXLandKernelTests/KernelInitTests.m
+    - IXLandKernelTests/PTYSessionTests.m
+    - IXLandKernelTests/PTYJobControlTests.m
+    - IXLandKernelTests/WaitJobControlTests.m
+    - IXLandKernelTests/PipeTests.m
+    - IXLandKernelTests/ReadinessTests.m
+    - IXLandKernelTests/EpollTests.m
+    - IXLandKernelTests/FcntlTests.m
+    - IXLandKernelTests/ExecFdTests.m
+    - IXLandKernelTests/ExecSyscallTests.m
+    - IXLandKernelTests/NativeSyscallTests.m
+    - IXLandKernelTests/TaskExecTests.m
+    - IXLandKernelTests/UTSTests.m
+    - IXLandKernelTests/NamespaceTests.m
+    - IXLandKernelTests/ProcfsNamespaceTests.m
+    - IXLandKernelTests/DevfsTests.m
+    - IXLandKernelTests/SeccompTests.m
+    - IXLandKernelTests/PtraceTests.m
+    - path: IXLandKernelTests/LinuxUAPICompileSmoke.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/LinuxKHeadersCompileSmoke.c
+    - path: IXLandKernelTests/LinuxKHeadersCompileSmoke.c
       compilerFlags:
       - -D__KERNEL__
-      - -I$(LINUX_OBJTREE_ROOT)/arch/$(LINUX_ARCH)/include/generated
-      - -I$(LINUX_OBJTREE_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_SRCTREE_ROOT)/arch/$(LINUX_ARCH)/include
-      - -I$(LINUX_SRCTREE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_OBJTREE_ROOT)/include/generated/uapi
-      - -I$(LINUX_OBJTREE_ROOT)/include
-      - -I$(LINUX_SRCTREE_ROOT)/include/uapi
-      - -I$(LINUX_SRCTREE_ROOT)/include
-    - path: IXLandSystemLinuxKernelTests/KernelBoot.c
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
+    - path: IXLandKernelTests/KernelBoot.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/KernelInitContract.c
+    - path: IXLandKernelTests/KernelInitContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/PTYSessionContract.c
+    - path: IXLandKernelTests/PTYSessionContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/PTYJobControlContract.c
+    - path: IXLandKernelTests/PTYJobControlContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/WaitJobControlContract.c
+    - path: IXLandKernelTests/WaitJobControlContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/PipeContract.c
+    - path: IXLandKernelTests/PipeContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/ReadinessContract.c
+    - path: IXLandKernelTests/ReadinessContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/EpollContract.c
+    - path: IXLandKernelTests/EpollContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/PtraceContract.c
+    - path: IXLandKernelTests/PtraceContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/PTYSessionContract.h
-    - IXLandSystemLinuxKernelTests/PTYJobControlContract.h
-    - IXLandSystemLinuxKernelTests/WaitJobControlContract.h
-    - IXLandSystemLinuxKernelTests/PipeContract.h
-    - IXLandSystemLinuxKernelTests/ReadinessContract.h
-    - IXLandSystemLinuxKernelTests/EpollContract.h
-    - IXLandSystemLinuxKernelTests/PtraceContract.h
-    - path: IXLandSystemLinuxKernelTests/CgroupContract.c
+    - IXLandKernelTests/PTYSessionContract.h
+    - IXLandKernelTests/PTYJobControlContract.h
+    - IXLandKernelTests/WaitJobControlContract.h
+    - IXLandKernelTests/PipeContract.h
+    - IXLandKernelTests/ReadinessContract.h
+    - IXLandKernelTests/EpollContract.h
+    - IXLandKernelTests/PtraceContract.h
+    - path: IXLandKernelTests/CgroupContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/CgroupContract.h
-    - IXLandSystemLinuxKernelTests/PTYSessionIoctlShim.c
-    - path: IXLandSystemLinuxKernelTests/FutexUAPICompileSmoke.c
+    - IXLandKernelTests/CgroupContract.h
+    - IXLandKernelTests/PTYSessionIoctlShim.c
+    - path: IXLandKernelTests/FutexUAPICompileSmoke.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/FutexContract.c
+    - path: IXLandKernelTests/FutexContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/FutexContract.h
-    - path: IXLandSystemLinuxKernelTests/LinuxUAPITestSupport.c
+    - IXLandKernelTests/FutexContract.h
+    - path: IXLandKernelTests/LinuxUAPITestSupport.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/LinuxUAPITestSupport.h
-    - path: IXLandSystemLinuxKernelTests/VFSAtContract.c
+    - IXLandKernelTests/LinuxUAPITestSupport.h
+    - path: IXLandKernelTests/VFSAtContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/FcntlContract.c
+    - path: IXLandKernelTests/FcntlContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/ExecFdContract.c
+    - path: IXLandKernelTests/ExecFdContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/ExecSyscallContract.c
+    - path: IXLandKernelTests/ExecSyscallContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/NativeSyscallContract.c
+    - path: IXLandKernelTests/NativeSyscallContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/NativeSyscallContract.h
-    - path: IXLandSystemLinuxKernelTests/SignalSyscallContract.c
+    - IXLandKernelTests/NativeSyscallContract.h
+    - path: IXLandKernelTests/SignalSyscallContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/SignalSyscallContract.h
-    - path: IXLandSystemLinuxKernelTests/SyscallUioContract.c
+    - IXLandKernelTests/SignalSyscallContract.h
+    - path: IXLandKernelTests/SyscallUioContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/SyscallUioContract.h
-    - path: IXLandSystemLinuxKernelTests/TaskExecContract.c
+    - IXLandKernelTests/SyscallUioContract.h
+    - path: IXLandKernelTests/TaskExecContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: IXLandSystemLinuxKernelTests/UTSContract.c
+    - path: IXLandKernelTests/UTSContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/UTSContract.h
-    - path: IXLandSystemLinuxKernelTests/NamespaceContract.c
+    - IXLandKernelTests/UTSContract.h
+    - path: IXLandKernelTests/NamespaceContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/NamespaceContract.h
-    - path: IXLandSystemLinuxKernelTests/ProcfsNamespaceContract.c
+    - IXLandKernelTests/NamespaceContract.h
+    - path: IXLandKernelTests/ProcfsNamespaceContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/ProcfsNamespaceContract.h
-    - path: IXLandSystemLinuxKernelTests/DevfsContract.c
+    - IXLandKernelTests/ProcfsNamespaceContract.h
+    - path: IXLandKernelTests/DevfsContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/DevfsContract.h
-    - path: IXLandSystemLinuxKernelTests/SeccompContract.c
+    - IXLandKernelTests/DevfsContract.h
+    - path: IXLandKernelTests/SeccompContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - IXLandSystemLinuxKernelTests/SeccompContract.h
+    - IXLandKernelTests/SeccompContract.h
     dependencies:
-    - target: IXLandSystem
+    - target: IXLandKernel
+    - target: IXLandHostAdapter
     settings:
       GENERATE_INFOPLIST_FILE: true
       HEADER_SEARCH_PATHS:
-        - $(SRCROOT)/include
-        - $(SRCROOT)
+        - $(SRCROOT)/IXLandKernel
+        - $(SRCROOT)/IXLandHostAdapter/include
+        - $(SRCROOT)/IXLandKernel/include
+        - $(SRCROOT)/IXLandKernel/internal/private
       BUNDLE_LOADER: ''
-  IXLandSystemHostBridgeTests:
+  IXLandHostAdapterTests:
     type: bundle.unit-test
     platform: iOS
     deploymentTarget:
       iOS: '16.0'
     sources:
-    - IXLandSystemHostBridgeTests/HostBridgeSmokeTests.m
-    - IXLandSystemHostBridgeTests/PTYHostBridgeTests.m
-    - IXLandSystemHostBridgeTests/VFSPathHostBridgeTests.m
-    - IXLandSystemHostBridgeTests/RootfsBootstrapTests.m
-    - IXLandSystemHostBridgeTests/HostTestSupport.c
-    - IXLandSystemHostBridgeTests/HostTestSupport.h
-    - IXLandSystemHostBridgeTests/PTYTestSupport.c
-    - IXLandSystemHostBridgeTests/PTYTestSupport.h
+    - IXLandHostAdapterTests/HostBridgeSmokeTests.m
+    - IXLandHostAdapterTests/PTYHostBridgeTests.m
+    - IXLandHostAdapterTests/VFSPathHostBridgeTests.m
+    - IXLandHostAdapterTests/RootfsBootstrapTests.m
+    - IXLandHostAdapterTests/HostTestSupport.c
+    - IXLandHostAdapterTests/HostTestSupport.h
+    - IXLandHostAdapterTests/PTYTestSupport.c
+    - IXLandHostAdapterTests/PTYTestSupport.h
     dependencies:
-    - target: IXLandSystem
+    - target: IXLandKernel
+    - target: IXLandHostAdapter
     settings:
       GENERATE_INFOPLIST_FILE: true
       HEADER_SEARCH_PATHS:
-        - $(SRCROOT)/include
-        - $(SRCROOT)
-        - $(SRCROOT)/internal/ios
-        - $(SRCROOT)/internal/ios/fs
-        - $(SRCROOT)/internal/ios/kernel
+        - $(SRCROOT)/IXLandKernel
+        - $(SRCROOT)/IXLandHostAdapterTests
+        - $(SRCROOT)/IXLandHostAdapter/include
+        - $(SRCROOT)/IXLandKernel/include
+        - $(SRCROOT)/IXLandKernel/internal/private
       BUNDLE_LOADER: ''
 configurations:
   Debug:
@@ -343,13 +370,14 @@ configurations:
       GCC_OPTIMIZATION_LEVEL: s
       SWIFT_OPTIMIZATION_LEVEL: -O
 schemes:
-  IXLandSystem-6.12-arm64:
+  IXLandKernel-6.12-arm64:
     build:
       targets:
-        IXLandSystem: all
-        IXLandSystemLinuxKernelTests: all
-        IXLandSystemHostBridgeTests: all
+        IXLandKernel: all
+        IXLandHostAdapter: all
+        IXLandKernelTests: all
+        IXLandHostAdapterTests: all
     test:
       targets:
-      - IXLandSystemLinuxKernelTests
-      - IXLandSystemHostBridgeTests
+      - IXLandKernelTests
+      - IXLandHostAdapterTests

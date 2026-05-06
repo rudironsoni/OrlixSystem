@@ -1,6 +1,6 @@
 # Linux 6.12 arm64 Syscall Gap Matrix
 
-Generated from vendored Linux UAPI and `runtime/syscall.c`.
+Generated from vendored Linux UAPI and `IXLandKernel/runtime/syscall.c`.
 
 | nr | syscall | classification | priority |
 | ---: | --- | --- | --- |
@@ -121,7 +121,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 114 | `clock_getres` | kernel-owned missing:unclassified | package |
 | 115 | `clock_nanosleep` | implemented:time | none |
 | 116 | `syslog` | kernel-owned missing:unclassified | package |
-| 117 | `ptrace` | implemented:process | `IXLandSystemLinuxKernelTests/PtraceContract.c`, `IXLandSystemLinuxKernelTests/PtraceTests.m` |
+| 117 | `ptrace` | implemented:process | `IXLandKernelTests/PtraceContract.c`, `IXLandKernelTests/PtraceTests.m` |
 | 118 | `sched_setparam` | kernel-owned missing:unclassified | package |
 | 119 | `sched_setscheduler` | kernel-owned missing:unclassified | package |
 | 120 | `sched_getscheduler` | kernel-owned missing:unclassified | package |

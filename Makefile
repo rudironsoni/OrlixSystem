@@ -137,8 +137,8 @@ vendor-linux-headers:
 			"Surfaces:" \
 			"" \
 			"- \`uapi/include\`: output from \`make headers_install\`." \
-			"- \`srctree\`: copied from extracted Linux source include roots." \
-			"- \`objtree\`: copied from generated Linux build include roots (O=<objtree>)." \
+			"- \`kheaders/source\`: copied non-generated Linux kernel source headers." \
+			"- \`kheaders/generated\`: copied generated Linux kernel build headers from O=." \
 			> "$$out_file"; \
 		}; \
 		write_manifest() { \
@@ -158,8 +158,8 @@ vendor-linux-headers:
 		validate_vendor_tree() { \
 			local tuple_root="$$1"; \
 			local uapi_root="$$tuple_root/uapi/include"; \
-			local srctree_root="$$tuple_root/srctree"; \
-			local objtree_root="$$tuple_root/objtree"; \
+			local kheaders_source_root="$$tuple_root/kheaders/source"; \
+			local kheaders_generated_root="$$tuple_root/kheaders/generated"; \
 			if [ -z "$$(find "$$tuple_root" -type f -print -quit)" ]; then \
 				echo "empty tuple root: $$tuple_root" >&2; \
 				exit 1; \
@@ -169,13 +169,13 @@ vendor-linux-headers:
 			require_file "$$uapi_root/asm-generic/errno-base.h"; \
 			require_file "$$uapi_root/linux/futex.h"; \
 			require_file "$$uapi_root/linux/seccomp.h"; \
-			require_file "$$srctree_root/include/linux/fs.h"; \
-			require_file "$$srctree_root/include/linux/sched.h"; \
-			require_dir "$$srctree_root/arch/$$linux_arch/include"; \
-			require_file "$$objtree_root/include/generated/autoconf.h"; \
-			require_file "$$objtree_root/include/generated/utsrelease.h"; \
-			require_dir "$$objtree_root/include/config"; \
-			require_dir "$$objtree_root/arch/$$linux_arch/include/generated"; \
+			require_file "$$kheaders_source_root/include/linux/fs.h"; \
+			require_file "$$kheaders_source_root/include/linux/sched.h"; \
+			require_dir "$$kheaders_source_root/arch/$$linux_arch/include"; \
+			require_file "$$kheaders_generated_root/include/generated/autoconf.h"; \
+			require_file "$$kheaders_generated_root/include/generated/utsrelease.h"; \
+			require_dir "$$kheaders_generated_root/include/config"; \
+			require_dir "$$kheaders_generated_root/arch/$$linux_arch/include/generated"; \
 		}; \
 	tarball="$$tmp/linux-$$linux_version.tar.xz"; \
 	src="$$tmp/linux-$$linux_version"; \
@@ -216,8 +216,9 @@ vendor-linux-headers:
 		require_dir "$$obj/arch/$$linux_arch/include/generated"; \
 		tuple_stage="$$stage_vendor_root/$$linux_version/$$linux_arch"; \
 		uapi_dest="$$tuple_stage/uapi/include"; \
-		srctree_root="$$tuple_stage/srctree"; \
-		objtree_root="$$tuple_stage/objtree"; \
+		kheaders_root="$$tuple_stage/kheaders"; \
+		kheaders_source_root="$$kheaders_root/source"; \
+		kheaders_generated_root="$$kheaders_root/generated"; \
 		copy_tree "$$uapi_out/include" "$$uapi_dest"; \
 		if [ -d "$$uapi_dest/include" ] && [ ! -d "$$uapi_dest/linux" ]; then \
 			normalized_uapi="$$tmp/uapi-normalized"; \
@@ -227,11 +228,11 @@ vendor-linux-headers:
 			mkdir -p "$$uapi_dest"; \
 			cp -R "$$normalized_uapi/." "$$uapi_dest"; \
 		fi; \
-		copy_tree "$$src/include" "$$srctree_root/include"; \
-		copy_tree "$$src/arch/$$linux_arch/include" "$$srctree_root/arch/$$linux_arch/include"; \
-		copy_tree "$$obj/include/generated" "$$objtree_root/include/generated"; \
-		copy_tree "$$obj/include/config" "$$objtree_root/include/config"; \
-		copy_tree "$$obj/arch/$$linux_arch/include/generated" "$$objtree_root/arch/$$linux_arch/include/generated"; \
+		copy_tree "$$src/include" "$$kheaders_source_root/include"; \
+		copy_tree "$$src/arch/$$linux_arch/include" "$$kheaders_source_root/arch/$$linux_arch/include"; \
+		copy_tree "$$obj/include/generated" "$$kheaders_generated_root/include/generated"; \
+		copy_tree "$$obj/include/config" "$$kheaders_generated_root/include/config"; \
+		copy_tree "$$obj/arch/$$linux_arch/include/generated" "$$kheaders_generated_root/arch/$$linux_arch/include/generated"; \
 		write_readme "$$tuple_stage/README.md"; \
 		write_source_json "$$tuple_stage" "$$tarball_sha"; \
 		write_manifest "$$tuple_stage" "$$tuple_stage/manifest.sha256"; \
@@ -244,5 +245,5 @@ vendor-linux-headers:
 		echo "  $$vendor_root/$$linux_version/$$linux_arch"; \
 		echo "surfaces:"; \
 		echo "  uapi/include"; \
-		echo "  srctree"; \
-		echo "  objtree"
+		echo "  kheaders/source"; \
+		echo "  kheaders/generated"

@@ -12,5 +12,5 @@ make vendor-linux-headers LINUX_VERSION=<version> LINUX_ARCH=<arch>
 Surfaces:
 
 - `uapi/include`: output from `make headers_install`.
-- `srctree`: copied from extracted Linux source include roots.
-- `objtree`: copied from generated Linux build include roots (O=<objtree>).
+- `kheaders/source`: copied non-generated Linux kernel source headers.
+- `kheaders/generated`: copied generated Linux kernel build headers from O=.

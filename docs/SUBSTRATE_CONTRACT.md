@@ -62,11 +62,12 @@ XcodeGen and the generated Xcode project are the only build truth.
 Canonical project surface:
 
 - Targets:
-  - `IXLandSystem`
-  - `IXLandSystemLinuxKernelTests`
-  - `IXLandSystemHostBridgeTests`
+  - `IXLandKernel`
+  - `IXLandHostAdapter`
+  - `IXLandKernelTests`
+  - `IXLandHostAdapterTests`
 - Scheme:
-  - `IXLandSystem-6.12-arm64`
+  - `IXLandKernel-6.12-arm64`
 
 Canonical authoritative flow:
 
@@ -93,16 +94,16 @@ Rules:
 
 Current subsystem ownership in this repository:
 
-- process/task lifecycle: `kernel/task.c`, `kernel/fork.c`, `kernel/exit.c`, `kernel/wait.c`, `kernel/pid.c`
-- credentials: `kernel/cred.c`, `kernel/cred_internal.h`
-- signals: `kernel/signal.c`, `kernel/signal.h`
-- time and sync: `kernel/time.c`, `kernel/time_darwin.c`, `kernel/sync.c`
-- init/sys/resource/random: `kernel/init.c`, `kernel/sys.c`, `kernel/resource.c`, `kernel/random.c`
-- networking owner surface: `kernel/net/network.c`
-- VFS and fdtable: `fs/vfs.c`, `fs/vfs.h`, `fs/fdtable.c`, `fs/fdtable.h`
-- file operation owners: `fs/open.c`, `fs/read_write.c`, `fs/stat.c`, `fs/fcntl.c`, `fs/ioctl.c`, `fs/namei.c`, `fs/readdir.c`, `fs/eventpoll.c`, `fs/mount.c`, `fs/inode.c`, `fs/super.c`, `fs/path.c`, `fs/exec.c`
-- native runtime registry: `runtime/native/registry.c`, `runtime/native/registry.h`
-- private Darwin bridge surface: `arch/darwin/signal_bridge.c`
+- process/task lifecycle: `IXLandKernel/kernel/task.c`, `IXLandKernel/kernel/fork.c`, `IXLandKernel/kernel/exit.c`, `IXLandKernel/kernel/wait.c`, `IXLandKernel/kernel/pid.c`
+- credentials: `IXLandKernel/kernel/cred.c`, `IXLandKernel/kernel/cred_internal.h`
+- signals: `IXLandKernel/kernel/signal.c`, `IXLandKernel/kernel/signal.h`
+- time and sync: `IXLandKernel/kernel/time.c`, `IXLandKernel/kernel/sync.c`
+- init/sys/resource/random: `IXLandKernel/kernel/init.c`, `IXLandKernel/kernel/sys.c`, `IXLandKernel/kernel/resource.c`, `IXLandKernel/kernel/random.c`
+- networking owner surface: `IXLandKernel/kernel/net/network.c`
+- VFS and fdtable: `IXLandKernel/fs/vfs.c`, `IXLandKernel/fs/vfs.h`, `IXLandKernel/fs/fdtable.c`, `IXLandKernel/fs/fdtable.h`
+- file operation owners: `IXLandKernel/fs/open.c`, `IXLandKernel/fs/read_write.c`, `IXLandKernel/fs/stat.c`, `IXLandKernel/fs/fcntl.c`, `IXLandKernel/fs/ioctl.c`, `IXLandKernel/fs/namei.c`, `IXLandKernel/fs/readdir.c`, `IXLandKernel/fs/eventpoll.c`, `IXLandKernel/fs/mount.c`, `IXLandKernel/fs/inode.c`, `IXLandKernel/fs/super.c`, `IXLandKernel/fs/path.c`, `IXLandKernel/fs/exec.c`
+- native runtime registry: `IXLandKernel/runtime/native/registry.c`, `IXLandKernel/runtime/native/registry.h`
+- private Darwin bridge surface: `IXLandHostAdapter/internal/ios/kernel/signal_bridge.c`
 
 ## Test Layering
 
@@ -111,10 +112,10 @@ This repo currently contains two valid proof layers in XCTest plus Linux UAPI co
 1. LinuxKernel proof
    - exercises syscall-facing Linux-visible behavior
    - uses C contract files for Linux UAPI constants, structs, and payload truth
-   - does not include `internal/ios/**`
+   - does not include `IXLandHostAdapter/internal/ios/**`
 
 2. HostBridge proof
-   - verifies private `internal/ios/**` seams only
+   - verifies private `IXLandHostAdapter/internal/ios/**` seams only
    - may use host APIs when proving host mechanics
    - does not prove Linux semantics
 
@@ -125,11 +126,11 @@ This repo currently contains two valid proof layers in XCTest plus Linux UAPI co
 
 Current test files:
 
-- `IXLandSystemLinuxKernelTests/SignalTests.m` — LinuxKernel semantic test
-- `IXLandSystemLinuxKernelTests/TaskGroupTests.m` — LinuxKernel semantic test
-- `IXLandSystemLinuxKernelTests/CredentialTests.m` — LinuxKernel semantic test
-- `IXLandSystemLinuxKernelTests/LinuxUAPICompileSmoke.c` — Linux UAPI / ABI compile smoke
-- `IXLandSystemHostBridgeTests/HostBridgeSmokeTests.m` — HostBridge seam test
+- `IXLandKernelTests/SignalTests.m` — LinuxKernel semantic test
+- `IXLandKernelTests/TaskGroupTests.m` — LinuxKernel semantic test
+- `IXLandKernelTests/CredentialTests.m` — LinuxKernel semantic test
+- `IXLandKernelTests/LinuxUAPICompileSmoke.c` — Linux UAPI / ABI compile smoke
+- `IXLandHostAdapterTests/HostBridgeSmokeTests.m` — HostBridge seam test
 
 True public drop-in Linux userspace compatibility proof is outside this XCTest tranche.
 

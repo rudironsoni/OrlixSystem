@@ -10,7 +10,7 @@ It is not public drop-in compatibility proof for arbitrary Linux userspace yet.
 Current proof in this repo is limited to:
 
 - LinuxKernel syscall-facing semantic tests for selected subsystems
-- HostBridge seam tests for private `internal/ios/**` mediation
+- HostBridge seam tests for private `IXLandHostAdapter/internal/ios/**` mediation
 - Linux UAPI / ABI compile smoke tests for vendored headers
 - canonical iOS Simulator build-for-testing and shared-scheme XCTest execution through XcodeGen + Xcodebuild
 
@@ -30,11 +30,12 @@ rtk xcodebuild test-without-building -project IXLandSystem.xcodeproj -scheme IXL
 Canonical project surface:
 
 - Targets:
-  - `IXLandSystem`
-  - `IXLandSystemLinuxKernelTests`
-  - `IXLandSystemHostBridgeTests`
+  - `IXLandKernel`
+  - `IXLandHostAdapter`
+  - `IXLandKernelTests`
+  - `IXLandHostAdapterTests`
 - Scheme:
-  - `IXLandSystem-6.12-arm64`
+  - `IXLandKernel-6.12-arm64`
 
 `swift build`, CMake, Make, package manifests, and ad hoc build flows are not authoritative for this repo.
 
@@ -42,12 +43,12 @@ Canonical project surface:
 
 Current top-level ownership is organized around the implemented subsystems in this tree:
 
-- `kernel/` — process/task, signal, pid, wait, cred, time, sync, init, resource, random, sys, network ownership
-- `fs/` — VFS, fdtable, open/read/write, stat, fcntl, ioctl, exec, path, mount, inode, readdir, eventpoll ownership
-- `runtime/native/` — native command registry surface
-- `internal/ios/` — private host mediation seams only
-- `IXLandSystemLinuxKernelTests/` — Linux-facing syscall and contract proof
-- `IXLandSystemHostBridgeTests/` — private host-bridge seam proof
+- `IXLandKernel/kernel/` — process/task, signal, pid, wait, cred, time, sync, init, resource, random, sys, network ownership
+- `IXLandKernel/fs/` — VFS, fdtable, open/read/write, stat, fcntl, ioctl, exec, path, mount, inode, readdir, eventpoll ownership
+- `IXLandKernel/runtime/native/` — native command registry surface
+- `IXLandHostAdapter/internal/ios/` — private host mediation seams only
+- `IXLandKernelTests/` — Linux-facing syscall and contract proof
+- `IXLandHostAdapterTests/` — private host-bridge seam proof
 - `third_party/linux/6.12/arm64/uapi/include/` — vendored Linux UAPI truth
 - `project.yml` — authoritative XcodeGen project specification
 
@@ -94,11 +95,11 @@ This repo currently contains two XCTest proof layers plus Linux UAPI compile smo
 
 1. LinuxKernel proof
    - uses syscall-facing contracts and Linux-visible runtime assertions
-   - keeps Linux semantics proof out of `internal/ios/**`
+   - keeps Linux semantics proof out of `IXLandHostAdapter/internal/ios/**`
    - is the primary subsystem proof for Linux-facing behavior
 
 2. HostBridge proof
-   - verifies private `internal/ios/**` mediation seams only
+   - verifies private `IXLandHostAdapter/internal/ios/**` mediation seams only
    - may use host APIs to prove host-mechanics contracts
    - does not count as Linux semantics proof
 
@@ -109,11 +110,11 @@ This repo currently contains two XCTest proof layers plus Linux UAPI compile smo
 
 Current files:
 
-- `IXLandSystemLinuxKernelTests/SignalTests.m` — LinuxKernel semantic test
-- `IXLandSystemLinuxKernelTests/TaskGroupTests.m` — LinuxKernel semantic test
-- `IXLandSystemLinuxKernelTests/CredentialTests.m` — LinuxKernel semantic test
-- `IXLandSystemLinuxKernelTests/LinuxUAPICompileSmoke.c` — Linux UAPI / ABI compile smoke
-- `IXLandSystemHostBridgeTests/HostBridgeSmokeTests.m` — HostBridge seam test
+- `IXLandKernelTests/SignalTests.m` — LinuxKernel semantic test
+- `IXLandKernelTests/TaskGroupTests.m` — LinuxKernel semantic test
+- `IXLandKernelTests/CredentialTests.m` — LinuxKernel semantic test
+- `IXLandKernelTests/LinuxUAPICompileSmoke.c` — Linux UAPI / ABI compile smoke
+- `IXLandHostAdapterTests/HostBridgeSmokeTests.m` — HostBridge seam test
 
 True public drop-in Linux userspace compatibility proof is not part of this XCTest tranche.
 

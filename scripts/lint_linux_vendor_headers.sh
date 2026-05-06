@@ -13,8 +13,8 @@ fi
 
 tuple_root="third_party/linux/${linux_version}/${linux_arch}"
 uapi_root="${tuple_root}/uapi/include"
-srctree_root="${tuple_root}/srctree"
-objtree_root="${tuple_root}/objtree"
+kheaders_source_root="${tuple_root}/kheaders/source"
+kheaders_generated_root="${tuple_root}/kheaders/generated"
 
 require_file() {
     local path=$1
@@ -46,7 +46,7 @@ echo "rationale: Linux-facing contracts must come from a single tuple root and m
 
 echo ""
 echo "=== Check A: Forbidden ABI directory ==="
-echo "rationale: vendored Linux headers must not grow an 'abi' taxonomy; the tuple surfaces are uapi/srctree/objtree only."
+echo "rationale: vendored Linux headers must not grow an 'abi' taxonomy; the tuple surfaces are uapi/include plus kheaders/source and kheaders/generated only."
 ABI_DIR=$(find third_party/linux -type d -name abi -print -quit 2>/dev/null || true)
 if [ -n "${ABI_DIR:-}" ]; then
     echo "FAIL: forbidden directory exists under third_party/linux: $ABI_DIR" >&2
@@ -77,13 +77,13 @@ echo "   ✓ No old uapi/kheaders category roots exist"
 
 echo ""
 echo "=== Check C: Required tuple layout exists ==="
-echo "rationale: vendored Linux headers must be laid out as third_party/linux/<ver>/<arch>/{uapi,srctree,objtree} with the expected Linux include subtrees."
+echo "rationale: vendored Linux headers must be laid out as third_party/linux/<ver>/<arch>/{uapi,kheaders} with the expected Linux include subtrees."
 require_nonempty_dir "$uapi_root"
-require_nonempty_dir "${srctree_root}/include"
-require_nonempty_dir "${srctree_root}/arch/${linux_arch}/include"
-require_nonempty_dir "${objtree_root}/include/generated"
-require_nonempty_dir "${objtree_root}/include/config"
-require_nonempty_dir "${objtree_root}/arch/${linux_arch}/include/generated"
+require_nonempty_dir "${kheaders_source_root}/include"
+require_nonempty_dir "${kheaders_source_root}/arch/${linux_arch}/include"
+require_nonempty_dir "${kheaders_generated_root}/include/generated"
+require_nonempty_dir "${kheaders_generated_root}/include/config"
+require_nonempty_dir "${kheaders_generated_root}/arch/${linux_arch}/include/generated"
 
 echo ""
 echo "=== Check D: Expected marker headers exist ==="
@@ -93,11 +93,11 @@ require_file "$uapi_root/asm/signal.h"
 require_file "$uapi_root/asm-generic/errno-base.h"
 require_file "$uapi_root/linux/futex.h"
 require_file "$uapi_root/linux/seccomp.h"
-require_file "${srctree_root}/include/linux/fs.h"
-require_file "${srctree_root}/include/linux/sched.h"
-require_file "${srctree_root}/arch/${linux_arch}/include/asm/unistd.h"
-require_file "${objtree_root}/include/generated/autoconf.h"
-require_file "${objtree_root}/include/generated/utsrelease.h"
+require_file "${kheaders_source_root}/include/linux/fs.h"
+require_file "${kheaders_source_root}/include/linux/sched.h"
+require_file "${kheaders_source_root}/arch/${linux_arch}/include/asm/unistd.h"
+require_file "${kheaders_generated_root}/include/generated/autoconf.h"
+require_file "${kheaders_generated_root}/include/generated/utsrelease.h"
 require_file "${tuple_root}/README.md"
 require_file "${tuple_root}/source.json"
 require_file "${tuple_root}/manifest.sha256"

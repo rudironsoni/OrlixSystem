@@ -1,0 +1,477 @@
+/* IXLandSystem/kernel/task.h
+ * Private internal header for virtual task/process subsystem
+ *
+ * This is PRIVATE internal state for the virtual kernel's process model.
+ * NOT a public Linux ABI header.
+ *
+ * Virtual task behavior emulated:
+ * - virtual PID/TGID/PPID/PGID/SID namespace
+ * - process groups and sessions
+ * - parent/child relationships
+ * - wait/reap semantics
+ * - zombie/dead transitions
+ * - clone/fork/vfork bookkeeping
+ */
+
+#ifndef KERNEL_TASK_H
+#define KERNEL_TASK_H
+
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "../fs/fdtable.h"
+#include "../fs/vfs.h"
+#include "kernel_sync.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define TASK_COMM_LEN 16
+#define TASK_MAX_ARGS 256
+#define TASK_MAX_TASKS 1024
+#define TASK_EXEC_MAX_LOAD_SEGMENTS 16
+#define TASK_EXEC_MAX_AUXV 32
+#define TASK_EXEC_MAX_VMAS ((TASK_EXEC_MAX_LOAD_SEGMENTS * 2) + 2)
+#define TASK_EXEC_MAX_DYNAMIC_NEEDED 16
+#define TASK_VMA_PAGE_SIZE 4096ULL
+
+/* Forward declarations for private subsystem state */
+struct task_struct;
+struct signal_struct;
+struct tty_struct;
+struct mm_struct;
+struct vm_private_page;
+struct vm_shared_mapping;
+struct exec_image;
+struct wait_queue_head;
+struct nsproxy;
+struct uts_namespace;
+struct cgroup;
+struct seccomp;
+struct cred;
+struct task_rlimit;
+struct clone_args;
+
+enum task_vma_kind {
+    TASK_VMA_EXEC = 1,
+    TASK_VMA_INTERP = 2,
+    TASK_VMA_STACK = 3,
+    TASK_VMA_ANON = 4,
+    TASK_VMA_FILE = 5,
+    TASK_VMA_GUARD = 6,
+};
+
+struct task_vma {
+    uint64_t start;
+    uint64_t end;
+    uint32_t flags;
+    enum task_vma_kind kind;
+    void *image;
+    size_t image_size;
+    uint64_t page_count;
+    uint32_t *page_flags;
+    uint8_t *resident_pages;
+    uint8_t *dirty_pages;
+    struct vm_private_page **private_pages;
+    int backing_fd;
+    uint64_t backing_file_identity;
+    char backing_path[MAX_PATH];
+    uint64_t backing_offset;
+    int shared;
+    struct vm_shared_mapping *shared_mapping;
+    struct vm_shared_mapping **shared_pages;
+    uint64_t shared_mapping_offset;
+};
+
+struct task_dynamic_info {
+    uint64_t vaddr;
+    uint64_t size;
+    uint64_t rela_vaddr;
+    uint64_t rela_size;
+    uint64_t rela_entry_size;
+    uint64_t plt_rela_vaddr;
+    uint64_t plt_rela_size;
+    uint64_t plt_rela_type;
+    uint64_t strtab_vaddr;
+    uint64_t strtab_size;
+    uint64_t symtab_vaddr;
+    uint64_t needed_offsets[TASK_EXEC_MAX_DYNAMIC_NEEDED];
+    uint32_t needed_count;
+};
+
+struct task_exec_handoff {
+    uint64_t entry_point;
+    uint64_t initial_stack_pointer;
+    uint64_t aarch64_pc;
+    uint64_t aarch64_sp;
+    long (*read_memory)(struct task_struct *task, uint64_t addr, void *buf, size_t count);
+    long (*write_memory)(struct task_struct *task, uint64_t addr, const void *buf, size_t count);
+};
+
+/* Task lifecycle states - virtual kernel internal */
+enum task_state {
+TASK_RUNNING = 0,
+TASK_INTERRUPTIBLE = 1,
+TASK_UNINTERRUPTIBLE = 2,
+TASK_STOPPED = 4,
+TASK_ZOMBIE = 8,
+TASK_DEAD = 16,
+};
+
+/* Resource limits - private internal representation
+ * Do not use host struct rlimit */
+struct task_rlimit {
+    uint64_t cur;
+    uint64_t max;
+};
+
+/* TTY structure - virtual kernel internal */
+struct tty_struct {
+    int index;
+    int32_t foreground_pgrp;
+    atomic_int refs;
+};
+
+/* MM structure - virtual kernel internal */
+struct mm_struct {
+    atomic_int refs;
+    void *exec_image_base;
+    size_t exec_image_size;
+    uint64_t exec_entry;
+    uint64_t exec_dynamic_vaddr;
+    uint64_t exec_dynamic_size;
+    struct task_dynamic_info exec_dynamic;
+    uint32_t exec_segment_count;
+    struct {
+        uint64_t vaddr;
+        uint64_t memsz;
+        uint64_t filesz;
+        uint64_t offset;
+        uint32_t flags;
+        void *image;
+        size_t image_size;
+    } exec_segments[TASK_EXEC_MAX_LOAD_SEGMENTS];
+    void *interp_image_base;
+    size_t interp_image_size;
+    uint64_t interp_entry;
+    uint64_t interp_dynamic_vaddr;
+    uint64_t interp_dynamic_size;
+    struct task_dynamic_info interp_dynamic;
+    uint32_t interp_segment_count;
+    char interp_path[MAX_PATH];
+    struct {
+        uint64_t vaddr;
+        uint64_t memsz;
+        uint64_t filesz;
+        uint64_t offset;
+        uint32_t flags;
+        void *image;
+        size_t image_size;
+    } interp_segments[TASK_EXEC_MAX_LOAD_SEGMENTS];
+    uint64_t entry_point;
+    uint64_t initial_stack_base;
+    uint64_t initial_stack_size;
+    uint64_t initial_stack_pointer;
+    void *stack_guard_image;
+    void *initial_stack_image;
+    size_t initial_stack_image_size;
+    int initial_argc;
+    int initial_envc;
+    uint64_t initial_argv[TASK_MAX_ARGS];
+    uint64_t initial_envp[TASK_MAX_ARGS];
+    uint64_t auxv_random_addr;
+    uint64_t auxv_platform_addr;
+    uint64_t auxv_execfn_addr;
+    struct {
+        uint64_t type;
+        uint64_t value;
+    } auxv[TASK_EXEC_MAX_AUXV];
+    uint32_t auxv_count;
+    struct task_vma vmas[TASK_EXEC_MAX_VMAS];
+    uint32_t vma_count;
+    uint64_t vm_peak_pages;
+    uint64_t vm_high_water_rss_pages;
+    struct task_exec_handoff handoff;
+    struct address_space *vma_addr_space;
+    uint64_t brk_start;
+    uint64_t brk_current;
+    uint64_t signal_frame_sp;
+    uint64_t signal_frame_signo;
+    uint64_t signal_frame_return_pc;
+    uint64_t signal_handler_pc;
+    uint64_t signal_frame_flags;
+    uint64_t signal_frame_restorer_pc;
+    uint64_t signal_frame_mask;
+    uint64_t signal_frame_altstack_sp;
+    uint64_t signal_frame_altstack_size;
+    uint64_t signal_frame_altstack_flags;
+    uint64_t signal_frame_current_sp;
+    uint64_t signal_frame_size;
+    uint64_t signal_frame_ucontext_flags;
+    uint64_t signal_frame_restartable;
+    uint64_t signal_frame_restart_return_pc;
+    uint64_t signal_frame_restart_sp;
+    uint64_t signal_frame_restart_signo;
+    uint64_t signal_frame_restart_kind;
+    uint64_t signal_frame_restart_arg0;
+    uint64_t signal_frame_restart_arg1;
+    uint64_t signal_frame_restart_arg2;
+    uint64_t signal_frame_restart_arg3;
+    uint64_t signal_frame_restart_arg4;
+    uint64_t signal_frame_restart_arg5;
+};
+
+enum task_restart_kind {
+    TASK_RESTART_NONE = 0,
+    TASK_RESTART_NANOSLEEP,
+    TASK_RESTART_POLL,
+    TASK_RESTART_PIPE_READ,
+    TASK_RESTART_PIPE_WRITE,
+    TASK_RESTART_FUTEX_WAIT,
+    TASK_RESTART_WAITPID,
+    TASK_RESTART_SELECT,
+    TASK_RESTART_EPOLL_WAIT,
+};
+
+/* Exec image types - virtual kernel internal */
+enum exec_image_type {
+    EXEC_IMAGE_NONE = 0,
+    EXEC_IMAGE_INVALID,
+    EXEC_IMAGE_NATIVE,
+    EXEC_IMAGE_ELF,
+    EXEC_IMAGE_WASI,
+    EXEC_IMAGE_SCRIPT,
+};
+
+/* Exec image entry - virtual kernel internal */
+typedef int (*native_entry_t)(struct task_struct *task, int argc, char **argv, char **envp);
+
+struct exec_image {
+    enum exec_image_type type;
+    char path[MAX_PATH];
+    char interpreter[MAX_PATH];
+
+    union {
+        struct {
+            native_entry_t entry;
+        } native;
+        struct {
+            uint64_t entry;
+            uint16_t type;
+            uint16_t machine;
+        } elf;
+        struct {
+            void *module;
+            void *instance;
+        } wasi;
+        struct {
+            char *interp_argv[TASK_MAX_ARGS];
+            int interp_argc;
+        } script;
+    } u;
+};
+
+/* Task structure - virtual kernel's internal representation of a Linux task
+ * This is PRIVATE internal state, NOT Linux UAPI. */
+struct task_struct {
+    /* Virtual PID/TGID/PGID/SID namespace identity */
+    int32_t pid;
+    int32_t tgid;
+    int32_t ppid;
+    int32_t pgid;
+    int32_t sid;
+    int32_t ns_pid;
+    int32_t pid_ns_level;
+
+    /* Virtual task lifecycle state */
+    atomic_int state;
+    int exit_status;
+    atomic_bool exited;
+    atomic_bool signaled;
+    atomic_int termsig;
+    atomic_bool stopped;
+    atomic_int stopsig;
+    atomic_bool continued;
+    atomic_bool stop_report_pending;
+    atomic_bool continue_report_pending;
+    atomic_bool execed;     /* Set after execve() - blocks setpgid per Linux semantics */
+    uint64_t clone_flags;
+    uint64_t thread_pending_signals;
+    atomic_bool new_pid_namespace_pending;
+
+    /* Host thread backing for this virtual task */
+    kernel_thread_t thread;
+    char comm[TASK_COMM_LEN];
+    char exe[MAX_PATH];
+    int argc;
+    char *argv[TASK_MAX_ARGS];
+    int envc;
+    char *envp[TASK_MAX_ARGS];
+
+    /* Resource ownership - pointers to virtual subsystem state */
+    struct files_struct *files;
+    struct fs_struct *fs;
+    struct signal_struct *signal;
+    struct cred *cred;
+    struct cgroup *cgroup;
+    struct cgroup *cgroup_ns_root;
+    uint64_t cgroup_ns_id;
+    uint64_t cgroup_ns_owner_user_ns_id;
+    struct seccomp *seccomp;
+    struct tty_struct *tty;
+    struct mm_struct *mm;
+    struct exec_image *exec_image;
+    struct uts_namespace *uts_ns;
+    uint64_t exec_secure;
+    uint64_t exec_dumpable;
+    int32_t ptracer_pid;
+    bool ptrace_attached;
+    bool ptrace_syscall_trace;
+    bool ptrace_syscall_exit_next;
+    bool ptrace_signal_bypass;
+    int32_t ptrace_signal;
+    int32_t ptrace_signal_stop;
+    uint64_t ptrace_options;
+    uint64_t ptrace_event;
+    uint64_t ptrace_event_message;
+    uint8_t ptrace_syscall_op;
+    uint64_t ptrace_syscall_nr;
+    uint64_t ptrace_syscall_args[6];
+    int64_t ptrace_syscall_retval;
+    bool ptrace_syscall_is_error;
+    uint64_t ptrace_regs[31];
+    uint64_t ptrace_sp;
+    uint64_t ptrace_pc;
+    uint64_t ptrace_pstate;
+    uint64_t clear_child_tid;
+    uint64_t robust_list_head;
+    uint64_t robust_list_len;
+    int32_t last_fault_signal;
+    int32_t last_fault_code;
+    uint64_t last_fault_addr;
+
+    /* Virtual process hierarchy relationships */
+    struct task_struct *parent;
+    struct task_struct *children;
+    struct task_struct *next_sibling;
+    struct task_struct *hash_next;
+
+    /* Vfork tracking - virtual kernel bookkeeping */
+    struct task_struct *vfork_parent;
+
+    /* Virtual wait queue / sleep state */
+    kernel_cond_t wait_cond;
+    kernel_mutex_t wait_lock;
+    struct wait_queue_head *current_wait_queue;
+    int waiters;
+
+    /* Resource limits - virtual kernel tracked
+     * Uses private struct task_rlimit, not host struct rlimit */
+    struct task_rlimit rlimits[16];
+
+    /* Start time - virtual kernel tracked
+     * Stored as nanoseconds instead of host struct timespec */
+    uint64_t start_time_ns;
+
+    /* Reference counting and locking */
+    atomic_int refs;
+    kernel_mutex_t lock;
+};
+
+/* Task global table - virtual PID namespace */
+extern kernel_mutex_t task_table_lock;
+extern struct task_struct *task_table[TASK_MAX_TASKS];
+
+/* The init_task (pid 1) - set up during kernel boot */
+extern struct task_struct *init_task;
+
+/* Task allocation - virtual kernel internal */
+struct task_struct *alloc_task(void);
+void free_task(struct task_struct *task);
+
+/* Current task accessors - virtual kernel runtime */
+struct task_struct *get_current(void);
+void set_current(struct task_struct *task);
+
+/* Virtual PID namespace management */
+int32_t alloc_pid(void);
+int pid_reserve(int32_t pid);
+void free_pid(int32_t pid);
+void pid_init(void);
+
+/* Virtual task table management */
+int task_init(void);
+void task_deinit(void);
+struct task_struct *task_lookup(int32_t pid);
+int task_hash(int32_t pid);
+int task_reassign_pid_impl(struct task_struct *task, int32_t pid);
+struct task_struct *task_create_child_impl(struct task_struct *parent);
+struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent, uint64_t flags);
+void task_unlink_child_impl(struct task_struct *parent, struct task_struct *child);
+void task_mark_stopped_by_signal(struct task_struct *task, int32_t sig);
+void task_mark_continued_by_signal(struct task_struct *task);
+void task_mark_signaled_exit(struct task_struct *task, int32_t sig);
+void task_mark_exited(struct task_struct *task, int status);
+void task_notify_parent_state_change(struct task_struct *task);
+long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void *buf, size_t count);
+long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, const void *buf, size_t count);
+const struct task_vma *task_find_vma_impl(struct task_struct *task, uint64_t addr);
+struct task_vma *task_find_vma_mutable_impl(struct task_struct *task, uint64_t addr);
+uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
+int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64_t size, uint32_t flags);
+void task_rename_vma_backing_path_impl(const char *old_path, const char *new_path);
+void task_exchange_vma_backing_paths_impl(const char *left_path, const char *right_path);
+void task_note_memory_fault_impl(struct task_struct *task, uint64_t addr, int32_t code);
+void task_note_memory_signal_fault_impl(struct task_struct *task, int32_t signo, int32_t code, uint64_t addr);
+const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task);
+void task_restart_clear_impl(struct task_struct *task);
+int task_restart_record_impl(struct task_struct *task, enum task_restart_kind kind,
+                             uint64_t arg0, uint64_t arg1, uint64_t arg2,
+                             uint64_t arg3, uint64_t arg4, uint64_t arg5);
+void task_clear_vmas_impl(struct mm_struct *mm);
+struct mm_struct *task_mm_get_impl(struct mm_struct *mm);
+struct mm_struct *task_mm_dup_impl(const struct mm_struct *mm);
+void task_mm_put_impl(struct mm_struct *mm);
+void task_mm_update_high_water_impl(struct mm_struct *mm);
+void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping);
+void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping);
+void mm_private_page_put_impl(struct vm_private_page *page);
+long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
+long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
+long mm_private_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
+long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
+
+/* Virtual process identity syscalls (internal helpers) */
+int32_t getpid_impl(void);
+int32_t getppid_impl(void);
+int32_t getpgrp_impl(void);
+int32_t getpgid_impl(int32_t pid);
+int setpgid_impl(int32_t pid, int32_t pgid);
+int32_t getsid_impl(int32_t pid);
+int32_t setsid_impl(void);
+int task_session_has_pgrp_impl(int32_t sid, int32_t pgid);
+
+/* Virtual fork/exec - internal helpers */
+int32_t fork_impl(void);
+int32_t vfork_impl(void);
+int32_t clone_impl(uint64_t flags);
+int32_t clone3_impl(const struct clone_args *args, size_t size);
+int unshare_impl(uint64_t flags);
+int task_exec_transition_impl(const char *path, const char *argv0);
+int task_record_exec_strings_impl(char *const argv[], char *const envp[]);
+
+/* Virtual exit helper */
+void exit_impl(int status);
+
+/* Virtual vfork notifications */
+void vfork_exec_notify(void);
+void vfork_exit_notify(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* KERNEL_TASK_H */

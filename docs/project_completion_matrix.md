@@ -42,10 +42,10 @@ It complements:
 
 | subgroup | artifact | required by | status | observation |
 | --- | --- | --- | --- | --- |
-| ownership | `IXLandKernel` target or package | M0 | `planned` | Must own `fs/**`, `kernel/**`, `runtime/**`, and `include/**`. |
+| ownership | `IXLandKernel` target or package | M0 | `implemented` | Owns the physical `IXLandKernel/fs/**`, `IXLandKernel/kernel/**`, `IXLandKernel/runtime/**`, and `IXLandKernel/include/**` trees. |
 | boundary | no Darwin, Foundation, UIKit, pthread, or dispatch headers in Linux-owner code | M0 | `partial` | Plans require this, but current repo still has host-shaped abstractions and direct host seam imports to eliminate. |
 | boundary | no arbitrary host implementation header visibility | M0 | `planned` | Must be enforced by target graph and include graph, not just convention. |
-| boundary | curated exported seam imports only | M0 | `planned` | Linux-owner code must stop importing raw `internal/ios/**` headers. |
+| boundary | curated exported seam imports only | M0 | `partial` | Linux-owner code now imports exported adapter seams instead of raw `IXLandHostAdapter/internal/ios/**` headers, but the seam still needs further narrowing. |
 | header discipline | Linux UAPI as production ABI truth | M1 | `partial` | Main target already uses vendored UAPI include root, but broader ownership cleanup remains. |
 | header discipline | kheaders as classified private reference only | M1 | `partial` | Current project has kheaders smoke, but the project-wide classification discipline is not yet complete. |
 | type ownership | no libc-owned typedef reinvention in kernel | M1 | `partial` | Repo still contains Linux-like typedef recreation and host seam leakage that need cleanup. |
@@ -125,15 +125,15 @@ It complements:
 
 | subgroup | artifact | required by | status | observation |
 | --- | --- | --- | --- | --- |
-| packaging | `IXLandHostAdapter` target or package | M0 | `planned` | Must own all current `internal/ios/**` code. |
+| packaging | `IXLandHostAdapter` target or package | M0 | `implemented` | Owns the physical `IXLandHostAdapter/internal/ios/**` tree. |
 | seam | curated exported seam namespace | M0 | `planned` | Must replace casual direct imports of host headers from kernel code. |
 | fs host mechanics | backing storage and path discovery | M0, M4 | `partial` | Current host fs helpers exist but need packaging and seam discipline. |
 | fs host mechanics | errno translation | M0, M4, M5 | `partial` | Present in current tree; still needs stronger boundary enforcement. |
 | fs host mechanics | open flags and host file I/O realization | M0, M4 | `partial` | Existing host helpers exist; must remain mechanism-only. |
-| kernel host mechanics | host clock access | M0, M3, M5 | `partial` | Existing host clock code exists in `internal/ios/kernel`. |
+| kernel host mechanics | host clock access | M0, M3, M5 | `partial` | Existing host clock code lives in `IXLandHostAdapter/internal/ios/kernel`. |
 | kernel host mechanics | host sleep and wake primitives | M0, M3 | `partial` | Existing sync and wait realization exists, but seam redesign is still ahead. |
 | kernel host mechanics | host signal mask save and restore where required as mechanism | M0, M3 | `partial` | Existing bridge code exists, but semantics must remain kernel-owned. |
-| runtime host mechanics | runtime synchronization helper ownership | M0 | `partial` | Current `runtime/native/registry.c` still imports host runtime sync directly. |
+| runtime host mechanics | runtime synchronization helper ownership | M0 | `implemented` | `IXLandKernel/runtime/native/registry.c` no longer imports host runtime sync directly. |
 | future host mechanics | security-scoped file access lifecycle | future external mounts | `planned` | Explicitly planned but not yet completed. |
 
 ## IXLandMLibC
