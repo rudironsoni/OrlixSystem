@@ -91,12 +91,12 @@ short poll_fd_revents_impl(int fd, short events, int *is_virtual) {
     }
 
     if (get_fd_is_socket_impl(entry)) {
-        struct ix_socket *sock = get_fd_socket_impl(entry);
+        struct socket_state *sock = get_fd_socket_impl(entry);
         if (is_virtual) {
             *is_virtual = 1;
         }
         put_fd_entry_impl(entry);
-        return ix_socket_poll_revents_impl(sock, events);
+        return socket_poll_revents_impl(sock, events);
     }
 
     if (get_fd_is_eventfd_impl(entry)) {

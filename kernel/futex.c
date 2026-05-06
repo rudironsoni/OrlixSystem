@@ -36,6 +36,21 @@ static struct wait_queue_head futex_table_lock;
 static struct futex_bucket futex_table[KERNEL_WAIT_WORD_BUCKETS];
 static atomic_int futex_table_state = 0;
 
+void futex_reset_impl(void) {
+    if (atomic_load(&futex_table_state) != 2) {
+        return;
+    }
+
+    wait_queue_lock(&futex_table_lock);
+    for (int i = 0; i < KERNEL_WAIT_WORD_BUCKETS; i++) {
+        futex_table[i].uaddr = 0;
+        futex_table[i].used = 0;
+        futex_table[i].waiter_list = NULL;
+        futex_table[i].waiters = 0;
+    }
+    wait_queue_unlock(&futex_table_lock);
+}
+
 static int futex_table_init_once(void) {
     int expected = 0;
 

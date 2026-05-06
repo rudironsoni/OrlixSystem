@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <linux/fcntl.h>
+#include <linux/net.h>
 #include <linux/poll.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -16,29 +17,60 @@
 #include "socket.h"
 #include "fs/fdtable.h"
 
+#ifndef SOCK_TYPE_MASK
+#define SOCK_TYPE_MASK 0xf
+#endif
+#ifndef SOCK_CLOEXEC
+#define SOCK_CLOEXEC O_CLOEXEC
+#endif
+#ifndef SOCK_NONBLOCK
+#define SOCK_NONBLOCK O_NONBLOCK
+#endif
+
 static int socket_flags_from_type(int type, int *base_type_out, int *fd_flags_out) {
     int base_type;
     int fd_flags = 0;
+    int type_flags;
 
     if (!base_type_out || !fd_flags_out) {
         errno = EINVAL;
         return -1;
     }
 
-    /* Linux allows OR-ing socket flags into type; this tranche keeps the
-     * virtual socket model, but does not yet decode those flags. */
-    base_type = type;
+    base_type = type & SOCK_TYPE_MASK;
+    type_flags = type & ~SOCK_TYPE_MASK;
+    if (type_flags & ~(SOCK_NONBLOCK | SOCK_CLOEXEC)) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (type_flags & SOCK_NONBLOCK) {
+        fd_flags |= O_NONBLOCK;
+    }
+    if (type_flags & SOCK_CLOEXEC) {
+        fd_flags |= O_CLOEXEC;
+    }
 
     *base_type_out = base_type;
-    /* Virtual sockets are full-duplex; model them as read/write at the fd layer
-     * so generic read/write paths accept the descriptor. */
     *fd_flags_out = O_RDWR | fd_flags;
     return 0;
 }
 
-static int fd_get_socket(int fd, struct ix_socket **sock_out) {
+static int socket_accept_flags(int flags, int *fd_flags_out) {
+    if (!fd_flags_out) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (flags & ~(O_NONBLOCK | O_CLOEXEC)) {
+        errno = EINVAL;
+        return -1;
+    }
+    *fd_flags_out = O_RDWR | (flags & (O_NONBLOCK | O_CLOEXEC));
+    return 0;
+}
+
+static int fd_get_socket(int fd, struct socket_state **sock_out) {
     void *entry;
-    struct ix_socket *sock;
+    struct socket_state *sock;
 
     if (!sock_out) {
         errno = EFAULT;
@@ -70,7 +102,7 @@ static int fd_get_socket(int fd, struct ix_socket **sock_out) {
         return -1;
     }
 
-    ix_socket_retain_impl(sock);
+    socket_retain_impl(sock);
     put_fd_entry_impl(entry);
     *sock_out = sock;
     return 0;
@@ -79,27 +111,27 @@ static int fd_get_socket(int fd, struct ix_socket **sock_out) {
 __attribute__((visibility("default"))) int socket(int domain, int type, int protocol) {
     int base_type;
     int flags;
-    struct ix_socket *sock;
+    struct socket_state *sock;
     int fd;
 
     if (socket_flags_from_type(type, &base_type, &flags) != 0) {
         return -1;
     }
 
-    sock = ix_socket_create_impl(domain, base_type, protocol);
+    sock = socket_create_impl(domain, base_type, protocol);
     if (!sock) {
         return -1;
     }
 
     fd = alloc_fd_impl();
     if (fd < 0) {
-        ix_socket_release_impl(sock);
+        socket_release_impl(sock);
         return -1;
     }
 
     if (init_socket_fd_entry_impl(fd, flags, sock) != 0) {
         free_fd_impl(fd);
-        ix_socket_release_impl(sock);
+        socket_release_impl(sock);
         return -1;
     }
 
@@ -109,8 +141,8 @@ __attribute__((visibility("default"))) int socket(int domain, int type, int prot
 __attribute__((visibility("default"))) int socketpair(int domain, int type, int protocol, int sv[2]) {
     int base_type;
     int flags;
-    struct ix_socket *a = NULL;
-    struct ix_socket *b = NULL;
+    struct socket_state *a = NULL;
+    struct socket_state *b = NULL;
     int fd0 = -1;
     int fd1 = -1;
 
@@ -123,7 +155,7 @@ __attribute__((visibility("default"))) int socketpair(int domain, int type, int 
         return -1;
     }
 
-    if (ix_socketpair_create_impl(domain, base_type, protocol, &a, &b) != 0) {
+    if (socketpair_create_impl(domain, base_type, protocol, &a, &b) != 0) {
         return -1;
     }
 
@@ -158,83 +190,88 @@ fail:
     if (fd1 >= 0) {
         close_impl(fd1);
     }
-    ix_socket_release_impl(a);
-    ix_socket_release_impl(b);
+    socket_release_impl(a);
+    socket_release_impl(b);
     return -1;
 }
 
 __attribute__((visibility("default"))) int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
-    struct ix_socket *sock;
+    struct socket_state *sock;
     int ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
     }
-    ret = ix_socket_connect_impl(sock, addr, addrlen);
-    ix_socket_release_impl(sock);
+    ret = socket_connect_impl(sock, addr, addrlen);
+    socket_release_impl(sock);
     return ret;
 }
 
 __attribute__((visibility("default"))) int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
-    struct ix_socket *sock;
+    struct socket_state *sock;
     int ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
     }
-    ret = ix_socket_bind_impl(sock, addr, addrlen);
-    ix_socket_release_impl(sock);
+    ret = socket_bind_impl(sock, addr, addrlen);
+    socket_release_impl(sock);
     return ret;
 }
 
 __attribute__((visibility("default"))) int listen(int sockfd, int backlog) {
-    struct ix_socket *sock;
+    struct socket_state *sock;
     int ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
     }
-    ret = ix_socket_listen_impl(sock, backlog);
-    ix_socket_release_impl(sock);
+    ret = socket_listen_impl(sock, backlog);
+    socket_release_impl(sock);
     return ret;
 }
 
 __attribute__((visibility("default"))) int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
-    struct ix_socket *sock;
-    struct ix_socket *accepted;
+    struct socket_state *sock;
+    struct socket_state *accepted;
     int fd;
+    int fd_flags;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
     }
 
-    accepted = ix_socket_accept_impl(sock, addr, addrlen, 0);
-    ix_socket_release_impl(sock);
+    accepted = socket_accept_impl(sock, addr, addrlen, 0);
+    socket_release_impl(sock);
     if (!accepted) {
         return -1;
     }
 
     fd = alloc_fd_impl();
     if (fd < 0) {
-        ix_socket_release_impl(accepted);
+        socket_release_impl(accepted);
         return -1;
     }
-    if (init_socket_fd_entry_impl(fd, 0, accepted) != 0) {
+    if (socket_accept_flags(0, &fd_flags) != 0) {
         free_fd_impl(fd);
-        ix_socket_release_impl(accepted);
+        socket_release_impl(accepted);
+        return -1;
+    }
+    if (init_socket_fd_entry_impl(fd, fd_flags, accepted) != 0) {
+        free_fd_impl(fd);
+        socket_release_impl(accepted);
         return -1;
     }
     return fd;
 }
 
 __attribute__((visibility("default"))) int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
-    struct ix_socket *sock;
-    struct ix_socket *accepted;
+    struct socket_state *sock;
+    struct socket_state *accepted;
     int fd;
+    int fd_flags;
 
-    /* Flags decoding is deferred in this tranche. */
-    if (flags != 0) {
-        errno = EINVAL;
+    if (socket_accept_flags(flags, &fd_flags) != 0) {
         return -1;
     }
 
@@ -242,46 +279,46 @@ __attribute__((visibility("default"))) int accept4(int sockfd, struct sockaddr *
         return -1;
     }
 
-    accepted = ix_socket_accept_impl(sock, addr, addrlen, flags);
-    ix_socket_release_impl(sock);
+    accepted = socket_accept_impl(sock, addr, addrlen, flags);
+    socket_release_impl(sock);
     if (!accepted) {
         return -1;
     }
 
     fd = alloc_fd_impl();
     if (fd < 0) {
-        ix_socket_release_impl(accepted);
+        socket_release_impl(accepted);
         return -1;
     }
-    if (init_socket_fd_entry_impl(fd, 0, accepted) != 0) {
+    if (init_socket_fd_entry_impl(fd, fd_flags, accepted) != 0) {
         free_fd_impl(fd);
-        ix_socket_release_impl(accepted);
+        socket_release_impl(accepted);
         return -1;
     }
     return fd;
 }
 
 __attribute__((visibility("default"))) ssize_t send(int sockfd, const void *buf, size_t len, int flags) {
-    struct ix_socket *sock;
+    struct socket_state *sock;
     ssize_t ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
     }
-    ret = ix_socket_send_impl(sock, buf, len, flags);
-    ix_socket_release_impl(sock);
+    ret = socket_send_impl(sock, buf, len, flags);
+    socket_release_impl(sock);
     return ret;
 }
 
 __attribute__((visibility("default"))) ssize_t recv(int sockfd, void *buf, size_t len, int flags) {
-    struct ix_socket *sock;
+    struct socket_state *sock;
     ssize_t ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
     }
-    ret = ix_socket_recv_impl(sock, buf, len, flags);
-    ix_socket_release_impl(sock);
+    ret = socket_recv_impl(sock, buf, len, flags);
+    socket_release_impl(sock);
     return ret;
 }
 
@@ -412,14 +449,14 @@ __attribute__((visibility("default"))) ssize_t recvmsg(int sockfd, struct msghdr
 }
 
 __attribute__((visibility("default"))) int shutdown(int sockfd, int how) {
-    struct ix_socket *sock;
+    struct socket_state *sock;
     int ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
     }
-    ret = ix_socket_shutdown_impl(sock, how);
-    ix_socket_release_impl(sock);
+    ret = socket_shutdown_impl(sock, how);
+    socket_release_impl(sock);
     return ret;
 }
 
@@ -428,13 +465,15 @@ __attribute__((visibility("default"))) int getsockopt(int sockfd,
                                                       int optname,
                                                       void *optval,
                                                       socklen_t *optlen) {
-    (void)sockfd;
-    (void)level;
-    (void)optname;
-    (void)optval;
-    (void)optlen;
-    errno = EOPNOTSUPP;
-    return -1;
+    struct socket_state *sock;
+    int ret;
+
+    if (fd_get_socket(sockfd, &sock) != 0) {
+        return -1;
+    }
+    ret = socket_getsockopt_impl(sock, level, optname, optval, optlen);
+    socket_release_impl(sock);
+    return ret;
 }
 
 __attribute__((visibility("default"))) int setsockopt(int sockfd,
@@ -442,27 +481,37 @@ __attribute__((visibility("default"))) int setsockopt(int sockfd,
                                                       int optname,
                                                       const void *optval,
                                                       socklen_t optlen) {
-    (void)sockfd;
-    (void)level;
-    (void)optname;
-    (void)optval;
-    (void)optlen;
-    errno = EOPNOTSUPP;
-    return -1;
+    struct socket_state *sock;
+    int ret;
+
+    if (fd_get_socket(sockfd, &sock) != 0) {
+        return -1;
+    }
+    ret = socket_setsockopt_impl(sock, level, optname, optval, optlen);
+    socket_release_impl(sock);
+    return ret;
 }
 
 __attribute__((visibility("default"))) int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
-    (void)sockfd;
-    (void)addr;
-    (void)addrlen;
-    errno = EOPNOTSUPP;
-    return -1;
+    struct socket_state *sock;
+    int ret;
+
+    if (fd_get_socket(sockfd, &sock) != 0) {
+        return -1;
+    }
+    ret = socket_getsockname_impl(sock, addr, addrlen);
+    socket_release_impl(sock);
+    return ret;
 }
 
 __attribute__((visibility("default"))) int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
-    (void)sockfd;
-    (void)addr;
-    (void)addrlen;
-    errno = EOPNOTSUPP;
-    return -1;
+    struct socket_state *sock;
+    int ret;
+
+    if (fd_get_socket(sockfd, &sock) != 0) {
+        return -1;
+    }
+    ret = socket_getpeername_impl(sock, addr, addrlen);
+    socket_release_impl(sock);
+    return ret;
 }

@@ -314,6 +314,14 @@
     XCTAssertEqual(native_syscall_contract_dispatches_pidfd_syscalls(), 0, @"errno %d", errno);
 }
 
+- (void)testUnixSocketListenAcceptConnectStreamTransfer {
+    XCTAssertEqual(native_syscall_contract_unix_socket_listen_accept_connect_stream_transfer(), 0, @"errno %d", errno);
+}
+
+- (void)testUnixSocketFlagsSockoptsAndProcIdentity {
+    XCTAssertEqual(native_syscall_contract_unix_socket_flags_sockopts_and_proc_identity(), 0, @"errno %d", errno);
+}
+
 - (void)testClassifiesMilestone01ProcessSurface {
     XCTAssertEqual(native_syscall_contract_classifies_milestone_01_process_surface(), 0, @"errno %d", errno);
 }

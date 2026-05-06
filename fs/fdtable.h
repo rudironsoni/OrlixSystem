@@ -71,7 +71,7 @@ struct fd_description;
 typedef struct fd_description fd_description_t;
 struct pipe_endpoint;
 struct epoll_instance;
-struct ix_socket;
+struct socket_state;
 
 #define VFS_MOUNT_FD_MAX_ENTRIES 64
 
@@ -161,7 +161,7 @@ typedef enum synthetic_dev_node synthetic_dev_node_t;
 void init_synthetic_dev_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_dev_node_t dev_node);
 void init_synthetic_pty_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, unsigned int pty_index, bool is_master);
 int init_pipe_fd_entry_impl(int fd, int flags, struct pipe_endpoint *endpoint);
-int init_socket_fd_entry_impl(int fd, int flags, struct ix_socket *socket);
+int init_socket_fd_entry_impl(int fd, int flags, struct socket_state *socket);
 int init_epoll_fd_entry_impl(int fd, int flags, struct epoll_instance *instance);
 int init_mount_fd_entry_impl(int fd, int flags, const struct vfs_mount_fd *mount_fd);
 int eventfd2_impl(unsigned int initval, int flags);
@@ -181,7 +181,7 @@ unsigned int get_fd_synthetic_pty_index_impl(void *entry);
 bool get_fd_is_pipe_impl(void *entry);
 struct pipe_endpoint *get_fd_pipe_endpoint_impl(void *entry);
 bool get_fd_is_socket_impl(void *entry);
-struct ix_socket *get_fd_socket_impl(void *entry);
+struct socket_state *get_fd_socket_impl(void *entry);
 bool get_fd_is_epoll_impl(void *entry);
 struct epoll_instance *get_fd_epoll_instance_impl(void *entry);
 bool get_fd_is_mount_impl(void *entry);

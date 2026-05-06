@@ -6,24 +6,43 @@
 #include <stdint.h>
 #include <sys/socket.h>
 
-struct ix_socket;
+struct socket_state;
 
-struct ix_socket *ix_socket_create_impl(int domain, int type, int protocol);
-int ix_socketpair_create_impl(int domain, int type, int protocol, struct ix_socket **a_out, struct ix_socket **b_out);
+struct socket_state *socket_create_impl(int domain, int type, int protocol);
+int socketpair_create_impl(int domain,
+                           int type,
+                           int protocol,
+                           struct socket_state **a_out,
+                           struct socket_state **b_out);
+unsigned long long socket_identity_impl(const struct socket_state *sock);
 
-void ix_socket_retain_impl(struct ix_socket *sock);
-void ix_socket_release_impl(struct ix_socket *sock);
+void socket_retain_impl(struct socket_state *sock);
+void socket_release_impl(struct socket_state *sock);
 
-int ix_socket_shutdown_impl(struct ix_socket *sock, int how);
-int ix_socket_connect_impl(struct ix_socket *sock, const struct sockaddr *addr, socklen_t addrlen);
-int ix_socket_bind_impl(struct ix_socket *sock, const struct sockaddr *addr, socklen_t addrlen);
-int ix_socket_listen_impl(struct ix_socket *sock, int backlog);
-struct ix_socket *ix_socket_accept_impl(struct ix_socket *sock, struct sockaddr *addr, socklen_t *addrlen, int flags);
+int socket_shutdown_impl(struct socket_state *sock, int how);
+int socket_connect_impl(struct socket_state *sock, const struct sockaddr *addr, socklen_t addrlen);
+int socket_bind_impl(struct socket_state *sock, const struct sockaddr *addr, socklen_t addrlen);
+int socket_listen_impl(struct socket_state *sock, int backlog);
+struct socket_state *socket_accept_impl(struct socket_state *sock,
+                                        struct sockaddr *addr,
+                                        socklen_t *addrlen,
+                                        int flags);
+int socket_getsockname_impl(struct socket_state *sock, struct sockaddr *addr, socklen_t *addrlen);
+int socket_getpeername_impl(struct socket_state *sock, struct sockaddr *addr, socklen_t *addrlen);
+int socket_getsockopt_impl(struct socket_state *sock,
+                           int level,
+                           int optname,
+                           void *optval,
+                           socklen_t *optlen);
+int socket_setsockopt_impl(struct socket_state *sock,
+                           int level,
+                           int optname,
+                           const void *optval,
+                           socklen_t optlen);
 
-ssize_t ix_socket_send_impl(struct ix_socket *sock, const void *buf, size_t len, int flags);
-ssize_t ix_socket_recv_impl(struct ix_socket *sock, void *buf, size_t len, int flags);
+ssize_t socket_send_impl(struct socket_state *sock, const void *buf, size_t len, int flags);
+ssize_t socket_recv_impl(struct socket_state *sock, void *buf, size_t len, int flags);
 
-short ix_socket_poll_revents_impl(struct ix_socket *sock, short events);
+short socket_poll_revents_impl(struct socket_state *sock, short events);
 
 #endif
-

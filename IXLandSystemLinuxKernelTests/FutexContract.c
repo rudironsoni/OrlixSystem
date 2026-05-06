@@ -263,9 +263,12 @@ int futex_contract_requeue_moves_waiter_to_new_uaddr(void) {
         /* spin */
     }
 
-    ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word1,
-                                FUTEX_REQUEUE_PRIVATE, 0,
-                                1 /* nr_requeue */, (long)(uintptr_t)&word2, 0);
+    ret = 0;
+    for (int i = 0; i < 100000 && ret == 0; i++) {
+        ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word1,
+                                    FUTEX_REQUEUE_PRIVATE, 0,
+                                    1 /* nr_requeue */, (long)(uintptr_t)&word2, 0);
+    }
     if (ret != 1) {
         pthread_join(thread, NULL);
         errno = EPROTO;

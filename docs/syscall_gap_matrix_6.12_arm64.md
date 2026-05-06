@@ -202,21 +202,21 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 195 | `shmctl` | kernel-owned missing:unclassified | package |
 | 196 | `shmat` | kernel-owned missing:unclassified | package |
 | 197 | `shmdt` | kernel-owned missing:unclassified | package |
-| 198 | `socket` | future backend:virtual-network | network |
-| 199 | `socketpair` | future backend:virtual-network | network |
-| 200 | `bind` | kernel-owned missing:unclassified | package |
-| 201 | `listen` | kernel-owned missing:unclassified | package |
-| 202 | `accept` | kernel-owned missing:unclassified | package |
-| 203 | `connect` | future backend:virtual-network | network |
-| 204 | `getsockname` | kernel-owned missing:unclassified | package |
-| 205 | `getpeername` | kernel-owned missing:unclassified | package |
-| 206 | `sendto` | future backend:virtual-network | network |
-| 207 | `recvfrom` | future backend:virtual-network | network |
-| 208 | `setsockopt` | kernel-owned missing:unclassified | package |
-| 209 | `getsockopt` | kernel-owned missing:unclassified | package |
-| 210 | `shutdown` | kernel-owned missing:unclassified | package |
-| 211 | `sendmsg` | future backend:virtual-network | network |
-| 212 | `recvmsg` | future backend:virtual-network | network |
+| 198 | `socket` | implemented:virtual-network | none |
+| 199 | `socketpair` | implemented:virtual-network | none |
+| 200 | `bind` | implemented:virtual-network | none |
+| 201 | `listen` | implemented:virtual-network | none |
+| 202 | `accept` | implemented:virtual-network | none |
+| 203 | `connect` | implemented:virtual-network | none |
+| 204 | `getsockname` | implemented:virtual-network | none |
+| 205 | `getpeername` | implemented:virtual-network | none |
+| 206 | `sendto` | implemented:virtual-network | none |
+| 207 | `recvfrom` | implemented:virtual-network | none |
+| 208 | `setsockopt` | implemented:virtual-network | none |
+| 209 | `getsockopt` | implemented:virtual-network | none |
+| 210 | `shutdown` | implemented:virtual-network | none |
+| 211 | `sendmsg` | implemented:virtual-network | none |
+| 212 | `recvmsg` | implemented:virtual-network | none |
 | 213 | `readahead` | kernel-owned missing:unclassified | package |
 | 214 | `brk` | implemented:vm | none |
 | 215 | `munmap` | implemented:vm | none |
@@ -246,7 +246,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 239 | `move_pages` | kernel-owned missing:unclassified | package |
 | 240 | `rt_tgsigqueueinfo` | kernel-owned missing:unclassified | package |
 | 241 | `perf_event_open` | kernel-owned missing:unclassified | package |
-| 242 | `accept4` | kernel-owned missing:unclassified | package |
+| 242 | `accept4` | implemented:virtual-network | none |
 | 243 | `recvmmsg` | future backend:virtual-network | network |
 | 260 | `wait4` | implemented:process | none |
 | 261 | `prlimit64` | implemented:resource | none |

@@ -3,6 +3,7 @@
 #include <errno.h>
 
 #include "FutexContract.h"
+#include "kernel/futex.h"
 #include "kernel/init.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
@@ -17,6 +18,8 @@ static void reset_futex_test_kernel_state(void) {
     if (!init_task) {
         return;
     }
+
+    futex_reset_impl();
 
     set_current(init_task);
     init_task->parent = NULL;

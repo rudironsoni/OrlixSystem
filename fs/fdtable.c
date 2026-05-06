@@ -27,10 +27,8 @@
 #include "eventpoll.h"
 #include "pipe.h"
 #include "pty.h"
+#include "kernel/net/socket.h"
 #include "../kernel/task.h"
-
-struct ix_socket;
-extern void ix_socket_release_impl(struct ix_socket *sock);
 
 static void retain_fd_description(struct fd_description *desc);
 static void release_fd_description(struct fd_description *desc);
@@ -386,7 +384,7 @@ typedef struct fd_description {
     unsigned int pty_index;
     bool pty_is_master;
     struct pipe_endpoint *pipe_endpoint;
-    struct ix_socket *socket;
+    struct socket_state *socket;
     struct epoll_instance *epoll_instance;
     struct vfs_mount_fd mount_fd;
     uint64_t eventfd_counter;
@@ -798,8 +796,9 @@ static fd_description_t *alloc_pipe_fd_description(int flags, struct pipe_endpoi
     return desc;
 }
 
-static fd_description_t *alloc_socket_fd_description(int flags, struct ix_socket *socket) {
+static fd_description_t *alloc_socket_fd_description(int flags, struct socket_state *socket) {
     fd_description_t *desc;
+    unsigned long long socket_id;
 
     if (!socket) {
         errno = EINVAL;
@@ -831,7 +830,8 @@ static fd_description_t *alloc_socket_fd_description(int flags, struct ix_socket
     desc->synthetic_state = NULL;
     atomic_init(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
-    memcpy(desc->path, "socket:[0]", sizeof("socket:[0]"));
+    socket_id = socket_identity_impl(socket);
+    snprintf(desc->path, sizeof(desc->path), "socket:[%llu]", socket_id);
     return desc;
 }
 
@@ -1141,7 +1141,7 @@ static void release_fd_description(fd_description_t *desc) {
         } else if (desc->type == FD_TYPE_PIPE) {
             pipe_close_endpoint_impl(desc->pipe_endpoint);
         } else if (desc->type == FD_TYPE_SOCKET) {
-            ix_socket_release_impl(desc->socket);
+            socket_release_impl(desc->socket);
         } else if (desc->type == FD_TYPE_EPOLL) {
             epoll_release_fd_impl(desc->epoll_instance);
         } else if (desc->type == FD_TYPE_PIDFD && desc->pidfd_task) {
@@ -1904,7 +1904,7 @@ int init_pipe_fd_entry_impl(int fd, int flags, struct pipe_endpoint *endpoint) {
     return 0;
 }
 
-int init_socket_fd_entry_impl(int fd, int flags, struct ix_socket *socket) {
+int init_socket_fd_entry_impl(int fd, int flags, struct socket_state *socket) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -2164,7 +2164,7 @@ bool get_fd_is_socket_impl(void *entry) {
     return fd_entry->desc && fd_entry->desc->type == FD_TYPE_SOCKET;
 }
 
-struct ix_socket *get_fd_socket_impl(void *entry) {
+struct socket_state *get_fd_socket_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     return fd_entry->desc ? fd_entry->desc->socket : NULL;
 }

@@ -10,6 +10,7 @@
 #include <linux/elf.h>
 #include <linux/memfd.h>
 #include <linux/mman.h>
+#include <linux/net.h>
 #include <linux/pidfd.h>
 #include <linux/poll.h>
 #include <linux/prctl.h>
@@ -117,6 +118,37 @@
 #ifndef F_OK
 #define F_OK 0
 #endif
+
+struct native_unix_sockaddr {
+    unsigned short sun_family;
+    char sun_path[108];
+};
+
+typedef unsigned int native_socklen_t;
+
+#ifndef AF_UNIX
+#define AF_UNIX 1
+#endif
+
+#ifndef SOCK_STREAM
+#define SOCK_STREAM 1
+#endif
+#ifndef SOCK_CLOEXEC
+#define SOCK_CLOEXEC O_CLOEXEC
+#endif
+#ifndef SOCK_NONBLOCK
+#define SOCK_NONBLOCK O_NONBLOCK
+#endif
+#define NATIVE_SOL_SOCKET 1
+#define NATIVE_SO_REUSEADDR 2
+#define NATIVE_SO_TYPE 3
+#define NATIVE_SO_ERROR 4
+#define NATIVE_SO_SNDBUF 7
+#define NATIVE_SO_RCVBUF 8
+#define NATIVE_SO_KEEPALIVE 9
+#define NATIVE_SO_ACCEPTCONN 30
+#define NATIVE_SO_PROTOCOL 38
+#define NATIVE_SO_DOMAIN 39
 
 struct linux_rusage_contract {
     struct __kernel_old_timeval ru_utime;
@@ -942,6 +974,367 @@ int native_syscall_contract_madvise_dontneed_discards_private_page(void) {
 out:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 8192, 0, 0, 0, 0);
     return result;
+}
+
+int native_syscall_contract_unix_socket_listen_accept_connect_stream_transfer(void) {
+    int server = -1;
+    int client = -1;
+    int accepted = -1;
+    struct native_unix_sockaddr server_addr;
+    struct native_unix_sockaddr client_addr;
+    struct native_unix_sockaddr actual_addr;
+    native_socklen_t addrlen;
+    const char message[] = "hi";
+    char buf[8];
+    long ret;
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sun_family = AF_UNIX;
+    server_addr.sun_path[0] = '\0';
+    memcpy(&server_addr.sun_path[1], "ixland-server", 13);
+
+    memset(&client_addr, 0, sizeof(client_addr));
+    client_addr.sun_family = AF_UNIX;
+    client_addr.sun_path[0] = '\0';
+    memcpy(&client_addr.sun_path[1], "ixland-client", 13);
+
+    server = (int)syscall_dispatch_impl(__NR_socket, AF_UNIX, SOCK_STREAM, 0, 0, 0, 0);
+    if (server < 0) {
+        errno = (int)-server;
+        return -1;
+    }
+
+    addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13);
+    ret = syscall_dispatch_impl(__NR_bind, server, (long)(uintptr_t)&server_addr, addrlen, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_listen, server, 1, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    client = (int)syscall_dispatch_impl(__NR_socket, AF_UNIX, SOCK_STREAM, 0, 0, 0, 0);
+    if (client < 0) {
+        errno = (int)-client;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_bind, client, (long)(uintptr_t)&client_addr, addrlen, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_connect, client, (long)(uintptr_t)&server_addr, addrlen, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    accepted = (int)syscall_dispatch_impl(__NR_accept, server, 0, 0, 0, 0, 0);
+    if (accepted < 0) {
+        errno = (int)-accepted;
+        goto out;
+    }
+
+    memset(&actual_addr, 0, sizeof(actual_addr));
+    addrlen = sizeof(actual_addr);
+    ret = syscall_dispatch_impl(__NR_getsockname, client, (long)(uintptr_t)&actual_addr,
+                                (long)(uintptr_t)&addrlen, 0, 0, 0);
+    if (ret != 0 || actual_addr.sun_family != AF_UNIX || addrlen !=
+        (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13) ||
+        memcmp(actual_addr.sun_path, client_addr.sun_path, 14) != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    memset(&actual_addr, 0, sizeof(actual_addr));
+    addrlen = sizeof(actual_addr);
+    ret = syscall_dispatch_impl(__NR_getpeername, client, (long)(uintptr_t)&actual_addr,
+                                (long)(uintptr_t)&addrlen, 0, 0, 0);
+    if (ret != 0 || actual_addr.sun_family != AF_UNIX || addrlen !=
+        (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13) ||
+        memcmp(actual_addr.sun_path, server_addr.sun_path, 14) != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    memset(&actual_addr, 0, sizeof(actual_addr));
+    addrlen = sizeof(actual_addr);
+    ret = syscall_dispatch_impl(__NR_getsockname, accepted, (long)(uintptr_t)&actual_addr,
+                                (long)(uintptr_t)&addrlen, 0, 0, 0);
+    if (ret != 0 || actual_addr.sun_family != AF_UNIX || addrlen !=
+        (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13) ||
+        memcmp(actual_addr.sun_path, server_addr.sun_path, 14) != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    memset(&actual_addr, 0, sizeof(actual_addr));
+    addrlen = sizeof(actual_addr);
+    ret = syscall_dispatch_impl(__NR_getpeername, accepted, (long)(uintptr_t)&actual_addr,
+                                (long)(uintptr_t)&addrlen, 0, 0, 0);
+    if (ret != 0 || actual_addr.sun_family != AF_UNIX || addrlen !=
+        (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13) ||
+        memcmp(actual_addr.sun_path, client_addr.sun_path, 14) != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_sendto, client, (long)(uintptr_t)message, 2, 0, 0, 0);
+    if (ret != 2) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    memset(buf, 0, sizeof(buf));
+    ret = syscall_dispatch_impl(__NR_recvfrom, accepted, (long)(uintptr_t)buf, 2, 0, 0, 0);
+    if (ret != 2 || memcmp(buf, message, 2) != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    close_if_open(server);
+    close_if_open(client);
+    close_if_open(accepted);
+    return 0;
+
+out:
+    close_if_open(server);
+    close_if_open(client);
+    close_if_open(accepted);
+    return -1;
+}
+
+int native_syscall_contract_unix_socket_flags_sockopts_and_proc_identity(void) {
+    int listener = -1;
+    int client = -1;
+    int accepted = -1;
+    struct native_unix_sockaddr listener_addr;
+    struct native_unix_sockaddr peer_addr;
+    native_socklen_t addrlen;
+    int value;
+    native_socklen_t optlen;
+    char proc_path[64];
+    char link_target[64];
+    long ret;
+
+    memset(&listener_addr, 0, sizeof(listener_addr));
+    listener_addr.sun_family = AF_UNIX;
+    listener_addr.sun_path[0] = '\0';
+    memcpy(&listener_addr.sun_path[1], "ixland-sockopts", 15);
+
+    memset(&peer_addr, 0, sizeof(peer_addr));
+    peer_addr.sun_family = AF_UNIX;
+    peer_addr.sun_path[0] = '\0';
+    memcpy(&peer_addr.sun_path[1], "ixland-sock-peer", 16);
+
+    listener = (int)syscall_dispatch_impl(__NR_socket,
+                                          AF_UNIX,
+                                          SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
+                                          0, 0, 0, 0);
+    if (listener < 0) {
+        errno = -listener;
+        return -1;
+    }
+
+    ret = syscall_dispatch_impl(__NR_fcntl, listener, F_GETFL, 0, 0, 0, 0);
+    if (ret < 0 || (ret & O_NONBLOCK) == 0 || (ret & O_ACCMODE) != O_RDWR) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, listener, F_GETFD, 0, 0, 0, 0);
+    if (ret != FD_CLOEXEC) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_TYPE,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || optlen != (native_socklen_t)sizeof(value) || value != SOCK_STREAM) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_DOMAIN,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != AF_UNIX) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_PROTOCOL,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_ACCEPTCONN,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    value = 1;
+    ret = syscall_dispatch_impl(__NR_setsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_REUSEADDR,
+                                (long)(uintptr_t)&value, sizeof(value), 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_setsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_KEEPALIVE,
+                                (long)(uintptr_t)&value, sizeof(value), 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    value = 4096;
+    ret = syscall_dispatch_impl(__NR_setsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_SNDBUF,
+                                (long)(uintptr_t)&value, sizeof(value), 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    value = 8192;
+    ret = syscall_dispatch_impl(__NR_setsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_RCVBUF,
+                                (long)(uintptr_t)&value, sizeof(value), 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_REUSEADDR,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != 1) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_KEEPALIVE,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != 1) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_SNDBUF,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != 4096) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_RCVBUF,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != 8192) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_ERROR,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 15);
+    ret = syscall_dispatch_impl(__NR_bind, listener, (long)(uintptr_t)&listener_addr, addrlen, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_listen, listener, 1, 0, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    optlen = (native_socklen_t)sizeof(value);
+    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_ACCEPTCONN,
+                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
+    if (ret != 0 || value != 1) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    client = (int)syscall_dispatch_impl(__NR_socket, AF_UNIX, SOCK_STREAM, 0, 0, 0, 0);
+    if (client < 0) {
+        errno = -client;
+        goto out;
+    }
+
+    addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 16);
+    ret = syscall_dispatch_impl(__NR_bind, client, (long)(uintptr_t)&peer_addr, addrlen, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 15);
+    ret = syscall_dispatch_impl(__NR_connect, client, (long)(uintptr_t)&listener_addr, addrlen, 0, 0, 0);
+    if (ret != 0) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    accepted = (int)syscall_dispatch_impl(__NR_accept4, listener, 0, 0,
+                                          O_NONBLOCK | O_CLOEXEC, 0, 0);
+    if (accepted < 0) {
+        errno = -accepted;
+        goto out;
+    }
+
+    ret = syscall_dispatch_impl(__NR_fcntl, accepted, F_GETFL, 0, 0, 0, 0);
+    if (ret < 0 || (ret & O_NONBLOCK) == 0 || (ret & O_ACCMODE) != O_RDWR) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+    ret = syscall_dispatch_impl(__NR_fcntl, accepted, F_GETFD, 0, 0, 0, 0);
+    if (ret != FD_CLOEXEC) {
+        errno = ret < 0 ? (int)-ret : EPROTO;
+        goto out;
+    }
+
+    if (format_proc_fd_path(proc_path, sizeof(proc_path), accepted) != 0) {
+        goto out;
+    }
+    ret = readlink_impl(proc_path, link_target, sizeof(link_target) - 1);
+    if (ret < 0) {
+        goto out;
+    }
+    link_target[ret] = '\0';
+    if (strncmp(link_target, "socket:[", 8) != 0 || strchr(link_target + 8, ']') == NULL) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    close_if_open(listener);
+    close_if_open(client);
+    close_if_open(accepted);
+    return 0;
+
+out:
+    close_if_open(listener);
+    close_if_open(client);
+    close_if_open(accepted);
+    return -1;
 }
 
 int native_syscall_contract_mincore_uses_file_offset_for_truncate_residency(void) {
