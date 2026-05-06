@@ -4,6 +4,8 @@
 
 Authoritative first-step architecture plan.
 
+The split is now implemented in the physical tree and build graph. This document remains the record of the boundary rules and acceptance criteria that future work must preserve.
+
 This plan is the prerequisite for all further roadmap work.
 
 Nothing else in the native-only package compatibility program should begin before this split and boundary lockdown is complete.
@@ -46,11 +48,11 @@ Use these names:
 
 2. `IXLandHostAdapter`
 - Owns iOS and Darwin host mediation only
-- Owns the current `internal/ios/**` subtree
+- Owns `IXLandHostAdapter/internal/ios/**`
 
 3. `IXLandSystem`
-- Optional umbrella or integration target
-- Links `IXLandKernel` and `IXLandHostAdapter`
+- Repository and Xcode project name only
+- Not an architectural owner and not the source of Linux or host-layer policy
 
 Rationale:
 
@@ -60,7 +62,7 @@ Rationale:
 
 ## Architectural Decision
 
-Split `internal/ios/**` into a separate private package or target before all other roadmap work.
+Keep `IXLandHostAdapter/internal/ios/**` isolated as a separate private target boundary before all other roadmap work continues.
 
 The split must enforce these truths:
 
@@ -77,10 +79,12 @@ This must be true by build structure, not by developer intention alone.
 
 Owns:
 
-- `fs/**`
-- `kernel/**`
-- `runtime/**`
-- `include/**`
+- `IXLandKernel/fs/**`
+- `IXLandKernel/kernel/**`
+- `IXLandKernel/runtime/**`
+- `IXLandKernel/include/**`
+- `IXLandKernel/observability/**`
+- `IXLandKernel/internal/private/**`
 
 Responsibilities:
 
@@ -102,7 +106,8 @@ Must not own:
 
 Owns:
 
-- `internal/ios/**`
+- `IXLandHostAdapter/internal/ios/**`
+- exported seam headers under `IXLandHostAdapter/include/**`
 
 Responsibilities:
 
@@ -129,18 +134,18 @@ Must not own:
 
 Responsibilities:
 
-- Product integration target
-- Link composition of kernel plus host adapter
-- Final library or app-facing build product if needed
+- Repository identity and project container only
+- No Linux semantic ownership
+- No host mediation ownership
 
 ## Why The Split Must Be First
 
 Current repo reality already shows structural leakage risk:
 
-- Linux-owner files directly include `internal/ios/fs/*.h`
-- `runtime/native/registry.c` directly includes `internal/ios/runtime/sync.h`
-- `kernel/sync.h` and `fs/sync.h` expose host-shaped storage-backed thread and synchronization types into Linux-owner code
-- broad header visibility currently allows source files to import host implementation headers too easily
+- Before the split, Linux-owner files directly included `internal/ios/fs/*.h`
+- Before the split, `runtime/native/registry.c` directly included `internal/ios/runtime/sync.h`
+- Before the split, `kernel/sync.h` and `fs/sync.h` exposed host-shaped storage-backed thread and synchronization types into Linux-owner code
+- Broad header visibility was allowing source files to import host implementation headers too easily
 
 If roadmap work continues before the split, new Linux code will keep being written against the wrong boundary.
 
@@ -150,11 +155,11 @@ That makes every subsequent milestone more expensive and less trustworthy.
 
 Relevant observations from the current tree:
 
-- `internal/ios/fs/` currently contains host backing storage, errno translation, open flag translation, path helpers, epoll bridge helpers, memfd host helpers, and sync helpers.
-- `internal/ios/kernel/` currently contains host clock, signal bridge, and sync helpers.
-- `internal/ios/runtime/` currently contains `sync.h`, which is imported by `runtime/native/registry.c`.
-- HostBridge tests already exist as a separate proof target in `project.yml`.
-- Linux-owner code currently imports host headers directly, including:
+- `IXLandHostAdapter/internal/ios/fs/` contains host backing storage, errno translation, open flag translation, path helpers, epoll bridge helpers, memfd host helpers, and sync helpers.
+- `IXLandHostAdapter/internal/ios/kernel/` contains host clock, signal bridge, and sync helpers.
+- Linux-owner code now lives under `IXLandKernel/**` with host mediation exported through `IXLandHostAdapter/include/**`.
+- Tests are split into `IXLandKernelTests` and `IXLandHostAdapterTests` in `project.yml`.
+- The direct host imports that motivated this plan were removed from the Linux-owner files that previously lived at:
   - `fs/read_write.c`
   - `fs/fdtable.c`
   - `fs/poll.c`
@@ -165,7 +170,7 @@ Relevant observations from the current tree:
   - `fs/ioctl.c`
   - `fs/namei.c`
 
-This means there is already a natural seam, but it is weakly enforced.
+This means the seam is now physically present, and the remaining requirement is to keep it enforced.
 
 ## First-Principles Guardrail
 
@@ -183,10 +188,10 @@ The goal is:
 
 1. `IXLandKernel` decides Linux semantics.
 2. `IXLandHostAdapter` decides only how to realize host mechanics.
-3. `IXLandKernel` must not include arbitrary headers from `internal/ios/**`.
+3. `IXLandKernel` must not include arbitrary headers from `IXLandHostAdapter/internal/ios/**`.
 4. `IXLandHostAdapter` must not expose Darwin types, Foundation types, pthread types, Objective-C types, or generic platform wrappers through its exported seam.
-5. LinuxKernel tests must not depend on host implementation headers.
-6. HostBridge tests may verify host mechanics, but they do not prove Linux semantics.
+5. `IXLandKernelTests` must not depend on host implementation headers.
+6. `IXLandHostAdapterTests` may verify host mechanics, but they do not prove Linux semantics.
 7. The split must reduce, not broaden, the host seam surface.
 
 ## Do And Don't Rules
@@ -204,7 +209,7 @@ The goal is:
 ### Don't
 
 - Do not create a generic platform abstraction library.
-- Do not expose all of `internal/ios/**` as exported package headers.
+- Do not expose all of `IXLandHostAdapter/internal/ios/**` as exported package headers.
 - Do not export Objective-C, Foundation, UIKit, pthread, or host POSIX types into `IXLandKernel`.
 - Do not freeze broad host-thread or host-sync wrapper families as a long-term kernel interface.
 - Do not solve this by directory renaming alone.
@@ -235,7 +240,7 @@ The goal is:
 
 ### Suggested export shape
 
-Use a distinct exported seam namespace instead of allowing direct inclusion of implementation headers under `internal/ios/**`.
+Use a distinct exported seam namespace instead of allowing direct inclusion of implementation headers under `IXLandHostAdapter/internal/ios/**`.
 
 Conceptually:
 
@@ -245,7 +250,7 @@ Conceptually:
 
 Only those curated exported headers may be visible to `IXLandKernel`.
 
-Everything else in `internal/ios/**` remains private implementation detail.
+Everything else in `IXLandHostAdapter/internal/ios/**` remains private implementation detail.
 
 ## Include Graph Policy
 
@@ -257,7 +262,7 @@ Everything else in `internal/ios/**` remains private implementation detail.
 
 ### IXLandKernel forbidden includes
 
-- non-exported `internal/ios/**` headers
+- non-exported `IXLandHostAdapter/internal/ios/**` headers
 - Darwin headers
 - Foundation headers
 - UIKit headers
@@ -279,13 +284,13 @@ Recommended dependency direction:
 
 - `IXLandKernel` depends on `IXLandHostAdapter` exported seam
 - `IXLandHostAdapter` may depend only on narrow `IXLandKernel` contract headers where unavoidable
-- `IXLandSystem` links both
+- the repository may define an integration product if needed, but the split does not depend on a monolithic `IXLandSystem` target
 
 Semantically, Linux model first and host realization second remains the product truth.
 
 ## Header Search Path Guardrails
 
-The split will fail if broad header search paths continue to make all of `internal/ios/**` ambiently visible.
+The split will fail if broad header search paths continue to make all of `IXLandHostAdapter/internal/ios/**` ambiently visible.
 
 ### Required target-level policy
 
@@ -301,7 +306,7 @@ It should not receive whole-repo host implementation visibility as ambient inclu
 
 If the repo still requires broad root visibility temporarily, add a hard lint blocker:
 
-- any `IXLandKernel` source including `internal/ios/...` directly fails lint unless the path is part of the curated exported seam namespace
+- any `IXLandKernel` source including `IXLandHostAdapter/internal/ios/...` directly fails lint unless the path is part of the curated exported seam namespace
 
 This transitional state is not the goal. It is only acceptable if clearly temporary.
 
@@ -339,17 +344,17 @@ Milestone 0 direction:
 
 Current problem:
 
-- directly includes `internal/ios/runtime/sync.h`
+- directly included `internal/ios/runtime/sync.h` before the split
 
 Milestone 0 direction:
 
 - move through exported adapter seam or pull synchronization ownership back into a neutral kernel-owned contract
 
-### 4. direct host header imports from `fs/**`
+### 4. direct host header imports from `IXLandKernel/fs/**`
 
 Current problem:
 
-- multiple `fs/**` files include `internal/ios/fs/*.h` directly
+- multiple Linux-owner fs files included `internal/ios/fs/*.h` directly before the split
 
 Milestone 0 direction:
 
@@ -363,6 +368,8 @@ Examples:
 - several host fs files include `fs/stat_types.h`
 - `internal/ios/kernel/sync.c` includes `kernel/task.h`
 
+Those dependencies should now be read as historical examples that justify narrow private contracts, not as permission to reintroduce broad host-to-kernel imports.
+
 Milestone 0 direction:
 
 - where possible, replace with narrow contract headers
@@ -372,7 +379,7 @@ Milestone 0 direction:
 
 1. Create `IXLandKernel` target or package.
 2. Create `IXLandHostAdapter` target or package.
-3. Move current `internal/ios/**` ownership fully under `IXLandHostAdapter`.
+3. Keep `IXLandHostAdapter/internal/ios/**` ownership fully under `IXLandHostAdapter`.
 4. Define and expose only curated seam headers from `IXLandHostAdapter` to `IXLandKernel`.
 5. Lock down include visibility so `IXLandKernel` cannot import host implementation headers casually.
 6. Update tests so Linux proof and host proof remain intentionally separated.
@@ -385,14 +392,14 @@ Milestone 0 is not complete until all are true:
 1. `IXLandKernel` builds without direct imports of non-exported host headers.
 2. Darwin, Foundation, UIKit, pthread, and dispatch headers do not appear in Linux-owner paths.
 3. `IXLandHostAdapter` builds as its own target or package.
-4. LinuxKernel tests remain host-implementation-free.
-5. HostBridge tests remain isolated to host mediation proof.
-6. Direct `internal/ios/...` imports from Linux-owner code are either gone or limited strictly to the curated exported seam namespace if transitional naming remains.
+4. `IXLandKernelTests` remain host-implementation-free.
+5. `IXLandHostAdapterTests` remain isolated to host mediation proof.
+6. Direct `IXLandHostAdapter/internal/ios/...` imports from Linux-owner code are either gone or limited strictly to the curated exported seam namespace if transitional naming remains.
 7. The exported seam surface is documented and reviewed as part of the split.
 
 ## Test And Proof Policy
 
-### LinuxKernel tests
+### IXLandKernel tests
 
 Must prove:
 
@@ -403,7 +410,7 @@ Must not:
 - include host implementation headers
 - use Darwin or Foundation host behavior as Linux proof
 
-### HostBridge tests
+### IXLandHostAdapter tests
 
 May prove:
 
@@ -423,7 +430,7 @@ Add hard checks for Milestone 0:
 
 1. Fail on Darwin or iOS headers in Linux-owner paths.
 2. Fail on non-exported `IXLandHostAdapter` header imports from `IXLandKernel`.
-3. Fail on direct `internal/ios/**` imports from Linux-owner code once exported seam namespace is in place.
+3. Fail on direct `IXLandHostAdapter/internal/ios/**` imports from Linux-owner code once exported seam namespace is in place.
 4. Fail on Foundation, UIKit, pthread, dispatch vocabulary in Linux-owner headers and source.
 5. Fail on new generic host wrapper families appearing in Linux-owner ownership zones.
 
@@ -467,7 +474,7 @@ Revised roadmap order:
 1. Define target graph
 - introduce `IXLandKernel`
 - introduce `IXLandHostAdapter`
-- define optional `IXLandSystem` integration target behavior
+- keep repo-level integration naming separate from architectural ownership
 
 2. Define curated exported seam surface
 - classify which current host headers are exported
@@ -478,7 +485,7 @@ Revised roadmap order:
 - reduce ambient visibility
 - make direct host implementation imports impossible or lint-fatal
 
-4. Move `internal/ios/**` sources under `IXLandHostAdapter` ownership in build configuration
+4. Keep `IXLandHostAdapter/internal/ios/**` sources under `IXLandHostAdapter` ownership in build configuration
 
 5. Update Linux-owner includes to use curated exported seam headers only
 

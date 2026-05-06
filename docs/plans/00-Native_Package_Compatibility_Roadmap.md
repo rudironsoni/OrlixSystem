@@ -64,11 +64,12 @@ These future backends must be planned for now in the execution architecture, but
 ### IXLandHostAdapter owns
 
 - iOS and Darwin host mechanics only
-- private mediation under `internal/ios/**`
+- private mediation under `IXLandHostAdapter/internal/ios/**`
 
-### IXLandSystem
+### Repo Integration
 
-- integration target tying the stack together
+- the repository and Xcode project may still be named `IXLandSystem`
+- architectural ownership remains split between `IXLandKernel` and `IXLandHostAdapter`
 
 ## Execution Model
 

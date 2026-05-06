@@ -57,4 +57,4 @@ Common exec pipeline must handle:
 1. Native commands run through the common exec path.
 2. Shebang scripts execute correctly.
 3. Nested interpreter behavior is Linux-shaped within supported scope.
-4. `FD_CLOEXEC`, argv, envp, and signal-reset behavior are covered by LinuxKernel tests.
+4. `FD_CLOEXEC`, argv, envp, and signal-reset behavior are covered by `IXLandKernelTests`.
