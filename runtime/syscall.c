@@ -226,9 +226,16 @@ extern ssize_t write_impl(int fd, const void *buf, size_t count);
 struct iovec;
 extern long readv_impl(int fd, const struct iovec *iov, int iovcnt);
 extern long writev_impl(int fd, const struct iovec *iov, int iovcnt);
+extern long preadv_impl(int fd, const struct iovec *iov, int iovcnt, unsigned long pos_l, unsigned long pos_h);
+extern long pwritev_impl(int fd, const struct iovec *iov, int iovcnt, unsigned long pos_l, unsigned long pos_h);
+extern long preadv2_impl(int fd, const struct iovec *iov, int iovcnt,
+                         unsigned long pos_l, unsigned long pos_h, int flags);
+extern long pwritev2_impl(int fd, const struct iovec *iov, int iovcnt,
+                          unsigned long pos_l, unsigned long pos_h, int flags);
 extern ssize_t pread_impl(int fd, void *buf, size_t count, long long offset);
 extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, long long offset);
 extern linux_off_t lseek_impl(int fd, linux_off_t offset, int whence);
+extern ssize_t sendfile_impl(int out_fd, int in_fd, linux_off_t *offset, size_t count);
 extern ssize_t copy_file_range_impl(int fd_in, linux_off_t *off_in, int fd_out,
                                     linux_off_t *off_out, size_t len, unsigned int flags);
 extern int fcntl_impl(int fd, int cmd, ...);
@@ -238,6 +245,7 @@ extern int fstatat_impl(int dirfd, const char *pathname, struct linux_stat *stat
 extern int faccessat_impl(int dirfd, const char *pathname, int mode, int flags);
 extern int statx_impl(int dirfd, const char *pathname, int flags, unsigned int mask,
                       struct statx *statxbuf);
+extern int truncate_impl(const char *path, linux_off_t length);
 extern int ftruncate_impl(int fd, linux_off_t length);
 extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
@@ -665,6 +673,11 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_write:
     case __NR_pread64:
     case __NR_pwrite64:
+    case __NR_preadv:
+    case __NR_pwritev:
+    case __NR_preadv2:
+    case __NR_pwritev2:
+    case __NR_sendfile:
     case __NR_lseek:
     case __NR_readv:
     case __NR_writev:
@@ -703,6 +716,7 @@ enum syscall_capability_class syscall_capability_class_impl(long number) {
     case __NR_fsync:
     case __NR_fdatasync:
     case __NR_syncfs:
+    case __NR_truncate:
     case __NR_close_range:
     case __NR_copy_file_range:
     case __NR_openat2:
@@ -894,6 +908,21 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_pwrite64:
         return syscall_result((long)pwrite_impl((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2,
                                                 (long long)arg3));
+    case __NR_preadv:
+        return syscall_result(preadv_impl((int)arg0, (const struct iovec *)(uintptr_t)arg1,
+                                          (int)arg2, (unsigned long)arg3, (unsigned long)arg4));
+    case __NR_pwritev:
+        return syscall_result(pwritev_impl((int)arg0, (const struct iovec *)(uintptr_t)arg1,
+                                           (int)arg2, (unsigned long)arg3, (unsigned long)arg4));
+    case __NR_preadv2:
+        return syscall_result(preadv2_impl((int)arg0, (const struct iovec *)(uintptr_t)arg1,
+                                           (int)arg2, (unsigned long)arg3, (unsigned long)arg4, (int)arg5));
+    case __NR_pwritev2:
+        return syscall_result(pwritev2_impl((int)arg0, (const struct iovec *)(uintptr_t)arg1,
+                                            (int)arg2, (unsigned long)arg3, (unsigned long)arg4, (int)arg5));
+    case __NR_sendfile:
+        return syscall_result((long)sendfile_impl((int)arg0, (int)arg1,
+                                                  (linux_off_t *)(uintptr_t)arg2, (size_t)arg3));
     case __NR_copy_file_range:
         return syscall_result((long)copy_file_range_impl((int)arg0, (linux_off_t *)(uintptr_t)arg1,
                                                          (int)arg2, (linux_off_t *)(uintptr_t)arg3,
@@ -1437,6 +1466,8 @@ static long syscall_dispatch_inner_impl(long number,
                                                   (size_t)arg2, (unsigned int)arg3));
     case __NR_msync:
         return syscall_result((long)msync_impl((void *)(uintptr_t)arg0, (size_t)arg1, (int)arg2));
+    case __NR_truncate:
+        return syscall_result((long)truncate_impl((const char *)(uintptr_t)arg0, (linux_off_t)arg1));
     case __NR_ftruncate:
         return syscall_result((long)ftruncate_impl((int)arg0, (linux_off_t)arg1));
     case __NR_setxattr:

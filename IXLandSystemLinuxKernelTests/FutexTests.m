@@ -36,9 +36,37 @@ static void reset_futex_test_kernel_state(void) {
     atomic_store(&init_task->continue_report_pending, false);
 
     if (init_task->signal) {
+        for (int sig = 0; sig < KERNEL_SIG_NUM; sig++) {
+            init_task->signal->actions[sig].handler = NULL;
+            init_task->signal->actions[sig].flags = 0;
+            init_task->signal->actions[sig].restorer = 0;
+            memset(&init_task->signal->actions[sig].mask, 0, sizeof(init_task->signal->actions[sig].mask));
+        }
         memset(&init_task->signal->blocked, 0, sizeof(init_task->signal->blocked));
         memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
         memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));
+        init_task->signal->altstack.ss_sp = NULL;
+        init_task->signal->altstack.ss_size = 0;
+        init_task->signal->altstack.ss_flags = 2;
+    }
+
+    if (init_task->mm) {
+        init_task->mm->signal_frame_return_pc = 0;
+        init_task->mm->signal_handler_pc = 0;
+        init_task->mm->signal_frame_flags = 0;
+        init_task->mm->signal_frame_restorer_pc = 0;
+        init_task->mm->signal_frame_mask = 0;
+        init_task->mm->signal_frame_altstack_sp = 0;
+        init_task->mm->signal_frame_altstack_size = 0;
+        init_task->mm->signal_frame_altstack_flags = 0;
+        init_task->mm->signal_frame_current_sp = 0;
+        init_task->mm->signal_frame_size = 0;
+        init_task->mm->signal_frame_ucontext_flags = 0;
+        init_task->mm->signal_frame_restartable = 0;
+        init_task->mm->signal_frame_restart_return_pc = 0;
+        init_task->mm->signal_frame_restart_sp = 0;
+        init_task->mm->signal_frame_restart_signo = 0;
+        task_restart_clear_impl(init_task);
     }
 
     while ((child = init_task->children) != NULL) {

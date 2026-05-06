@@ -338,6 +338,22 @@
     XCTAssertEqual(syscall_uio_contract_rejects_invalid_iov_count(), 0, @"errno %d", errno);
 }
 
+- (void)testTruncateChangesFileSizeByPath {
+    XCTAssertEqual(syscall_uio_contract_truncate_changes_file_size_by_path(), 0, @"errno %d", errno);
+}
+
+- (void)testPreadvPwritevPreserveFileOffset {
+    XCTAssertEqual(syscall_uio_contract_preadv_pwritev_preserve_file_offset(), 0, @"errno %d", errno);
+}
+
+- (void)testPreadv2Pwritev2FlagPolicy {
+    XCTAssertEqual(syscall_uio_contract_preadv2_pwritev2_flag_policy(), 0, @"errno %d", errno);
+}
+
+- (void)testSendfileHonorsOffsetRules {
+    XCTAssertEqual(syscall_uio_contract_sendfile_honors_offset_rules(), 0, @"errno %d", errno);
+}
+
 - (void)testMlibcLinuxSysdepsInventoryIsKernelOwned {
     XCTAssertEqual(native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(), 0, @"errno %d", errno);
 }

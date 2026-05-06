@@ -49,7 +49,7 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 42 | `nfsservctl` | kernel-owned missing:unclassified | package |
 | 43 | `statfs` | implemented:fd | none |
 | 44 | `fstatfs` | implemented:fd | none |
-| 45 | `truncate` | kernel-owned missing:unclassified | package |
+| 45 | `truncate` | implemented:fd | none |
 | 46 | `ftruncate` | implemented:fd | none |
 | 47 | `fallocate` | kernel-owned missing:unclassified | package |
 | 48 | `faccessat` | implemented:fd | none |
@@ -73,9 +73,9 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 66 | `writev` | implemented:fd | none |
 | 67 | `pread64` | implemented:fd | none |
 | 68 | `pwrite64` | implemented:fd | none |
-| 69 | `preadv` | kernel-owned missing:unclassified | package |
-| 70 | `pwritev` | kernel-owned missing:unclassified | package |
-| 71 | `sendfile` | kernel-owned missing:unclassified | package |
+| 69 | `preadv` | implemented:fd | none |
+| 70 | `pwritev` | implemented:fd | none |
+| 71 | `sendfile` | implemented:fd | none |
 | 72 | `pselect6` | implemented:readiness | none |
 | 73 | `ppoll` | implemented:readiness | none |
 | 74 | `signalfd4` | kernel-owned missing:unclassified | package |
@@ -274,8 +274,8 @@ Generated from vendored Linux UAPI and `runtime/syscall.c`.
 | 283 | `membarrier` | kernel-owned missing:unclassified | package |
 | 284 | `mlock2` | kernel-owned missing:unclassified | package |
 | 285 | `copy_file_range` | implemented:fd | none |
-| 286 | `preadv2` | kernel-owned missing:unclassified | package |
-| 287 | `pwritev2` | kernel-owned missing:unclassified | package |
+| 286 | `preadv2` | implemented:fd | none |
+| 287 | `pwritev2` | implemented:fd | none |
 | 288 | `pkey_mprotect` | kernel-owned missing:unclassified | package |
 | 289 | `pkey_alloc` | kernel-owned missing:unclassified | package |
 | 290 | `pkey_free` | kernel-owned missing:unclassified | package |
