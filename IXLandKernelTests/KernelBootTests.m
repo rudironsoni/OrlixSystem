@@ -1,4 +1,4 @@
-/* IXLandSystemTests/KernelBootTests.m
+/* IXLandKernelTests/KernelBootTests.m
  * Objective-C XCTest wrapper for virtual kernel boot contract tests.
  *
  * All Linux contract logic lives in KernelBoot.c (C translation unit).

@@ -1,5 +1,5 @@
 /*
- * IXLandSystem Time Subsystem - Darwin Bridge
+ * IXLandKernel Time Subsystem - Darwin Bridge
  *
  * This file includes Darwin headers and provides the implementation
  * using Darwin's time functions. It is the ONLY file in the time

@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/mm.h
+/* IXLandKernel/kernel/mm.h
  * Private virtual memory syscall substrate for Linux-shaped tasks.
  */
 

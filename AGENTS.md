@@ -1,10 +1,10 @@
-# AGENTS.md - Linux-Shaped Architecture Rules for IXLandSystem
+# AGENTS.md - Linux-Shaped Architecture Rules for IXLandKernel
 
 ## Project Invariant
 
-IXLandSystem is a Linux-shaped headers + syscall + runtime target hosted on iOS.
+IXLandKernel is a Linux-shaped headers + syscall + runtime target hosted on iOS.
 
-If a change makes IXLandSystem less suitable for real Linux userspace (for example bash, zsh, grep, sed, awk, fzf), the change is wrong.
+If a change makes IXLandKernel less suitable for real Linux userspace (for example bash, zsh, grep, sed, awk, fzf), the change is wrong.
 
 Repo-local convenience never outranks Linux userspace compatibility.
 
@@ -77,10 +77,10 @@ Category rule: banning one prefix and reintroducing the same leakage with a new 
 
 ## 6) Test Target Ownership
 
-`IXLandKernelTests` proves Linux-facing IXLandSystem behavior.
+`IXLandKernelTests` proves Linux-facing IXLandKernel behavior.
 
 Rules for LinuxKernel tests:
-- Exercise syscall-facing IXLandSystem functions and Linux-visible runtime behavior.
+- Exercise syscall-facing IXLandKernel functions and Linux-visible runtime behavior.
 - Use C contract files for Linux UAPI constants, macros, structs, and ioctl payloads.
 - Objective-C test files must not include Linux UAPI headers.
 - Do not include `IXLandHostAdapter/internal/ios/**`.
@@ -107,14 +107,14 @@ HostBridge failures can block a full repo-green milestone, but they do not repla
 
 ## 7) mlibc Reference Boundary
 
-mlibc is a design reference for Linux source compatibility, not code to paste into IXLandSystem.
+mlibc is a design reference for Linux source compatibility, not code to paste into IXLandKernel.
 
 Use these mlibc surfaces deliberately:
 - `mlibc/abis/linux` is a Linux libc ABI surface checklist.
 - `mlibc/sysdeps/linux` is a libc syscall backend design reference.
 - `mlibc/options` is a libc feature/API organization reference.
 
-IXLandSystem ownership:
+IXLandKernel ownership:
 - virtual kernel behavior that libc sysdeps call into
 - syscall/runtime ABI entry points
 - tasks, signals, wait, fdtable, VFS, mounts, pipes, PTY, poll/select/epoll, procfs/devfs, credentials, namespaces, cgroups, seccomp, ptrace, netlink
@@ -139,15 +139,15 @@ native iOS arm64/aarch64 package code
         ↓
 IXLandMLibC Linux ABI headers + IXLand sysdeps
         ↓
-IXLandSystem syscall/runtime ABI
+IXLandKernel syscall/runtime ABI
         ↓
-IXLandSystem virtual kernel subsystems
+IXLandKernel virtual kernel subsystems
         ↓
 IXLandHostAdapter/internal/ios host mediation
 ```
 
-Do not vendor mlibc `abis`, `sysdeps`, or `options` into IXLandSystem.
-Do not implement libc sysdeps inside IXLandSystem.
+Do not vendor mlibc `abis`, `sysdeps`, or `options` into IXLandKernel.
+Do not implement libc sysdeps inside IXLandKernel.
 Do not create kernel-owned replacements for libc typedef headers such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `sigevent`, `sigval`, `socklen_t`, `statvfs`, or `suseconds_t`.
 
 The Linux header vendoring pipeline must treat mlibc `abis/linux` as a coverage reference:
@@ -163,7 +163,7 @@ Build green is necessary but insufficient.
 Authoritative proof target is iOS Simulator:
 1. `bash ./scripts/lint_linux_surface.sh`
 2. `xcodegen generate --project .`
-3. `xcodebuild build-for-testing -project IXLandSystem.xcodeproj -scheme IXLandSystem-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'`
+3. `xcodebuild build-for-testing -project IXLandKernel.xcodeproj -scheme IXLandKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'`
 4. required targeted tests for the current tranche
 
 Catalyst may be secondary smoke only.
@@ -178,7 +178,7 @@ Do not “fix lint” by weakening checks or broadening allowlists.
 
 ## 10) Quality Bar: No Shortcuts
 
-IXLandSystem is a kernel/runtime substrate, not a test-passing exercise.
+IXLandKernel is a kernel/runtime substrate, not a test-passing exercise.
 
 Forbidden implementation behavior:
 - shallow compatibility stubs presented as completed kernel capability
@@ -192,7 +192,7 @@ Forbidden implementation behavior:
 
 Required implementation behavior:
 - use vendored generated Linux headers for kernel/userspace contract truth
-- keep libc-owned typedef/API surfaces out of IXLandSystem and in IXLandMLibC
+- keep libc-owned typedef/API surfaces out of IXLandKernel and in IXLandMLibC
 - model the real virtual-kernel behavior in the owning subsystem
 - make host mediation explicit under `IXLandHostAdapter/internal/ios/**` only
 - prefer deleting a bad shortcut over preserving compatibility with it

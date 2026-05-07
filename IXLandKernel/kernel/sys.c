@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/sys.c
+/* IXLandKernel/kernel/sys.c
  * Internal kernel misc call owner
  *
  * Canonical internal implementations for process-group and session

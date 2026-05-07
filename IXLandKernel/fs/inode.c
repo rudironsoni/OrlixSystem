@@ -1,7 +1,7 @@
-/* IXLandSystem/fs/inode.c
+/* IXLandKernel/fs/inode.c
  * Linux-shaped inode metadata operations.
  *
- * Ownership and mode changes are virtual IXLandSystem metadata. Host uid/gid
+ * Ownership and mode changes are virtual IXLandKernel metadata. Host uid/gid
  * ownership is not the semantic source of truth.
  */
 

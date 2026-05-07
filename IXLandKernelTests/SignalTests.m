@@ -1,11 +1,11 @@
 //
 // SignalTests.m
-// IXLandSystemTests
+// IXLandKernelTests
 //
 // INTERNAL RUNTIME SEMANTIC TEST
 // NOT public wrapper compatibility proof
 //
-// This file tests internal IXLandSystem signal semantics through
+// This file tests internal IXLandKernel signal semantics through
 // internal entry points (do_sigprocmask, do_sigaction, do_raise, etc.).
 //
 // Uses IXLand headers which provide the Linux behavior surface.

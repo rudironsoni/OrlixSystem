@@ -1,5 +1,5 @@
 /*
- * IXLandSystemTests - RootfsBootstrapTests.m
+ * IXLandKernelTests - RootfsBootstrapTests.m
  *
  * INTERNAL RUNTIME SEMANTIC TEST.
  *

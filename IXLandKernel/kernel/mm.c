@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/mm.c
+/* IXLandKernel/kernel/mm.c
  * Virtual Linux memory mapping substrate.
  */
 

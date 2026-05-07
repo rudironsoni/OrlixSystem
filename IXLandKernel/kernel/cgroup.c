@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/cgroup.c
+/* IXLandKernel/kernel/cgroup.c
  * Virtual cgroup hierarchy and membership ownership.
  */
 

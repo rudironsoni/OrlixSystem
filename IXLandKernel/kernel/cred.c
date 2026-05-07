@@ -1,7 +1,7 @@
-/* IXLandSystem/kernel/cred.c
+/* IXLandKernel/kernel/cred.c
  * Canonical owner for user/group identity syscalls
  *
- * Implements virtual Linux-shaped credentials within IXLandSystem boundaries.
+ * Implements virtual Linux-shaped credentials within IXLandKernel boundaries.
  * Does NOT use host credential system.
  * Does NOT include Darwin headers.
  *
@@ -28,7 +28,7 @@
 /* ============================================================================
  * VIRTUAL CREDENTIAL SUBSYSTEM
  * ============================================================================
- * Private credential state internal to IXLandSystem runtime.
+ * Private credential state internal to IXLandKernel runtime.
  */
 
 /* Default IXLand virtual credential values
@@ -321,7 +321,7 @@ void put_cred(struct cred *cred) {
 /* ============================================================================
  * INTERNAL VIRTUAL CREDENTIAL OPERATIONS
  * ============================================================================
- * These implement Linux-shaped semantics within IXLandSystem.
+ * These implement Linux-shaped semantics within IXLandKernel.
  * No host privilege changes are attempted.
  */
 

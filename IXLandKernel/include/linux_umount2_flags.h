@@ -10,7 +10,7 @@
  *
  * Values are sourced from upstream Linux 6.12: include/linux/fs.h.
  *
- * NOTE: This header is IXLandSystem-private glue for the virtual-kernel syscall
+ * NOTE: This header is IXLandKernel-private glue for the virtual-kernel syscall
  * surface and tests. It must not be treated as a vendored Linux header.
  */
 

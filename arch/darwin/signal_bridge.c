@@ -1,4 +1,4 @@
-/* IXLandSystem/arch/darwin/signal_bridge.c
+/* IXLandKernel/arch/darwin/signal_bridge.c
  * Darwin host bridge for signal type conversions
  *
  * This file is ONLY for host-mediation. It includes Darwin

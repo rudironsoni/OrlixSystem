@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/cred_internal.h
+/* IXLandKernel/kernel/cred_internal.h
  * Private internal header for virtual credential subsystem
  *
  * This is PRIVATE internal state for the virtual kernel's credential handling.
@@ -27,7 +27,7 @@ extern "C" {
 #endif
 
 /* Virtual credential structure - private internal
- * This is the IXLandSystem-internal credential representation,
+ * This is the IXLandKernel-internal credential representation,
  * NOT the Linux UAPI struct cred.
  *
  * Tracks virtual UID/GID identity within IXLand boundaries.

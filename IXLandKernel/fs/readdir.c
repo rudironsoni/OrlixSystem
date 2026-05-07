@@ -1,4 +1,4 @@
-/* IXLandSystem/fs/readdir.c
+/* IXLandKernel/fs/readdir.c
  * Virtual getdents/getdents64 implementation
  */
 

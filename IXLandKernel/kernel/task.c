@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/task.c
+/* IXLandKernel/kernel/task.c
  * Virtual task/process subsystem implementation
  */
 
@@ -1981,7 +1981,7 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
  * PUBLIC CANONICAL WRAPPERS
  * ============================================================================
  * These wrappers convert between POSIX/Linux public types and
- * IXLandSystem's internal representation.
+ * IXLandKernel's internal representation.
  */
 
 __attribute__((visibility("default"))) pid_t getpid(void) {

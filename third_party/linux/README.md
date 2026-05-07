@@ -1,6 +1,6 @@
 # Vendored Linux Headers
 
-IXLandSystem vendors three distinct Linux-shaped header surfaces under `third_party/linux/<version>/<arch>/`:
+IXLandKernel vendors three distinct Linux-shaped header surfaces under `third_party/linux/<version>/<arch>/`:
 
 - `uapi/include`: exported userspace headers from Linux `headers_install`.
 - `kheaders/source`: copied non-generated Linux kernel source headers.

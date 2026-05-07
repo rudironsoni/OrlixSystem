@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/cgroup.h
+/* IXLandKernel/kernel/cgroup.h
  * Private owner header for IXLand virtual cgroup state.
  *
  * This is runtime state, not Linux UAPI.

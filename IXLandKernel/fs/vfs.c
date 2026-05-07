@@ -4028,7 +4028,7 @@ int vfs_open(const char *path, int flags, uint32_t mode, int *target_fd) {
     }
 
     /* Current in-repo callers pass the host platform's open flags.
-     * Preserve the actual call surface used by IXLandSystem while the Linux-facing
+     * Preserve the actual call surface used by IXLandKernel while the Linux-facing
      * contract is modeled in higher layers. Validate only combinations we can
      * represent coherently now.
      */

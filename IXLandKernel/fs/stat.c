@@ -1,4 +1,4 @@
-/* IXLandSystem/fs/stat.c
+/* IXLandKernel/fs/stat.c
  * Virtual stat/fstat implementation
  */
 #include <linux/fcntl.h>

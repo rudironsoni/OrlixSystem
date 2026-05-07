@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/task.h
+/* IXLandKernel/kernel/task.h
  * Private internal header for virtual task/process subsystem
  *
  * This is PRIVATE internal state for the virtual kernel's process model.

@@ -163,12 +163,9 @@ struct pipe_poll_thread_case {
 };
 
 static void case_init(struct pipe_thread_case *ctx, int read_fd, int write_fd) {
+    memset(ctx, 0, sizeof(*ctx));
     ctx->fds[0] = read_fd;
     ctx->fds[1] = write_fd;
-    ctx->started = 0;
-    ctx->done = 0;
-    ctx->result = 0;
-    ctx->task = NULL;
     kernel_mutex_init(&ctx->lock);
     kernel_cond_init(&ctx->cond);
 }
@@ -256,10 +253,8 @@ static void *blocking_write_thread(void *arg) {
 }
 
 static void poll_case_init(struct pipe_poll_thread_case *ctx, int fd) {
+    memset(ctx, 0, sizeof(*ctx));
     ctx->fd = fd;
-    ctx->started = 0;
-    ctx->done = 0;
-    ctx->result = 0;
     kernel_mutex_init(&ctx->lock);
     kernel_cond_init(&ctx->cond);
 }

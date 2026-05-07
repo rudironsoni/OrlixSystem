@@ -1,4 +1,4 @@
-name: IXLandSystem
+name: IXLandKernel
 settings:
   base:
     GCC_TREAT_WARNINGS_AS_ERRORS: true

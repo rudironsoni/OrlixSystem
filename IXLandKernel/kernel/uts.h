@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/uts.h
+/* IXLandKernel/kernel/uts.h
  * Private internal header for virtual UTS namespace state.
  *
  * This is runtime-owned namespace state, not a Linux UAPI mirror.

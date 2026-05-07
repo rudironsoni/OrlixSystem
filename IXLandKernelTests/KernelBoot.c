@@ -1,4 +1,4 @@
-/* IXLandSystemTests/KernelBoot.c
+/* IXLandKernelTests/KernelBoot.c
  * C translation unit for Linux virtual kernel boot contract.
  *
  * Proves the virtual kernel reaches a deterministic ready state.

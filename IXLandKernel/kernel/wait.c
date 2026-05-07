@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/wait.c
+/* IXLandKernel/kernel/wait.c
  * Virtual wait/waitpid implementation
  */
 #include <errno.h>
@@ -312,7 +312,7 @@ __kernel_pid_t wait_impl(int *wstatus) {
  * PUBLIC CANONICAL WRAPPERS
  * ============================================================================
  * These wrappers expose Linux UAPI kernel pid types while keeping
- * IXLandSystem's internal wait implementation fixed-width.
+ * IXLandKernel's internal wait implementation fixed-width.
  */
 
 __attribute__((visibility("default"))) __kernel_pid_t waitpid(__kernel_pid_t pid, int *wstatus, int options) {

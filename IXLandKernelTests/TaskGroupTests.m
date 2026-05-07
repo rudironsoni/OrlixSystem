@@ -5,7 +5,7 @@
 // INTERNAL RUNTIME SEMANTIC TEST
 // NOT public wrapper compatibility proof
 //
-// This file intentionally tests internal IXLandSystem owner semantics
+// This file intentionally tests internal IXLandKernel owner semantics
 // through internal entry points (getpgrp_impl, setpgid_impl, etc.).
 //
 // Public drop-in compatibility is deferred to IXLandMLibC/sysroot integration.

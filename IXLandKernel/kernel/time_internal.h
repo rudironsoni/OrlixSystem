@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/time_internal.h
+/* IXLandKernel/kernel/time_internal.h
  * Private internal header for time subsystem struct definitions
  * 
  * This is PRIVATE internal state - NOT Linux UAPI.

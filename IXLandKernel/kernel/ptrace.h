@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/ptrace.h
+/* IXLandKernel/kernel/ptrace.h
  * Private owner header for virtual ptrace supervision state.
  *
  * This is runtime behavior over IXLand tasks, not host process debugging.

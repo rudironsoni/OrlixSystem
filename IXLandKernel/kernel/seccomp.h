@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/seccomp.h
+/* IXLandKernel/kernel/seccomp.h
  * Private owner header for IXLand virtual syscall policy.
  */
 

@@ -1,4 +1,4 @@
-/* IXLandSystemTests/HostTestSupport.h
+/* IXLandKernelTests/HostTestSupport.h
  * Host-side test support helpers
  *
  * This header declares host-side helpers needed for test setup.

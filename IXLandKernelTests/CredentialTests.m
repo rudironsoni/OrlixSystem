@@ -1,10 +1,10 @@
 /*
- * IXLandSystemTests - CredentialTests.m
+ * IXLandKernelTests - CredentialTests.m
  *
  * Internal runtime semantic tests for credential subsystem.
  *
  * This is an INTERNAL RUNTIME SEMANTIC TEST.
- * It tests IXLandSystem private credential APIs via _impl() and do_* entry points.
+ * It tests IXLandKernel private credential APIs via _impl() and do_* entry points.
  * It does NOT prove public Linux UAPI compatibility.
  */
 

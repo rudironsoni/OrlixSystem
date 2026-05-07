@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/seccomp.c
+/* IXLandKernel/kernel/seccomp.c
  * Virtual seccomp-like syscall policy ownership.
  */
 

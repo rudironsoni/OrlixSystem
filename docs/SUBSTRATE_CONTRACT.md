@@ -1,8 +1,8 @@
-# IXLandSystem Substrate Contract
+# IXLandKernel Substrate Contract
 
 ## Scope
 
-IXLandSystem is the Linux-shaped runtime substrate for IXLand on iOS.
+IXLandKernel is the Linux-shaped runtime substrate for IXLand on iOS.
 This repository owns virtual kernel/runtime behavior inside one iOS app sandbox.
 It is not public drop-in proof for arbitrary Linux userspace yet.
 
@@ -28,7 +28,7 @@ Priority order:
 
 Decision rule:
 
-If a change makes IXLandSystem less suitable as a Linux-oriented syscall, header, or runtime target, it is the wrong change.
+If a change makes IXLandKernel less suitable as a Linux-oriented syscall, header, or runtime target, it is the wrong change.
 
 ## Linux Header Truth
 
@@ -73,9 +73,9 @@ Canonical authoritative flow:
 
 ```bash
 rtk xcodegen generate --project .
-rtk xcodebuild -list -project IXLandSystem.xcodeproj
-rtk xcodebuild build-for-testing -project IXLandSystem.xcodeproj -scheme IXLandSystem-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
-rtk xcodebuild test-without-building -project IXLandSystem.xcodeproj -scheme IXLandSystem-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
+rtk xcodebuild -list -project IXLandKernel.xcodeproj
+rtk xcodebuild build-for-testing -project IXLandKernel.xcodeproj -scheme IXLandKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
+rtk xcodebuild test-without-building -project IXLandKernel.xcodeproj -scheme IXLandKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
 `swift build`, CMake, Make, package manifests, and other build systems are non-authoritative drift for this repo.

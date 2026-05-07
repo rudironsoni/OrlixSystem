@@ -44,7 +44,7 @@ static void uts_set_defaults_locked(struct uts_namespace *ns) {
     uts_copy_literal(ns->sysname, "Linux");
     uts_copy_literal(ns->nodename, "ixland");
     uts_copy_literal(ns->release, "6.12.0-ixland");
-    uts_copy_literal(ns->version, "#1 IXLandSystem");
+    uts_copy_literal(ns->version, "#1 IXLandKernel");
     uts_copy_literal(ns->machine, "aarch64");
     uts_copy_literal(ns->domainname, "(none)");
 }

@@ -1,6 +1,6 @@
-# IXLandSystem
+# IXLandKernel
 
-IXLandSystem is the Linux-shaped runtime substrate for IXLand on iOS.
+IXLandKernel is the Linux-shaped runtime substrate for IXLand on iOS.
 It is a virtual kernel/runtime inside one iOS app sandbox whose job is to present Linux-oriented source and runtime semantics while keeping iOS host mediation private.
 
 ## Status
@@ -22,9 +22,9 @@ Canonical flow:
 
 ```bash
 rtk xcodegen generate --project .
-rtk xcodebuild -list -project IXLandSystem.xcodeproj
-rtk xcodebuild build-for-testing -project IXLandSystem.xcodeproj -scheme IXLandSystem-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
-rtk xcodebuild test-without-building -project IXLandSystem.xcodeproj -scheme IXLandSystem-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
+rtk xcodebuild -list -project IXLandKernel.xcodeproj
+rtk xcodebuild build-for-testing -project IXLandKernel.xcodeproj -scheme IXLandKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
+rtk xcodebuild test-without-building -project IXLandKernel.xcodeproj -scheme IXLandKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
 Canonical project surface:
@@ -54,7 +54,7 @@ Current top-level ownership is organized around the implemented subsystems in th
 
 ## Architecture Direction
 
-IXLandSystem does not define its Linux-facing contract by delegating host semantics directly.
+IXLandKernel does not define its Linux-facing contract by delegating host semantics directly.
 Its direction is a Linux-shaped virtual runtime with private iOS mediation.
 That includes:
 
@@ -120,7 +120,7 @@ True public drop-in Linux userspace compatibility proof is not part of this XCTe
 
 ## Current Constraints
 
-IXLandSystem runs inside one iOS app sandbox.
+IXLandKernel runs inside one iOS app sandbox.
 Host limitations must be virtualized where possible rather than leaked into the Linux-facing contract.
 Some subsystems remain incomplete or partial; incomplete behavior should be treated as implementation work in progress, not as proof of finished Linux compatibility.
 

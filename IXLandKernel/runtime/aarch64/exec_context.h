@@ -1,4 +1,4 @@
-/* IXLandSystem/runtime/aarch64/exec_context.h
+/* IXLandKernel/runtime/aarch64/exec_context.h
  * Private aarch64 execution handoff substrate for virtual Linux tasks.
  */
 

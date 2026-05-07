@@ -1,4 +1,4 @@
-/* IXLandSystem/runtime/aarch64/elf_reloc.c
+/* IXLandKernel/runtime/aarch64/elf_reloc.c
  * AArch64 ELF relocation application for IXLand virtual task memory.
  */
 

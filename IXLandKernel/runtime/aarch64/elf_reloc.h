@@ -1,4 +1,4 @@
-/* IXLandSystem/runtime/aarch64/elf_reloc.h
+/* IXLandKernel/runtime/aarch64/elf_reloc.h
  * Private aarch64 ELF relocation application over virtual task memory.
  */
 

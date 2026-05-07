@@ -1,4 +1,4 @@
-/* IXLandSystem/runtime/aarch64/exec_context.c
+/* IXLandKernel/runtime/aarch64/exec_context.c
  * Virtual aarch64 execution context setup from task exec handoff state.
  */
 

@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "EC94262A09660B746B3859EA"
+               BlueprintIdentifier = "096BA1BE372665E5A742B805"
                BuildableName = "libIXLandHostAdapter.a"
                BlueprintName = "IXLandHostAdapter"
-               ReferencedContainer = "container:IXLandSystem.xcodeproj">
+               ReferencedContainer = "container:IXLandKernel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -29,10 +29,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "C4CCE3FE68CE68E2DE742DAD"
+               BlueprintIdentifier = "F99D4313609072456B9FA2C9"
                BuildableName = "IXLandHostAdapterTests.xctest"
                BlueprintName = "IXLandHostAdapterTests"
-               ReferencedContainer = "container:IXLandSystem.xcodeproj">
+               ReferencedContainer = "container:IXLandKernel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -43,10 +43,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "D093BD9A0620D390A6B029A2"
+               BlueprintIdentifier = "4BA11E7DFE7F143343D9787A"
                BuildableName = "libIXLandKernel.a"
                BlueprintName = "IXLandKernel"
-               ReferencedContainer = "container:IXLandSystem.xcodeproj">
+               ReferencedContainer = "container:IXLandKernel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -57,10 +57,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7E4917F62D008F68A7C7E413"
+               BlueprintIdentifier = "197D25AF8B2CD7295F6BE2F7"
                BuildableName = "IXLandKernelTests.xctest"
                BlueprintName = "IXLandKernelTests"
-               ReferencedContainer = "container:IXLandSystem.xcodeproj">
+               ReferencedContainer = "container:IXLandKernel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -74,10 +74,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EC94262A09660B746B3859EA"
+            BlueprintIdentifier = "096BA1BE372665E5A742B805"
             BuildableName = "libIXLandHostAdapter.a"
             BlueprintName = "IXLandHostAdapter"
-            ReferencedContainer = "container:IXLandSystem.xcodeproj">
+            ReferencedContainer = "container:IXLandKernel.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -86,10 +86,10 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "7E4917F62D008F68A7C7E413"
+               BlueprintIdentifier = "197D25AF8B2CD7295F6BE2F7"
                BuildableName = "IXLandKernelTests.xctest"
                BlueprintName = "IXLandKernelTests"
-               ReferencedContainer = "container:IXLandSystem.xcodeproj">
+               ReferencedContainer = "container:IXLandKernel.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -97,10 +97,10 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "C4CCE3FE68CE68E2DE742DAD"
+               BlueprintIdentifier = "F99D4313609072456B9FA2C9"
                BuildableName = "IXLandHostAdapterTests.xctest"
                BlueprintName = "IXLandHostAdapterTests"
-               ReferencedContainer = "container:IXLandSystem.xcodeproj">
+               ReferencedContainer = "container:IXLandKernel.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -120,10 +120,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EC94262A09660B746B3859EA"
+            BlueprintIdentifier = "096BA1BE372665E5A742B805"
             BuildableName = "libIXLandHostAdapter.a"
             BlueprintName = "IXLandHostAdapter"
-            ReferencedContainer = "container:IXLandSystem.xcodeproj">
+            ReferencedContainer = "container:IXLandKernel.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </LaunchAction>
@@ -136,10 +136,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "EC94262A09660B746B3859EA"
+            BlueprintIdentifier = "096BA1BE372665E5A742B805"
             BuildableName = "libIXLandHostAdapter.a"
             BlueprintName = "IXLandHostAdapter"
-            ReferencedContainer = "container:IXLandSystem.xcodeproj">
+            ReferencedContainer = "container:IXLandKernel.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </ProfileAction>

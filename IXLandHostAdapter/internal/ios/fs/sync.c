@@ -1,5 +1,5 @@
 /*
- * IXLandSystem FS Sync Subsystem - Darwin Bridge
+ * IXLandKernel FS Sync Subsystem - Darwin Bridge
  *
  * This file includes Darwin headers and provides the implementation
  * using Darwin's pthread functions. It is the ONLY file in the fs

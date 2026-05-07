@@ -1,4 +1,4 @@
-/* IXLandSystem/internal/ios/fs/backing_paths.m
+/* IXLandKernel/internal/ios/fs/backing_paths.m
  * iOS container path resolution - quarantined in private bridge
  *
  * This file uses Foundation APIs to query iOS container paths.

@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-echo "=== Generating compile_commands.json for IXLandSystem ==="
+echo "=== Generating compile_commands.json for IXLandKernel ==="
 
 # This script generates compile_commands.json from Xcode build output.
 # The generated file contains absolute paths specific to your machine.
@@ -17,8 +17,8 @@ xcodegen generate --project .
 
 # Build and generate compilation database fragments
 xcodebuild \
-  -project IXLandSystem.xcodeproj \
-  -scheme IXLandSystem-6.12-arm64 \
+  -project IXLandKernel.xcodeproj \
+  -scheme IXLandKernel-6.12-arm64 \
   -sdk iphonesimulator \
   -arch arm64 \
   -configuration Debug \

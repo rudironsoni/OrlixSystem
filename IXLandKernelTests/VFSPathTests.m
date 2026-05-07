@@ -1,5 +1,5 @@
 /*
- * IXLandSystemTests - VFSPathTests.m (Linux-only)
+ * IXLandKernelTests - VFSPathTests.m (Linux-only)
  *
  * INTERNAL OWNER SEMANTIC TESTS ONLY.
  * Host-dependent helpers and NSFileManager usage are removed and live in the

@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/signal.h
+/* IXLandKernel/kernel/signal.h
  * Private internal header for virtual signal subsystem
  *
  * This is PRIVATE internal state for the virtual kernel's signal handling.

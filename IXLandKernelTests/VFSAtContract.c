@@ -1,4 +1,4 @@
-/* IXLandSystemTests/VFSAtContract.c
+/* IXLandKernelTests/VFSAtContract.c
  * C translation unit for VFS AT_* flag Linux UAPI contract tests.
  *
  * Compiled in a Linux-UAPI-clean context.

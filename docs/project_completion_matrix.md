@@ -146,11 +146,11 @@ It complements:
 | sysdeps | Linux-oriented sysdeps for native iOS builds | M1, Version 1 runtime | `planned` | Required for package transparency and native execution path. |
 | integration | no kernel reinvention of libc-owned surfaces | M1 | `planned` | Shared ownership boundary must be enforced through both kernel and sysroot cleanup. |
 
-## IXLandSystem Integration And Proof Harness
+## IXLandKernel Integration And Proof Harness
 
 | subgroup | artifact | required by | status | observation |
 | --- | --- | --- | --- | --- |
-| integration | `IXLandSystem` integration target | all milestones | `partial` | Existing project target exists, but future composition with `IXLandKernel` and `IXLandHostAdapter` must be updated. |
+| integration | `IXLandKernel` integration target | all milestones | `partial` | The main project now composes `IXLandKernel` with `IXLandHostAdapter`; proof and milestone tracking should treat `IXLandKernel` as the repo's primary product identity. |
 | proof split | LinuxKernel tests as Linux behavior proof | M0 onward | `partial` | Test target exists today and must remain host-implementation-free. |
 | proof split | HostBridge tests as host-adapter proof | M0 onward | `partial` | Test target exists today and already matches the intended split conceptually. |
 | proof policy | package-driven proof over unit-test-only proof | M6 | `planned` | Explicitly defined in the package proof milestone. |

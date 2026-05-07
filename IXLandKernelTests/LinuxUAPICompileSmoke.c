@@ -1,6 +1,6 @@
 /*
  * LinuxUAPICompileSmoke.c
- * IXLandSystemTests
+ * IXLandKernelTests
  *
  * LINUX UAPI / ABI COMPILE TEST
  *

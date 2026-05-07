@@ -1,4 +1,4 @@
-/* IXLandSystem/kernel/signal.c
+/* IXLandKernel/kernel/signal.c
  * Internal kernel signal owner implementation
  *
  * Public wrappers use proper POSIX types.
