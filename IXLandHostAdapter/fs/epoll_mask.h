@@ -1,4 +1,4 @@
-/* internal/ios/fs/epoll_bridge.h
+/* IXLandHostAdapter/fs/epoll_mask.h
  * Host bridge for epoll signal mask operations
  *
  * Narrow seam: only sigmask save/restore for epoll_pwait

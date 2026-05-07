@@ -120,7 +120,7 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec);
 void init_fd_entry_impl(int fd, int real_fd, int flags, uint32_t mode, const char *path);
 void init_fd_entry_with_identity_impl(int fd, int real_fd, int flags, uint32_t mode,
                                       const char *path, uint64_t file_identity);
-void init_host_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const char *path);
+void init_backing_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const char *path);
 
 enum synthetic_dir_class {
     SYNTHETIC_DIR_GENERIC = 0,

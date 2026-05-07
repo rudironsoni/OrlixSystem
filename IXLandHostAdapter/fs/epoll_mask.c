@@ -1,12 +1,12 @@
-/* internal/ios/fs/epoll_bridge.c
- * Host bridge for epoll public API wrappers and signal mask operations
+/* IXLandHostAdapter/fs/epoll_mask.c
+ * Epoll signal mask mediation
  */
 
 #include <signal.h>
 #include <stdbool.h>
 #include <string.h>
 
-#include "epoll_bridge.h"
+#include "epoll_mask.h"
 
 typedef struct epoll_sigmask_state_internal {
     sigset_t oldmask;

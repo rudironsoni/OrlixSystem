@@ -89,17 +89,17 @@ int nanosleep_impl(const struct timespec *req, struct timespec *rem) {
 }
 
 int linux_realtime_now_impl(struct __kernel_timespec *tp) {
-    struct timespec host_ts;
+    struct timespec backing_ts;
 
     if (!tp) {
         errno = EFAULT;
         return -1;
     }
-    if (clock_gettime_impl(CLOCK_REALTIME, &host_ts) != 0) {
+    if (clock_gettime_impl(CLOCK_REALTIME, &backing_ts) != 0) {
         return -1;
     }
-    tp->tv_sec = (__kernel_time64_t)host_ts.tv_sec;
-    tp->tv_nsec = (long long)host_ts.tv_nsec;
+    tp->tv_sec = (__kernel_time64_t)backing_ts.tv_sec;
+    tp->tv_nsec = (long long)backing_ts.tv_nsec;
     return 0;
 }
 

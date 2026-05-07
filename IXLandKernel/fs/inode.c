@@ -11,7 +11,7 @@
 
 #include "fdtable.h"
 #include "vfs.h"
-#include "IXLandHostAdapter/fs/file_io_host.h"
+#include "internal/private/backing_io.h"
 #include "../kernel/mm.h"
 #include "../kernel/task.h"
 
@@ -286,7 +286,7 @@ int truncate_impl(const char *path, int64_t length) {
         errno = -ret;
         return -1;
     }
-    ret = host_truncate_impl(translated_path, length);
+    ret = backing_truncate(translated_path, length);
     if (ret != 0) {
         return -1;
     }
@@ -326,7 +326,7 @@ int ftruncate_impl(int fd, int64_t length) {
         errno = EINVAL;
         return -1;
     }
-    ret = host_ftruncate_impl(real_fd, length);
+    ret = backing_ftruncate(real_fd, length);
     if (ret != 0) {
         return -1;
     }

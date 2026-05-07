@@ -1,5 +1,12 @@
 # Shell Process, Signal, And PTY Plan
 
+## Status
+
+This milestone depends on the split plan and inherits its stricter condition:
+
+- Linux semantics must remain Linux-owner
+- structural target separation alone is not enough if host realization still diverges from Linux-visible shell behavior under simulator proof
+
 ## Purpose
 
 Make `zsh` viable as the primary proof target by hardening the task, wait, signal, session, process-group, and PTY model.
@@ -9,6 +16,9 @@ Make `zsh` viable as the primary proof target by hardening the task, wait, signa
 1. Provide Linux-shaped shell-critical process semantics.
 2. Redesign signal ownership where needed to match Linux behavior.
 3. Make interactive PTY and job control behavior reliable.
+4. Keep host realization private and prevent shell semantics from being encoded through branded host-adapter contracts.
+5. Use kernel-owned private contracts wherever shell-critical subsystems need host realization hooks.
+6. Reject host primitives that are structurally private but semantically wrong for Linux shell behavior.
 
 ## Required Subsystems
 
@@ -35,12 +45,14 @@ Make `zsh` viable as the primary proof target by hardening the task, wait, signa
 - Use `zsh` behavior as the real compatibility target.
 - Treat process groups, sessions, and PTY rules as must-have shell semantics.
 - Preserve Linux signal reset and pending semantics across exec.
+- Keep Darwin and host realization mechanics behind kernel-owned private contracts, not as the kernel-facing shell model.
 
 ### Don't
 
 - Do not leave signal state as a monolithic shallow structure if it diverges from Linux behavior.
 - Do not rely on Darwin signal or wait behavior as proof.
 - Do not present simulated `vfork` semantics as complete if they still diverge in shell-relevant ways.
+- Do not call this milestone complete if shell-critical behavior still relies on a host-private shortcut that has not been proven Linux-shaped on the simulator.
 
 ## Proof
 
@@ -49,3 +61,4 @@ Make `zsh` viable as the primary proof target by hardening the task, wait, signa
 3. Pipelines and redirections work.
 4. Foreground and background PTY job control scenarios work.
 5. Stop and continue behavior is wait-visible and shell-correct.
+6. The milestone closeout does not preserve branded host-adapter vocabulary as the accepted kernel-facing shell seam.

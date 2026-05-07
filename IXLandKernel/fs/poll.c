@@ -7,7 +7,7 @@
 #include <stdlib.h>
 
 #include "fdtable.h"
-#include "IXLandHostAdapter/fs/poll_host.h"
+#include "internal/private/backing_poll.h"
 #include "pipe.h"
 #include "pty.h"
 #include "kernel/net/socket.h"
@@ -28,8 +28,8 @@ static void readiness_wait_init_once(void) {
     }
 }
 
-static int host_poll_wait(struct pollfd *fds, nfds_t nfds, int timeout) {
-    return host_poll_impl(fds, nfds, timeout);
+static int backing_poll_wait(struct pollfd *fds, nfds_t nfds, int timeout) {
+    return backing_poll(fds, nfds, timeout);
 }
 
 void poll_notify_readiness_impl(void) {
@@ -233,25 +233,25 @@ static int poll_wait_after_snapshot(uint64_t observed_generation, int timeout) {
     return 0;
 }
 
-static int poll_snapshot(struct pollfd *fds, nfds_t nfds, bool *has_virtual_out, bool *has_host_out) {
+static int poll_snapshot(struct pollfd *fds, nfds_t nfds, bool *has_virtual_out, bool *has_backing_out) {
     int ready_count = 0;
-    int host_fds_count = 0;
+    int backing_fds_count = 0;
     bool has_virtual = false;
-    struct pollfd *host_fds = NULL;
+    struct pollfd *backing_fds = NULL;
     int *fd_map = NULL;
 
     if (has_virtual_out) {
         *has_virtual_out = false;
     }
-    if (has_host_out) {
-        *has_host_out = false;
+    if (has_backing_out) {
+        *has_backing_out = false;
     }
 
     if (nfds > 0) {
-        host_fds = calloc(nfds, sizeof(struct pollfd));
+        backing_fds = calloc(nfds, sizeof(struct pollfd));
         fd_map = calloc(nfds, sizeof(int));
-        if (!host_fds || !fd_map) {
-            free(host_fds);
+        if (!backing_fds || !fd_map) {
+            free(backing_fds);
             free(fd_map);
             errno = ENOMEM;
             return -1;
@@ -279,25 +279,25 @@ static int poll_snapshot(struct pollfd *fds, nfds_t nfds, bool *has_virtual_out,
             continue;
         }
 
-        host_fds[host_fds_count].fd = fds[i].fd;
-        host_fds[host_fds_count].events = fds[i].events;
-        host_fds[host_fds_count].revents = 0;
-        fd_map[host_fds_count] = (int)i;
-        host_fds_count++;
+        backing_fds[backing_fds_count].fd = fds[i].fd;
+        backing_fds[backing_fds_count].events = fds[i].events;
+        backing_fds[backing_fds_count].revents = 0;
+        fd_map[backing_fds_count] = (int)i;
+        backing_fds_count++;
     }
 
-    if (host_fds_count > 0) {
-        int host_ready = host_poll_wait(host_fds, (nfds_t)host_fds_count, 0);
-        if (host_ready < 0) {
-            free(host_fds);
+    if (backing_fds_count > 0) {
+        int backing_ready = backing_poll_wait(backing_fds, (nfds_t)backing_fds_count, 0);
+        if (backing_ready < 0) {
+            free(backing_fds);
             free(fd_map);
             return -1;
         }
 
-        for (int i = 0; i < host_fds_count; i++) {
+        for (int i = 0; i < backing_fds_count; i++) {
             int orig_idx = fd_map[i];
-            fds[orig_idx].revents = host_fds[i].revents;
-            if (host_fds[i].revents != 0) {
+            fds[orig_idx].revents = backing_fds[i].revents;
+            if (backing_fds[i].revents != 0) {
                 ready_count++;
             }
         }
@@ -306,11 +306,11 @@ static int poll_snapshot(struct pollfd *fds, nfds_t nfds, bool *has_virtual_out,
     if (has_virtual_out) {
         *has_virtual_out = has_virtual;
     }
-    if (has_host_out) {
-        *has_host_out = host_fds_count > 0;
+    if (has_backing_out) {
+        *has_backing_out = backing_fds_count > 0;
     }
 
-    free(host_fds);
+    free(backing_fds);
     free(fd_map);
     return ready_count;
 }
@@ -340,9 +340,9 @@ static int poll_impl_common(struct pollfd *fds, nfds_t nfds, int timeout, bool r
 
     for (;;) {
         bool has_virtual = false;
-        bool has_host = false;
+        bool has_backing = false;
         uint64_t observed_generation = poll_generation_snapshot();
-        int ready_count = poll_snapshot(fds, nfds, &has_virtual, &has_host);
+        int ready_count = poll_snapshot(fds, nfds, &has_virtual, &has_backing);
         if (ready_count < 0) {
             return -1;
         }
@@ -350,15 +350,15 @@ static int poll_impl_common(struct pollfd *fds, nfds_t nfds, int timeout, bool r
             return ready_count;
         }
 
-        if (!has_virtual && has_host) {
-            return host_poll_wait(fds, nfds, timeout);
+        if (!has_virtual && has_backing) {
+            return backing_poll_wait(fds, nfds, timeout);
         }
 
         int wait_ms = timeout < 0 ? -1 : remaining;
         if (timeout > 0 && remaining <= 0) {
             return 0;
         }
-        if (has_host && (wait_ms < 0 || wait_ms > POLL_HOST_SLICE_MS)) {
+        if (has_backing && (wait_ms < 0 || wait_ms > POLL_HOST_SLICE_MS)) {
             wait_ms = POLL_HOST_SLICE_MS;
         }
 

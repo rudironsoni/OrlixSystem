@@ -1,4 +1,4 @@
-#include "errno_host.h"
+#include "errno_translation.h"
 
 #include <errno.h>
 
@@ -29,8 +29,8 @@
 #define LINUX_EPIPE        32
 #define LINUX_ENOTSUP      95
 
-int host_errno_to_linux_errno(int host_errno) {
-    switch (host_errno) {
+int linux_errno_from_darwin_errno(int darwin_errno) {
+    switch (darwin_errno) {
     case EPERM: return LINUX_EPERM;
     case ENOENT: return LINUX_ENOENT;
     case EINTR: return LINUX_EINTR;

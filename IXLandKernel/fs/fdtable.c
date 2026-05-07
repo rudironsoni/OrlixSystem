@@ -22,8 +22,8 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 #endif
-#include "IXLandHostAdapter/fs/file_io_host.h"
-#include "IXLandHostAdapter/fs/memfd_host.h"
+#include "internal/private/backing_io.h"
+#include "internal/private/backing_memfd.h"
 #include "eventpoll.h"
 #include "pipe.h"
 #include "pty.h"
@@ -1034,7 +1034,7 @@ static fd_description_t *alloc_memfd_description(int real_fd, const char *name, 
     ret = snprintf(desc->path, sizeof(desc->path), "/memfd:%s", name ? name : "");
     if (ret < 0 || (size_t)ret >= sizeof(desc->path)) {
         fs_mutex_destroy(&desc->lock);
-        host_close_impl(real_fd);
+        backing_close(real_fd);
         free(desc);
         errno = ENAMETOOLONG;
         return NULL;
@@ -1135,7 +1135,7 @@ static void release_fd_description(fd_description_t *desc) {
     }
     if (atomic_fetch_sub(&desc->refs, 1) == 1) {
         if (desc->type == FD_TYPE_HOST || desc->type == FD_TYPE_MEMFD) {
-            host_close_impl(desc->fd);
+            backing_close(desc->fd);
         } else if (desc->type == FD_TYPE_SYNTHETIC_PTY) {
             pty_close_end_impl(desc->pty_index, desc->pty_is_master);
         } else if (desc->type == FD_TYPE_PIPE) {
@@ -1471,7 +1471,7 @@ void init_fd_entry_with_identity_impl(int fd, int real_fd, int flags, uint32_t m
     fs_mutex_unlock(&entry->lock);
 }
 
-void init_host_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const char *path) {
+void init_backing_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const char *path) {
     init_fd_entry_impl(fd, real_fd, O_RDONLY | O_DIRECTORY, mode, path);
 }
 
@@ -2063,13 +2063,13 @@ int memfd_create_impl(const char *name, unsigned int flags) {
         return -1;
     }
 
-    real_fd = host_memfd_create_backing_impl();
+    real_fd = backing_memfd_create();
     if (real_fd < 0) {
         return -1;
     }
     fd = alloc_fd_impl();
     if (fd < 0) {
-        host_close_impl(real_fd);
+        backing_close(real_fd);
         return -1;
     }
     if (init_memfd_entry_impl(fd, name, flags, real_fd) != 0) {
@@ -2588,7 +2588,7 @@ int memfd_truncate_allowed_entry_impl(void *entry, int64_t length) {
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_MEMFD) {
         return 0;
     }
-    if (host_fstat_impl(get_real_fd_impl(entry), &st) != 0) {
+    if (backing_fstat(get_real_fd_impl(entry), &st) != 0) {
         errno = EIO;
         return -1;
     }

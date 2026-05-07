@@ -4,7 +4,13 @@
 
 Authoritative Milestone 1 plan.
 
-This milestone follows the `IXLandKernel` and `IXLandHostAdapter` split and assumes that the physical ownership boundary is already in place.
+This milestone follows the delivered `IXLandKernel` and `IXLandHostAdapter` split and assumes that the physical ownership boundary and kernel-owned active seam are now in place.
+
+It must still account for the remaining Milestone 0 learning:
+
+- structure alone is not enough
+- host-backed runtime primitives can still violate Linux-visible expectations after the seam is cleaned up
+- package-facing truth must therefore stay strict about ownership and proof rather than relying on convenient local shapes
 
 ## Purpose
 
@@ -26,8 +32,9 @@ This milestone is about source-compatibility truth, not runtime completion.
 1. Make `IXLandMLibC` the sole owner of package-facing libc and sysroot surfaces.
 2. Keep vendored Linux UAPI as the kernel-userspace contract truth.
 3. Keep vendored `kheaders/source` and `kheaders/generated` as classified private kernel reference only.
-4. Eliminate local Linux-like typedef reinvention inside `IXLandKernel` and exported host-adapter seam headers where vendored Linux truth or libc ownership should apply instead.
+4. Eliminate local Linux-like typedef reinvention inside `IXLandKernel` and kernel-private backing contracts where vendored Linux truth or libc ownership should apply instead.
 5. Make configure and compile probes reliable for real packages.
+6. Ensure build-truth cleanup does not bless host-private adapter declarations as Linux-facing ownership surfaces.
 
 ## Why This Milestone Exists
 
@@ -39,7 +46,7 @@ Typical drift patterns include:
 
 - fixed-width aliases such as `linux_mode_t` and `linux_off_t` living in Linux-owner headers
 - locally defined Linux-looking structs that should instead come from vendored Linux truth or libc-facing ownership
-- exported seam headers that recreate Linux-shaped scalar types instead of depending on owned contract types
+- kernel-private backing contracts that recreate Linux-shaped scalar types instead of depending on owned contract types
 - build setups that accidentally make kheaders look package-facing when they are only kernel-reference material
 
 If this drift remains, package probes may compile against a shape that is convenient for this repo but not faithful to Linux source expectations.
@@ -55,10 +62,10 @@ Relevant current facts in this repo:
 - `IXLandKernelTests/LinuxUAPICompileSmoke.c` already proves canonical UAPI include-path resolution.
 - `IXLandKernelTests/LinuxKHeadersCompileSmoke.c` already proves isolated kheaders include-path resolution.
 - `project.yml` already separates UAPI include paths from kheaders compile-smoke include paths.
-- The repo still contains local Linux-like scalar type recreation in Linux-owner and exported seam headers, including examples such as:
+- The repo still contains local Linux-like scalar type recreation in Linux-owner and kernel-private contract-adjacent headers, including examples such as:
   - `IXLandKernel/fs/vfs.h`
   - `IXLandKernel/fs/fdtable.h`
-  - `IXLandHostAdapter/include/IXLandHostAdapter/fs/backing_io_decls.h`
+  - current kernel-owned backing contract surfaces
 - The project completion matrix already marks Milestone 1 as partial for Linux UAPI truth, kheaders classification, and libc-owned type ownership.
 
 This means the foundation for M1 exists, but the ownership cleanup and package-facing discipline are not complete.
@@ -71,14 +78,15 @@ This means the foundation for M1 exists, but the ownership cleanup and package-f
 - `kheaders/source` and `kheaders/generated` are private classified kernel reference only.
 - `IXLandKernel` must not invent Linux ABI items already available in vendored Linux truth.
 - `IXLandKernel` must not own libc-owned typedefs or APIs.
-- Exported `IXLandHostAdapter` seam headers must not reintroduce Linux ABI ownership drift.
+- Kernel-owned private backing contracts must not reintroduce Linux ABI ownership drift.
+- The end-state is kernel-owned private contracts plus `IXLandMLibC` sysroot truth, not convenience leakage through host-private declarations.
 
 ### Ownership model
 
 - `IXLandMLibC` owns package-facing libc ABI headers, typedef surfaces, and sysroot installation shape.
 - `IXLandMLibC` owns libc-facing types such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `socklen_t`, `sigval`, `sigevent`, `statvfs`, and related libc-facing API surface.
 - `IXLandKernel` owns syscall/runtime semantics and private virtual-kernel state only.
-- `IXLandHostAdapter` owns private mechanism seams only and must not become a second place where Linux or libc-facing type truth is recreated.
+- `IXLandHostAdapter` owns private mechanism implementation only and must not become a second place where Linux or libc-facing type truth is recreated.
 
 ### Build-truth model
 
@@ -92,9 +100,10 @@ This means the foundation for M1 exists, but the ownership cleanup and package-f
 1. `IXLandKernel` must not hand-own libc ABI.
 2. Vendored Linux UAPI is the only Linux userspace ABI truth in this repo.
 3. Kheaders are not package-facing ABI.
-4. Exported adapter seams must not become a backdoor for Linux-like typedef recreation.
-5. Configure-probe success must come from correct ownership and include surfaces, not local one-off compatibility hacks.
-6. If a type or constant already has a real owner, this milestone must move the repo toward that owner instead of preserving local duplicates.
+4. Adapter-owned seams must not become a backdoor for Linux-like typedef recreation.
+5. This milestone must not convert branded host-adapter seam headers into accepted Linux-facing build truth.
+6. Configure-probe success must come from correct ownership and include surfaces, not local one-off compatibility hacks.
+7. If a type or constant already has a real owner, this milestone must move the repo toward that owner instead of preserving local duplicates.
 
 ## Tranche Scope
 
@@ -133,18 +142,18 @@ Milestone direction:
 - decide whether each surface is truly private kernel state, vendored Linux ABI truth, or libc-facing ownership
 - remove local reinvention where a real owner already exists
 
-### 2. Linux-like scalar typedef recreation in exported host-adapter seam headers
+### 2. Linux-like scalar typedef recreation in kernel-private backing contracts
 
-Current examples include exported adapter declarations that define Linux-looking scalar names in the seam itself.
+Current risk is no longer exported adapter seam headers. The risk is now that kernel-private backing contracts or adjacent headers could casually re-own Linux-looking scalar types.
 
 Current example to audit first:
 
-- `IXLandHostAdapter/include/IXLandHostAdapter/fs/backing_io_decls.h`
+- current kernel-owned backing I/O contract surfaces
 
 Milestone direction:
 
-- keep exported seam headers mechanism-only
-- avoid making the seam the source of Linux or libc-facing type truth
+- keep seam declarations kernel-owned and narrow
+- avoid making kernel-private contract headers a second source of Linux or libc-facing type truth
 
 ### 3. Freestanding repo-local integer typedef surfaces used as Linux contract stand-ins
 
@@ -183,8 +192,8 @@ Milestone direction:
    - vendored kheaders reference only
    - `IXLandMLibC` ownership
    - `IXLandKernel` private-only state
-   - `IXLandHostAdapter` private mechanism-only seams
-3. Remove or replace risky local typedef recreation in `IXLandKernel` and exported host-adapter seam headers.
+   - `IXLandHostAdapter` private mechanism-only implementation
+3. Remove or replace risky local typedef recreation in `IXLandKernel` and keep kernel-private backing contracts narrow and ownership-correct.
 4. Keep kheaders out of blanket production include roots.
 5. Add compile-smoke and configure-probe proof for real package expectations.
 6. Update repo docs and guardrails so future work cannot casually reintroduce ownership drift.
@@ -204,7 +213,7 @@ Milestone direction:
 - Do not include libc headers directly in Linux-owner code as source of truth.
 - Do not treat kheaders as package-facing ABI.
 - Do not hand-define Linux ABI constants if vendored Linux truth already provides them.
-- Do not let exported host seam headers recreate Linux-owned or libc-owned types casually.
+- Do not let kernel-private backing contracts recreate Linux-owned or libc-owned types casually.
 - Do not preserve local typedefs just because they currently unblock one compile unit.
 - Do not hide sysroot defects behind broader Xcode header search paths.
 
@@ -215,10 +224,11 @@ Milestone 1 is not complete until all are true:
 1. UAPI include truth is documented and enforced as the only production Linux ABI source.
 2. Kheaders remain isolated to explicit classified use and compile-smoke proof.
 3. The repo no longer contains known local Linux-like typedef recreation for surfaces already owned by vendored Linux truth or `IXLandMLibC`.
-4. Exported `IXLandHostAdapter` seam headers do not define Linux-facing ownership casually.
+4. Adapter-owned seam headers are removed from the accepted contract surface.
 5. Configure-style compile probes for representative `zsh` and `curl` prerequisites pass through the intended owners.
 6. Project build settings do not grant blanket kheaders visibility to production targets.
 7. Repo docs describe the resulting ownership model clearly enough to keep future tranches aligned.
+8. No Milestone 1 outcome is described as complete if it still depends on branded host-adapter vocabulary as normal kernel-facing contract surface.
 
 ## Proof
 
@@ -238,6 +248,6 @@ Milestone 1 succeeds when the repo stops improvising Linux-facing header ownersh
 - private kernel reference comes from classified `kheaders/source` and `kheaders/generated`
 - libc-facing sysroot truth belongs to `IXLandMLibC`
 - `IXLandKernel` keeps only private runtime state and syscall semantics
-- `IXLandHostAdapter` remains mechanism-only
+- `IXLandHostAdapter` remains mechanism-only implementation
 
 That is the minimum build-surface truth required before the roadmap can honestly claim package configure and compile transparency.

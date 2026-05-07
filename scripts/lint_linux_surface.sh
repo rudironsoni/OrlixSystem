@@ -3,7 +3,7 @@ set -eu
 
 KERNEL_ROOT="IXLandKernel"
 OWNER_PATHS="$KERNEL_ROOT/fs $KERNEL_ROOT/kernel $KERNEL_ROOT/runtime $KERNEL_ROOT/include"
-HOST_ADAPTER_ROOT="IXLandHostAdapter/internal/ios"
+HOST_ADAPTER_ROOT="IXLandHostAdapter"
 KERNEL_TEST_ROOT="IXLandKernelTests"
 HOST_TEST_ROOT="IXLandHostAdapterTests"
 
@@ -52,7 +52,7 @@ GENERIC_ABSTRACTIONS=$(rg -n -e '\b(kmutex|kcond|kthread|konce|ksig|kplatform|kb
 if [ -n "$GENERIC_ABSTRACTIONS" ]; then
     echo "FAIL: Generic abstraction leakage in Linux-owner paths:"
     echo "$GENERIC_ABSTRACTIONS"
-    echo "Use narrow subsystem-owned interfaces under internal/ios/** instead."
+    echo "Use kernel-owned private contracts and keep host implementation private under IXLandHostAdapter/**."
     exit 1
 fi
 echo "   ✓ No generic abstraction leakage in Linux-owner paths"
@@ -63,6 +63,12 @@ PUBLIC_IOS=$(rg -n '^\s*#\s*include\s*"internal/ios/.+"' "$KERNEL_ROOT/include" 
 if [ -n "$PUBLIC_IOS" ]; then
     echo "FAIL: Public headers in include/ must not depend on internal/ios/**:"
     echo "$PUBLIC_IOS"
+    exit 1
+fi
+KERNEL_INCLUDES_ADAPTER=$(rg -n '^\s*#\s*include\s*"(IXLandHostAdapter/|.*/IXLandHostAdapter/)' "$KERNEL_ROOT/fs" "$KERNEL_ROOT/kernel" "$KERNEL_ROOT/runtime" "$KERNEL_ROOT/include" 2>/dev/null || true)
+if [ -n "$KERNEL_INCLUDES_ADAPTER" ]; then
+    echo "FAIL: Linux-owner code must not include any IXLandHostAdapter headers:"
+    echo "$KERNEL_INCLUDES_ADAPTER"
     exit 1
 fi
 BROAD_IOS=$(rg -n '^\s*#\s*include\s*"internal/ios/.*/(bridge|platform|generic|common|helpers?|shim|host_api)[^/"]*\.h"' "$KERNEL_ROOT/fs" "$KERNEL_ROOT/kernel" "$KERNEL_ROOT/runtime" 2>/dev/null || true)
@@ -85,6 +91,12 @@ CROSS_SUBSYSTEM=$(rg -n '^\s*#\s*include\s*"internal/ios/fs/.*"' "$KERNEL_ROOT/k
 if [ -n "$CROSS_SUBSYSTEM" ]; then
     echo "FAIL: kernel/runtime must not include fs-owned internal/ios mediation headers:"
     echo "$CROSS_SUBSYSTEM"
+    exit 1
+fi
+KERNEL_HOST_VOCAB=$(rg -n -e '\bhost_[a-z0-9_]+\b' -e '\b[a-z0-9_]+_host\b' -e '\b[a-z0-9_]+_bridge\b' $OWNER_PATHS 2>/dev/null || true)
+if [ -n "$KERNEL_HOST_VOCAB" ]; then
+    echo "FAIL: host-branded vocabulary found in Linux-owner paths:"
+    echo "$KERNEL_HOST_VOCAB"
     exit 1
 fi
 echo "   ✓ Subsystem placement boundaries hold"
@@ -145,14 +157,26 @@ fi
 echo "   ✓ Test targets correctly named"
 
 echo ""
-echo "=== Check 11: New broad mediation headers under internal/ios ==="
+echo "=== Check 11: Host tree naming hygiene ==="
 BROAD_HEADERS=$(find "$HOST_ADAPTER_ROOT" -type f -name '*.h' 2>/dev/null | rg '/(bridge|platform|generic|common|helpers?|shim|host_api)[^/]*\.h$' || true)
 if [ -n "$BROAD_HEADERS" ]; then
-    echo "FAIL: Broad mediation headers found under internal/ios/** (must be narrow and subsystem-owned):"
+    echo "FAIL: Broad mediation headers found under IXLandHostAdapter/** (must be narrow and subsystem-owned):"
     echo "$BROAD_HEADERS"
     exit 1
 fi
-echo "   ✓ No new broad mediation headers under internal/ios"
+REDUNDANT_HOST_NAMES=$(find "$HOST_ADAPTER_ROOT" -type f 2>/dev/null | rg '/internal/ios/|_host[.]|_bridge[.]' || true)
+if [ -n "$REDUNDANT_HOST_NAMES" ]; then
+    echo "FAIL: Redundant host path or filename role labels found:"
+    echo "$REDUNDANT_HOST_NAMES"
+    exit 1
+fi
+ADAPTER_INCLUDE_ROOT=$(find IXLandHostAdapter -type d -path 'IXLandHostAdapter/include' 2>/dev/null || true)
+if [ -n "$ADAPTER_INCLUDE_ROOT" ]; then
+    echo "FAIL: IXLandHostAdapter/include must not exist in the accepted end-state:"
+    echo "$ADAPTER_INCLUDE_ROOT"
+    exit 1
+fi
+echo "   ✓ Host tree naming hygiene holds"
 
 echo ""
 echo "=== Check 12: Test ABI contamination - branded wrapper macros ==="
@@ -251,7 +275,7 @@ echo "   ✓ No broad bridge bag usage in Linux-facing tests"
 
 echo ""
 echo "=== Check 17: Broken host syscall errno rewriting ==="
-BROKEN_HOST_ERRNO=$(rg -n 'errno[[:space:]]*=[[:space:]]*-ret|errno[[:space:]]*=[[:space:]]*\(int\)-ret' "$HOST_ADAPTER_ROOT/fs/path_host.c" "$HOST_ADAPTER_ROOT/fs/backing_io.m" 2>/dev/null || true)
+BROKEN_HOST_ERRNO=$(rg -n 'errno[[:space:]]*=[[:space:]]*-ret|errno[[:space:]]*=[[:space:]]*\(int\)-ret' "$HOST_ADAPTER_ROOT/fs/path.c" "$HOST_ADAPTER_ROOT/fs/backing_io.m" 2>/dev/null || true)
 if [ -n "$BROKEN_HOST_ERRNO" ]; then
     echo "FAIL: Broken host syscall errno rewriting found:"
     echo "$BROKEN_HOST_ERRNO"
@@ -288,14 +312,14 @@ fi
 echo "   ✓ No test Linux UAPI contamination aliases"
 
 echo ""
-echo "=== Check 17c: Unified host_fstat_impl contract ==="
-HOST_FSTAT_CONTRACT=$(rg -n 'host_fstat_impl\s*\([^)]*struct stat\s*\*' "$HOST_ADAPTER_ROOT/fs" 2>/dev/null || true)
+echo "=== Check 17c: Unified backing_fstat contract ==="
+HOST_FSTAT_CONTRACT=$(rg -n 'backing_fstat\s*\([^)]*struct stat\s*\*' "$HOST_ADAPTER_ROOT/fs" 2>/dev/null || true)
 if [ -n "$HOST_FSTAT_CONTRACT" ]; then
-    echo "FAIL: host_fstat_impl declared with host struct stat:"
+    echo "FAIL: backing_fstat declared with host struct stat:"
     echo "$HOST_FSTAT_CONTRACT"
     exit 1
 fi
-echo "   ✓ host_fstat_impl uses linux_stat contract"
+echo "   ✓ backing_fstat uses linux_stat contract"
 
 echo ""
 echo "=== Check 18: Darwin S_IS* used as Linux proof ==="
@@ -416,7 +440,7 @@ BRIDGE_BAG_LINUX=$(rg -n 'backing_io\.h|backing_io_decls\.h' "$KERNEL_TEST_ROOT"
 if [ -n "$BRIDGE_BAG_LINUX" ]; then
     echo "FAIL: Broad bridge bag headers found in Linux-facing tests:"
     echo "$BRIDGE_BAG_LINUX"
-    echo "Use narrow subsystem-owned interfaces under internal/ios/** instead."
+    echo "Use kernel-owned private contracts instead."
     exit 1
 fi
 echo "   ✓ No broad bridge bag usage in Linux-facing tests"
@@ -478,11 +502,11 @@ echo ""
 echo "=== Check 31: internal/ios errno mediation is not rewritten from negative returns ==="
 BROKEN_HOST_ERRNO_ALL=$(rg -n 'errno[[:space:]]*=[[:space:]]*(\(int\)[[:space:]]*)?-ret' "$HOST_ADAPTER_ROOT/fs" 2>/dev/null || true)
 if [ -n "$BROKEN_HOST_ERRNO_ALL" ]; then
-    echo "FAIL: Broken host errno rewriting found under internal/ios/fs:"
+    echo "FAIL: Broken backing errno rewriting found under IXLandHostAdapter/fs:"
     echo "$BROKEN_HOST_ERRNO_ALL"
     exit 1
 fi
-echo "   ✓ No internal/ios/fs errno = -ret rewriting"
+echo "   ✓ No backing errno = -ret rewriting"
 
 echo ""
 echo "=== Check 32: XcodeGen Linux UAPI source segregation ==="

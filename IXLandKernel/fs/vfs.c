@@ -132,9 +132,9 @@
 #undef __ASSEMBLY__
 
 /* Narrow seam headers for host operations */
-#include "IXLandHostAdapter/fs/file_io_host.h"
-#include "IXLandHostAdapter/fs/path_host.h"
-#include "IXLandHostAdapter/fs/path_discovery_host.h"
+#include "internal/private/backing_io.h"
+#include "internal/private/backing_path.h"
+#include "internal/private/backing_roots.h"
 
 #include "fdtable.h"
 #include "eventpoll.h"
@@ -2216,7 +2216,7 @@ static int vfs_stat_virtual_backed_path(const char *resolved_vpath, const char *
         return -EINVAL;
     }
 
-    if (host_stat_impl(translated_path, st) != 0) {
+    if (backing_stat(translated_path, st) != 0) {
         return -errno;
     }
     vfs_apply_stat_metadata(resolved_vpath, st);
@@ -2551,7 +2551,7 @@ static const struct vfs_route_entry *vfs_route_for_path(const char *vpath) {
     return best_match;
 }
 
-static const char *vfs_relative_suffkfor_route(const struct vfs_route_entry *route,
+static const char *vfs_relative_suffixfor_route(const struct vfs_route_entry *route,
                                                  const char *normalized_virtual_path) {
     if (!route || !normalized_virtual_path) {
         return NULL;
@@ -2929,7 +2929,7 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
                    const char *to_pathname, unsigned int flags) {
     char resolved_from[MAX_PATH];
     char resolved_target[MAX_PATH];
-    char host_target[MAX_PATH];
+    char backing_target[MAX_PATH];
     struct linux_stat target_stat;
     struct vfs_mount_namespace *mnt_ns = vfs_task_mount_namespace();
     int ret;
@@ -2955,11 +2955,11 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
     if (strcmp(resolved_target, "/") == 0) {
         return -EINVAL;
     }
-    ret = vfs_translate_path(resolved_target, host_target, sizeof(host_target));
+    ret = vfs_translate_path(resolved_target, backing_target, sizeof(backing_target));
     if (ret != 0) {
         return ret;
     }
-    if (host_stat_impl(host_target, &target_stat) != 0) {
+    if (backing_stat(backing_target, &target_stat) != 0) {
         return -errno;
     }
     if (!S_ISDIR(target_stat.st_mode)) {
@@ -3057,8 +3057,8 @@ int vfs_pivot_root(const char *new_root, const char *put_old) {
     struct vfs_mount_namespace *mnt_ns = NULL;
     char resolved_new_root[MAX_PATH];
     char resolved_put_old[MAX_PATH];
-    char host_new_root[MAX_PATH];
-    char host_put_old[MAX_PATH];
+    char backing_new_root[MAX_PATH];
+    char backing_put_old[MAX_PATH];
     char old_pwd[MAX_PATH];
     struct linux_stat st;
     int ret;
@@ -3091,21 +3091,21 @@ int vfs_pivot_root(const char *new_root, const char *put_old) {
         return -EINVAL;
     }
 
-    ret = vfs_translate_path(resolved_new_root, host_new_root, sizeof(host_new_root));
+    ret = vfs_translate_path(resolved_new_root, backing_new_root, sizeof(backing_new_root));
     if (ret != 0) {
         return ret;
     }
-    ret = vfs_translate_path(resolved_put_old, host_put_old, sizeof(host_put_old));
+    ret = vfs_translate_path(resolved_put_old, backing_put_old, sizeof(backing_put_old));
     if (ret != 0) {
         return ret;
     }
-    if (host_stat_impl(host_new_root, &st) != 0) {
+    if (backing_stat(backing_new_root, &st) != 0) {
         return -errno;
     }
     if (!S_ISDIR(st.st_mode)) {
         return -ENOTDIR;
     }
-    if (host_stat_impl(host_put_old, &st) != 0) {
+    if (backing_stat(backing_put_old, &st) != 0) {
         return -errno;
     }
     if (!S_ISDIR(st.st_mode)) {
@@ -3381,15 +3381,15 @@ const char *vfs_temp_backing_root(void) {
 }
 
 static int vfs_join_backing_root_for_route(const struct vfs_route_entry *route,
-                                           const char *normalized_virtual_path, char *host_path,
-                                           size_t host_path_len) {
+                                           const char *normalized_virtual_path, char *backing_path,
+                                           size_t backing_path_len) {
     const char *backing_root;
     const char *relative_suffix;
     size_t root_len;
-    size_t suffklen;
+    size_t suffixlen;
     size_t total_len;
 
-    if (!route || !normalized_virtual_path || !host_path || host_path_len == 0) {
+    if (!route || !normalized_virtual_path || !backing_path || backing_path_len == 0) {
         return -EINVAL;
     }
 
@@ -3399,30 +3399,30 @@ static int vfs_join_backing_root_for_route(const struct vfs_route_entry *route,
         return -ENOTSUP;
     }
 
-    relative_suffix = vfs_relative_suffkfor_route(route, normalized_virtual_path);
+    relative_suffix = vfs_relative_suffixfor_route(route, normalized_virtual_path);
     if (!relative_suffix) {
         return -EINVAL;
     }
 
     root_len = strlen(backing_root);
-    suffklen = strlen(relative_suffix);
+    suffixlen = strlen(relative_suffix);
 
-    if (suffklen == 0 || strcmp(relative_suffix, "/") == 0) {
-        return vfs_copy_string(backing_root, host_path, host_path_len);
+    if (suffixlen == 0 || strcmp(relative_suffix, "/") == 0) {
+        return vfs_copy_string(backing_root, backing_path, backing_path_len);
     }
 
-    total_len = root_len + suffklen;
-    if (total_len + 1 > host_path_len) {
+    total_len = root_len + suffixlen;
+    if (total_len + 1 > backing_path_len) {
         return -ENAMETOOLONG;
     }
 
-    memcpy(host_path, backing_root, root_len);
-    memcpy(host_path + root_len, relative_suffix, suffklen + 1);
+    memcpy(backing_path, backing_root, root_len);
+    memcpy(backing_path + root_len, relative_suffix, suffixlen + 1);
     return 0;
 }
 
-static int vfs_join_host_root(const char *normalized_virtual_path, char *host_path,
-                              size_t host_path_len) {
+static int vfs_join_backing_root(const char *normalized_virtual_path, char *backing_path,
+                              size_t backing_path_len) {
     const struct vfs_route_entry *route;
 
     if (vfs_ensure_backing_initialized() < 0) {
@@ -3434,10 +3434,10 @@ static int vfs_join_host_root(const char *normalized_virtual_path, char *host_pa
         return -ENOENT;
     }
 
-    return vfs_join_backing_root_for_route(route, normalized_virtual_path, host_path, host_path_len);
+    return vfs_join_backing_root_for_route(route, normalized_virtual_path, backing_path, backing_path_len);
 }
 
-const char *vfs_host_backing_root(void) {
+const char *vfs_primary_backing_root(void) {
     if (vfs_ensure_backing_initialized() < 0) {
         return NULL;
     }
@@ -3654,15 +3654,15 @@ static int vfs_bootstrap_etc_files_impl(void) {
     size_t len;
 
     snprintf(etc_path, sizeof(etc_path), "%s/etc", vfs_persistent_backing_root());
-    host_ensure_directory_impl(etc_path, 0755);
+    backing_ensure_directory(etc_path, 0755);
 
     /* Create /etc/passwd */
     snprintf(file_path, sizeof(file_path), "%s/passwd", etc_path);
-    fd = host_open_impl(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fd = backing_open(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
         len = strlen(passwd_content);
-        written = host_write_impl(fd, passwd_content, len);
-        host_close_impl(fd);
+        written = backing_write(fd, passwd_content, len);
+        backing_close(fd);
         if (written != (ssize_t)len) {
             /* Non-fatal: file creation may fail in constrained environments */
         }
@@ -3670,11 +3670,11 @@ static int vfs_bootstrap_etc_files_impl(void) {
 
     /* Create /etc/group */
     snprintf(file_path, sizeof(file_path), "%s/group", etc_path);
-    fd = host_open_impl(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fd = backing_open(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
         len = strlen(group_content);
-        written = host_write_impl(fd, group_content, len);
-        host_close_impl(fd);
+        written = backing_write(fd, group_content, len);
+        backing_close(fd);
         if (written != (ssize_t)len) {
             /* Non-fatal: file creation may fail in constrained environments */
         }
@@ -3682,11 +3682,11 @@ static int vfs_bootstrap_etc_files_impl(void) {
 
     /* Create /etc/hosts */
     snprintf(file_path, sizeof(file_path), "%s/hosts", etc_path);
-    fd = host_open_impl(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fd = backing_open(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
         len = strlen(hosts_content);
-        written = host_write_impl(fd, hosts_content, len);
-        host_close_impl(fd);
+        written = backing_write(fd, hosts_content, len);
+        backing_close(fd);
         if (written != (ssize_t)len) {
             /* Non-fatal: file creation may fail in constrained environments */
         }
@@ -3694,11 +3694,11 @@ static int vfs_bootstrap_etc_files_impl(void) {
 
     /* Create /etc/resolv.conf */
     snprintf(file_path, sizeof(file_path), "%s/resolv.conf", etc_path);
-    fd = host_open_impl(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fd = backing_open(file_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd >= 0) {
         len = strlen(resolv_content);
-        written = host_write_impl(fd, resolv_content, len);
-        host_close_impl(fd);
+        written = backing_write(fd, resolv_content, len);
+        backing_close(fd);
         if (written != (ssize_t)len) {
             /* Non-fatal: file creation may fail in constrained environments */
         }
@@ -3731,8 +3731,8 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     (void)data;
     char resolved_source[MAX_PATH];
     char resolved_target[MAX_PATH];
-    char host_source[MAX_PATH];
-    char host_target[MAX_PATH];
+    char backing_source[MAX_PATH];
+    char backing_target[MAX_PATH];
     struct linux_stat source_stat;
     struct linux_stat target_stat;
     int ret;
@@ -3838,11 +3838,11 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
     }
 
     if (move_mount) {
-        ret = vfs_translate_path(resolved_target, host_target, sizeof(host_target));
+        ret = vfs_translate_path(resolved_target, backing_target, sizeof(backing_target));
         if (ret != 0) {
             return ret;
         }
-        if (host_stat_impl(host_target, &target_stat) != 0) {
+        if (backing_stat(backing_target, &target_stat) != 0) {
             return -errno;
         }
         fs_mutex_lock(&mnt_ns->lock);
@@ -3851,20 +3851,20 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         return ret;
     }
 
-    ret = vfs_translate_path(resolved_target, host_target, sizeof(host_target));
+    ret = vfs_translate_path(resolved_target, backing_target, sizeof(backing_target));
     if (ret != 0) {
         return ret;
     }
 
-    if (host_stat_impl(host_target, &target_stat) != 0) {
+    if (backing_stat(backing_target, &target_stat) != 0) {
         return -errno;
     }
     if (!cgroup2_mount) {
-        ret = vfs_translate_path(resolved_source, host_source, sizeof(host_source));
+        ret = vfs_translate_path(resolved_source, backing_source, sizeof(backing_source));
         if (ret != 0) {
             return ret;
         }
-        if (host_stat_impl(host_source, &source_stat) != 0) {
+        if (backing_stat(backing_source, &source_stat) != 0) {
             return -errno;
         }
         if ((S_ISDIR(source_stat.st_mode) && !S_ISDIR(target_stat.st_mode)) ||
@@ -4036,7 +4036,7 @@ int vfs_open(const char *path, int flags, uint32_t mode, int *target_fd) {
         return -EINVAL;
     }
 
-    real_fd = host_open_impl(path, flags, mode);
+    real_fd = backing_open(path, flags, mode);
     if (real_fd < 0) {
         return -errno;
     }
@@ -4048,37 +4048,37 @@ int vfs_open(const char *path, int flags, uint32_t mode, int *target_fd) {
 static int vfs_join_virtual_path(const char *base_path, const char *suffix, char *joined_path,
                                  size_t joined_path_len) {
     size_t base_len;
-    size_t suffklen;
-    size_t suffkoffset;
+    size_t suffixlen;
+    size_t suffixoffset;
 
     if (!base_path || !suffix || !joined_path || joined_path_len == 0) {
         return -EINVAL;
     }
 
     base_len = strlen(base_path);
-    suffklen = strlen(suffix);
-    suffkoffset = (suffix[0] == '/') ? 1 : 0;
+    suffixlen = strlen(suffix);
+    suffixoffset = (suffix[0] == '/') ? 1 : 0;
 
     if (base_len == 0) {
         return -EINVAL;
     }
 
     if (strcmp(base_path, "/") == 0) {
-        if (suffklen - suffkoffset + 1 >= joined_path_len) {
+        if (suffixlen - suffixoffset + 1 >= joined_path_len) {
             return -ENAMETOOLONG;
         }
         joined_path[0] = '/';
-        memcpy(joined_path + 1, suffix + suffkoffset, suffklen - suffkoffset + 1);
+        memcpy(joined_path + 1, suffix + suffixoffset, suffixlen - suffixoffset + 1);
         return 0;
     }
 
-    if (base_len + 1 + suffklen - suffkoffset >= joined_path_len) {
+    if (base_len + 1 + suffixlen - suffixoffset >= joined_path_len) {
         return -ENAMETOOLONG;
     }
 
     memcpy(joined_path, base_path, base_len);
     joined_path[base_len] = '/';
-    memcpy(joined_path + base_len + 1, suffix + suffkoffset, suffklen - suffkoffset + 1);
+    memcpy(joined_path + base_len + 1, suffix + suffixoffset, suffixlen - suffixoffset + 1);
     return 0;
 }
 
@@ -4099,7 +4099,7 @@ static int vfs_lstat_resolved_virtual_path(const char *resolved_vpath, struct li
     if (ret != 0) {
         return ret;
     }
-    ret = vfs_join_host_root(mounted_path, translated_path, sizeof(translated_path));
+    ret = vfs_join_backing_root(mounted_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
         return ret;
     }
@@ -4126,12 +4126,12 @@ static int vfs_readlink_resolved_virtual_path(const char *resolved_vpath, char *
     if (ret != 0) {
         return ret;
     }
-    ret = vfs_join_host_root(mounted_path, translated_path, sizeof(translated_path));
+    ret = vfs_join_backing_root(mounted_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
         return ret;
     }
 
-    len = host_readlink_impl(translated_path, target, target_len - 1);
+    len = backing_readlink(translated_path, target, target_len - 1);
     if (len < 0) {
         return -errno;
     }
@@ -4438,13 +4438,13 @@ int vfs_resolve_virtual_path_at_follow(int dirfd, const char *vpath, char *resol
                                     resolved_vpath, resolved_vpath_len);
 }
 
-int vfs_translate_path_task(const char *vpath, char *host_path, size_t host_path_len,
+int vfs_translate_path_task(const char *vpath, char *backing_path, size_t backing_path_len,
                             struct fs_struct *fs) {
     char resolved_virtual[MAX_PATH];
     char mounted_virtual[MAX_PATH];
     int ret;
 
-    if (!vpath || !host_path || host_path_len == 0) {
+    if (!vpath || !backing_path || backing_path_len == 0) {
         return -EINVAL;
     }
 
@@ -4458,15 +4458,15 @@ int vfs_translate_path_task(const char *vpath, char *host_path, size_t host_path
         return ret;
     }
 
-    return vfs_join_host_root(mounted_virtual, host_path, host_path_len);
+    return vfs_join_backing_root(mounted_virtual, backing_path, backing_path_len);
 }
 
-int vfs_translate_path_at(int dirfd, const char *vpath, char *host_path, size_t host_path_len) {
+int vfs_translate_path_at(int dirfd, const char *vpath, char *backing_path, size_t backing_path_len) {
     char resolved_virtual[MAX_PATH];
     char mounted_virtual[MAX_PATH];
     int ret;
 
-    if (!vpath || !host_path || host_path_len == 0) {
+    if (!vpath || !backing_path || backing_path_len == 0) {
         return -EINVAL;
     }
 
@@ -4480,12 +4480,12 @@ int vfs_translate_path_at(int dirfd, const char *vpath, char *host_path, size_t 
         return ret;
     }
 
-    return vfs_join_host_root(mounted_virtual, host_path, host_path_len);
+    return vfs_join_backing_root(mounted_virtual, backing_path, backing_path_len);
 }
 
 /* Legacy API: translate path using hardcoded root (for backward compatibility) */
-int vfs_translate_path(const char *vpath, char *host_path, size_t host_path_len) {
-    return vfs_translate_path_task(vpath, host_path, host_path_len, NULL);
+int vfs_translate_path(const char *vpath, char *backing_path, size_t backing_path_len) {
+    return vfs_translate_path_task(vpath, backing_path, backing_path_len, NULL);
 }
 
 /* Backing initialization - must be called before path translation */
@@ -4497,13 +4497,13 @@ static int vfs_ensure_backing_initialized(void) {
     int ret;
 
     /* Discover persistent (Application Support) root */
-    ret = vfs_discover_persistent_root(vfs_persistent_root, sizeof(vfs_persistent_root));
+    ret = backing_root_discover_persistent(vfs_persistent_root, sizeof(vfs_persistent_root));
     if (ret < 0) {
         return -ENOTSUP;
     }
 
     /* Discover cache root */
-    ret = vfs_discover_cache_root(vfs_cache_root, sizeof(vfs_cache_root));
+    ret = backing_root_discover_cache(vfs_cache_root, sizeof(vfs_cache_root));
     if (ret < 0) {
         /* Fall back to persistent if caches not available */
         strncpy(vfs_cache_root, vfs_persistent_root, sizeof(vfs_cache_root) - 1);
@@ -4511,7 +4511,7 @@ static int vfs_ensure_backing_initialized(void) {
     }
 
     /* Discover temp root */
-    ret = vfs_discover_temp_root(vfs_temp_root, sizeof(vfs_temp_root));
+    ret = backing_root_discover_temp(vfs_temp_root, sizeof(vfs_temp_root));
     if (ret < 0) {
         /* Fall back to temporary subdirectory of persistent */
         snprintf(vfs_temp_root, sizeof(vfs_temp_root), "%s/.ixland.tmp", vfs_persistent_root);
@@ -4530,14 +4530,14 @@ static int vfs_ensure_backing_initialized(void) {
     return 0;
 }
 
-int vfs_reverse_translate(const char *host_path, char *vpath, size_t vpath_len) {
+int vfs_reverse_translate(const char *backing_path, char *vpath, size_t vpath_len) {
     const struct vfs_route_entry *best_route = NULL;
-    const char *best_host_suffix = NULL;
+    const char *best_backing_suffix = NULL;
     size_t best_prefklen = 0;
     size_t i;
     int ret;
 
-    if (!host_path || !vpath || vpath_len == 0) {
+    if (!backing_path || !vpath || vpath_len == 0) {
         return -EINVAL;
     }
 
@@ -4549,10 +4549,10 @@ int vfs_reverse_translate(const char *host_path, char *vpath, size_t vpath_len) 
     for (i = 0; i < vfs_route_table_count; i++) {
         const struct vfs_route_entry *route = &vfs_route_table[i];
         const char *backing_root;
-        const char *host_suffix;
+        const char *backing_suffix;
         size_t root_len;
         size_t prefklen;
-        char route_host_prefix[MAX_PATH];
+        char route_backing_prefix[MAX_PATH];
 
         if (!route->reverse_linux_prefix) {
             continue;
@@ -4565,53 +4565,53 @@ int vfs_reverse_translate(const char *host_path, char *vpath, size_t vpath_len) 
 
         root_len = strlen(backing_root);
         if (route->strip_linux_prefix || strcmp(route->reverse_linux_prefix, "/") == 0) {
-            if (vfs_copy_string(backing_root, route_host_prefix, sizeof(route_host_prefix)) != 0) {
+            if (vfs_copy_string(backing_root, route_backing_prefix, sizeof(route_backing_prefix)) != 0) {
                 continue;
             }
         } else {
-            ret = snprintf(route_host_prefix, sizeof(route_host_prefix), "%s%s", backing_root,
+            ret = snprintf(route_backing_prefix, sizeof(route_backing_prefix), "%s%s", backing_root,
                            route->reverse_linux_prefix);
-            if (ret < 0 || (size_t)ret >= sizeof(route_host_prefix)) {
+            if (ret < 0 || (size_t)ret >= sizeof(route_backing_prefix)) {
                 continue;
             }
         }
 
-        prefklen = strlen(route_host_prefix);
-        if (strncmp(host_path, route_host_prefix, prefklen) != 0) {
+        prefklen = strlen(route_backing_prefix);
+        if (strncmp(backing_path, route_backing_prefix, prefklen) != 0) {
             continue;
         }
 
-        host_suffix = host_path + prefklen;
-        if (*host_suffix != '\0' && *host_suffix != '/') {
+        backing_suffix = backing_path + prefklen;
+        if (*backing_suffix != '\0' && *backing_suffix != '/') {
             continue;
         }
 
         if (prefklen > best_prefklen) {
             best_route = route;
-            best_host_suffix = host_suffix;
+            best_backing_suffix = backing_suffix;
             best_prefklen = prefklen;
         }
     }
 
-    if (!best_route || !best_host_suffix) {
+    if (!best_route || !best_backing_suffix) {
         return -EXDEV;
     }
 
     if (strcmp(best_route->reverse_linux_prefix, "/") == 0) {
-        if (*best_host_suffix == '\0') {
+        if (*best_backing_suffix == '\0') {
             return vfs_copy_string(vfs_virtual_root_path, vpath, vpath_len);
         }
-        return vfs_normalize_linux_path(best_host_suffix, vpath, vpath_len);
+        return vfs_normalize_linux_path(best_backing_suffix, vpath, vpath_len);
     }
 
-    if (*best_host_suffix == '\0') {
+    if (*best_backing_suffix == '\0') {
         return vfs_copy_string(best_route->reverse_linux_prefix, vpath, vpath_len);
     }
 
     {
         char work_buf[MAX_PATH];
         ret = snprintf(work_buf, sizeof(work_buf), "%s%s", best_route->reverse_linux_prefix,
-                       best_host_suffix);
+                       best_backing_suffix);
         if (ret < 0 || (size_t)ret >= sizeof(work_buf)) {
             return -ENAMETOOLONG;
         }
@@ -4626,7 +4626,7 @@ int vfs_stat_path(const char *pathname, struct linux_stat *statbuf) {
     if (vfs_path_is_synthetic(pathname)) {
         return -ENOENT;
     }
-    return host_stat_impl(pathname, statbuf);
+    return backing_stat(pathname, statbuf);
 }
 
 int vfs_lstat(const char *pathname, struct linux_stat *statbuf) {
@@ -4636,7 +4636,7 @@ int vfs_lstat(const char *pathname, struct linux_stat *statbuf) {
     if (vfs_path_is_synthetic(pathname)) {
         return -ENOENT;
     }
-    return host_lstat_impl(pathname, statbuf);
+    return backing_lstat(pathname, statbuf);
 }
 
 static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_path, size_t self_path_len) {
@@ -6808,7 +6808,7 @@ int vfs_fstatat(int dirfd, const char *pathname, struct linux_stat *statbuf, int
     }
 
     /* Translate the resolved virtual path to host backing path */
-    ret = vfs_join_host_root(resolved_virtual, translated_path, sizeof(translated_path));
+    ret = vfs_join_backing_root(resolved_virtual, translated_path, sizeof(translated_path));
     if (ret != 0) {
         return ret;
     }

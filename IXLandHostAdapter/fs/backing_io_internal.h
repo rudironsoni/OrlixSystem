@@ -1,5 +1,5 @@
-#ifndef IXLAND_INTERNAL_IOS_FS_BACKING_IO_H
-#define IXLAND_INTERNAL_IOS_FS_BACKING_IO_H
+#ifndef IXLAND_HOST_ADAPTER_FS_BACKING_IO_H
+#define IXLAND_HOST_ADAPTER_FS_BACKING_IO_H
 
 #include <fcntl.h>
 #include <poll.h>
@@ -120,32 +120,32 @@ static inline int kclock_gettime_impl(clockid_t clock_id, struct timespec *tp) {
     return clock_gettime(clock_id, tp);
 }
 
-/* Host container path discovery - quarantined in iOS bridge */
-int vfs_discover_persistent_root(char *path, size_t path_len);
-int vfs_discover_cache_root(char *path, size_t path_len);
-int vfs_discover_temp_root(char *path, size_t path_len);
+/* Backing root discovery - realized privately inside IXLandHostAdapter. */
+int backing_root_discover_persistent(char *path, size_t path_len);
+int backing_root_discover_cache(char *path, size_t path_len);
+int backing_root_discover_temp(char *path, size_t path_len);
 
-/* Stat operations - delegated to exported adapter seam */
-#include "IXLandHostAdapter/fs/path_host.h"
+/* Path operations live in the kernel-owned private contract. */
+#include "backing_path.h"
 
-/* Host filesystem operations via direct syscalls */
-int host_open_impl(const char *path, int flags, uint32_t mode);
-int host_close_impl(int fd);
-int host_dup_impl(int fd);
-int host_fstat_impl(int fd, struct linux_stat *statbuf);
-ssize_t host_read_impl(int fd, void *buf, size_t count);
-ssize_t host_write_impl(int fd, const void *buf, size_t count);
-int64_t host_lseek_impl(int fd, int64_t offset, int whence);
-int64_t host_pread_impl(int fd, void *buf, size_t count, int64_t offset);
-int64_t host_pwrite_impl(int fd, const void *buf, size_t count, int64_t offset);
-ssize_t host_readv_impl(int fd, const struct iovec *iov, int iovcnt);
-ssize_t host_writev_impl(int fd, const struct iovec *iov, int iovcnt);
-int host_poll_impl(struct pollfd *fds, nfds_t nfds, int timeout);
-int host_ioctl_impl(int fd, unsigned long request, void *arg);
-int host_truncate_impl(const char *path, int64_t length);
-int host_ftruncate_impl(int fd, int64_t length);
-int host_ensure_directory_impl(const char *path, uint32_t mode);
-int host_fcntl_impl(int fd, int cmd, ...);
+/* Backing filesystem operations via direct syscalls. */
+int backing_open(const char *path, int flags, uint32_t mode);
+int backing_close(int fd);
+int backing_dup(int fd);
+int backing_fstat(int fd, struct linux_stat *statbuf);
+ssize_t backing_read(int fd, void *buf, size_t count);
+ssize_t backing_write(int fd, const void *buf, size_t count);
+int64_t backing_lseek(int fd, int64_t offset, int whence);
+int64_t backing_pread(int fd, void *buf, size_t count, int64_t offset);
+int64_t backing_pwrite(int fd, const void *buf, size_t count, int64_t offset);
+ssize_t backing_readv(int fd, const struct iovec *iov, int iovcnt);
+ssize_t backing_writev(int fd, const struct iovec *iov, int iovcnt);
+int backing_poll(struct pollfd *fds, nfds_t nfds, int timeout);
+int backing_ioctl(int fd, unsigned long request, void *arg);
+int backing_truncate(const char *path, int64_t length);
+int backing_ftruncate(int fd, int64_t length);
+int backing_ensure_directory(const char *path, uint32_t mode);
+int backing_fcntl(int fd, int cmd, ...);
 
 #ifdef __cplusplus
 }

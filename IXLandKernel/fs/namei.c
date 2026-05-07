@@ -17,7 +17,7 @@
 #include <linux/stat.h>
 #include <asm-generic/stat.h>
 
-#include "IXLandHostAdapter/fs/path_host.h"
+#include "internal/private/backing_path.h"
 #include "kernel/cgroup.h"
 
 /* Standard file descriptors - local definitions to avoid Darwin <unistd.h> */
@@ -137,37 +137,37 @@ static int rename_validate_same_route(const char *old_virtual_path, const char *
     return 0;
 }
 
-static int rename_apply_host_operation(const char *old_virtual_path, const char *new_virtual_path,
-                                       const char *old_host_path, const char *new_host_path,
-                                       unsigned int host_flags) {
+static int rename_apply_backing_operation(const char *old_virtual_path, const char *new_virtual_path,
+                                       const char *old_backing_path, const char *new_backing_path,
+                                       unsigned int backing_flags) {
     if (rename_validate_same_route(old_virtual_path, new_virtual_path) != 0) {
         return -1;
     }
 
-    if (host_renameatx_np_impl(AT_FDCWD, old_host_path, AT_FDCWD, new_host_path, host_flags) != 0) {
+    if (backing_rename_with_flags(AT_FDCWD, old_backing_path, AT_FDCWD, new_backing_path, backing_flags) != 0) {
         return -1;
     }
 
     return 0;
 }
 
-static int rename_apply_host_exchange(const char *old_virtual_path, const char *new_virtual_path,
-                                      const char *old_host_path, const char *new_host_path) {
+static int rename_apply_backing_exchange(const char *old_virtual_path, const char *new_virtual_path,
+                                      const char *old_backing_path, const char *new_backing_path) {
     if (rename_validate_same_route(old_virtual_path, new_virtual_path) != 0) {
         return -1;
     }
 
-    if (host_rename_exchange_impl(old_host_path, new_host_path) != 0) {
+    if (backing_rename_exchange(old_backing_path, new_backing_path) != 0) {
         return -1;
     }
 
     return 0;
 }
 
-static int rename_lstat_host_entry(const char *host_path, struct linux_stat *st) {
+static int rename_lstat_backing_entry(const char *backing_path, struct linux_stat *st) {
     int ret;
 
-    ret = host_lstat_impl(host_path, st);
+    ret = backing_lstat(backing_path, st);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -175,10 +175,10 @@ static int rename_lstat_host_entry(const char *host_path, struct linux_stat *st)
     return 0;
 }
 
-static int rename_lstat_optional_host_entry(const char *host_path, struct linux_stat *st, bool *exists) {
+static int rename_lstat_optional_backing_entry(const char *backing_path, struct linux_stat *st, bool *exists) {
     int ret;
 
-    ret = host_lstat_impl(host_path, st);
+    ret = backing_lstat(backing_path, st);
     if (ret == 0) {
         *exists = true;
         return 0;
@@ -192,7 +192,7 @@ static int rename_lstat_optional_host_entry(const char *host_path, struct linux_
 }
 
 static int rename_validate_target_shape(const char *old_virtual_path, const char *new_virtual_path,
-                                        const char *old_host_path, const char *new_host_path,
+                                        const char *old_backing_path, const char *new_backing_path,
                                         unsigned int flags) {
     struct linux_stat old_st;
     struct linux_stat new_st;
@@ -201,10 +201,10 @@ static int rename_validate_target_shape(const char *old_virtual_path, const char
     bool new_is_dir;
     int empty;
 
-    if (rename_lstat_host_entry(old_host_path, &old_st) != 0) {
+    if (rename_lstat_backing_entry(old_backing_path, &old_st) != 0) {
         return -1;
     }
-    if (rename_lstat_optional_host_entry(new_host_path, &new_st, &new_exists) != 0) {
+    if (rename_lstat_optional_backing_entry(new_backing_path, &new_st, &new_exists) != 0) {
         return -1;
     }
 
@@ -235,7 +235,7 @@ static int rename_validate_target_shape(const char *old_virtual_path, const char
         return -1;
     }
     if (old_is_dir && new_is_dir) {
-        empty = host_directory_is_empty_impl(new_host_path);
+        empty = backing_directory_is_empty(new_backing_path);
         if (empty < 0) {
             errno = -empty;
             return -1;
@@ -254,7 +254,7 @@ int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *
     char resolved_new[MAX_PATH];
     char translated_old[MAX_PATH];
     char translated_new[MAX_PATH];
-    unsigned int host_flags = 0;
+    unsigned int backing_flags = 0;
     int ret;
 
     if (oldpath == NULL || newpath == NULL) {
@@ -294,7 +294,7 @@ int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *
     }
 
     if ((flags & AT_RENAME_NOREPLACE) != 0) {
-        host_flags |= RENAME_EXCL;
+        backing_flags |= RENAME_EXCL;
     }
 
     if (rename_validate_target_shape(resolved_old, resolved_new, translated_old, translated_new, flags) != 0) {
@@ -318,7 +318,7 @@ int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *
     }
 
     if ((flags & AT_RENAME_EXCHANGE) != 0) {
-        ret = rename_apply_host_exchange(resolved_old, resolved_new, translated_old, translated_new);
+        ret = rename_apply_backing_exchange(resolved_old, resolved_new, translated_old, translated_new);
         if (ret == 0) {
             fdtable_exchange_paths_impl(resolved_old, resolved_new);
             task_exchange_vma_backing_paths_impl(resolved_old, resolved_new);
@@ -327,7 +327,7 @@ int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *
         return ret;
     }
 
-    ret = rename_apply_host_operation(resolved_old, resolved_new, translated_old, translated_new, host_flags);
+    ret = rename_apply_backing_operation(resolved_old, resolved_new, translated_old, translated_new, backing_flags);
     if (ret == 0) {
         fdtable_rename_path_impl(resolved_old, resolved_new);
         task_rename_vma_backing_path_impl(resolved_old, resolved_new);
@@ -398,7 +398,7 @@ int chdir_impl(const char *path) {
     }
 
     struct linux_stat st;
-    if (host_stat_impl(translated_path, &st) != 0) {
+    if (backing_stat(translated_path, &st) != 0) {
         return -1;
     }
 
@@ -407,7 +407,7 @@ int chdir_impl(const char *path) {
         return -1;
     }
 
-    if (host_access_impl(translated_path, X_OK) != 0) {
+    if (backing_access(translated_path, X_OK) != 0) {
         errno = EACCES;
         return -1;
     }
@@ -564,7 +564,7 @@ int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
         return -1;
     }
 
-    ret = host_mkdir_impl(translated_path, mode);
+    ret = backing_mkdir(translated_path, mode);
     if (ret == 0) {
         vfs_record_created_path(resolved_path, S_IFDIR | mode);
     }
@@ -622,7 +622,7 @@ int unlinkat_impl(int dirfd, const char *pathname, int flags) {
         return -1;
     }
 
-    if (host_lstat_impl(translated_path, &st) != 0) {
+    if (backing_lstat(translated_path, &st) != 0) {
         return -1;
     }
 
@@ -640,7 +640,7 @@ int unlinkat_impl(int dirfd, const char *pathname, int flags) {
         return -1;
     }
 
-    ret = remove_dir ? host_rmdir_impl(translated_path) : host_unlink_impl(translated_path);
+    ret = remove_dir ? backing_rmdir(translated_path) : backing_unlink(translated_path);
     if (ret == 0) {
         fdtable_mark_path_deleted_impl(resolved_path);
         vfs_forget_path_metadata(resolved_path);
@@ -709,9 +709,9 @@ static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const ch
     }
 
     if ((flags & AT_SYMLINK_FOLLOW) != 0) {
-        ret = host_stat_impl(translated_old, &st);
+        ret = backing_stat(translated_old, &st);
     } else {
-        ret = host_lstat_impl(translated_old, &st);
+        ret = backing_lstat(translated_old, &st);
     }
     if (ret != 0) {
         return -1;
@@ -722,7 +722,7 @@ static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const ch
         return -1;
     }
 
-    if (host_lstat_impl(translated_new, &st) == 0) {
+    if (backing_lstat(translated_new, &st) == 0) {
         errno = EEXIST;
         return -1;
     }
@@ -730,7 +730,7 @@ static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const ch
         return -1;
     }
 
-    ret = host_linkat_impl(translated_old, translated_new, (flags & AT_SYMLINK_FOLLOW) != 0);
+    ret = backing_linkat(translated_old, translated_new, (flags & AT_SYMLINK_FOLLOW) != 0);
     if (ret == 0) {
         vfs_link_path_metadata(resolved_old, resolved_new);
     }
@@ -774,7 +774,7 @@ static int symlinkat_impl(const char *target, int newdirfd, const char *linkpath
         return -1;
     }
 
-    if (host_lstat_impl(translated_link, &st) == 0) {
+    if (backing_lstat(translated_link, &st) == 0) {
         errno = EEXIST;
         return -1;
     }
@@ -782,7 +782,7 @@ static int symlinkat_impl(const char *target, int newdirfd, const char *linkpath
         return -1;
     }
 
-    ret = host_symlink_impl(target, translated_link);
+    ret = backing_symlink(target, translated_link);
     if (ret == 0) {
         vfs_record_created_path(resolved_link, S_IFLNK | 0777);
     }
@@ -886,7 +886,7 @@ static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_
     }
 
     struct linux_stat path_stat;
-    if (host_lstat_impl(translated_path, &path_stat) != 0) {
+    if (backing_lstat(translated_path, &path_stat) != 0) {
         return -1;
     }
 
@@ -895,7 +895,7 @@ static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_
         return -1;
     }
 
-    return host_readlink_impl(translated_path, buf, bufsiz);
+    return backing_readlink(translated_path, buf, bufsiz);
 }
 
 ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
@@ -928,7 +928,7 @@ int chroot_impl(const char *path) {
         return -1;
     }
 
-    if (host_stat_impl(translated_path, &st) != 0) {
+    if (backing_stat(translated_path, &st) != 0) {
         return -1;
     }
 
@@ -937,7 +937,7 @@ int chroot_impl(const char *path) {
         return -1;
     }
 
-    if (host_access_impl(translated_path, X_OK) != 0) {
+    if (backing_access(translated_path, X_OK) != 0) {
         errno = EACCES;
         return -1;
     }

@@ -31,8 +31,8 @@ void path_normalize(char *path);
 int path_normalize_with_len(char *path, size_t path_len);
 
 /* Path translation between virtual and host */
-int path_translate(const char *virtual_path, char *host_path, size_t host_path_len);
-int path_reverse_translate(const char *host_path, char *virtual_path, size_t virtual_path_len);
+int path_translate(const char *virtual_path, char *backing_path, size_t backing_path_len);
+int path_reverse_translate(const char *backing_path, char *virtual_path, size_t virtual_path_len);
 int path_virtual_to_ios(const char *vpath, char *ios_path, size_t ios_path_len);
 
 /* Path resolution */

@@ -20,7 +20,7 @@
  * PATH CLASSIFICATION
  * ============================================================================ */
 
-static bool path_is_known_host_absolute_impl(const char *path) {
+static bool path_is_known_backing_absolute_impl(const char *path) {
     if (!path || path[0] != '/') {
         return false;
     }
@@ -50,7 +50,7 @@ path_type_t path_classify(const char *path) {
         return PATH_VIRTUAL_LINUX;
     }
 
-    if (path_is_known_host_absolute_impl(path)) {
+    if (path_is_known_backing_absolute_impl(path)) {
         return PATH_ABSOLUTE_HOST;
     }
 
@@ -158,10 +158,10 @@ int path_normalize_with_len(char *path, size_t path_len) {
  * PATH TRANSLATION (Virtual -> Host)
  * ============================================================================ */
 
-int path_translate(const char *virtual_path, char *host_path, size_t host_path_len) {
+int path_translate(const char *virtual_path, char *backing_path, size_t backing_path_len) {
     int ret;
 
-    if (!virtual_path || !host_path || host_path_len == 0) {
+    if (!virtual_path || !backing_path || backing_path_len == 0) {
         errno = EINVAL;
         return -1;
     }
@@ -169,16 +169,16 @@ int path_translate(const char *virtual_path, char *host_path, size_t host_path_l
     switch (path_classify(virtual_path)) {
     case PATH_OWN_SANDBOX:
     case PATH_ABSOLUTE_HOST:
-        if (strlen(virtual_path) >= host_path_len) {
+        if (strlen(virtual_path) >= backing_path_len) {
             errno = ENAMETOOLONG;
             return -1;
         }
-        strncpy(host_path, virtual_path, host_path_len - 1);
-        host_path[host_path_len - 1] = '\0';
+        strncpy(backing_path, virtual_path, backing_path_len - 1);
+        backing_path[backing_path_len - 1] = '\0';
         return 0;
 
     case PATH_VIRTUAL_LINUX:
-        ret = vfs_translate_path(virtual_path, host_path, host_path_len);
+        ret = vfs_translate_path(virtual_path, backing_path, backing_path_len);
         if (ret != 0) {
             errno = -ret;
             return -1;
@@ -195,15 +195,15 @@ int path_translate(const char *virtual_path, char *host_path, size_t host_path_l
  * REVERSE TRANSLATION (Host -> Virtual)
  * ============================================================================ */
 
-int path_reverse_translate(const char *host_path, char *virtual_path, size_t virtual_path_len) {
+int path_reverse_translate(const char *backing_path, char *virtual_path, size_t virtual_path_len) {
     int ret;
 
-    if (!host_path || !virtual_path || virtual_path_len == 0) {
+    if (!backing_path || !virtual_path || virtual_path_len == 0) {
         errno = EINVAL;
         return -1;
     }
 
-    ret = vfs_reverse_translate(host_path, virtual_path, virtual_path_len);
+    ret = vfs_reverse_translate(backing_path, virtual_path, virtual_path_len);
     if (ret != 0) {
         errno = -ret;
         return -1;

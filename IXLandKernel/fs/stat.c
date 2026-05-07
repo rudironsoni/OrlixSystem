@@ -10,8 +10,8 @@
 #include "vfs.h"
 #include "fdtable.h"
 #include "fs_sync.h"
-#include "IXLandHostAdapter/fs/file_io_host.h"
-#include "IXLandHostAdapter/fs/path_host.h"
+#include "internal/private/backing_io.h"
+#include "internal/private/backing_path.h"
 #include "vfs.h"
 
 #ifndef MAX_PATH
@@ -35,7 +35,7 @@ int stat_impl(const char *pathname, struct linux_stat *statbuf) {
         return 0;
     }
 
-    ret = host_stat_impl(pathname, statbuf);
+    ret = backing_stat(pathname, statbuf);
     if (ret != 0) {
         errno = -ret;
         return -1;
@@ -79,7 +79,7 @@ int fstat_impl(int fd, struct linux_stat *statbuf) {
 
     real_fd = get_real_fd_impl(entry);
     if (real_fd >= 0) {
-        ret = host_fstat_impl(real_fd, statbuf);
+        ret = backing_fstat(real_fd, statbuf);
         if (ret == 0 && get_fd_is_memfd_impl(entry)) {
             statbuf->st_mode = S_IFREG | (statbuf->st_mode & 0777U);
         }
@@ -125,7 +125,7 @@ int lstat_impl(const char *pathname, struct linux_stat *statbuf) {
         return 0;
     }
 
-    ret = host_lstat_impl(pathname, statbuf);
+    ret = backing_lstat(pathname, statbuf);
     if (ret != 0) {
         errno = -ret;
         return -1;

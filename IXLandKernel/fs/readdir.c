@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 #include "fdtable.h"
-#include "IXLandHostAdapter/fs/file_io_host.h"
+#include "internal/private/backing_io.h"
 #include "path.h"
 #include "pty.h"
 #include "vfs.h"
@@ -438,7 +438,7 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
         return ret;
     }
 
-    int dup_fd = host_dup_impl(real_fd);
+    int dup_fd = backing_dup(real_fd);
     if (dup_fd < 0) {
         put_fd_entry_impl(entry);
         return -1;
@@ -447,7 +447,7 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
     DIR *dp = fdopendir(dup_fd);
     if (dp == NULL) {
         int saved_errno = errno;
-        host_close_impl(dup_fd);
+        backing_close(dup_fd);
         put_fd_entry_impl(entry);
         errno = saved_errno;
         return -1;
@@ -467,7 +467,7 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
             if (errno != 0 && written == 0) {
                 int saved_errno = errno;
                 closedir(dp);
-                host_close_impl(dup_fd);
+                backing_close(dup_fd);
                 put_fd_entry_impl(entry);
                 errno = saved_errno;
                 return -1;
@@ -482,7 +482,7 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
         if (aligned_len > count - written) {
             if (written == 0) {
                 closedir(dp);
-                host_close_impl(dup_fd);
+                backing_close(dup_fd);
                 put_fd_entry_impl(entry);
                 errno = EINVAL;
                 return -1;
@@ -507,7 +507,7 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
 
     set_fd_offset_impl(entry, latest_offset);
     closedir(dp);
-    /* closedir closes dup_fd; do NOT call host_close_impl here */
+    /* closedir closes dup_fd; do NOT call backing_close here */
     put_fd_entry_impl(entry);
     return (ssize_t)written;
 }

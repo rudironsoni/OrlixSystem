@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include "IXLandHostAdapter/fs/backing_io_decls.h"
+#include "internal/private/backing_io.h"
 #include "fs/vfs.h"
 
 @interface RootfsBootstrapTests : XCTestCase
@@ -35,9 +35,9 @@
     XCTAssertEqual(ret, 0, @"vfs_translate_path for /etc/passwd should succeed");
 
     /* Verify file is accessible by opening it via host bridge */
-    int fd = host_open_impl(host_path, O_RDONLY, 0);
-    XCTAssertTrue(fd >= 0, @"host_open_impl /etc/passwd via host bridge should succeed");
-    if (fd >= 0) host_close_impl(fd);
+    int fd = backing_open(host_path, O_RDONLY, 0);
+    XCTAssertTrue(fd >= 0, @"backing_open /etc/passwd via host bridge should succeed");
+    if (fd >= 0) backing_close(fd);
 }
 
 - (void)testVirtualEtcGroupExists {
@@ -46,9 +46,9 @@
 
     XCTAssertEqual(ret, 0, @"vfs_translate_path for /etc/group should succeed");
 
-    int fd = host_open_impl(host_path, O_RDONLY, 0);
-    XCTAssertTrue(fd >= 0, @"host_open_impl /etc/group via host bridge should succeed");
-    if (fd >= 0) host_close_impl(fd);
+    int fd = backing_open(host_path, O_RDONLY, 0);
+    XCTAssertTrue(fd >= 0, @"backing_open /etc/group via host bridge should succeed");
+    if (fd >= 0) backing_close(fd);
 }
 
 - (void)testVirtualEtcHostsExists {
@@ -57,9 +57,9 @@
 
     XCTAssertEqual(ret, 0, @"vfs_translate_path for /etc/hosts should succeed");
 
-    int fd = host_open_impl(host_path, O_RDONLY, 0);
-    XCTAssertTrue(fd >= 0, @"host_open_impl /etc/hosts via host bridge should succeed");
-    if (fd >= 0) host_close_impl(fd);
+    int fd = backing_open(host_path, O_RDONLY, 0);
+    XCTAssertTrue(fd >= 0, @"backing_open /etc/hosts via host bridge should succeed");
+    if (fd >= 0) backing_close(fd);
 }
 
 - (void)testVirtualEtcResolvConfExists {
@@ -68,9 +68,9 @@
 
     XCTAssertEqual(ret, 0, @"vfs_translate_path for /etc/resolv.conf should succeed");
 
-    int fd = host_open_impl(host_path, O_RDONLY, 0);
-    XCTAssertTrue(fd >= 0, @"host_open_impl /etc/resolv.conf via host bridge should succeed");
-    if (fd >= 0) host_close_impl(fd);
+    int fd = backing_open(host_path, O_RDONLY, 0);
+    XCTAssertTrue(fd >= 0, @"backing_open /etc/resolv.conf via host bridge should succeed");
+    if (fd >= 0) backing_close(fd);
 }
 
 @end

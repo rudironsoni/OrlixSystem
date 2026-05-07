@@ -8,6 +8,14 @@ This document is the top-level roadmap.
 
 It depends on `01-IXLandKernel_IXLandHostAdapter_Split_Plan.md` as Milestone 0 and does not replace it.
 
+All later milestones inherit the Milestone 0 constraint:
+
+- the structural split landed and the old branded kernel-facing seam was removed from `IXLandKernel`
+- the accepted end-state removed `internal/ios`, removed `IXLandHostAdapter/include`, and moved the active cross-target seam to kernel-owned private declarations
+- remaining Milestone 0 debt is now narrower: `IXLandHostAdapter` still sees broader `IXLandKernel` roots than ideal in `project.yml`, and host-backed runtime primitives still need Linux-shaped behavioral proof rather than assumption
+
+No later milestone may regress back to branded adapter-owned kernel-facing vocabulary or treat a host primitive as correct without Linux-visible proof.
+
 ## Product Goal
 
 Build Linux-oriented packages as native iOS arm64 code, with zero target-package source modifications, while preserving Linux-identical observable behavior at the userspace surface.
@@ -64,12 +72,14 @@ These future backends must be planned for now in the execution architecture, but
 ### IXLandHostAdapter owns
 
 - iOS and Darwin host mechanics only
-- private mediation under `IXLandHostAdapter/internal/ios/**`
+- private mediation under `IXLandHostAdapter/**`
+- no adapter-owned include surface for kernel consumption
 
 ### Repo Integration
 
-- the repository and Xcode project may still be named `IXLandSystem`
+- the main project and Xcode project are now named `IXLandKernel`
 - architectural ownership remains split between `IXLandKernel` and `IXLandHostAdapter`
+- `IXLandSystem` is a retired name and must not be reintroduced as an active owner or product identity
 
 ## Execution Model
 
@@ -133,6 +143,13 @@ Authoritative detail lives in:
 
 This milestone is mandatory before all others.
 
+Its acceptance standard is strict:
+
+- separate targets were necessary but insufficient
+- the old branded kernel-facing seam is now removed from active `IXLandKernel` code
+- the remaining acceptance burden is behavioral: host-backed primitives must still match Linux-visible expectations under simulator proof
+- the end-state remains kernel-owned private contracts, with `IXLandHostAdapter` kept private and narrower in dependency scope over time
+
 ### Milestone 1
 
 Sysroot and build truth
@@ -142,6 +159,7 @@ Goals:
 - make package-facing headers and typedef ownership correct
 - make configure and compile probes reliable
 - enforce UAPI versus kheaders separation
+- keep Milestone 1 from normalizing branded `IXLandHostAdapter` seam vocabulary or adapter-owned headers as package-facing truth
 
 Detailed plan:
 
@@ -156,6 +174,7 @@ Goals:
 - implement native-only execution cleanly
 - preserve future backend extensibility
 - make script execution a first-class feature
+- keep exec-path ownership Linux-first, with host mechanics remaining private and non-authoritative
 
 Detailed plan:
 
@@ -169,6 +188,7 @@ Goals:
 
 - make `zsh` viable
 - make process model, signals, wait, sessions, job control, and PTY semantics Linux-shaped
+- do not resolve shell-critical semantics by preserving branded host-facing contracts as the kernel model
 
 Detailed plan:
 
@@ -182,6 +202,7 @@ Goals:
 
 - make the Linux virtual filesystem environment real enough for shells and package workflows
 - stabilize `/etc`, `/usr`, `/var`, `/tmp`, `/run`, `/proc`, and `/dev`
+- keep host root discovery and backing storage strictly private to `IXLandHostAdapter`
 
 Detailed plan:
 
@@ -194,6 +215,7 @@ Networking for `curl`
 Goals:
 
 - provide sockets, DNS, timeout behavior, and readiness semantics sufficient for `curl`
+- keep host network plumbing private and avoid promoting branded host seam vocabulary or adapter-owned headers into Linux-facing contracts
 
 Detailed plan:
 
@@ -207,6 +229,7 @@ Goals:
 
 - prove the product with real packages instead of unit tests alone
 - use `zsh` as the gating shell proof and `curl` as the gating network proof
+- fail any milestone claim that still depends on branded host vocabulary as part of the kernel-facing story
 
 Detailed plan:
 
@@ -261,9 +284,11 @@ Minimum proof ladder:
 3. No WASM execution dependency in Version 1.
 4. No Darwin leakage into `IXLandKernel`.
 5. No libc-owned typedef reinvention inside `IXLandKernel`.
-6. No shallow stubs presented as completed kernel support.
-7. Real package behavior outranks local convenience.
-8. If Linux userspace behavior breaks, fix IXLand, not the package.
+6. No milestone is complete if the kernel-facing surface still depends on branded host-adapter vocabulary as normal contract surface.
+7. No adapter-owned header surface is accepted as the kernel-facing seam.
+8. No shallow stubs presented as completed kernel support.
+9. Real package behavior outranks local convenience.
+10. If Linux userspace behavior breaks, fix IXLand, not the package.
 
 ## Definition Of Version 1 Success
 

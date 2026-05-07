@@ -53,9 +53,7 @@ struct linux_dirent64 {
 
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
-extern int vfs_discover_persistent_root(char *path, size_t size);
-extern int vfs_discover_cache_root(char *path, size_t size);
-extern int vfs_discover_temp_root(char *path, size_t size);
+#include "internal/private/backing_roots.h"
 extern int stat_impl(const char *path, struct linux_stat *statbuf);
 extern int fstat_impl(int fd, struct linux_stat *statbuf);
 extern int lstat_impl(const char *path, struct linux_stat *statbuf);
@@ -160,7 +158,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
 - (void)testPersistentRootDiscoveryResolves {
     char path[MAX_PATH];
-    int ret = vfs_discover_persistent_root(path, sizeof(path));
+    int ret = backing_root_discover_persistent(path, sizeof(path));
 
     XCTAssertEqual(ret, 0, @"persistent root discovery should succeed");
     XCTAssertTrue(path[0] != '\0', @"persistent root should be non-empty");
@@ -168,7 +166,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
 - (void)testCacheRootDiscoveryResolves {
     char path[MAX_PATH];
-    int ret = vfs_discover_cache_root(path, sizeof(path));
+    int ret = backing_root_discover_cache(path, sizeof(path));
 
     XCTAssertEqual(ret, 0, @"cache root discovery should succeed");
     XCTAssertTrue(path[0] != '\0', @"cache root should be non-empty");
@@ -176,7 +174,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
 - (void)testTempRootDiscoveryResolves {
     char path[MAX_PATH];
-    int ret = vfs_discover_temp_root(path, sizeof(path));
+    int ret = backing_root_discover_temp(path, sizeof(path));
 
     XCTAssertEqual(ret, 0, @"temp root discovery should succeed");
     XCTAssertTrue(path[0] != '\0', @"temp root should be non-empty");
@@ -187,11 +185,11 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     char cache[MAX_PATH];
     char temp[MAX_PATH];
 
-    XCTAssertEqual(vfs_discover_persistent_root(persistent, sizeof(persistent)), 0,
+    XCTAssertEqual(backing_root_discover_persistent(persistent, sizeof(persistent)), 0,
                    @"persistent root discovery should succeed");
-    XCTAssertEqual(vfs_discover_cache_root(cache, sizeof(cache)), 0,
+    XCTAssertEqual(backing_root_discover_cache(cache, sizeof(cache)), 0,
                    @"cache root discovery should succeed");
-    XCTAssertEqual(vfs_discover_temp_root(temp, sizeof(temp)), 0,
+    XCTAssertEqual(backing_root_discover_temp(temp, sizeof(temp)), 0,
                    @"temp root discovery should succeed");
 
     XCTAssertNotEqual(strcmp(persistent, temp), 0,
@@ -355,7 +353,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
     XCTAssertEqual(ret, 0, @"absolute path translation should succeed");
     NSString *result = [NSString stringWithUTF8String:host_path];
-    NSString *expected = [NSString stringWithFormat:@"%s/bin/ls", vfs_host_backing_root()];
+    NSString *expected = [NSString stringWithFormat:@"%s/bin/ls", vfs_primary_backing_root()];
     XCTAssertEqualObjects(result, expected, @"absolute path should resolve from virtual root");
 
     free_fs_struct(fs);
@@ -376,7 +374,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
     XCTAssertEqual(ret, 0, @"relative path translation should succeed");
     NSString *result = [NSString stringWithUTF8String:host_path];
-    NSString *expected = [NSString stringWithFormat:@"%s/etc/passwd", vfs_host_backing_root()];
+    NSString *expected = [NSString stringWithFormat:@"%s/etc/passwd", vfs_primary_backing_root()];
     XCTAssertEqualObjects(result, expected, @"relative path should resolve from virtual pwd");
 
     free_fs_struct(fs);
@@ -397,7 +395,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
     XCTAssertEqual(ret, 0, @"nested relative path translation should succeed");
     NSString *result = [NSString stringWithUTF8String:host_path];
-    NSString *expected = [NSString stringWithFormat:@"%s/usr/local/bin/myapp", vfs_host_backing_root()];
+    NSString *expected = [NSString stringWithFormat:@"%s/usr/local/bin/myapp", vfs_primary_backing_root()];
     XCTAssertEqualObjects(result, expected, @"relative path should resolve correctly from nested pwd");
 
     free_fs_struct(fs);
@@ -434,7 +432,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
     XCTAssertEqual(ret, 0, @"absolute path translation should succeed from non-root task root");
     NSString *result = [NSString stringWithUTF8String:host_path];
-    NSString *expected = [NSString stringWithFormat:@"%s/sandbox/bin/ls", vfs_host_backing_root()];
+    NSString *expected = [NSString stringWithFormat:@"%s/sandbox/bin/ls", vfs_primary_backing_root()];
     XCTAssertEqualObjects(result, expected, @"absolute paths should resolve from task root prefix");
 
     free_fs_struct(fs);
@@ -488,7 +486,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
     XCTAssertEqual(ret, 0, @"vfs_translate_path_at with AT_FDCWD should succeed");
     NSString *result = [NSString stringWithUTF8String:host_path];
-    NSString *expected = [NSString stringWithFormat:@"%s/etc/passwd", vfs_host_backing_root()];
+    NSString *expected = [NSString stringWithFormat:@"%s/etc/passwd", vfs_primary_backing_root()];
     XCTAssertEqualObjects(result, expected, @"AT_FDCWD should resolve from task cwd");
 }
 
@@ -498,7 +496,7 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 
     XCTAssertEqual(ret, 0, @"absolute path should succeed regardless of invalid dirfd");
     NSString *result = [NSString stringWithUTF8String:host_path];
-    NSString *expected = [NSString stringWithFormat:@"%s/bin/ls", vfs_host_backing_root()];
+    NSString *expected = [NSString stringWithFormat:@"%s/bin/ls", vfs_primary_backing_root()];
     XCTAssertEqualObjects(result, expected, @"absolute paths should resolve from task root");
 }
 

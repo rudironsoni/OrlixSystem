@@ -1,5 +1,11 @@
 # Exec, Shebang, And Native Execution Plan
 
+## Status
+
+This milestone builds on the `IXLandKernel` and `IXLandHostAdapter` split.
+
+It assumes the old branded seam is gone, and it must preserve that by keeping exec-facing contracts kernel-owned and behaviorally Linux-shaped under simulator proof.
+
 ## Purpose
 
 Build the Version 1 execution path around native iOS execution only, while preserving a backend-neutral architecture for future ELF and WASM support.
@@ -9,6 +15,9 @@ Build the Version 1 execution path around native iOS execution only, while prese
 1. Implement Linux-shaped `execve` semantics for native IXLand programs.
 2. Make shebang and script execution mandatory and correct.
 3. Keep the execution-image architecture open for future ELF and WASM backends.
+4. Keep host execution mechanics private to `IXLandHostAdapter` and non-authoritative for Linux-visible exec semantics.
+5. Use kernel-owned private contracts if exec needs cross-target declarations.
+6. Treat successful structure as insufficient without Linux-visible runtime proof on the booted simulator.
 
 ## Required Model
 
@@ -45,12 +54,14 @@ Common exec pipeline must handle:
 - Treat script execution as part of the core shell product.
 - Preserve Linux-visible exec semantics even though the actual image is native iOS code.
 - Reserve clear extension points for ELF and WASM.
+- Keep host mediation behind kernel-owned private contracts rather than adapter-owned kernel-facing contracts.
 
 ### Don't
 
 - Do not add ELF loading or emulation in this milestone.
 - Do not bake native-only assumptions into process semantics that will block future backends.
 - Do not fork a separate ad hoc script path outside the main exec pipeline.
+- Do not treat branded `IXLandHostAdapter` vocabulary or adapter-owned headers as the completed Linux-facing exec contract.
 
 ## Proof
 
@@ -58,3 +69,4 @@ Common exec pipeline must handle:
 2. Shebang scripts execute correctly.
 3. Nested interpreter behavior is Linux-shaped within supported scope.
 4. `FD_CLOEXEC`, argv, envp, and signal-reset behavior are covered by `IXLandKernelTests`.
+5. Completion claims for this milestone do not rely on branded host-adapter vocabulary as the normal kernel-facing seam.

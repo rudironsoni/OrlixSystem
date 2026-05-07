@@ -3,6 +3,11 @@ settings:
   base:
     GCC_TREAT_WARNINGS_AS_ERRORS: true
     SWIFT_TREAT_WARNINGS_AS_ERRORS: true
+    # End-state policy:
+    # - IXLandKernel consumes only kernel-owned headers plus vendored Linux truth
+    # - IXLandHostAdapter is private host implementation only
+    # - cross-target declarations must move under IXLandKernel private contract roots
+    # Current IXLandHostAdapter include usage is transitional until the seam refactor lands.
     LINUX_VERSION: '6.12'
     LINUX_ARCH: arm64
     LINUX_VENDOR_ROOT: $(SRCROOT)/third_party/linux
@@ -24,7 +29,6 @@ targets:
         - $(SRCROOT)/IXLandKernel/include
         - $(SRCROOT)/IXLandKernel/internal/private
         - $(LINUX_UAPI_INCLUDE_ROOT)
-        - $(SRCROOT)/IXLandHostAdapter/include
       GCC_PREPROCESSOR_DEFINITIONS:
       - _XOPEN_SOURCE
       CLANG_ENABLE_OBJC_ARC: true
@@ -139,7 +143,6 @@ targets:
       iOS: '16.0'
     settings:
       HEADER_SEARCH_PATHS:
-        - $(SRCROOT)/IXLandHostAdapter/include
         - $(SRCROOT)/IXLandKernel
         - $(SRCROOT)/IXLandKernel/include
         - $(SRCROOT)/IXLandKernel/internal/private
@@ -151,30 +154,30 @@ targets:
       OTHER_CFLAGS:
       - -fvisibility=hidden
     sources:
-    - path: IXLandHostAdapter/internal/ios/fs/backing_io.m
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/backing_io.h
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/errno_host.c
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/open_flags.c
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/path_host.c
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/memfd_host.c
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/backing_paths.m
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/epoll_bridge.c
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/kernel/signal_bridge.c
-      group: IXLandHostAdapter/internal/ios/kernel
-    - path: IXLandHostAdapter/internal/ios/kernel/sync.c
-      group: IXLandHostAdapter/internal/ios/kernel
-    - path: IXLandHostAdapter/internal/ios/kernel/clock.c
-      group: IXLandHostAdapter/internal/ios/kernel
-    - path: IXLandHostAdapter/internal/ios/fs/sync.c
-      group: IXLandHostAdapter/internal/ios/fs
+    - path: IXLandHostAdapter/fs/backing_io.m
+      group: IXLandHostAdapter/fs
+    - path: IXLandHostAdapter/fs/backing_io_internal.h
+      group: IXLandHostAdapter/fs
+    - path: IXLandHostAdapter/fs/errno_translation.c
+      group: IXLandHostAdapter/fs
+    - path: IXLandHostAdapter/fs/open_flags.c
+      group: IXLandHostAdapter/fs
+    - path: IXLandHostAdapter/fs/path.c
+      group: IXLandHostAdapter/fs
+    - path: IXLandHostAdapter/fs/memfd.c
+      group: IXLandHostAdapter/fs
+    - path: IXLandHostAdapter/fs/backing_paths.m
+      group: IXLandHostAdapter/fs
+    - path: IXLandHostAdapter/fs/epoll_mask.c
+      group: IXLandHostAdapter/fs
+    - path: IXLandHostAdapter/kernel/signal.c
+      group: IXLandHostAdapter/kernel
+    - path: IXLandHostAdapter/kernel/sync.c
+      group: IXLandHostAdapter/kernel
+    - path: IXLandHostAdapter/kernel/clock.c
+      group: IXLandHostAdapter/kernel
+    - path: IXLandHostAdapter/fs/sync.c
+      group: IXLandHostAdapter/fs
   IXLandKernelTests:
     type: bundle.unit-test
     platform: iOS
@@ -325,7 +328,6 @@ targets:
       GENERATE_INFOPLIST_FILE: true
       HEADER_SEARCH_PATHS:
         - $(SRCROOT)/IXLandKernel
-        - $(SRCROOT)/IXLandHostAdapter/include
         - $(SRCROOT)/IXLandKernel/include
         - $(SRCROOT)/IXLandKernel/internal/private
       BUNDLE_LOADER: ''
@@ -351,7 +353,6 @@ targets:
       HEADER_SEARCH_PATHS:
         - $(SRCROOT)/IXLandKernel
         - $(SRCROOT)/IXLandHostAdapterTests
-        - $(SRCROOT)/IXLandHostAdapter/include
         - $(SRCROOT)/IXLandKernel/include
         - $(SRCROOT)/IXLandKernel/internal/private
       BUNDLE_LOADER: ''

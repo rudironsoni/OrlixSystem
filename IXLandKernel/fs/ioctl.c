@@ -15,7 +15,7 @@
 
 #include "fdtable.h"
 #include "pty.h"
-#include "IXLandHostAdapter/fs/ioctl_host.h"
+#include "internal/private/backing_ioctl.h"
 #include "fs_sync.h"
 
 int ioctl_impl(int fd, unsigned long request, void *arg) {
@@ -25,7 +25,7 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
     }
 
     if (fd <= 2) {
-        return host_ioctl_impl(fd, request, arg);
+        return backing_ioctl(fd, request, arg);
     }
 
     void *entry = get_fd_entry_impl(fd);
@@ -145,7 +145,7 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
         return -1;
     }
 
-    result = host_ioctl_impl(get_real_fd_impl(entry), request, arg);
+    result = backing_ioctl(get_real_fd_impl(entry), request, arg);
     put_fd_entry_impl(entry);
     return result;
 }

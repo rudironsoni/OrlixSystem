@@ -6,12 +6,11 @@
 #include <linux/fs.h>
 
 #include <errno.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "fdtable.h"
-#include "IXLandHostAdapter/fs/file_io_host.h"
+#include "internal/private/backing_io.h"
 #include "fs_sync.h"
 #include "pipe.h"
 #include "pty.h"
@@ -264,9 +263,9 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
     }
 
     int real_fd = get_real_fd_impl(entry);
-    ssize_t bytes = host_read_impl(real_fd, buf, count);
+    ssize_t bytes = backing_read(real_fd, buf, count);
     if (bytes > 0) {
-        int64_t pos = host_lseek_impl(real_fd, 0, SEEK_CUR);
+        int64_t pos = backing_lseek(real_fd, 0, SEEK_CUR);
         if (pos >= 0) {
             set_fd_offset_impl((fd_entry_t *)entry, pos);
         }
@@ -422,22 +421,37 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
     }
 
     int real_fd = get_real_fd_impl(entry);
-    int64_t current_size = host_lseek_impl(real_fd, 0, SEEK_END);
-    if (current_size < 0) {
-        put_fd_entry_impl(entry);
-        return -1;
-    }
+    if (get_fd_is_memfd_impl(entry)) {
+        struct linux_stat st;
+        int64_t offset = get_fd_offset_impl((fd_entry_t *)entry);
+        int64_t end = offset + (int64_t)count;
 
-    if (get_fd_is_append_impl(entry)) {
-        if (host_lseek_impl(real_fd, 0, SEEK_END) < 0) {
+        if (end < offset) {
+            put_fd_entry_impl(entry);
+            errno = EFBIG;
+            return -1;
+        }
+        if (backing_fstat(real_fd, &st) != 0) {
+            put_fd_entry_impl(entry);
+            errno = EIO;
+            return -1;
+        }
+        if (end > st.st_size && backing_ftruncate(real_fd, end) != 0) {
             put_fd_entry_impl(entry);
             return -1;
         }
     }
 
-    ssize_t bytes = host_write_impl(real_fd, buf, count);
+    if (get_fd_is_append_impl(entry)) {
+        if (backing_lseek(real_fd, 0, SEEK_END) < 0) {
+            put_fd_entry_impl(entry);
+            return -1;
+        }
+    }
+
+    ssize_t bytes = backing_write(real_fd, buf, count);
     if (bytes > 0) {
-        int64_t pos = host_lseek_impl(real_fd, 0, SEEK_CUR);
+        int64_t pos = backing_lseek(real_fd, 0, SEEK_CUR);
         if (pos >= 0) {
             set_fd_offset_impl((fd_entry_t *)entry, pos);
         }
@@ -478,7 +492,7 @@ int64_t lseek_impl(int fd, int64_t offset, int whence) {
         return (int64_t)-1;
     }
 
-    int64_t result = host_lseek_impl(get_real_fd_impl(entry), offset, whence);
+    int64_t result = backing_lseek(get_real_fd_impl(entry), offset, whence);
     if (result >= 0) {
         set_fd_offset_impl((fd_entry_t *)entry, result);
     }
@@ -608,7 +622,7 @@ ssize_t pread_impl(int fd, void *buf, size_t count, int64_t offset) {
         return (ssize_t)to_copy;
     }
 
-    ssize_t bytes = host_pread_impl(get_real_fd_impl(entry), buf, count, offset);
+    ssize_t bytes = backing_pread(get_real_fd_impl(entry), buf, count, offset);
     put_fd_entry_impl(entry);
     return bytes;
 }
@@ -678,7 +692,7 @@ ssize_t pwrite_impl(int fd, const void *buf, size_t count, int64_t offset) {
         return -1;
     }
 
-    ssize_t bytes = host_pwrite_impl(get_real_fd_impl(entry), buf, count, offset);
+    ssize_t bytes = backing_pwrite(get_real_fd_impl(entry), buf, count, offset);
     put_fd_entry_impl(entry);
     return bytes;
 }
@@ -789,7 +803,7 @@ int fallocate_impl(int fd, int mode, int64_t offset, int64_t len) {
         errno = EINVAL;
         return -1;
     }
-    if (host_fstat_impl(real_fd, &st) != 0) {
+    if (backing_fstat(real_fd, &st) != 0) {
         return -1;
     }
 

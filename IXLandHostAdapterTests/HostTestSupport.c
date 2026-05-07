@@ -8,7 +8,7 @@
  */
 
 #include "HostTestSupport.h"
-#include "IXLandHostAdapter/fs/backing_io_decls.h"
+#include "internal/private/backing_io.h"
 
 #include <errno.h>
 #include <sys/types.h>
@@ -69,11 +69,11 @@ int host_test_signal_restore_mask(void) {
  * ============================================================================ */
 
 int host_test_fcntl_dupfd(int fd, int min_fd) {
-    return host_fcntl_impl(fd, F_DUPFD, min_fd);
+    return backing_fcntl(fd, F_DUPFD, min_fd);
 }
 
 int host_test_fcntl_dupfd_cloexec(int fd, int min_fd) {
-    int new_fd = host_fcntl_impl(fd, F_DUPFD_CLOEXEC, min_fd);
+    int new_fd = backing_fcntl(fd, F_DUPFD_CLOEXEC, min_fd);
 
     if (new_fd >= 0) {
         return new_fd;
@@ -83,14 +83,14 @@ int host_test_fcntl_dupfd_cloexec(int fd, int min_fd) {
         return -1;
     }
 
-    new_fd = host_fcntl_impl(fd, F_DUPFD, min_fd);
+    new_fd = backing_fcntl(fd, F_DUPFD, min_fd);
     if (new_fd < 0) {
         return -1;
     }
 
-    if (host_fcntl_impl(new_fd, F_SETFD, FD_CLOEXEC) < 0) {
+    if (backing_fcntl(new_fd, F_SETFD, FD_CLOEXEC) < 0) {
         int saved_errno = errno;
-        host_close_impl(new_fd);
+        backing_close(new_fd);
         errno = saved_errno;
         return -1;
     }
@@ -99,15 +99,15 @@ int host_test_fcntl_dupfd_cloexec(int fd, int min_fd) {
 }
 
 int host_test_fcntl_getfd(int fd) {
-    return host_fcntl_impl(fd, F_GETFD);
+    return backing_fcntl(fd, F_GETFD);
 }
 
 int host_test_fcntl_setfd(int fd, int flags) {
-    return host_fcntl_impl(fd, F_SETFD, flags);
+    return backing_fcntl(fd, F_SETFD, flags);
 }
 
 int host_test_fcntl_getfl(int fd) {
-    return host_fcntl_impl(fd, F_GETFL);
+    return backing_fcntl(fd, F_GETFL);
 }
 
 int host_test_fcntl_has_cloexec(int flags) {

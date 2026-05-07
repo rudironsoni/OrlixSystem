@@ -34,29 +34,32 @@ Linux-owner paths (Linux semantics live here):
 - `IXLandKernel/include/`
 
 Host mediation paths (host mechanics live here only):
-- `IXLandHostAdapter/internal/ios/**`
+- `IXLandHostAdapter/**`
 
 Wrong-direction changes are forbidden:
-- Do not move Linux semantic decisions into `internal/ios/**`.
+- Do not move Linux semantic decisions into `IXLandHostAdapter/**`.
 - Do not move host mechanics into Linux-owner paths.
 - Do not excuse Darwin/iOS leakage in Linux-owner code as an environmental fact.
 - If Darwin/iOS types, headers, macros, constants, process APIs, fd APIs, wait APIs, signal APIs, or filesystem semantics appear in Linux-owner code, treat that as an agent implementation error.
-- Fix such leakage by restoring the architecture boundary: Linux header truth (UAPI + kernel-internal generated headers) in Linux-owner code, private host mediation only under `IXLandHostAdapter/internal/ios/**`.
+- Fix such leakage by restoring the architecture boundary: Linux header truth (UAPI + kernel-internal generated headers) in Linux-owner code, private host mediation only under `IXLandHostAdapter/**`.
 - Never describe Linux-owner files as “not needing Darwin” as if Darwin was a valid option there. Darwin is not a Linux-owner dependency.
 
 ## 3) Narrow Subsystem Seams Only
 
-When Linux-owner code needs host mediation, use narrow, subsystem-owned, private seams under `IXLandHostAdapter/internal/ios/**`.
+When Linux-owner code needs host mediation, use narrow, subsystem-owned, private contracts declared by `IXLandKernel` and implemented under `IXLandHostAdapter/**`.
 
 Allowed seam shape:
 - specific to one subsystem
 - minimal exported surface
 - no ambient host vocabulary leakage
+- kernel-owned declarations, host-owned implementations only
 
 Forbidden seam shape:
 - generic helper bags
 - catch-all mediation headers used by unrelated subsystems
 - abstractions that rename/deodorize host APIs and make them ambient
+- adapter-owned include surfaces consumed by `IXLandKernel`
+- filenames or contract names that encode host role redundantly with `_host`, `_bridge`, `internal/ios`, or similar labels
 
 ## 4) Ambient Host Vocabulary Is Forbidden in Linux-Owner Code
 
@@ -65,6 +68,8 @@ In `IXLandKernel/fs/`, `IXLandKernel/kernel/`, `IXLandKernel/runtime/`, `IXLandK
 - renamed host APIs wrapped as generic helpers
 - generic wrapper families for mutex/thread/cond/signal/io/platform bridging
 - broad mediation headers that encode host assumptions globally
+- any include from `IXLandHostAdapter/**`
+- ambient host vocabulary such as `host_*`, `*_host`, or `*_bridge`
 
 Category rule: banning one prefix and reintroducing the same leakage with a new prefix is still a violation.
 
@@ -74,6 +79,7 @@ Category rule: banning one prefix and reintroducing the same leakage with a new 
 - No branded/public ABI names that encode platform identity.
 - Darwin/BSD header behavior must not define Linux-facing contracts.
 - Keep internal implementation behind private `*_impl()` helpers and preserve clean public wrapper boundaries.
+- Cross-target contract headers are kernel-private only. `IXLandHostAdapter` does not own or export the seam.
 
 ## 6) Test Target Ownership
 
@@ -83,14 +89,14 @@ Rules for LinuxKernel tests:
 - Exercise syscall-facing IXLandKernel functions and Linux-visible runtime behavior.
 - Use C contract files for Linux UAPI constants, macros, structs, and ioctl payloads.
 - Objective-C test files must not include Linux UAPI headers.
-- Do not include `IXLandHostAdapter/internal/ios/**`.
+- Do not include `IXLandHostAdapter/**`.
 - Do not depend on HostBridge helpers or Darwin host behavior as Linux proof.
 - Do not introduce branded helper vocabularies such as `ixland_test_*`, `IX_*`, `TEST_*`, or Linux constant accessor wrappers.
 
 `IXLandHostAdapterTests` proves private iOS host mediation seams only.
 
 Rules for HostBridge tests:
-- May include `IXLandHostAdapter/internal/ios/**` and may use Darwin/Foundation/POSIX host APIs when testing host mechanics.
+- May include `IXLandHostAdapter/**` and may use Darwin/Foundation/POSIX host APIs when testing host mechanics.
 - Must verify bridge contracts such as host path discovery, host errno translation, backing storage setup, security-scoped access, and host fd mediation.
 - Must not be cited as proof that Linux semantics are correct.
 - Must not define Linux-facing ABI, Linux UAPI aliases, or Linux-looking compatibility helpers.
@@ -100,7 +106,7 @@ The test target split is intentional:
 
 ```text
 IXLandKernelTests -> Linux surface proof
-IXLandHostAdapterTests  -> IXLandHostAdapter/internal/ios seam proof
+IXLandHostAdapterTests  -> IXLandHostAdapter seam proof
 ```
 
 HostBridge failures can block a full repo-green milestone, but they do not replace LinuxKernel proof.
@@ -143,7 +149,7 @@ IXLandKernel syscall/runtime ABI
         ↓
 IXLandKernel virtual kernel subsystems
         ↓
-IXLandHostAdapter/internal/ios host mediation
+IXLandHostAdapter host mediation
 ```
 
 Do not vendor mlibc `abis`, `sysdeps`, or `options` into IXLandKernel.
@@ -194,7 +200,8 @@ Required implementation behavior:
 - use vendored generated Linux headers for kernel/userspace contract truth
 - keep libc-owned typedef/API surfaces out of IXLandKernel and in IXLandMLibC
 - model the real virtual-kernel behavior in the owning subsystem
-- make host mediation explicit under `IXLandHostAdapter/internal/ios/**` only
+- keep host mediation inside `IXLandHostAdapter/**` only
+- declare any cross-target contract from `IXLandKernel`, not from `IXLandHostAdapter`
 - prefer deleting a bad shortcut over preserving compatibility with it
 - verify the subsystem through syscall-facing LinuxKernel tests, not internal struct peeking
 - raise the implementation to the product contract before claiming completion
@@ -218,10 +225,13 @@ Forbidden:
 - incident-specific blacklist hacks (single test/helper name grudges)
 - fake completion claims without repo truth and proof logs
 - cosmetic renames that preserve the same architectural violation
+- adapter-owned seam headers consumed by `IXLandKernel`
+- redundant path or filename role labels such as `internal/ios`, `*_host`, and `*_bridge` in the accepted end-state
 
 Required response to lint conflicts:
 - refine seam boundaries
-- relocate host mechanics behind `IXLandHostAdapter/internal/ios/**`
+- relocate host mechanics behind `IXLandHostAdapter/**`
+- move cross-target declarations under kernel-owned private contract headers
 - preserve Linux-owner semantics and contracts
 
 @RTK.md

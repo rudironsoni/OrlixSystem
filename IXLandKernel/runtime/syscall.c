@@ -1566,19 +1566,19 @@ static long syscall_dispatch_inner_impl(long number,
                                           (void *)(uintptr_t)arg2,
                                           (void *)(uintptr_t)arg3));
     case __NR_clock_gettime: {
-        struct timespec host_ts;
+        struct timespec backing_ts;
         struct __kernel_timespec *linux_ts = (struct __kernel_timespec *)(uintptr_t)arg1;
         long ret;
 
         if (!linux_ts) {
             return -EFAULT;
         }
-        ret = syscall_result((long)clock_gettime_impl((clockid_t)arg0, &host_ts));
+        ret = syscall_result((long)clock_gettime_impl((clockid_t)arg0, &backing_ts));
         if (ret < 0) {
             return ret;
         }
-        linux_ts->tv_sec = host_ts.tv_sec;
-        linux_ts->tv_nsec = host_ts.tv_nsec;
+        linux_ts->tv_sec = backing_ts.tv_sec;
+        linux_ts->tv_nsec = backing_ts.tv_nsec;
         return 0;
     }
     case __NR_nanosleep: {
@@ -1614,37 +1614,37 @@ static long syscall_dispatch_inner_impl(long number,
                                        (struct __kernel_timespec *)(uintptr_t)arg3);
     case __NR_gettimeofday: {
         struct __kernel_old_timeval *linux_tv = (struct __kernel_old_timeval *)(uintptr_t)arg0;
-        struct timeval host_tv;
+        struct timeval backing_tv;
         long ret;
 
         if (!linux_tv) {
             return -EFAULT;
         }
-        ret = syscall_result((long)gettimeofday_impl(&host_tv, (void *)(uintptr_t)arg1));
+        ret = syscall_result((long)gettimeofday_impl(&backing_tv, (void *)(uintptr_t)arg1));
         if (ret < 0) {
             return ret;
         }
-        linux_tv->tv_sec = (__kernel_old_time_t)host_tv.tv_sec;
-        linux_tv->tv_usec = (__kernel_suseconds_t)host_tv.tv_usec;
+        linux_tv->tv_sec = (__kernel_old_time_t)backing_tv.tv_sec;
+        linux_tv->tv_usec = (__kernel_suseconds_t)backing_tv.tv_usec;
         return 0;
     }
     case __NR_getitimer: {
         struct __kernel_old_itimerval *linux_value =
             (struct __kernel_old_itimerval *)(uintptr_t)arg1;
-        struct itimerval host_value;
+        struct itimerval backing_value;
         long ret;
 
         if (!linux_value) {
             return -EFAULT;
         }
-        ret = syscall_result((long)interval_timer_get_impl((int)arg0, &host_value));
+        ret = syscall_result((long)interval_timer_get_impl((int)arg0, &backing_value));
         if (ret < 0) {
             return ret;
         }
-        linux_value->it_interval.tv_sec = (__kernel_old_time_t)host_value.it_interval.tv_sec;
-        linux_value->it_interval.tv_usec = (__kernel_suseconds_t)host_value.it_interval.tv_usec;
-        linux_value->it_value.tv_sec = (__kernel_old_time_t)host_value.it_value.tv_sec;
-        linux_value->it_value.tv_usec = (__kernel_suseconds_t)host_value.it_value.tv_usec;
+        linux_value->it_interval.tv_sec = (__kernel_old_time_t)backing_value.it_interval.tv_sec;
+        linux_value->it_interval.tv_usec = (__kernel_suseconds_t)backing_value.it_interval.tv_usec;
+        linux_value->it_value.tv_sec = (__kernel_old_time_t)backing_value.it_value.tv_sec;
+        linux_value->it_value.tv_usec = (__kernel_suseconds_t)backing_value.it_value.tv_usec;
         return 0;
     }
     case __NR_setitimer: {
@@ -1652,28 +1652,28 @@ static long syscall_dispatch_inner_impl(long number,
             (const struct __kernel_old_itimerval *)(uintptr_t)arg1;
         struct __kernel_old_itimerval *linux_old =
             (struct __kernel_old_itimerval *)(uintptr_t)arg2;
-        struct itimerval host_new;
-        struct itimerval host_old;
-        const struct itimerval *host_new_ptr = NULL;
+        struct itimerval backing_new;
+        struct itimerval backing_old;
+        const struct itimerval *backing_new_ptr = NULL;
         long ret;
 
         if (linux_new) {
-            host_new.it_interval.tv_sec = (time_t)linux_new->it_interval.tv_sec;
-            host_new.it_interval.tv_usec = (suseconds_t)linux_new->it_interval.tv_usec;
-            host_new.it_value.tv_sec = (time_t)linux_new->it_value.tv_sec;
-            host_new.it_value.tv_usec = (suseconds_t)linux_new->it_value.tv_usec;
-            host_new_ptr = &host_new;
+            backing_new.it_interval.tv_sec = (time_t)linux_new->it_interval.tv_sec;
+            backing_new.it_interval.tv_usec = (suseconds_t)linux_new->it_interval.tv_usec;
+            backing_new.it_value.tv_sec = (time_t)linux_new->it_value.tv_sec;
+            backing_new.it_value.tv_usec = (suseconds_t)linux_new->it_value.tv_usec;
+            backing_new_ptr = &backing_new;
         }
-        ret = syscall_result((long)interval_timer_set_impl((int)arg0, host_new_ptr,
-                                                           linux_old ? &host_old : NULL));
+        ret = syscall_result((long)interval_timer_set_impl((int)arg0, backing_new_ptr,
+                                                           linux_old ? &backing_old : NULL));
         if (ret < 0) {
             return ret;
         }
         if (linux_old) {
-            linux_old->it_interval.tv_sec = (__kernel_old_time_t)host_old.it_interval.tv_sec;
-            linux_old->it_interval.tv_usec = (__kernel_suseconds_t)host_old.it_interval.tv_usec;
-            linux_old->it_value.tv_sec = (__kernel_old_time_t)host_old.it_value.tv_sec;
-            linux_old->it_value.tv_usec = (__kernel_suseconds_t)host_old.it_value.tv_usec;
+            linux_old->it_interval.tv_sec = (__kernel_old_time_t)backing_old.it_interval.tv_sec;
+            linux_old->it_interval.tv_usec = (__kernel_suseconds_t)backing_old.it_interval.tv_usec;
+            linux_old->it_value.tv_sec = (__kernel_old_time_t)backing_old.it_value.tv_sec;
+            linux_old->it_value.tv_usec = (__kernel_suseconds_t)backing_old.it_value.tv_usec;
         }
         return 0;
     }

@@ -14,8 +14,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include "IXLandHostAdapter/fs/backing_io_decls.h"
-#include "IXLandHostAdapter/fs/path_host.h"
+#include "internal/private/backing_io.h"
+#include "internal/private/backing_path.h"
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "HostTestSupport.h"
@@ -81,8 +81,8 @@ static void vfs_test_remove_linux_path(const char *path) {
     char host_path[MAX_PATH];
     vfs_test_translate_virtual_path_or_fail(path, host_path, sizeof(host_path));
 
-    if (host_unlink_impl(host_path) < 0 && errno != ENOENT) {
-        int dir_ret = host_rmdir_impl(host_path);
+    if (backing_unlink(host_path) < 0 && errno != ENOENT) {
+        int dir_ret = backing_rmdir(host_path);
         XCTAssertTrue(dir_ret == 0 || errno == ENOENT, @"cleanup should tolerate missing path for %s", path);
     }
 }
@@ -103,9 +103,9 @@ static void vfs_test_seed_linux_file(const char *path) {
     }
 
     static const char payload[] = "seed";
-    ssize_t written = host_write_impl(fd, payload, sizeof(payload) - 1);
+    ssize_t written = backing_write(fd, payload, sizeof(payload) - 1);
     XCTAssertEqual(written, (ssize_t)(sizeof(payload) - 1), @"seed write should succeed for %s", path);
-    host_close_impl(fd);
+    backing_close(fd);
 }
 
 @interface VFSPathHostBridgeTests : XCTestCase
@@ -115,22 +115,22 @@ static void vfs_test_seed_linux_file(const char *path) {
 
 - (void)testHostStatMissingPathReturnsLinuxEnoent_HostBacked {
     struct linux_stat st;
-    int ret = host_stat_impl("/definitely/missing/ixland-host-stat", &st);
+    int ret = backing_stat("/definitely/missing/ixland-host-stat", &st);
 
-    XCTAssertEqual(ret, -ENOENT, @"host_stat_impl should return Linux -ENOENT for missing path");
+    XCTAssertEqual(ret, -ENOENT, @"backing_stat should return Linux -ENOENT for missing path");
 }
 
 - (void)testHostLstatMissingPathReturnsLinuxEnoent_HostBacked {
     struct linux_stat st;
-    int ret = host_lstat_impl("/definitely/missing/ixland-host-lstat", &st);
+    int ret = backing_lstat("/definitely/missing/ixland-host-lstat", &st);
 
-    XCTAssertEqual(ret, -ENOENT, @"host_lstat_impl should return Linux -ENOENT for missing path");
+    XCTAssertEqual(ret, -ENOENT, @"backing_lstat should return Linux -ENOENT for missing path");
 }
 
 - (void)testHostAccessMissingPathReturnsLinuxEnoent_HostBacked {
-    int ret = host_access_impl("/definitely/missing/ixland-host-access", F_OK);
+    int ret = backing_access("/definitely/missing/ixland-host-access", F_OK);
 
-    XCTAssertEqual(ret, -ENOENT, @"host_access_impl should return Linux -ENOENT for missing path");
+    XCTAssertEqual(ret, -ENOENT, @"backing_access should return Linux -ENOENT for missing path");
 }
 
 - (void)testVirtualEtcPasswdExists_HostBacked {
@@ -140,14 +140,14 @@ static void vfs_test_seed_linux_file(const char *path) {
 
     int fd = vfs_test_open_host_path(host_path, O_RDONLY, 0);
     XCTAssertTrue(fd >= 0, @"host open /etc/passwd should succeed");
-    if (fd >= 0) host_close_impl(fd);
+    if (fd >= 0) backing_close(fd);
 }
 
 - (void)testHostFstatReturnsLinuxEbadfForInvalidFd_HostBacked {
     struct linux_stat st;
-    int ret = host_fstat_impl(-1, &st);
+    int ret = backing_fstat(-1, &st);
 
-    XCTAssertEqual(ret, -EBADF, @"host_fstat_impl should return Linux -EBADF for invalid fd");
+    XCTAssertEqual(ret, -EBADF, @"backing_fstat should return Linux -EBADF for invalid fd");
 }
 
 - (void)testHostFstatReturnsLinuxEfaultForNullStatbuf_HostBacked {
@@ -164,10 +164,10 @@ static void vfs_test_seed_linux_file(const char *path) {
         return;
     }
 
-    ret = host_fstat_impl(fd, NULL);
-    XCTAssertEqual(ret, -EFAULT, @"host_fstat_impl should return Linux -EFAULT for NULL stat buffer");
+    ret = backing_fstat(fd, NULL);
+    XCTAssertEqual(ret, -EFAULT, @"backing_fstat should return Linux -EFAULT for NULL stat buffer");
 
-    host_close_impl(fd);
+    backing_close(fd);
 }
 
 - (void)testHostFstatTranslatesHostStatForValidFd_HostBacked {
@@ -185,12 +185,12 @@ static void vfs_test_seed_linux_file(const char *path) {
         return;
     }
 
-    ret = host_fstat_impl(fd, &st);
-    XCTAssertEqual(ret, 0, @"host_fstat_impl should succeed for valid host fd");
-    XCTAssertTrue(st.st_mode != 0, @"host_fstat_impl should populate mode");
-    XCTAssertTrue(st.st_nlink > 0, @"host_fstat_impl should populate link count");
+    ret = backing_fstat(fd, &st);
+    XCTAssertEqual(ret, 0, @"backing_fstat should succeed for valid host fd");
+    XCTAssertTrue(st.st_mode != 0, @"backing_fstat should populate mode");
+    XCTAssertTrue(st.st_nlink > 0, @"backing_fstat should populate link count");
 
-    host_close_impl(fd);
+    backing_close(fd);
 }
 
 - (void)testVfsTranslatePathAtRelativePathUsesDirfd_HostBacked {
@@ -211,11 +211,11 @@ static void vfs_test_seed_linux_file(const char *path) {
     dirfd = alloc_fd_impl();
     XCTAssertTrue(dirfd >= 0, @"dirfd allocation should succeed");
     if (dirfd < 0) {
-        host_close_impl(real_fd);
+        backing_close(real_fd);
         return;
     }
 
-    init_host_dirfd_entry_impl(dirfd, real_fd, 0755, "/tmp/translate-dirfd");
+    init_backing_dirfd_entry_impl(dirfd, real_fd, 0755, "/tmp/translate-dirfd");
 
     XCTAssertEqual(vfs_translate_path_at(dirfd, "file", host_path, sizeof(host_path)), 0,
                    @"relative path should resolve from dirfd");
@@ -431,15 +431,15 @@ static void vfs_test_seed_linux_file(const char *path) {
     int new_fd = host_test_fcntl_dupfd_cloexec(fd, 10);
     XCTAssertTrue(new_fd >= 0, @"host dupfd_cloexec should succeed");
     if (new_fd < 0) {
-        host_close_impl(fd);
+        backing_close(fd);
         return;
     }
 
     int flags = host_test_fcntl_getfd(new_fd);
     XCTAssertTrue((flags & FD_CLOEXEC) != 0, @"duped fd should have FD_CLOEXEC");
 
-    host_close_impl(fd);
-    host_close_impl(new_fd);
+    backing_close(fd);
+    backing_close(new_fd);
 }
 
 
@@ -456,20 +456,20 @@ static void vfs_test_seed_linux_file(const char *path) {
     if (fd < 0) return;
 
     const char *write_data = "test data";
-    ssize_t written = host_write_impl(fd, write_data, strlen(write_data));
+    ssize_t written = backing_write(fd, write_data, strlen(write_data));
     XCTAssertEqual(written, (ssize_t)strlen(write_data), @"write should succeed");
 
-    off_t pos = host_lseek_impl(fd, 0, SEEK_SET);
+    off_t pos = backing_lseek(fd, 0, SEEK_SET);
     XCTAssertEqual(pos, 0, @"seek should succeed");
 
     char read_buf[64] = {0};
-    ssize_t nread = host_read_impl(fd, read_buf, sizeof(read_buf));
+    ssize_t nread = backing_read(fd, read_buf, sizeof(read_buf));
     XCTAssertEqual(nread, (ssize_t)strlen(write_data), @"read should return written amount");
     XCTAssertEqual(memcmp(read_buf, write_data, strlen(write_data)), 0,
                     @"read data should match written data");
 
-    host_close_impl(fd);
-    host_unlink_impl(host_path);
+    backing_close(fd);
+    backing_unlink(host_path);
 }
 
 - (void)testPersistentDirectoryCreation_HostBacked {
@@ -480,14 +480,14 @@ static void vfs_test_seed_linux_file(const char *path) {
                    @"directory path should translate");
     vfs_test_ensure_virtual_parent_directory(test_dir);
 
-    int ret = host_mkdir_impl(host_path, 0755);
+    int ret = backing_mkdir(host_path, 0755);
     XCTAssertTrue(ret == 0 || errno == EEXIST, @"directory creation should succeed");
 
     struct linux_stat st;
     XCTAssertEqual(stat_impl(test_dir, &st), 0, @"stat should succeed for created directory");
     XCTAssertTrue((st.st_mode & S_IFMT) == S_IFDIR, @"created path should be a directory");
 
-    host_rmdir_impl(host_path);
+    backing_rmdir(host_path);
 }
 
 - (void)testPersistentSymbolicLink_HostBacked {
@@ -499,16 +499,16 @@ static void vfs_test_seed_linux_file(const char *path) {
                    @"link path should translate");
     vfs_test_ensure_virtual_parent_directory(link_path);
 
-    host_unlink_impl(host_link);
+    backing_unlink(host_link);
 
-    int ret = host_symlink_impl(target, host_link);
+    int ret = backing_symlink(target, host_link);
     XCTAssertEqual(ret, 0, @"symlink creation should succeed");
 
     struct linux_stat st;
     XCTAssertEqual(lstat_impl(link_path, &st), 0, @"lstat should succeed for symlink");
     XCTAssertTrue((st.st_mode & S_IFMT) == S_IFLNK, @"created path should be a symlink");
 
-    host_unlink_impl(host_link);
+    backing_unlink(host_link);
 }
 
 @end

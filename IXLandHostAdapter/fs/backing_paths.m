@@ -1,5 +1,5 @@
-/* IXLandKernel/internal/ios/fs/backing_paths.m
- * iOS container path resolution - quarantined in private bridge
+/* IXLandHostAdapter/fs/backing_paths.m
+ * iOS container path resolution for backing roots
  *
  * This file uses Foundation APIs to query iOS container paths.
  * It is the only file in the VFS subsystem that includes Darwin/Foundation headers.
@@ -14,12 +14,12 @@
 #define MAX_PATH 4096
 
 /* Forward declarations for C interop */
-int host_get_application_support_path_impl(char *path, size_t path_len);
-int host_get_caches_path_impl(char *path, size_t path_len);
-int host_get_tmp_path_impl(char *path, size_t path_len);
-int host_ensure_directory_impl(const char *path, uint32_t mode);
+int application_support_path(char *path, size_t path_len);
+int caches_path(char *path, size_t path_len);
+int temporary_path(char *path, size_t path_len);
+int backing_ensure_directory(const char *path, uint32_t mode);
 
-int host_get_application_support_path_impl(char *path, size_t path_len) {
+int application_support_path(char *path, size_t path_len) {
     @autoreleasepool {
         NSURL *url = [[NSFileManager defaultManager]
                       URLForDirectory:NSApplicationSupportDirectory
@@ -42,7 +42,7 @@ int host_get_application_support_path_impl(char *path, size_t path_len) {
     }
 }
 
-int host_get_caches_path_impl(char *path, size_t path_len) {
+int caches_path(char *path, size_t path_len) {
     @autoreleasepool {
         NSURL *url = [[NSFileManager defaultManager]
                       URLForDirectory:NSCachesDirectory
@@ -65,7 +65,7 @@ int host_get_caches_path_impl(char *path, size_t path_len) {
     }
 }
 
-int host_get_tmp_path_impl(char *path, size_t path_len) {
+int temporary_path(char *path, size_t path_len) {
     @autoreleasepool {
         NSString *tmp = NSTemporaryDirectory();
         if (!tmp) {
@@ -125,19 +125,19 @@ static int ensure_dir_recursive(const char *path, uint32_t mode) {
     return 0;
 }
 
-int host_ensure_directory_impl(const char *path, uint32_t mode) {
+int backing_ensure_directory(const char *path, uint32_t mode) {
     return ensure_dir_recursive(path, mode);
 }
 
-/* VFS root discovery - thin wrappers around existing host path discovery */
-int vfs_discover_persistent_root(char *path, size_t path_len) {
-    return host_get_application_support_path_impl(path, path_len);
+/* VFS root discovery - thin wrappers around backing path discovery. */
+int backing_root_discover_persistent(char *path, size_t path_len) {
+    return application_support_path(path, path_len);
 }
 
-int vfs_discover_cache_root(char *path, size_t path_len) {
-    return host_get_caches_path_impl(path, path_len);
+int backing_root_discover_cache(char *path, size_t path_len) {
+    return caches_path(path, path_len);
 }
 
-int vfs_discover_temp_root(char *path, size_t path_len) {
-    return host_get_tmp_path_impl(path, path_len);
+int backing_root_discover_temp(char *path, size_t path_len) {
+    return temporary_path(path, path_len);
 }
