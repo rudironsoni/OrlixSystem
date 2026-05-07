@@ -139,6 +139,7 @@ targets:
       iOS: '16.0'
     settings:
       HEADER_SEARCH_PATHS:
+        - $(SRCROOT)/IXLandHostAdapter/include
         - $(SRCROOT)/IXLandKernel
         - $(SRCROOT)/IXLandKernel/include
         - $(SRCROOT)/IXLandKernel/internal/private
@@ -160,11 +161,7 @@ targets:
       group: IXLandHostAdapter/internal/ios/fs
     - path: IXLandHostAdapter/internal/ios/fs/path_host.c
       group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/path_host.h
-      group: IXLandHostAdapter/internal/ios/fs
     - path: IXLandHostAdapter/internal/ios/fs/memfd_host.c
-      group: IXLandHostAdapter/internal/ios/fs
-    - path: IXLandHostAdapter/internal/ios/fs/memfd_host.h
       group: IXLandHostAdapter/internal/ios/fs
     - path: IXLandHostAdapter/internal/ios/fs/backing_paths.m
       group: IXLandHostAdapter/internal/ios/fs

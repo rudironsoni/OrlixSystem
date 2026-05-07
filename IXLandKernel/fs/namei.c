@@ -2,7 +2,7 @@
  * Linux-shaped path operations
  *
  * This file contains only Linux-owner logic. All host operations
- * are delegated through narrow seams in internal/ios/fs/path_host.h
+ * are delegated through the exported IXLandHostAdapter fs seam.
  */
 
 #include <errno.h>

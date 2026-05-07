@@ -7,7 +7,6 @@
 #include <string.h>
 
 #include "epoll_bridge.h"
-#include "backing_io_decls.h"
 
 typedef struct epoll_sigmask_state_internal {
     sigset_t oldmask;

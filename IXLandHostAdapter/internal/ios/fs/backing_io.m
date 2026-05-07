@@ -37,11 +37,11 @@ extern int host_translate_open_flags_impl(int flags,
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
-int host_open_impl(const char *path, int flags, mode_t mode) {
+int host_open_impl(const char *path, int flags, uint32_t mode) {
     int host_flags = host_translate_open_flags_impl(flags, O_RDONLY, O_WRONLY, O_RDWR,
                                                     O_CREAT, O_EXCL, O_TRUNC, O_APPEND,
                                                     O_NONBLOCK, O_DIRECTORY, O_NOFOLLOW);
-    int ret = syscall(SYS_open_nocancel, path, host_flags, mode);
+    int ret = syscall(SYS_open_nocancel, path, host_flags, (mode_t)mode);
     if (ret < 0) {
         int host_errno = errno;
         errno = host_errno;
@@ -130,8 +130,8 @@ ssize_t host_write_impl(int fd, const void *buf, size_t count) {
     return ret;
 }
 
-off_t host_lseek_impl(int fd, off_t offset, int whence) {
-    off_t ret = syscall(SYS_lseek, fd, offset, whence);
+int64_t host_lseek_impl(int fd, int64_t offset, int whence) {
+    off_t ret = syscall(SYS_lseek, fd, (off_t)offset, whence);
     if (ret < 0) {
         int host_errno = errno;
         errno = host_errno;
@@ -140,8 +140,8 @@ off_t host_lseek_impl(int fd, off_t offset, int whence) {
     return ret;
 }
 
-ssize_t host_pread_impl(int fd, void *buf, size_t count, off_t offset) {
-    ssize_t ret = syscall(SYS_pread_nocancel, fd, buf, count, offset);
+int64_t host_pread_impl(int fd, void *buf, size_t count, int64_t offset) {
+    ssize_t ret = syscall(SYS_pread_nocancel, fd, buf, count, (off_t)offset);
     if (ret < 0) {
         int host_errno = errno;
         if (host_errno == ENOTSUP) {
@@ -149,7 +149,7 @@ ssize_t host_pread_impl(int fd, void *buf, size_t count, off_t offset) {
             if (original < 0) {
                 return -1;
             }
-            if (syscall(SYS_lseek, fd, offset, SEEK_SET) < 0) {
+            if (syscall(SYS_lseek, fd, (off_t)offset, SEEK_SET) < 0) {
                 return -1;
             }
             ret = syscall(SYS_read_nocancel, fd, buf, count);
@@ -169,8 +169,8 @@ ssize_t host_pread_impl(int fd, void *buf, size_t count, off_t offset) {
     return ret;
 }
 
-ssize_t host_pwrite_impl(int fd, const void *buf, size_t count, off_t offset) {
-    ssize_t ret = syscall(SYS_pwrite_nocancel, fd, buf, count, offset);
+int64_t host_pwrite_impl(int fd, const void *buf, size_t count, int64_t offset) {
+    ssize_t ret = syscall(SYS_pwrite_nocancel, fd, buf, count, (off_t)offset);
     if (ret < 0) {
         int host_errno = errno;
         if (host_errno == ENOTSUP) {
@@ -178,7 +178,7 @@ ssize_t host_pwrite_impl(int fd, const void *buf, size_t count, off_t offset) {
             if (original < 0) {
                 return -1;
             }
-            if (syscall(SYS_lseek, fd, offset, SEEK_SET) < 0) {
+            if (syscall(SYS_lseek, fd, (off_t)offset, SEEK_SET) < 0) {
                 return -1;
             }
             ret = syscall(SYS_write_nocancel, fd, buf, count);
@@ -238,8 +238,8 @@ int host_ioctl_impl(int fd, unsigned long request, void *arg) {
     return ret;
 }
 
-int host_truncate_impl(const char *path, off_t length) {
-    int ret = syscall(SYS_truncate, path, length);
+int host_truncate_impl(const char *path, int64_t length) {
+    int ret = syscall(SYS_truncate, path, (off_t)length);
     if (ret < 0) {
         int host_errno = errno;
         errno = host_errno;
@@ -248,8 +248,8 @@ int host_truncate_impl(const char *path, off_t length) {
     return ret;
 }
 
-int host_ftruncate_impl(int fd, off_t length) {
-    int ret = syscall(SYS_ftruncate, fd, length);
+int host_ftruncate_impl(int fd, int64_t length) {
+    int ret = syscall(SYS_ftruncate, fd, (off_t)length);
     if (ret < 0) {
         int host_errno = errno;
         errno = host_errno;

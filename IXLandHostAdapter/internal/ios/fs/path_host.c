@@ -9,7 +9,7 @@
 /* Include shared stat type definition */
 #include "fs/stat_types.h"
 
-#include "path_host.h"
+#include "IXLandHostAdapter/fs/path_host.h"
 
 /* Darwin headers - these define S_IFMT, S_ISDIR, etc. which are compatible
  * with Linux ABI values, so we use them directly in bridge code */

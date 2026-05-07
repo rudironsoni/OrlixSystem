@@ -23,9 +23,6 @@
 extern int ftruncate_impl(int fd, linux_off_t length);
 extern int fdatasync_impl(int fd);
 
-/* Linux-owner type for file offsets (matches __kernel_off_t) */
-typedef long long linux_off_t;
-
 ssize_t read_impl(int fd, void *buf, size_t count) {
     if (count == 0) {
         return 0;

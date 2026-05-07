@@ -17,7 +17,7 @@
 int host_get_application_support_path_impl(char *path, size_t path_len);
 int host_get_caches_path_impl(char *path, size_t path_len);
 int host_get_tmp_path_impl(char *path, size_t path_len);
-int host_ensure_directory_impl(const char *path, mode_t mode);
+int host_ensure_directory_impl(const char *path, uint32_t mode);
 
 int host_get_application_support_path_impl(char *path, size_t path_len) {
     @autoreleasepool {
@@ -83,7 +83,7 @@ int host_get_tmp_path_impl(char *path, size_t path_len) {
     }
 }
 
-static int ensure_dir_recursive(const char *path, mode_t mode) {
+static int ensure_dir_recursive(const char *path, uint32_t mode) {
     struct stat st;
     if (stat(path, &st) == 0) {
         if (S_ISDIR(st.st_mode)) {
@@ -117,7 +117,7 @@ static int ensure_dir_recursive(const char *path, mode_t mode) {
     /* Create this directory */
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    int ret = syscall(SYS_mkdir, path, mode);
+    int ret = syscall(SYS_mkdir, path, (mode_t)mode);
 #pragma clang diagnostic pop
     if (ret < 0 && errno != EEXIST) {
         return -1;
@@ -125,7 +125,7 @@ static int ensure_dir_recursive(const char *path, mode_t mode) {
     return 0;
 }
 
-int host_ensure_directory_impl(const char *path, mode_t mode) {
+int host_ensure_directory_impl(const char *path, uint32_t mode) {
     return ensure_dir_recursive(path, mode);
 }
 

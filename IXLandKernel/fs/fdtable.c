@@ -367,7 +367,7 @@ typedef struct fd_description {
     enum fd_type type;
     int fd;
     int flags;
-    linux_mode_t mode;
+    uint32_t mode;
     off_t offset;
     char path[MAX_PATH];
     uint64_t file_identity;
@@ -452,7 +452,7 @@ static bool fdtable_any_task_uses_fd(int fd) {
     return used;
 }
 
-static void fdtable_update_file_offsets_for_desc(fd_description_t *desc, linux_off_t offset) {
+static void fdtable_update_file_offsets_for_desc(fd_description_t *desc, int64_t offset) {
     if (!desc) {
         return;
     }
@@ -550,7 +550,7 @@ static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
     file->real_fd = new_desc ? new_desc->fd : -1;
     file->flags = new_desc ? (unsigned int)new_desc->flags : 0;
     file->fd_flags = entry ? (unsigned int)entry->fd_flags : 0;
-    file->pos = new_desc ? (linux_off_t)new_desc->offset : 0;
+        file->pos = new_desc ? (int64_t)new_desc->offset : 0;
     if (new_desc) {
         strncpy(file->path, new_desc->path, sizeof(file->path) - 1);
         file->path[sizeof(file->path) - 1] = '\0';
@@ -577,7 +577,7 @@ static void fdtable_remove_task_file(int fd) {
     }
 }
 
-static fd_description_t *alloc_fd_description(int real_fd, int flags, linux_mode_t mode, const char *path) {
+static fd_description_t *alloc_fd_description(int real_fd, int flags, uint32_t mode, const char *path) {
     fd_description_t *desc = calloc(1, sizeof(fd_description_t));
     if (!desc) {
         errno = ENOMEM;
@@ -618,7 +618,7 @@ static fd_description_t *alloc_fd_description(int real_fd, int flags, linux_mode
     return desc;
 }
 
-static fd_description_t *alloc_fd_description_with_identity(int real_fd, int flags, linux_mode_t mode,
+static fd_description_t *alloc_fd_description_with_identity(int real_fd, int flags, uint32_t mode,
                                                             const char *path,
                                                             uint64_t file_identity) {
     fd_description_t *desc = alloc_fd_description(real_fd, flags, mode, path);
@@ -628,7 +628,7 @@ static fd_description_t *alloc_fd_description_with_identity(int real_fd, int fla
     return desc;
 }
 
-static fd_description_t *alloc_synthetic_subdir_fd_description(int flags, linux_mode_t mode, const char *path, synthetic_dir_class_t dir_class) {
+static fd_description_t *alloc_synthetic_subdir_fd_description(int flags, uint32_t mode, const char *path, synthetic_dir_class_t dir_class) {
     fd_description_t *desc = calloc(1, sizeof(fd_description_t));
     if (!desc) {
         errno = ENOMEM;
@@ -664,7 +664,7 @@ static fd_description_t *alloc_synthetic_subdir_fd_description(int flags, linux_
     return desc;
 }
 
-static fd_description_t *alloc_synthetic_dev_fd_description(int flags, linux_mode_t mode, const char *path, synthetic_dev_node_t dev_node) {
+static fd_description_t *alloc_synthetic_dev_fd_description(int flags, uint32_t mode, const char *path, synthetic_dev_node_t dev_node) {
     fd_description_t *desc = calloc(1, sizeof(fd_description_t));
     if (!desc) {
         errno = ENOMEM;
@@ -694,7 +694,7 @@ static fd_description_t *alloc_synthetic_dev_fd_description(int flags, linux_mod
     return desc;
 }
 
-static fd_description_t *alloc_synthetic_proc_file_fd_description(int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file) {
+static fd_description_t *alloc_synthetic_proc_file_fd_description(int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file) {
     fd_description_t *desc = calloc(1, sizeof(fd_description_t));
     if (!desc) {
         errno = ENOMEM;
@@ -725,7 +725,7 @@ static fd_description_t *alloc_synthetic_proc_file_fd_description(int flags, lin
     return desc;
 }
 
-static fd_description_t *alloc_synthetic_pty_fd_description(int flags, linux_mode_t mode, const char *path,
+static fd_description_t *alloc_synthetic_pty_fd_description(int flags, uint32_t mode, const char *path,
                                                              unsigned int pty_index, bool is_master) {
     fd_description_t *desc = calloc(1, sizeof(fd_description_t));
     if (!desc) {
@@ -1408,10 +1408,10 @@ void set_fd_descriptor_flags_impl(fd_entry_t *entry, int flags) {
     }
 }
 
-off_t get_fd_offset_impl(fd_entry_t *entry) {
+int64_t get_fd_offset_impl(fd_entry_t *entry) {
     if (entry && entry->task_local) {
         struct task_struct *task = get_current();
-        linux_off_t pos = -1;
+        int64_t pos = -1;
         if (task && task->files && entry->task_fd >= 0 &&
             (size_t)entry->task_fd < task->files->max_fds) {
             fs_mutex_lock(&task->files->lock);
@@ -1425,7 +1425,7 @@ off_t get_fd_offset_impl(fd_entry_t *entry) {
     return (entry && entry->desc) ? entry->desc->offset : -1;
 }
 
-void set_fd_offset_impl(fd_entry_t *entry, off_t offset) {
+void set_fd_offset_impl(fd_entry_t *entry, int64_t offset) {
     if (entry && entry->desc) {
         entry->desc->offset = offset;
         if (entry->task_local) {
@@ -1456,11 +1456,11 @@ bool get_fd_is_writable_impl(void *entry) {
     return flags == O_WRONLY || flags == O_RDWR;
 }
 
-void init_fd_entry_impl(int fd, int real_fd, int flags, linux_mode_t mode, const char *path) {
+void init_fd_entry_impl(int fd, int real_fd, int flags, uint32_t mode, const char *path) {
     init_fd_entry_with_identity_impl(fd, real_fd, flags, mode, path, 0);
 }
 
-void init_fd_entry_with_identity_impl(int fd, int real_fd, int flags, linux_mode_t mode,
+void init_fd_entry_with_identity_impl(int fd, int real_fd, int flags, uint32_t mode,
                                       const char *path, uint64_t file_identity) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
@@ -1471,7 +1471,7 @@ void init_fd_entry_with_identity_impl(int fd, int real_fd, int flags, linux_mode
     fs_mutex_unlock(&entry->lock);
 }
 
-void init_host_dirfd_entry_impl(int fd, int real_fd, linux_mode_t mode, const char *path) {
+void init_host_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const char *path) {
     init_fd_entry_impl(fd, real_fd, O_RDONLY | O_DIRECTORY, mode, path);
 }
 
@@ -1528,7 +1528,7 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
         new_file->real_fd = old_file->real_fd;
         new_file->flags = old_file->flags;
         new_file->fd_flags = cloexec ? FD_CLOEXEC : 0;
-        new_file->pos = (linux_off_t)desc->offset;
+        new_file->pos = (int64_t)desc->offset;
         memcpy(new_file->path, old_file->path, sizeof(new_file->path));
         new_file->private_data = desc;
         task->files->fd[newfd] = new_file;
@@ -1645,7 +1645,7 @@ int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flag
     new_file->real_fd = source_file->real_fd;
     new_file->flags = source_file->flags;
     new_file->fd_flags = FD_CLOEXEC;
-    new_file->pos = (linux_off_t)desc->offset;
+        new_file->pos = (int64_t)desc->offset;
     memcpy(new_file->path, source_file->path, sizeof(new_file->path));
     new_file->private_data = desc;
     dest_files->fd[newfd] = new_file;
@@ -1701,7 +1701,7 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
         new_file->real_fd = old_file->real_fd;
         new_file->flags = old_file->flags;
         new_file->fd_flags = cloexec ? FD_CLOEXEC : 0;
-        new_file->pos = (linux_off_t)old_desc->offset;
+        new_file->pos = (int64_t)old_desc->offset;
         memcpy(new_file->path, old_file->path, sizeof(new_file->path));
         new_file->private_data = old_desc;
         replaced_file = task->files->fd[newfd];
@@ -1858,7 +1858,7 @@ int close_on_exec_impl(void) {
     return closed;
 }
 
-void init_synthetic_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path) {
+void init_synthetic_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -1868,7 +1868,7 @@ void init_synthetic_fd_entry_impl(int fd, int flags, linux_mode_t mode, const ch
     fs_mutex_unlock(&entry->lock);
 }
 
-void init_synthetic_dev_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_dev_node_t dev_node) {
+void init_synthetic_dev_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_dev_node_t dev_node) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -1878,7 +1878,7 @@ void init_synthetic_dev_fd_entry_impl(int fd, int flags, linux_mode_t mode, cons
     fs_mutex_unlock(&entry->lock);
 }
 
-void init_synthetic_pty_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path,
+void init_synthetic_pty_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path,
                                       unsigned int pty_index, bool is_master) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
@@ -2560,7 +2560,7 @@ int memfd_add_seals_entry_impl(void *entry, int seals) {
     return 0;
 }
 
-int memfd_write_allowed_entry_impl(void *entry, linux_off_t offset, size_t count) {
+int memfd_write_allowed_entry_impl(void *entry, int64_t offset, size_t count) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     fd_description_t *desc;
     (void)offset;
@@ -2580,7 +2580,7 @@ int memfd_write_allowed_entry_impl(void *entry, linux_off_t offset, size_t count
     return 0;
 }
 
-int memfd_truncate_allowed_entry_impl(void *entry, linux_off_t length) {
+int memfd_truncate_allowed_entry_impl(void *entry, int64_t length) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
     fd_description_t *desc;
     struct linux_stat st;
@@ -2595,12 +2595,12 @@ int memfd_truncate_allowed_entry_impl(void *entry, linux_off_t length) {
 
     desc = fd_entry->desc;
     fs_mutex_lock(&desc->lock);
-    if ((desc->memfd_seals & F_SEAL_GROW) != 0 && length > (linux_off_t)st.st_size) {
+    if ((desc->memfd_seals & F_SEAL_GROW) != 0 && length > (int64_t)st.st_size) {
         fs_mutex_unlock(&desc->lock);
         errno = EPERM;
         return -1;
     }
-    if ((desc->memfd_seals & F_SEAL_SHRINK) != 0 && length < (linux_off_t)st.st_size) {
+    if ((desc->memfd_seals & F_SEAL_SHRINK) != 0 && length < (int64_t)st.st_size) {
         fs_mutex_unlock(&desc->lock);
         errno = EPERM;
         return -1;
@@ -2614,7 +2614,7 @@ int memfd_truncate_allowed_entry_impl(void *entry, linux_off_t length) {
     return 0;
 }
 
-void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file) {
+void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -2624,7 +2624,7 @@ void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, linux_mode_t mode
     fs_mutex_unlock(&entry->lock);
 }
 
-void init_synthetic_cgroupfs_file_fd_entry_impl(int fd, int flags, linux_mode_t mode,
+void init_synthetic_cgroupfs_file_fd_entry_impl(int fd, int flags, uint32_t mode,
                                                 const char *path, const char *cgroup_path,
                                                 int cgroup_node) {
     file_init_impl();
@@ -2641,7 +2641,7 @@ void init_synthetic_cgroupfs_file_fd_entry_impl(int fd, int flags, linux_mode_t 
     fs_mutex_unlock(&entry->lock);
 }
 
-void init_synthetic_proc_file_fd_entry_for_pid_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int target_pid) {
+void init_synthetic_proc_file_fd_entry_for_pid_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file, int target_pid) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -2654,7 +2654,7 @@ void init_synthetic_proc_file_fd_entry_for_pid_impl(int fd, int flags, linux_mod
     fs_mutex_unlock(&entry->lock);
 }
 
-void init_synthetic_proc_file_fd_entry_with_fdnum_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num) {
+void init_synthetic_proc_file_fd_entry_with_fdnum_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -2667,7 +2667,7 @@ void init_synthetic_proc_file_fd_entry_with_fdnum_impl(int fd, int flags, linux_
     fs_mutex_unlock(&entry->lock);
 }
 
-void init_synthetic_proc_file_fd_entry_with_fdnum_for_pid_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num, int target_pid) {
+void init_synthetic_proc_file_fd_entry_with_fdnum_for_pid_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num, int target_pid) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -2728,7 +2728,7 @@ int get_fd_cgroupfs_node_impl(void *entry) {
     return fd_entry->desc ? fd_entry->desc->cgroupfs_node : 0;
 }
 
-void init_synthetic_subdir_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_dir_class_t dir_class) {
+void init_synthetic_subdir_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_dir_class_t dir_class) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -2966,7 +2966,7 @@ int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size
 int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned long long mnt_id,
                                      char *buf, size_t buf_len) {
     struct file *file;
-    linux_off_t pos;
+    int64_t pos;
     unsigned int flags;
     unsigned int fd_flags;
     int ret;
@@ -2988,7 +2988,7 @@ int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned 
         return -1;
     }
     fd_description_t *desc = (fd_description_t *)file->private_data;
-    pos = desc ? (linux_off_t)desc->offset : file->pos;
+    pos = desc ? (int64_t)desc->offset : file->pos;
     flags = desc ? (unsigned int)desc->flags : file->flags;
     fd_flags = file->fd_flags;
     fs_mutex_unlock(&task->files->lock);
@@ -3025,7 +3025,7 @@ void fdtable_sync_current_task_fd_impl(int fd) {
         if (file && desc) {
             file->real_fd = desc->fd;
             file->flags = (unsigned int)desc->flags;
-            file->pos = (linux_off_t)desc->offset;
+            file->pos = (int64_t)desc->offset;
             strncpy(file->path, desc->path, sizeof(file->path) - 1);
             file->path[sizeof(file->path) - 1] = '\0';
         }

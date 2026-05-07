@@ -1,4 +1,4 @@
-#include "memfd_host.h"
+#include "IXLandHostAdapter/fs/memfd_host.h"
 
 #include <linux/fcntl.h>
 
@@ -8,9 +8,9 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "file_io_host.h"
-#include "path_host.h"
-#include "path_discovery_host.h"
+#include "IXLandHostAdapter/fs/file_io_host.h"
+#include "IXLandHostAdapter/fs/path_host.h"
+#include "IXLandHostAdapter/fs/path_discovery_host.h"
 
 int host_memfd_create_backing_impl(void) {
     char temp_root[4096];

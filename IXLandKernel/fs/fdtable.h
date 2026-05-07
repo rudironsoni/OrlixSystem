@@ -6,10 +6,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Use Linux-sized types directly */
-typedef uint32_t linux_mode_t;
-typedef int64_t linux_off_t;
-
 #include "fs_sync.h"
 
 #define NR_OPEN_DEFAULT 256
@@ -29,7 +25,7 @@ struct file {
     int real_fd;
     unsigned int flags;
     unsigned int fd_flags;
-    linux_off_t pos;
+    int64_t pos;
     char path[MAX_PATH];
     void *private_data;
     atomic_int refs;
@@ -112,8 +108,8 @@ uint64_t get_fd_file_identity_impl(void *entry);
 bool get_fd_path_deleted_impl(void *entry);
 void set_fd_flags_impl(fd_entry_t *entry, int flags);
 void set_fd_descriptor_flags_impl(fd_entry_t *entry, int flags);
-linux_off_t get_fd_offset_impl(fd_entry_t *entry);
-void set_fd_offset_impl(fd_entry_t *entry, linux_off_t offset);
+int64_t get_fd_offset_impl(fd_entry_t *entry);
+void set_fd_offset_impl(fd_entry_t *entry, int64_t offset);
 bool get_fd_is_append_impl(fd_entry_t *entry);
 bool get_fd_is_readable_impl(void *entry);
 bool get_fd_is_writable_impl(void *entry);
@@ -121,10 +117,10 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec);
 int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec);
 
 /* Initialize/clone fd entries */
-void init_fd_entry_impl(int fd, int real_fd, int flags, linux_mode_t mode, const char *path);
-void init_fd_entry_with_identity_impl(int fd, int real_fd, int flags, linux_mode_t mode,
+void init_fd_entry_impl(int fd, int real_fd, int flags, uint32_t mode, const char *path);
+void init_fd_entry_with_identity_impl(int fd, int real_fd, int flags, uint32_t mode,
                                       const char *path, uint64_t file_identity);
-void init_host_dirfd_entry_impl(int fd, int real_fd, linux_mode_t mode, const char *path);
+void init_host_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const char *path);
 
 enum synthetic_dir_class {
     SYNTHETIC_DIR_GENERIC = 0,
@@ -142,8 +138,8 @@ enum synthetic_dir_class {
 
 typedef enum synthetic_dir_class synthetic_dir_class_t;
 
-void init_synthetic_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path);
-void init_synthetic_subdir_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_dir_class_t dir_class);
+void init_synthetic_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path);
+void init_synthetic_subdir_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_dir_class_t dir_class);
 
 synthetic_dir_class_t get_fd_synthetic_dir_class_impl(void *entry);
 
@@ -158,8 +154,8 @@ enum synthetic_dev_node {
 
 typedef enum synthetic_dev_node synthetic_dev_node_t;
 
-void init_synthetic_dev_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_dev_node_t dev_node);
-void init_synthetic_pty_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, unsigned int pty_index, bool is_master);
+void init_synthetic_dev_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_dev_node_t dev_node);
+void init_synthetic_pty_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path, unsigned int pty_index, bool is_master);
 int init_pipe_fd_entry_impl(int fd, int flags, struct pipe_endpoint *endpoint);
 int init_socket_fd_entry_impl(int fd, int flags, struct socket_state *socket);
 int init_epoll_fd_entry_impl(int fd, int flags, struct epoll_instance *instance);
@@ -198,8 +194,8 @@ bool timerfd_read_ready_entry_impl(void *entry);
 bool get_fd_is_memfd_impl(void *entry);
 int memfd_get_seals_entry_impl(void *entry);
 int memfd_add_seals_entry_impl(void *entry, int seals);
-int memfd_write_allowed_entry_impl(void *entry, linux_off_t offset, size_t count);
-int memfd_truncate_allowed_entry_impl(void *entry, linux_off_t length);
+int memfd_write_allowed_entry_impl(void *entry, int64_t offset, size_t count);
+int memfd_truncate_allowed_entry_impl(void *entry, int64_t length);
 bool get_fd_is_pidfd_impl(void *entry);
 struct task_struct *pidfd_get_task_entry_impl(void *entry);
 bool pidfd_read_ready_entry_impl(void *entry);
@@ -228,13 +224,13 @@ enum synthetic_proc_file {
 
 typedef enum synthetic_proc_file synthetic_proc_file_t;
 
-void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file);
-void init_synthetic_cgroupfs_file_fd_entry_impl(int fd, int flags, linux_mode_t mode,
+void init_synthetic_proc_file_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file);
+void init_synthetic_cgroupfs_file_fd_entry_impl(int fd, int flags, uint32_t mode,
                                                 const char *path, const char *cgroup_path,
                                                 int cgroup_node);
-void init_synthetic_proc_file_fd_entry_for_pid_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int target_pid);
-void init_synthetic_proc_file_fd_entry_with_fdnum_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num);
-void init_synthetic_proc_file_fd_entry_with_fdnum_for_pid_impl(int fd, int flags, linux_mode_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num, int target_pid);
+void init_synthetic_proc_file_fd_entry_for_pid_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file, int target_pid);
+void init_synthetic_proc_file_fd_entry_with_fdnum_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num);
+void init_synthetic_proc_file_fd_entry_with_fdnum_for_pid_impl(int fd, int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file, int fd_num, int target_pid);
 bool get_fd_is_synthetic_proc_file_impl(void *entry);
 synthetic_proc_file_t get_fd_synthetic_proc_file_impl(void *entry);
 int get_fd_proc_file_fd_num_impl(void *entry);
