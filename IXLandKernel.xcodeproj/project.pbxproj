@@ -58,6 +58,7 @@
 		5100FDE4ECC4EDBC4CFC7014 /* PTYSessionTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 7552B29E8D4D9C323DABE3B2 /* PTYSessionTests.m */; };
 		52318D92C27B08EA1A85100C /* NamespaceContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 691B73007BC1D8B37396FDAF /* NamespaceContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT)"; }; };
 		5258B76792593142969BC67D /* ixland_observability.c in Sources */ = {isa = PBXBuildFile; fileRef = 2E5D3C0BF6D33D8D5045AEF4 /* ixland_observability.c */; };
+		53FFA66BFA377F63183C6C00 /* MLibCConfigureProbeCompileSmoke.c in Sources */ = {isa = PBXBuildFile; fileRef = C5CCC57A015EE46A92488FED /* MLibCConfigureProbeCompileSmoke.c */; settings = {COMPILER_FLAGS = "-I$(SRCROOT)/IXLandMLibC/include -I$(LINUX_UAPI_INCLUDE_ROOT)"; }; };
 		5477831CCB283E16A0AE07B3 /* elf_reloc.c in Sources */ = {isa = PBXBuildFile; fileRef = AA792585FF8A5331486A653B /* elf_reloc.c */; };
 		5694F069D568D2E57B53469D /* ExecFdTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 80DBA8A51FBF9F28C624BBA5 /* ExecFdTests.m */; };
 		56E73F90AD6FC7CD6AAC67A4 /* WaitJobControlContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 5A11F5B4ED6986ADF848C08D /* WaitJobControlContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT)"; }; };
@@ -313,6 +314,7 @@
 		C0384F767FC53F0302EC3840 /* readdir.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = readdir.c; sourceTree = "<group>"; };
 		C29CB9486D574AF4F50F9257 /* IXLandKernelTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = IXLandKernelTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C3E40917769ADB0AC3CF1602 /* ReadinessContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = ReadinessContract.c; sourceTree = "<group>"; };
+		C5CCC57A015EE46A92488FED /* MLibCConfigureProbeCompileSmoke.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = MLibCConfigureProbeCompileSmoke.c; sourceTree = "<group>"; };
 		C6B4D7545B46C016BE5DE2D5 /* HostTestSupport.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HostTestSupport.h; sourceTree = "<group>"; };
 		CC6AE2A79CA6AAB22C0020A4 /* epoll_mask.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = epoll_mask.c; sourceTree = "<group>"; };
 		CD864BC274C840002F4F6170 /* SyscallUioContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SyscallUioContract.h; sourceTree = "<group>"; };
@@ -547,6 +549,7 @@
 				13EFBE679CDC4DB51EA895C1 /* LinuxUAPICompileSmoke.c */,
 				EE1AA08B73C459E46CA42FED /* LinuxUAPITestSupport.c */,
 				19EE3C111CB6664A31623830 /* LinuxUAPITestSupport.h */,
+				C5CCC57A015EE46A92488FED /* MLibCConfigureProbeCompileSmoke.c */,
 				2D3BB1A637E6A3750340FF6B /* MLibCPackageHeadersCompileSmoke.c */,
 				04E50F0A270A9A015C04A2CF /* MLibCStatCompileSmoke.c */,
 				691B73007BC1D8B37396FDAF /* NamespaceContract.c */,
@@ -847,6 +850,7 @@
 				45950A4093CF68ABBBAFF94B /* LinuxKHeadersCompileSmoke.c in Sources */,
 				8B6234D074E1AF531588E6B1 /* LinuxUAPICompileSmoke.c in Sources */,
 				5FADE12CC2EB7EF5BCC2C688 /* LinuxUAPITestSupport.c in Sources */,
+				53FFA66BFA377F63183C6C00 /* MLibCConfigureProbeCompileSmoke.c in Sources */,
 				3DEE3517F680A71208F6E393 /* MLibCPackageHeadersCompileSmoke.c in Sources */,
 				CDC193A61C588675F54019C0 /* MLibCStatCompileSmoke.c in Sources */,
 				52318D92C27B08EA1A85100C /* NamespaceContract.c in Sources */,

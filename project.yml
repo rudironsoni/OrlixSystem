@@ -222,6 +222,10 @@ targets:
       compilerFlags:
       - -I$(SRCROOT)/IXLandMLibC/include
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: IXLandKernelTests/MLibCConfigureProbeCompileSmoke.c
+      compilerFlags:
+      - -I$(SRCROOT)/IXLandMLibC/include
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: IXLandKernelTests/LinuxKHeadersCompileSmoke.c
       compilerFlags:
       - -D__KERNEL__

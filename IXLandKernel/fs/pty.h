@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <unistd.h>
+
+#include "../../IXLandMLibC/include/sys/types.h"
 
 #ifdef __cplusplus
 extern "C" {
