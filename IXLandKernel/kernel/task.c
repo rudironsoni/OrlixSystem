@@ -19,7 +19,6 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include <linux/fcntl.h>
 #include <linux/capability.h>
@@ -31,6 +30,8 @@
 #undef RLIM_NLIMITS
 #endif
 #include <asm-generic/resource.h>
+
+#include "internal/private/kernel_time_compat.h"
 
 extern void poll_notify_readiness_impl(void);
 

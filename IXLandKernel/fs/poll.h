@@ -8,7 +8,9 @@
 #include <sys/time.h>
 #undef poll
 
-#include "../../IXLandMLibC/include/poll.h"
+#include <linux/poll.h>
+
+#include "internal/private/kernel_type_compat.h"
 
 #ifdef __cplusplus
 extern "C" {

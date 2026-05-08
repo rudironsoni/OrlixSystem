@@ -138,6 +138,12 @@ IXLandMLibC ownership:
 - errno exposure at the libc boundary
 - `_start`, libc startup, libc syscall stubs/wrappers, package-facing sysroot headers
 
+Hard direction rule:
+- `IXLandKernel/**` must not include `IXLandMLibC/**`.
+- The only allowed consumers of `IXLandMLibC/**` inside this repo are package-facing compile probes, sysroot/bootstrap plumbing, and non-kernel targets that explicitly model native userspace.
+- If Linux-owner code needs a type or struct that is not appropriate to take from Darwin and not appropriate to take from `IXLandMLibC`, define or use a kernel-private/Linux-owned surface instead of crossing into libc ownership.
+- Do not "fix" Darwin leakage in `IXLandKernel` by replacing it with `IXLandMLibC` includes. That is still a wrong-direction dependency.
+
 Correct native userspace path:
 
 ```text
@@ -202,6 +208,7 @@ Required implementation behavior:
 - model the real virtual-kernel behavior in the owning subsystem
 - keep host mediation inside `IXLandHostAdapter/**` only
 - declare any cross-target contract from `IXLandKernel`, not from `IXLandHostAdapter`
+- keep `IXLandKernel` independent from `IXLandMLibC` includes and package-facing header ownership
 - prefer deleting a bad shortcut over preserving compatibility with it
 - verify the subsystem through syscall-facing LinuxKernel tests, not internal struct peeking
 - raise the implementation to the product contract before claiming completion

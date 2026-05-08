@@ -14,9 +14,10 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
-#include <time.h>
 
 #include <linux/futex.h>
+
+#include "internal/private/kernel_time_compat.h"
 
 /* ============================================================================
  * FUTEX - Fast Userspace muTEX

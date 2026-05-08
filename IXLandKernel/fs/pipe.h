@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "../../IXLandMLibC/include/ixlandmlibc/bits/kernel_types.h"
+#include "internal/private/kernel_type_compat.h"
 
 #include "fdtable.h"
 

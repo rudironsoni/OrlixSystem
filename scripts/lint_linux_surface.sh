@@ -91,6 +91,30 @@ fi
 echo "   ✓ No wrong-direction broad mediation includes"
 
 echo ""
+echo "=== Check 6a: Wrong-direction libc ownership ==="
+KERNEL_INCLUDES_MLIBC=$(rg -n '^\s*#\s*include\s*"(IXLandMLibC/|.*/IXLandMLibC/)|^\s*#\s*include\s*<ixlandmlibc/' "$KERNEL_ROOT/fs" "$KERNEL_ROOT/kernel" "$KERNEL_ROOT/runtime" "$KERNEL_ROOT/include" 2>/dev/null || true)
+if [ -n "$KERNEL_INCLUDES_MLIBC" ]; then
+    echo "FAIL: Linux-owner code must not include IXLandMLibC headers:"
+    echo "$KERNEL_INCLUDES_MLIBC"
+    exit 1
+fi
+KERNEL_TARGET_BLOCK=$(python3 - <<'PY'
+from pathlib import Path
+text = Path('project.yml').read_text()
+start = text.index('  IXLandKernel:')
+end = text.index('  IXLandHostAdapter:')
+print(text[start:end])
+PY
+)
+KERNEL_TARGET_MLIBC=$(printf '%s' "$KERNEL_TARGET_BLOCK" | rg -n 'IXLandMLibC/include' 2>/dev/null || true)
+if [ -n "$KERNEL_TARGET_MLIBC" ]; then
+    echo "FAIL: IXLandKernel target must not receive IXLandMLibC include visibility in project.yml:"
+    echo "$KERNEL_TARGET_MLIBC"
+    exit 1
+fi
+echo "   ✓ No IXLandMLibC ownership leakage into IXLandKernel"
+
+echo ""
 echo "=== Check 7: Wrong subsystem placement ==="
 HOST_IMPL_IN_OWNER=$(rg -n '^\s*(static\s+)?[A-Za-z_][A-Za-z0-9_\s\*]*\s+host_[a-z0-9_]+_impl\s*\([^)]*\)\s*\{' $OWNER_PATHS 2>/dev/null || true)
 if [ -n "$HOST_IMPL_IN_OWNER" ]; then

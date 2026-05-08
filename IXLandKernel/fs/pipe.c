@@ -6,7 +6,7 @@
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 
-#include "../../IXLandMLibC/include/poll.h"
+#include <linux/poll.h>
 
 #include "pipe.h"
 

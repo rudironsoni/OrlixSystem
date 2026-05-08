@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../IXLandMLibC/include/sys/types.h"
+#include "internal/private/kernel_type_compat.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -175,8 +175,6 @@
 #include <sys/time.h>
 #include <time.h>
 
-#include "../../IXLandMLibC/include/poll.h"
-
 #include "../fs/fdtable.h"
 #include "../fs/eventpoll.h"
 #include "../fs/pipe.h"

@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include <linux/close_range.h>
 #include <linux/eventfd.h>
@@ -15,6 +14,7 @@
 #include <linux/timerfd.h>
 
 #include "fs_sync.h"
+#include "internal/private/kernel_time_compat.h"
 
 /* Standard file descriptors - local definitions to avoid Darwin <unistd.h> */
 #ifndef STDIN_FILENO
@@ -34,7 +34,7 @@ static void retain_fd_description(struct fd_description *desc);
 static void release_fd_description(struct fd_description *desc);
 static struct file *copy_file_descriptor(struct file *file);
 extern void poll_notify_readiness_impl(void);
-extern int clock_gettime_impl(clockid_t clk_id, struct timespec *tp);
+extern int kernel_clock_gettime(int clock_id, struct timespec *tp);
 
 struct files_struct *alloc_files(size_t max_fds) {
     if (max_fds == 0) {
@@ -908,14 +908,12 @@ static int timerfd_clock_allowed(int clockid) {
 
 static int timerfd_now_ns(int clockid, uint64_t *now_out) {
     struct timespec ts;
-    clockid_t backend_clockid;
 
     if (!now_out || !timerfd_clock_allowed(clockid)) {
         errno = EINVAL;
         return -1;
     }
-    backend_clockid = clockid == 0 ? CLOCK_REALTIME : CLOCK_MONOTONIC;
-    if (clock_gettime_impl(backend_clockid, &ts) != 0) {
+    if (kernel_clock_gettime(clockid, &ts) != 0) {
         return -1;
     }
     if (ts.tv_sec < 0 || ts.tv_nsec < 0) {

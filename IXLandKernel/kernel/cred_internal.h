@@ -18,7 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../IXLandMLibC/include/ixlandmlibc/bits/kernel_types.h"
+#include "internal/private/kernel_type_compat.h"
 
 #ifdef __cplusplus
 extern "C" {

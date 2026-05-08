@@ -12,8 +12,7 @@
 #include <linux/magic.h>
 #include <linux/mount.h>
 
-#include "../../IXLandMLibC/include/sys/types.h"
-
+#include "internal/private/kernel_type_compat.h"
 #include "fdtable.h"
 #include "vfs.h"
 
