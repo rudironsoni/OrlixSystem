@@ -228,6 +228,7 @@ targets:
       compilerFlags:
       - -I$(SRCROOT)/OrlixMLibC/include
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - OrlixKernelTests/KernelOwnerCompatCompileSmoke.c
     - path: OrlixKernelTests/LinuxKHeadersCompileSmoke.c
       compilerFlags:
       - -D__KERNEL__
