@@ -285,7 +285,7 @@ Milestone 1 is not complete until all are true:
 7. Repo docs describe the resulting ownership model clearly enough to keep future tranches aligned.
 8. No Milestone 1 outcome is described as complete if it still depends on branded host-adapter vocabulary as normal kernel-facing contract surface.
 9. Linux-owner code does not keep ambient host directory iteration APIs such as `dirent.h`, `fdopendir()`, `readdir()`, `seekdir()`, `telldir()`, or `closedir()` as part of normal kernel ownership.
-10. Remaining Linux-owner `time` / `sys/time` / `sys/socket` / `sys/select` cleanup is tracked honestly as separate follow-on work if it has not actually landed green.
+10. Remaining Linux-owner `time` / `sys/time` cleanup plus deeper public socket-surface ownership work is tracked honestly as separate follow-on work if it has not actually landed green.
 
 ## Proof
 

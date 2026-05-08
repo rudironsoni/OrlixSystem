@@ -1,17 +1,24 @@
 #ifndef ORLIX_INTERNAL_PRIVATE_KERNEL_SELECT_COMPAT_H
 #define ORLIX_INTERNAL_PRIVATE_KERNEL_SELECT_COMPAT_H
 
+#include <stdint.h>
+
 #include "kernel_time_compat.h"
 
 #ifndef FD_SETSIZE
 #define FD_SETSIZE 1024
 #endif
 
-#define ORLIX_KERNEL_NFDBITS ((int)(8U * sizeof(unsigned long)))
+/*
+ * Keep the private fd_set layout module-compatible with the simulator SDK.
+ * The public Linux-facing sys/select truth is owned elsewhere; this header is
+ * only for internal kernel-owner compilation.
+ */
+#define ORLIX_KERNEL_NFDBITS 32
 #define ORLIX_KERNEL_FDSET_WORDS ((FD_SETSIZE + ORLIX_KERNEL_NFDBITS - 1) / ORLIX_KERNEL_NFDBITS)
 
 typedef struct fd_set {
-    unsigned long fds_bits[ORLIX_KERNEL_FDSET_WORDS];
+    int32_t fds_bits[ORLIX_KERNEL_FDSET_WORDS];
 } fd_set;
 
 #ifndef FD_ZERO
@@ -42,21 +49,21 @@ static inline void orlix_kernel_fd_set(int fd, fd_set *set) {
     if (!set || fd < 0 || fd >= FD_SETSIZE) {
         return;
     }
-    set->fds_bits[fd / ORLIX_KERNEL_NFDBITS] |= (1UL << (fd % ORLIX_KERNEL_NFDBITS));
+    set->fds_bits[fd / ORLIX_KERNEL_NFDBITS] |= (int32_t)(1U << (fd % ORLIX_KERNEL_NFDBITS));
 }
 
 static inline void orlix_kernel_fd_clr(int fd, fd_set *set) {
     if (!set || fd < 0 || fd >= FD_SETSIZE) {
         return;
     }
-    set->fds_bits[fd / ORLIX_KERNEL_NFDBITS] &= ~(1UL << (fd % ORLIX_KERNEL_NFDBITS));
+    set->fds_bits[fd / ORLIX_KERNEL_NFDBITS] &= (int32_t)~(1U << (fd % ORLIX_KERNEL_NFDBITS));
 }
 
 static inline int orlix_kernel_fd_isset(int fd, const fd_set *set) {
     if (!set || fd < 0 || fd >= FD_SETSIZE) {
         return 0;
     }
-    return (set->fds_bits[fd / ORLIX_KERNEL_NFDBITS] & (1UL << (fd % ORLIX_KERNEL_NFDBITS))) != 0;
+    return (set->fds_bits[fd / ORLIX_KERNEL_NFDBITS] & (int32_t)(1U << (fd % ORLIX_KERNEL_NFDBITS))) != 0;
 }
 
 #endif

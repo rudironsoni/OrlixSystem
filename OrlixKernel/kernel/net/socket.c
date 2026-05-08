@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "internal/private/kernel_socket_compat.h"
 #include "kernel_sync.h"
 #include "../signal.h"
 #include "../task.h"

@@ -3,13 +3,10 @@
 
 #include <stdint.h>
 
-#define poll orlix_host_poll_frame
-#include <sys/select.h>
-#include <sys/time.h>
-#undef poll
-
 #include <linux/poll.h>
 
+#include "internal/private/kernel_select_compat.h"
+#include "internal/private/kernel_time_compat.h"
 #include "internal/private/kernel_type_compat.h"
 
 #ifdef __cplusplus

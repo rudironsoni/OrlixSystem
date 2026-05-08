@@ -170,16 +170,14 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#include <time.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/eventpoll.h"
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
+#include "../internal/private/kernel_socket_compat.h"
+#include "../internal/private/kernel_time_compat.h"
 #include "../kernel/cred_internal.h"
 #include "../kernel/futex.h"
 #include "../kernel/mm.h"

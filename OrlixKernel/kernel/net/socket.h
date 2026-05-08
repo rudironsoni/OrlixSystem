@@ -4,7 +4,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/socket.h>
+
+#include "internal/private/kernel_type_compat.h"
+
+#ifndef _SOCKLEN_T
+#define _SOCKLEN_T
+typedef __UINT32_TYPE__ socklen_t;
+#endif
+
+struct sockaddr;
 
 struct socket_state;
 

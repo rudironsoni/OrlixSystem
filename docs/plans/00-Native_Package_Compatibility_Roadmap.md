@@ -187,13 +187,14 @@ Current remaining learning:
 
 - Milestone 1 is still not a license to force every host-libc-shaped kernel include out in one tranche
 - the attempted `time` / `sys/time` / `sys/socket` / `sys/select` kernel cutover exposed mixed simulator ABI conflicts when treated as part of the same bootstrap tranche
-- those kernel-owner cutovers remain valid work, but they need their own deliberate tranche instead of being mixed into package-facing bootstrap proof
+- a bounded follow-on tranche has now landed kernel-private compat proof plus production cleanup for internal `poll` / `select` ownership and the internal socket seam that was leaking host `fd_set`
+- deeper `time` / `sys/time` work and public socket-surface cutovers still remain valid follow-on work, but they must stay deliberate and simulator-proven rather than being mixed into package-facing bootstrap proof
 
 Current next executable step:
 
 - keep Milestone 1 active
 - continue ownership cleanup in bounded slices instead of broad concept sweeps
-- treat the remaining Linux-owner `time` / `sys/time` / `sys/socket` / `sys/select` drift as a dedicated follow-on tranche with its own simulator proof
+- treat the remaining Linux-owner `time` / `sys/time` drift plus deeper public socket-surface cleanup as the next dedicated follow-on tranche with its own simulator proof
 - keep package-facing `OrlixMLibC` bootstrap progress and deeper kernel-owner include cleanup as separate concerns unless a tranche proves they can move together safely
 
 Detailed plan:

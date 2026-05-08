@@ -4,6 +4,7 @@
 
 #include <linux/fcntl.h>
 #include <linux/fs.h>
+#include <linux/uio.h>
 
 #include <errno.h>
 #include <stdlib.h>
@@ -11,6 +12,7 @@
 
 #include "fdtable.h"
 #include "internal/private/backing_io.h"
+#include "internal/private/kernel_socket_compat.h"
 #include "fs_sync.h"
 #include "pipe.h"
 #include "pty.h"
