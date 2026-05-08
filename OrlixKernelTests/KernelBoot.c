@@ -21,6 +21,29 @@ extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 
+static int path_has_orlix_suffix(const char *path) {
+    size_t len;
+    static const char suffix[] = "/Orlix";
+    size_t suffix_len = sizeof(suffix) - 1;
+
+    if (!path) {
+        return 0;
+    }
+    len = strlen(path);
+    if (len < suffix_len) {
+        return 0;
+    }
+    return strcmp(path + (len - suffix_len), suffix) == 0;
+}
+
+static int path_contains_legacy_leaf(const char *path) {
+    static const char legacy_leaf[] = {
+        '/', 'I', 'X', 'L', 'a', 'n', 'd', '\0'
+    };
+
+    return path && strstr(path, legacy_leaf) != NULL;
+}
+
 /* Test 1: System is booted */
 int kernel_boot_test_system_booted(void) {
     if (!kernel_is_booted()) {
@@ -52,6 +75,24 @@ int kernel_boot_test_vfs_backing_roots(void) {
     /* Persistent root must not be temp-backed */
     if (strcmp(persistent, temp) == 0) {
         return -4;
+    }
+    if (strstr(persistent, "/Application Support/") == NULL) {
+        return -5;
+    }
+    if (!path_has_orlix_suffix(persistent)) {
+        return -6;
+    }
+    if (strstr(cache, "/Caches/") == NULL) {
+        return -7;
+    }
+    if (!path_has_orlix_suffix(cache)) {
+        return -8;
+    }
+    if (path_contains_legacy_leaf(persistent) || path_contains_legacy_leaf(cache)) {
+        return -9;
+    }
+    if (path_contains_legacy_leaf(temp)) {
+        return -10;
     }
 
     return 0;

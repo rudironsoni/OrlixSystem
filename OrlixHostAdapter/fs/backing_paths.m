@@ -12,6 +12,7 @@
 #include <sys/syscall.h>
 
 #define MAX_PATH 4096
+static const char kOrlixStorageLeaf[] = "Orlix";
 
 /* Forward declarations for C interop */
 int application_support_path(char *path, size_t path_len);
@@ -21,46 +22,74 @@ int backing_ensure_directory(const char *path, uint32_t mode);
 
 int application_support_path(char *path, size_t path_len) {
     @autoreleasepool {
-        NSURL *url = [[NSFileManager defaultManager]
-                      URLForDirectory:NSApplicationSupportDirectory
-                      inDomain:NSUserDomainMask
-                      appropriateForURL:nil
-                      create:YES
-                      error:nil];
-        if (!url) {
+        NSFileManager *manager = [NSFileManager defaultManager];
+        NSURL *baseURL = [manager URLForDirectory:NSApplicationSupportDirectory
+                                         inDomain:NSUserDomainMask
+                                appropriateForURL:nil
+                                           create:YES
+                                            error:nil];
+        NSURL *url;
+        if (!baseURL) {
             errno = ENOENT;
             return -1;
         }
+        url = [baseURL URLByAppendingPathComponent:@(kOrlixStorageLeaf) isDirectory:YES];
+        if (![manager createDirectoryAtURL:url
+               withIntermediateDirectories:YES
+                                attributes:nil
+                                     error:nil]) {
+            errno = EIO;
+            return -1;
+        }
         const char *cpath = [url fileSystemRepresentation];
-        if (!cpath || strlen(cpath) >= path_len) {
+        size_t len;
+        if (!cpath) {
+            errno = ENOENT;
+            return -1;
+        }
+        len = strlen(cpath);
+        if (len >= path_len) {
             errno = ENAMETOOLONG;
             return -1;
         }
-        strncpy(path, cpath, path_len - 1);
-        path[path_len - 1] = '\0';
+        memcpy(path, cpath, len + 1);
         return 0;
     }
 }
 
 int caches_path(char *path, size_t path_len) {
     @autoreleasepool {
-        NSURL *url = [[NSFileManager defaultManager]
-                      URLForDirectory:NSCachesDirectory
-                      inDomain:NSUserDomainMask
-                      appropriateForURL:nil
-                      create:YES
-                      error:nil];
-        if (!url) {
+        NSFileManager *manager = [NSFileManager defaultManager];
+        NSURL *baseURL = [manager URLForDirectory:NSCachesDirectory
+                                         inDomain:NSUserDomainMask
+                                appropriateForURL:nil
+                                           create:YES
+                                            error:nil];
+        NSURL *url;
+        if (!baseURL) {
             errno = ENOENT;
             return -1;
         }
+        url = [baseURL URLByAppendingPathComponent:@(kOrlixStorageLeaf) isDirectory:YES];
+        if (![manager createDirectoryAtURL:url
+               withIntermediateDirectories:YES
+                                attributes:nil
+                                     error:nil]) {
+            errno = EIO;
+            return -1;
+        }
         const char *cpath = [url fileSystemRepresentation];
-        if (!cpath || strlen(cpath) >= path_len) {
+        size_t len;
+        if (!cpath) {
+            errno = ENOENT;
+            return -1;
+        }
+        len = strlen(cpath);
+        if (len >= path_len) {
             errno = ENAMETOOLONG;
             return -1;
         }
-        strncpy(path, cpath, path_len - 1);
-        path[path_len - 1] = '\0';
+        memcpy(path, cpath, len + 1);
         return 0;
     }
 }
