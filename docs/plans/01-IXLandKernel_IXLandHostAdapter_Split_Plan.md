@@ -175,6 +175,7 @@ Relevant observations from the current tree:
 - the active seam is now kernel-owned private `backing_*` declarations under `IXLandKernel/internal/private/**`.
 - the end-state is still for `IXLandKernel` to receive only `IXLandKernel` roots, vendored Linux include roots, and the narrowest necessary kernel-owned private contract roots.
 - Tests are split into `IXLandKernelTests` and `IXLandHostAdapterTests` in `project.yml`.
+- host-backed directory iteration for `fs/readdir.c` now routes through a kernel-owned private `backing_dir` contract instead of ambient `dirent.h` usage in Linux-owner code.
 - The direct host imports that motivated this plan were removed from the Linux-owner files that previously lived at:
   - `fs/read_write.c`
   - `fs/fdtable.c`

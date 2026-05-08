@@ -16,6 +16,22 @@ All later milestones inherit the Milestone 0 constraint:
 
 No later milestone may regress back to branded adapter-owned kernel-facing vocabulary or treat a host primitive as correct without Linux-visible proof.
 
+## Current Program State
+
+The roadmap is not starting from zero:
+
+- Milestone 0 is structurally delivered enough to unblock later work.
+- Milestone 1 is the active milestone.
+- The current repo already has:
+  - `IXLandMLibC` bootstrap ownership for the first package-facing libc header set
+  - compile-smoke proof for vendored UAPI, kheaders classification, package-facing libc headers, and configure-style bootstrap probes
+  - the `fs/readdir.c` host-directory iteration cut over to a kernel-owned private backing seam
+
+The roadmap therefore needs to stay honest about two different truths at once:
+
+- real M1 progress has landed
+- M1 is still partial because broader kernel-owner ownership cleanup and full sysroot completion are not done
+
 ## Product Goal
 
 Build Linux-oriented packages as native iOS arm64 code, with zero target-package source modifications, while preserving Linux-identical observable behavior at the userspace surface.
@@ -161,6 +177,25 @@ Goals:
 - enforce UAPI versus kheaders separation
 - keep Milestone 1 from normalizing branded `IXLandHostAdapter` seam vocabulary or adapter-owned headers as package-facing truth
 
+Current delivered learning:
+
+- `IXLandMLibC` bootstrap ownership is now real enough to host package-facing `fcntl`, `poll`, `signal`, `sys/stat`, `sys/types`, `sys/uio`, `unistd`, `time`, `sys/time`, `sys/socket`, and `sys/select` surfaces
+- package-facing compile smoke now includes both direct libc header proof and a configure-style probe file
+- host-backed directory iteration for `fs/readdir.c` is now behind a kernel-owned private backing contract instead of ambient `dirent.h` usage in Linux-owner code
+
+Current remaining learning:
+
+- Milestone 1 is still not a license to force every host-libc-shaped kernel include out in one tranche
+- the attempted `time` / `sys/time` / `sys/socket` / `sys/select` kernel cutover exposed mixed simulator ABI conflicts when treated as part of the same bootstrap tranche
+- those kernel-owner cutovers remain valid work, but they need their own deliberate tranche instead of being mixed into package-facing bootstrap proof
+
+Current next executable step:
+
+- keep Milestone 1 active
+- continue ownership cleanup in bounded slices instead of broad concept sweeps
+- treat the remaining Linux-owner `time` / `sys/time` / `sys/socket` / `sys/select` drift as a dedicated follow-on tranche with its own simulator proof
+- keep package-facing `IXLandMLibC` bootstrap progress and deeper kernel-owner include cleanup as separate concerns unless a tranche proves they can move together safely
+
 Detailed plan:
 
 - `02-Sysroot_Build_Truth_Plan.md`
@@ -179,6 +214,11 @@ Goals:
 Detailed plan:
 
 - `03-Exec_Shebang_Native_Execution_Plan.md`
+
+Activation rule:
+
+- do not treat Milestone 2 as the active coding tranche while Milestone 1 still has known ownership drift that materially affects package configure and build truth
+- Milestone 2 becomes the active tranche only after the remaining M1 build-truth work is narrow enough that exec-path work is no longer being built on ambiguous ownership
 
 ### Milestone 3
 
@@ -289,6 +329,7 @@ Minimum proof ladder:
 8. No shallow stubs presented as completed kernel support.
 9. Real package behavior outranks local convenience.
 10. If Linux userspace behavior breaks, fix IXLand, not the package.
+11. Do not compress package-facing bootstrap work and deeper kernel-owner ownership cleanup into one tranche unless simulator proof shows they are ABI-safe together.
 
 ## Definition Of Version 1 Success
 

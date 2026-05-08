@@ -70,6 +70,43 @@ Relevant current facts in this repo:
 
 This means the foundation for M1 exists, but the ownership cleanup and package-facing discipline are not complete.
 
+## Delivered Milestone 1 Slices So Far
+
+Milestone 1 is no longer theoretical in this repo. The following slices are already delivered and simulator-proofed:
+
+- `IXLandMLibC` bootstrap headers now exist for:
+  - `fcntl.h`
+  - `poll.h`
+  - `signal.h`
+  - `sys/stat.h`
+  - `sys/types.h`
+  - `sys/uio.h`
+  - `unistd.h`
+  - `time.h`
+  - `sys/time.h`
+  - `sys/socket.h`
+  - `sys/select.h`
+- compile-smoke proof now covers:
+  - vendored UAPI truth
+  - kheaders classification
+  - package-facing libc header bootstrap
+  - package-style configure probe bootstrap
+- `IXLandKernel/fs/readdir.c` no longer owns host directory iteration directly; that host mechanism now sits behind a kernel-owned private `backing_dir` contract
+
+Those changes matter because they prove Milestone 1 can advance in bounded slices without pretending the entire libc/sysroot problem is already complete.
+
+## Latest Milestone 1 Learning
+
+The current repo teaches an important tranche rule:
+
+- package-facing bootstrap ownership and configure-probe truth can land cleanly in one tranche
+- some deeper kernel-owner header cutovers cannot be mixed into that tranche safely just because they touch the same conceptual area
+
+The attempted kernel cutover for `time`, `sys/time`, `sys/socket`, and `sys/select` exposed mixed simulator ABI conflicts when forced into the same slice as package-facing bootstrap work.
+
+That does not make those kernel cutovers wrong.
+It means they must be treated as a separate, explicit kernel-owner cleanup tranche with their own proof and compatibility strategy.
+
 ## Required Decisions
 
 ### Header model
@@ -184,6 +221,21 @@ Milestone direction:
 - add proof that package-style compile checks for representative `zsh` and `curl` prerequisites resolve through the intended UAPI and libc-owned surfaces
 - classify failures by ownership instead of masking them locally
 
+### 6. Linux-owner host-header drift that still needs separate cleanup
+
+Current repo state still includes Linux-owner code that reaches for host libc headers in some subsystems, especially around:
+
+- `time.h`
+- `sys/time.h`
+- `sys/socket.h`
+- `sys/select.h`
+
+Milestone direction:
+
+- do not normalize those includes as acceptable end-state ownership
+- do not force them all out in the same tranche as package bootstrap additions
+- plan them as a separate kernel-owner cleanup step with simulator ABI proof
+
 ## Deliverables
 
 1. Document and enforce the UAPI plus kheaders model.
@@ -197,6 +249,7 @@ Milestone direction:
 4. Keep kheaders out of blanket production include roots.
 5. Add compile-smoke and configure-probe proof for real package expectations.
 6. Update repo docs and guardrails so future work cannot casually reintroduce ownership drift.
+7. Move obvious host-owned mechanics such as directory iteration behind kernel-owned private contracts instead of leaving Linux-owner code to include host directory APIs directly.
 
 ## Implementation Rules
 
@@ -207,6 +260,7 @@ Milestone direction:
 - Prefer generated or validated mirrors over ad hoc local recreation when something is needed outside installed UAPI.
 - Keep Linux-owner files dependent on canonical include roots rather than path-specific vendored hacks.
 - Make proof files intentionally separate for UAPI truth, kheaders truth, and configure-probe truth.
+- Split package-facing bootstrap work from deeper kernel-owner header cutovers when simulator ABI conflicts show they are not safely the same tranche.
 
 ### Don't
 
@@ -216,6 +270,7 @@ Milestone direction:
 - Do not let kernel-private backing contracts recreate Linux-owned or libc-owned types casually.
 - Do not preserve local typedefs just because they currently unblock one compile unit.
 - Do not hide sysroot defects behind broader Xcode header search paths.
+- Do not present a failed or reverted kernel-owner cutover as Milestone 1 progress just because the package-facing bootstrap part of the experiment was valid.
 
 ## Acceptance Gates
 
@@ -229,6 +284,8 @@ Milestone 1 is not complete until all are true:
 6. Project build settings do not grant blanket kheaders visibility to production targets.
 7. Repo docs describe the resulting ownership model clearly enough to keep future tranches aligned.
 8. No Milestone 1 outcome is described as complete if it still depends on branded host-adapter vocabulary as normal kernel-facing contract surface.
+9. Linux-owner code does not keep ambient host directory iteration APIs such as `dirent.h`, `fdopendir()`, `readdir()`, `seekdir()`, `telldir()`, or `closedir()` as part of normal kernel ownership.
+10. Remaining Linux-owner `time` / `sys/time` / `sys/socket` / `sys/select` cleanup is tracked honestly as separate follow-on work if it has not actually landed green.
 
 ## Proof
 
@@ -239,6 +296,7 @@ Required proof for this milestone:
 3. New configure-style compile probes cover representative package prerequisites for `zsh` and `curl`.
 4. The authoritative simulator build remains green through the canonical XcodeGen plus Xcodebuild flow.
 5. Lint and repo checks fail if kheaders or local typedef ownership drift reappears.
+6. Lint fails if Linux-owner code reintroduces ambient host directory-iteration APIs instead of using the private backing contract.
 
 ## Definition Of Success
 
@@ -249,5 +307,8 @@ Milestone 1 succeeds when the repo stops improvising Linux-facing header ownersh
 - libc-facing sysroot truth belongs to `IXLandMLibC`
 - `IXLandKernel` keeps only private runtime state and syscall semantics
 - `IXLandHostAdapter` remains mechanism-only implementation
+
+It does not require pretending that every remaining host-libc-shaped kernel include has already been solved.
+Milestone 1 is still partial until those kernel-owner follow-on cutovers are delivered green in their own bounded tranches.
 
 That is the minimum build-surface truth required before the roadmap can honestly claim package configure and compile transparency.

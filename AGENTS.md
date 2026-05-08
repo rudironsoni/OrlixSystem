@@ -172,11 +172,18 @@ The Linux header vendoring pipeline must treat mlibc `abis/linux` as a coverage 
 Lint green is necessary but insufficient.
 Build green is necessary but insufficient.
 
+Lint model:
+- Source lint is `clang-tidy` only.
+- `make lint` is the only lint entrypoint.
+- Do not reintroduce shell/Python lint wrappers, repo-layout lint targets, or sidecar text-policy checks.
+- Do not reintroduce `grep`, `rg`, `sed`, Python regex scans, or shell text-policy checks as a parallel lint system outside the `Makefile` + `clang-tidy` path.
+- Do not revive `scripts/lint_linux_vendor_headers.sh` or any shell wrapper that pretends to be source lint.
+
 Authoritative proof target is iOS Simulator:
-1. `bash ./scripts/lint_linux_surface.sh`
-2. `xcodegen generate --project .`
-3. `xcodebuild build-for-testing -project IXLandKernel.xcodeproj -scheme IXLandKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'`
-4. required targeted tests for the current tranche
+1. `make lint`
+3. `xcodegen generate --project .`
+4. `xcodebuild build-for-testing -project IXLandKernel.xcodeproj -scheme IXLandKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'`
+5. required targeted tests for the current tranche
 
 Catalyst may be secondary smoke only.
 No commit/push before required proof is green.

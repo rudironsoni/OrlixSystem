@@ -9,6 +9,79 @@ KEEP_LINUX_TMP ?= 0
 LINUX_MAKE ?=
 LINUX_LLVM_BIN ?=
 LINUX_SED ?=
+LLVM_PREFIX ?= /opt/homebrew/opt/llvm
+CLANG_TIDY ?= $(LLVM_PREFIX)/bin/clang-tidy
+LLVM_CONFIG ?= $(LLVM_PREFIX)/bin/llvm-config
+CLANG_TIDY_BUILD_DIR ?= .clang-tidy-build
+CLANG_TIDY_PLUGIN_SO := $(CLANG_TIDY_BUILD_DIR)/IXLandTidyModule.so
+CLANG_TIDY_PLUGIN_DYLIB := $(CLANG_TIDY_BUILD_DIR)/IXLandTidyModule.dylib
+IPHONESIM_SDK := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk
+IPHONESIM_FRAMEWORK_DIR := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks
+IPHONESIM_SDK_FRAMEWORK_DIR := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks
+IXLAND_LINT_COMMON_FLAGS := \
+	-target arm64-apple-ios26.4-simulator \
+	-isysroot $(IPHONESIM_SDK) \
+	-mios-simulator-version-min=26.4 \
+	-fno-modules
+IXLAND_LINT_C_FLAGS := \
+	$(IXLAND_LINT_COMMON_FLAGS) \
+	-I$(CURDIR)/IXLandKernel \
+	-I$(CURDIR)/IXLandKernel/include \
+	-I$(CURDIR)/IXLandKernel/internal/private \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/uapi/include \
+	-D_XOPEN_SOURCE \
+	-fvisibility=hidden
+IXLAND_LINT_OBJC_FLAGS := \
+	$(IXLAND_LINT_COMMON_FLAGS) \
+	-fobjc-arc \
+	-I$(CURDIR)/IXLandKernel \
+	-I$(CURDIR)/IXLandKernel/include \
+	-I$(CURDIR)/IXLandKernel/internal/private \
+	-F$(IPHONESIM_FRAMEWORK_DIR) \
+	-F$(IPHONESIM_SDK_FRAMEWORK_DIR) \
+	-DDEBUG=1
+
+.PHONY: build-ixland-clang-tidy-module lint lint-linux-surface
+
+build-ixland-clang-tidy-module:
+	@set -euo pipefail; \
+	if [ ! -x "$(LLVM_CONFIG)" ]; then \
+		echo "llvm-config not found at $(LLVM_CONFIG)" >&2; \
+		exit 1; \
+	fi; \
+	rm -rf "$(CLANG_TIDY_BUILD_DIR)"; \
+	mkdir -p "$(CLANG_TIDY_BUILD_DIR)"; \
+	cmake -S tools/clang_tidy_ixland -B "$(CLANG_TIDY_BUILD_DIR)" \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DLLVM_DIR="$$(dirname "$$($(LLVM_CONFIG) --cmakedir)")/llvm" \
+		-DClang_DIR="$$(dirname "$$($(LLVM_CONFIG) --cmakedir)")/clang" \
+		-DLLVM_CONFIG_EXECUTABLE="$(LLVM_CONFIG)" >/dev/null; \
+	cmake --build "$(CLANG_TIDY_BUILD_DIR)" >/dev/null
+
+lint: build-ixland-clang-tidy-module
+	@set -euo pipefail; \
+	plugin_path="$(CLANG_TIDY_PLUGIN_SO)"; \
+	if [ ! -f "$$plugin_path" ]; then \
+		plugin_path="$(CLANG_TIDY_PLUGIN_DYLIB)"; \
+	fi; \
+	if [ ! -f "$$plugin_path" ]; then \
+		echo "clang-tidy plugin not found" >&2; \
+		exit 1; \
+	fi; \
+	c_files="$$(rg --files IXLandKernel IXLandHostAdapter IXLandKernelTests IXLandHostAdapterTests | rg '\.(c|cc|cpp|cxx)$$' | rg -v '^IXLandKernelTests/.*\.c$$' || true)"; \
+	objc_files="$$(rg --files IXLandKernel IXLandHostAdapter IXLandKernelTests IXLandHostAdapterTests | rg '\.(m|mm)$$' || true)"; \
+	if [ -n "$$c_files" ]; then \
+		while IFS= read -r file; do \
+			"$(CLANG_TIDY)" --load="$$plugin_path" --config-file=.clang-tidy "$$file" -- $(IXLAND_LINT_C_FLAGS); \
+		done <<< "$$c_files"; \
+	fi; \
+	if [ -n "$$objc_files" ]; then \
+		while IFS= read -r file; do \
+			"$(CLANG_TIDY)" --load="$$plugin_path" --config-file=.clang-tidy "$$file" -- $(IXLAND_LINT_OBJC_FLAGS); \
+		done <<< "$$objc_files"; \
+	fi
+
+lint-linux-surface: lint
 
 .PHONY: vendor-linux-headers
 vendor-linux-headers:
