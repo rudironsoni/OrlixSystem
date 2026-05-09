@@ -19,6 +19,7 @@ Current delivered learning:
 - public `killpg()` now lives in `OrlixKernel`, not `OrlixHostAdapter`, and is simulator-proven against process-group signal delivery and `ESRCH` failure behavior
 - public `tcgetsid()` and `TIOCGSID` now ride the kernel-owned PTY/session model and are simulator-proven against controlling-session identity and `ENOTTY` failure behavior
 - public `isatty()` now rides the kernel-owned PTY/ioctl model and is simulator-proven against PTY truth, `ENOTTY`, and `EBADF` behavior
+- public `waitpid()` now has simulator-proven Linux-surface coverage for exited, stopped, and continued child reporting, not just the internal wait owner path
 - public `wait4()` and `waitid()` now ride the kernel-owned wait model and are simulator-proven against exited-child status reporting and `WNOWAIT` preservation behavior
 
 ## Purpose

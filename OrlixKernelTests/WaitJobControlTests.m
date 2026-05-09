@@ -131,8 +131,22 @@ static void reset_wait_job_control_test_kernel_state(void) {
     XCTAssertEqual(wait_job_control_contract_child_exit_generates_sigchld_for_parent(), 0, @"errno %d", errno);
 }
 
+- (void)testPublicWaitpidReportsExitedChildStatus {
+    XCTAssertEqual(wait_job_control_contract_public_waitpid_reports_exited_child_status(), 0, @"errno %d", errno);
+}
+
 - (void)testWait4ReportsExitedChildStatus {
     XCTAssertEqual(wait_job_control_contract_wait4_reports_exited_child_status(), 0, @"errno %d", errno);
+}
+
+- (void)testPublicWaitpidReportsStoppedChildWithWuntraced {
+    XCTAssertEqual(wait_job_control_contract_public_waitpid_reports_stopped_child_with_wuntraced(), 0,
+                   @"errno %d", errno);
+}
+
+- (void)testPublicWaitpidReportsContinuedChildWithWcontinued {
+    XCTAssertEqual(wait_job_control_contract_public_waitpid_reports_continued_child_with_wcontinued(), 0,
+                   @"errno %d", errno);
 }
 
 - (void)testWaitidReportsExitedChildStatus {

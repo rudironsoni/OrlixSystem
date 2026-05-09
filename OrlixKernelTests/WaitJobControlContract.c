@@ -28,6 +28,8 @@ extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
 extern int32_t clone_impl(uint64_t flags);
+extern __kernel_pid_t kernel_waitpid(__kernel_pid_t pid, int *wstatus, int options)
+    __asm("_waitpid");
 extern __kernel_pid_t kernel_wait4(__kernel_pid_t pid, int *wstatus, int options, void *rusage)
     __asm("_wait4");
 extern int kernel_waitid(int idtype, __kernel_pid_t id, siginfo_t *infop, int options)
@@ -682,6 +684,38 @@ int wait_job_control_contract_child_exit_generates_sigchld_for_parent(void) {
     return 0;
 }
 
+int wait_job_control_contract_public_waitpid_reports_exited_child_status(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    int32_t child_pid;
+    int status = 0;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = create_child_task(parent, 0);
+    if (!child) {
+        return -1;
+    }
+    child_pid = child->pid;
+    if (exit_child_with_status(parent, child, 29) != 0) {
+        destroy_child_task(parent, child);
+        return -1;
+    }
+
+    if (kernel_waitpid(child_pid, &status, 0) != child_pid) {
+        errno = EBUSY;
+        return -1;
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 29) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
 int wait_job_control_contract_wait4_reports_exited_child_status(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child = NULL;
@@ -711,6 +745,80 @@ int wait_job_control_contract_wait4_reports_exited_child_status(void) {
         errno = EPROTO;
         return -1;
     }
+    return 0;
+}
+
+int wait_job_control_contract_public_waitpid_reports_stopped_child_with_wuntraced(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    int status = 0;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = create_child_task(parent, 0);
+    if (!child) {
+        return -1;
+    }
+    clear_pending_signal(parent, SIGCHLD);
+    if (signal_generate_task(child, SIGSTOP) != 0) {
+        destroy_child_task(parent, child);
+        return -1;
+    }
+
+    if (kernel_waitpid(child->pid, &status, WUNTRACED) != child->pid) {
+        destroy_child_task(parent, child);
+        errno = EBUSY;
+        return -1;
+    }
+    if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGSTOP) {
+        destroy_child_task(parent, child);
+        errno = EPROTO;
+        return -1;
+    }
+
+    destroy_child_task(parent, child);
+    return 0;
+}
+
+int wait_job_control_contract_public_waitpid_reports_continued_child_with_wcontinued(void) {
+    struct task_struct *parent = get_current();
+    struct task_struct *child = NULL;
+    int status = 0;
+
+    if (!parent) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    child = create_child_task(parent, 0);
+    if (!child) {
+        return -1;
+    }
+    if (stop_and_wait_status(parent, child, SIGSTOP, NULL) != 0) {
+        destroy_child_task(parent, child);
+        return -1;
+    }
+    clear_pending_signal(parent, SIGCHLD);
+    if (signal_generate_task(child, SIGCONT) != 0) {
+        destroy_child_task(parent, child);
+        return -1;
+    }
+
+    if (kernel_waitpid(child->pid, &status, WCONTINUED) != child->pid) {
+        destroy_child_task(parent, child);
+        errno = EBUSY;
+        return -1;
+    }
+    if (!WIFCONTINUED(status)) {
+        destroy_child_task(parent, child);
+        errno = EPROTO;
+        return -1;
+    }
+
+    destroy_child_task(parent, child);
     return 0;
 }
 
