@@ -38,6 +38,7 @@ extern int32_t getsid_impl(int32_t pid);
 extern int32_t setsid_impl(void);
 extern void exit_impl(int status);
 extern __kernel_pid_t tcgetsid(int fd);
+extern int kernel_isatty(int fd) __asm("_isatty");
 
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
 
@@ -676,6 +677,65 @@ int pty_session_contract_tcgetsid_matches_controlling_session(void) {
     close_if_open(tty_fd);
     close_if_open(master_fd);
     close_if_open(slave_fd);
+    return 0;
+}
+
+int pty_session_contract_isatty_reports_true_for_pty_descriptors(void) {
+    int master_fd = -1;
+    int slave_fd = -1;
+    unsigned int pty_index = 0;
+
+    if (alloc_pty_pair(0, 0, &master_fd, &slave_fd, &pty_index) != 0) {
+        return -1;
+    }
+
+    errno = 0;
+    if (kernel_isatty(master_fd) != 1) {
+        close_if_open(master_fd);
+        close_if_open(slave_fd);
+        errno = EPROTO;
+        return -1;
+    }
+
+    errno = 0;
+    if (kernel_isatty(slave_fd) != 1) {
+        close_if_open(master_fd);
+        close_if_open(slave_fd);
+        errno = EPROTO;
+        return -1;
+    }
+
+    close_if_open(master_fd);
+    close_if_open(slave_fd);
+    return 0;
+}
+
+int pty_session_contract_isatty_reports_enotty_for_non_tty_directory(void) {
+    int dirfd;
+
+    errno = 0;
+    dirfd = open_impl("/proc/self/fd", O_RDONLY | O_DIRECTORY, 0);
+    if (dirfd < 0) {
+        return -1;
+    }
+
+    errno = 0;
+    if (kernel_isatty(dirfd) != 0 || errno != ENOTTY) {
+        close_if_open(dirfd);
+        errno = EPROTO;
+        return -1;
+    }
+
+    return close_if_open(dirfd);
+}
+
+int pty_session_contract_isatty_reports_ebadf_for_invalid_descriptor(void) {
+    errno = 0;
+    if (kernel_isatty(-1) != 0 || errno != EBADF) {
+        errno = EPROTO;
+        return -1;
+    }
+
     return 0;
 }
 

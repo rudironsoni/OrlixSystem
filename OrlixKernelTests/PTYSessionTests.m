@@ -60,6 +60,18 @@
     XCTAssertEqual(pty_session_contract_tcgetsid_matches_controlling_session(), 0, @"errno %d", errno);
 }
 
+- (void)testIsattyReportsTrueForPtyDescriptors {
+    XCTAssertEqual(pty_session_contract_isatty_reports_true_for_pty_descriptors(), 0, @"errno %d", errno);
+}
+
+- (void)testIsattyReportsEnottyForNonTtyDirectory {
+    XCTAssertEqual(pty_session_contract_isatty_reports_enotty_for_non_tty_directory(), 0, @"errno %d", errno);
+}
+
+- (void)testIsattyReportsEbadfForInvalidDescriptor {
+    XCTAssertEqual(pty_session_contract_isatty_reports_ebadf_for_invalid_descriptor(), 0, @"errno %d", errno);
+}
+
 - (void)testControllingTtySurvivesDupOfSlaveDescriptor {
     XCTAssertEqual(pty_session_contract_controlling_tty_survives_dup_of_slave_descriptor(), 0, @"errno %d", errno);
 }

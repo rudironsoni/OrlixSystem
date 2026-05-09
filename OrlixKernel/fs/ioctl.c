@@ -189,3 +189,13 @@ __attribute__((visibility("default"))) __kernel_pid_t tcgetsid(int fd) {
 
     return (__kernel_pid_t)sid;
 }
+
+__attribute__((visibility("default"))) int isatty(int fd) {
+    pty_linux_termios_t termios;
+
+    if (ioctl_impl(fd, TCGETS, &termios) == 0) {
+        return 1;
+    }
+
+    return 0;
+}
