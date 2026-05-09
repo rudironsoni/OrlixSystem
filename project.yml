@@ -189,6 +189,7 @@ targets:
     sources:
     - OrlixKernelTests/SignalTests.m
     - OrlixKernelTests/TaskGroupTests.m
+    - OrlixKernelTests/ProcessGroupSessionTests.m
     - OrlixKernelTests/CgroupTests.m
     - OrlixKernelTests/CredentialTests.m
     - OrlixKernelTests/VFSPathTests.m
@@ -255,6 +256,9 @@ targets:
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: OrlixKernelTests/WaitJobControlContract.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixKernelTests/ProcessGroupSessionContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: OrlixKernelTests/PipeContract.c
