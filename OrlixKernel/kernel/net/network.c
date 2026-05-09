@@ -11,11 +11,12 @@
 #include <linux/poll.h>
 #include <linux/socket.h>
 #include <linux/time_types.h>
+#include <linux/uio.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 
+#include "internal/private/kernel_socket_compat.h"
 #include "socket.h"
 #include "fs/fdtable.h"
 
@@ -202,7 +203,7 @@ fail:
     return -1;
 }
 
-__attribute__((visibility("default"))) int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+__attribute__((visibility("default"))) int connect(int sockfd, const struct sockaddr *addr, __u32 addrlen) {
     struct socket_state *sock;
     int ret;
 
@@ -214,7 +215,7 @@ __attribute__((visibility("default"))) int connect(int sockfd, const struct sock
     return ret;
 }
 
-__attribute__((visibility("default"))) int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen) {
+__attribute__((visibility("default"))) int bind(int sockfd, const struct sockaddr *addr, __u32 addrlen) {
     struct socket_state *sock;
     int ret;
 
@@ -238,7 +239,7 @@ __attribute__((visibility("default"))) int listen(int sockfd, int backlog) {
     return ret;
 }
 
-__attribute__((visibility("default"))) int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+__attribute__((visibility("default"))) int accept(int sockfd, struct sockaddr *addr, __u32 *addrlen) {
     struct socket_state *sock;
     struct socket_state *accepted;
     int fd;
@@ -272,7 +273,7 @@ __attribute__((visibility("default"))) int accept(int sockfd, struct sockaddr *a
     return fd;
 }
 
-__attribute__((visibility("default"))) int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
+__attribute__((visibility("default"))) int accept4(int sockfd, struct sockaddr *addr, __u32 *addrlen, int flags) {
     struct socket_state *sock;
     struct socket_state *accepted;
     int fd;
@@ -305,9 +306,9 @@ __attribute__((visibility("default"))) int accept4(int sockfd, struct sockaddr *
     return fd;
 }
 
-__attribute__((visibility("default"))) ssize_t send(int sockfd, const void *buf, size_t len, int flags) {
+__attribute__((visibility("default"))) __kernel_ssize_t send(int sockfd, const void *buf, size_t len, int flags) {
     struct socket_state *sock;
-    ssize_t ret;
+    __kernel_ssize_t ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
@@ -317,9 +318,9 @@ __attribute__((visibility("default"))) ssize_t send(int sockfd, const void *buf,
     return ret;
 }
 
-__attribute__((visibility("default"))) ssize_t recv(int sockfd, void *buf, size_t len, int flags) {
+__attribute__((visibility("default"))) __kernel_ssize_t recv(int sockfd, void *buf, size_t len, int flags) {
     struct socket_state *sock;
-    ssize_t ret;
+    __kernel_ssize_t ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
@@ -329,14 +330,14 @@ __attribute__((visibility("default"))) ssize_t recv(int sockfd, void *buf, size_
     return ret;
 }
 
-__attribute__((visibility("default"))) ssize_t sendto(int sockfd,
-                                                      const void *buf,
-                                                      size_t len,
-                                                      int flags,
-                                                      const struct sockaddr *dest_addr,
-                                                      socklen_t addrlen) {
+__attribute__((visibility("default"))) __kernel_ssize_t sendto(int sockfd,
+                                                               const void *buf,
+                                                               size_t len,
+                                                               int flags,
+                                                               const struct sockaddr *dest_addr,
+                                                               __u32 addrlen) {
     struct socket_state *sock;
-    ssize_t ret;
+    __kernel_ssize_t ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
@@ -346,14 +347,14 @@ __attribute__((visibility("default"))) ssize_t sendto(int sockfd,
     return ret;
 }
 
-__attribute__((visibility("default"))) ssize_t recvfrom(int sockfd,
-                                                        void *buf,
-                                                        size_t len,
-                                                        int flags,
-                                                        struct sockaddr *src_addr,
-                                                        socklen_t *addrlen) {
+__attribute__((visibility("default"))) __kernel_ssize_t recvfrom(int sockfd,
+                                                                 void *buf,
+                                                                 size_t len,
+                                                                 int flags,
+                                                                 struct sockaddr *src_addr,
+                                                                 __u32 *addrlen) {
     struct socket_state *sock;
-    ssize_t ret;
+    __kernel_ssize_t ret;
 
     if (fd_get_socket(sockfd, &sock) != 0) {
         return -1;
@@ -363,11 +364,11 @@ __attribute__((visibility("default"))) ssize_t recvfrom(int sockfd,
     return ret;
 }
 
-__attribute__((visibility("default"))) ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags) {
+__attribute__((visibility("default"))) __kernel_ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags) {
     size_t total = 0;
     size_t offset = 0;
     char *tmp;
-    ssize_t ret;
+    __kernel_ssize_t ret;
 
     if (!msg) {
         errno = EFAULT;
@@ -401,17 +402,17 @@ __attribute__((visibility("default"))) ssize_t sendmsg(int sockfd, const struct 
         }
     }
 
-    ret = sendto(sockfd, tmp, offset, flags, (const struct sockaddr *)msg->msg_name, (socklen_t)msg->msg_namelen);
+    ret = sendto(sockfd, tmp, offset, flags, (const struct sockaddr *)msg->msg_name, (__u32)msg->msg_namelen);
     free(tmp);
     return ret;
 }
 
-__attribute__((visibility("default"))) ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags) {
+__attribute__((visibility("default"))) __kernel_ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags) {
     size_t total = 0;
     size_t remaining;
     size_t offset = 0;
     char *tmp;
-    ssize_t nread;
+    __kernel_ssize_t nread;
 
     if (!msg) {
         errno = EFAULT;
@@ -443,7 +444,7 @@ __attribute__((visibility("default"))) ssize_t recvmsg(int sockfd, struct msghdr
                      total,
                      flags,
                      (struct sockaddr *)msg->msg_name,
-                     (socklen_t *)&msg->msg_namelen);
+                     (__u32 *)&msg->msg_namelen);
     if (nread <= 0) {
         free(tmp);
         return nread;
@@ -488,7 +489,7 @@ __attribute__((visibility("default"))) int sendmmsg(int sockfd,
     }
 
     for (sent = 0; sent < vlen; sent++) {
-        ssize_t ret = sendmsg(sockfd, &msgvec[sent].msg_hdr, flags);
+        __kernel_ssize_t ret = sendmsg(sockfd, &msgvec[sent].msg_hdr, flags);
         if (ret < 0) {
             return sent > 0 ? (int)sent : -1;
         }
@@ -519,7 +520,7 @@ __attribute__((visibility("default"))) int recvmmsg(int sockfd,
 
     for (received = 0; received < vlen; received++) {
         int recv_flags = flags;
-        ssize_t ret;
+        __kernel_ssize_t ret;
 
         if (received > 0) {
             recv_flags |= MSG_DONTWAIT;
@@ -552,7 +553,7 @@ __attribute__((visibility("default"))) int getsockopt(int sockfd,
                                                       int level,
                                                       int optname,
                                                       void *optval,
-                                                      socklen_t *optlen) {
+                                                      __u32 *optlen) {
     struct socket_state *sock;
     int ret;
 
@@ -568,7 +569,7 @@ __attribute__((visibility("default"))) int setsockopt(int sockfd,
                                                       int level,
                                                       int optname,
                                                       const void *optval,
-                                                      socklen_t optlen) {
+                                                      __u32 optlen) {
     struct socket_state *sock;
     int ret;
 
@@ -580,7 +581,7 @@ __attribute__((visibility("default"))) int setsockopt(int sockfd,
     return ret;
 }
 
-__attribute__((visibility("default"))) int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+__attribute__((visibility("default"))) int getsockname(int sockfd, struct sockaddr *addr, __u32 *addrlen) {
     struct socket_state *sock;
     int ret;
 
@@ -592,7 +593,7 @@ __attribute__((visibility("default"))) int getsockname(int sockfd, struct sockad
     return ret;
 }
 
-__attribute__((visibility("default"))) int getpeername(int sockfd, struct sockaddr *addr, socklen_t *addrlen) {
+__attribute__((visibility("default"))) int getpeername(int sockfd, struct sockaddr *addr, __u32 *addrlen) {
     struct socket_state *sock;
     int ret;
 

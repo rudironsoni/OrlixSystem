@@ -151,7 +151,7 @@ int readiness_contract_timerfd_relative_expiration_read_and_poll(void) {
     fd = (int)syscall_dispatch_impl(__NR_timerfd_create, 1, TFD_NONBLOCK | TFD_CLOEXEC, 0, 0, 0, 0);
     if (fd < 0) {
         errno = (int)-fd;
-        return -1;
+        return -101;
     }
 
     ret = syscall_dispatch_impl(__NR_fcntl, fd, F_GETFD, 0, 0, 0, 0);

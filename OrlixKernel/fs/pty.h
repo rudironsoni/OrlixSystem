@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "internal/private/kernel_type_compat.h"
+#include <linux/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,10 +49,10 @@ size_t pty_list_slave_indices_impl(unsigned int *indices, size_t capacity);
 
 int pty_close_end_impl(unsigned int pty_index, bool is_master);
 
-ssize_t pty_read_master_impl(unsigned int pty_index, void *buf, size_t count, bool nonblock);
-ssize_t pty_write_master_impl(unsigned int pty_index, const void *buf, size_t count, bool nonblock);
-ssize_t pty_read_slave_impl(unsigned int pty_index, void *buf, size_t count, bool nonblock);
-ssize_t pty_write_slave_impl(unsigned int pty_index, const void *buf, size_t count, bool nonblock);
+__kernel_ssize_t pty_read_master_impl(unsigned int pty_index, void *buf, size_t count, bool nonblock);
+__kernel_ssize_t pty_write_master_impl(unsigned int pty_index, const void *buf, size_t count, bool nonblock);
+__kernel_ssize_t pty_read_slave_impl(unsigned int pty_index, void *buf, size_t count, bool nonblock);
+__kernel_ssize_t pty_write_slave_impl(unsigned int pty_index, const void *buf, size_t count, bool nonblock);
 
 short pty_poll_revents_impl(unsigned int pty_index, bool is_master, short events);
 void pty_poll_wake_impl(unsigned int pty_index);

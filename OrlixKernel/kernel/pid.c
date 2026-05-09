@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <linux/types.h>
+
 #include "task.h"
 
 #define PID_MIN 1
@@ -11,7 +13,7 @@
 #define PID_COUNT (PID_MAX - PID_MIN + 1)
 
 /* Free list stack for O(1) PID allocation/reuse */
-static pid_t pid_free_stack[PID_COUNT];
+static __kernel_pid_t pid_free_stack[PID_COUNT];
 static _Atomic int pid_stack_top = 0;
 static kernel_mutex_t pid_lock = KERNEL_MUTEX_INITIALIZER;
 static atomic_bool pid_initialized = false;
@@ -31,7 +33,7 @@ static int32_t pid_alloc_impl(void) {
     }
 
     top--;
-    pid_t pid = pid_free_stack[top];
+    __kernel_pid_t pid = pid_free_stack[top];
     atomic_store(&pid_stack_top, top);
     kernel_mutex_unlock(&pid_lock);
 
@@ -82,7 +84,7 @@ void pid_init(void) {
 
     /* Push PIDs in reverse order so PID_MIN is popped first */
     int idx = 0;
-    for (pid_t pid = PID_MAX; pid >= PID_MIN; pid--) {
+    for (__kernel_pid_t pid = PID_MAX; pid >= PID_MIN; pid--) {
         pid_free_stack[idx++] = pid;
     }
     atomic_store(&pid_stack_top, PID_COUNT);

@@ -30,7 +30,7 @@
 		34D27A8A1EA1C280455CC5FD /* LinuxUAPICompileSmoke.c in Sources */ = {isa = PBXBuildFile; fileRef = 6F0D2C981B4804AA4EE393A6 /* LinuxUAPICompileSmoke.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT)"; }; };
 		36F0EB3AD4A943C9E4257687 /* random.c in Sources */ = {isa = PBXBuildFile; fileRef = B641675306E5E0E4C108ADD7 /* random.c */; };
 		38F2CC16EE3FEB7AD9ED8123 /* sync.c in Sources */ = {isa = PBXBuildFile; fileRef = 2E4082ED2FFD96285D7A4CB9 /* sync.c */; };
-		3C77C051B455DB725C05136B /* KernelOwnerCompatCompileSmoke.c in Sources */ = {isa = PBXBuildFile; fileRef = 401F14541905D4566D1F3EA9 /* KernelOwnerCompatCompileSmoke.c */; };
+		3C77C051B455DB725C05136B /* KernelOwnerCompatCompileSmoke.c in Sources */ = {isa = PBXBuildFile; fileRef = 401F14541905D4566D1F3EA9 /* KernelOwnerCompatCompileSmoke.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT)"; }; };
 		3C94E0FBE2F7AF0E96199284 /* SeccompTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 719FE383FDCB72E5E6979162 /* SeccompTests.m */; };
 		3DEC5F04961D44E1D855B171 /* WaitJobControlTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 2F684F5EB4A5943021FF5118 /* WaitJobControlTests.m */; };
 		4435B0123EE6391DF1290763 /* CredentialContract.c in Sources */ = {isa = PBXBuildFile; fileRef = D1F57E8094171050217C0955 /* CredentialContract.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_INCLUDE_ROOT)"; }; };

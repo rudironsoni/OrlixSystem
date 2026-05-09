@@ -34,7 +34,7 @@ static void retain_fd_description(struct fd_description *desc);
 static void release_fd_description(struct fd_description *desc);
 static struct file *copy_file_descriptor(struct file *file);
 extern void poll_notify_readiness_impl(void);
-extern int kernel_clock_gettime(int clock_id, struct timespec *tp);
+extern int kernel_clock_gettime(int clock_id, struct kernel_timespec *tp);
 
 struct files_struct *alloc_files(size_t max_fds) {
     if (max_fds == 0) {
@@ -358,7 +358,7 @@ enum fd_type {
 };
 
 typedef struct synthetic_dir_state {
-    off_t cursor;
+    __kernel_off_t cursor;
     bool entries_emitted;
     synthetic_dir_class_t dir_class;
 } synthetic_dir_state_t;
@@ -368,7 +368,7 @@ typedef struct fd_description {
     int fd;
     int flags;
     uint32_t mode;
-    off_t offset;
+    __kernel_off_t offset;
     char path[MAX_PATH];
     uint64_t file_identity;
     uint64_t mount_ns_id;
@@ -907,7 +907,7 @@ static int timerfd_clock_allowed(int clockid) {
 }
 
 static int timerfd_now_ns(int clockid, uint64_t *now_out) {
-    struct timespec ts;
+    struct kernel_timespec ts;
 
     if (!now_out || !timerfd_clock_allowed(clockid)) {
         errno = EINVAL;

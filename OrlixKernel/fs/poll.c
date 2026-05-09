@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <sys/_types/_timeval.h>
 
 #include "fdtable.h"
 #include "internal/private/backing_poll.h"
@@ -28,8 +29,8 @@ static void readiness_wait_init_once(void) {
     }
 }
 
-static int backing_poll_wait(struct pollfd *fds, nfds_t nfds, int timeout) {
-    if (nfds > (nfds_t)UINT_MAX) {
+static int backing_poll_wait(struct pollfd *fds, __kernel_ulong_t nfds, int timeout) {
+    if (nfds > (__kernel_ulong_t)UINT_MAX) {
         errno = EINVAL;
         return -1;
     }
@@ -237,7 +238,7 @@ static int poll_wait_after_snapshot(uint64_t observed_generation, int timeout) {
     return 0;
 }
 
-static int poll_snapshot(struct pollfd *fds, nfds_t nfds, bool *has_virtual_out, bool *has_backing_out) {
+static int poll_snapshot(struct pollfd *fds, __kernel_ulong_t nfds, bool *has_virtual_out, bool *has_backing_out) {
     int ready_count = 0;
     int backing_fds_count = 0;
     bool has_virtual = false;
@@ -262,7 +263,7 @@ static int poll_snapshot(struct pollfd *fds, nfds_t nfds, bool *has_virtual_out,
         }
     }
 
-    for (nfds_t i = 0; i < nfds; i++) {
+    for (__kernel_ulong_t i = 0; i < nfds; i++) {
         int is_virtual = 0;
         short revents;
 
@@ -291,7 +292,7 @@ static int poll_snapshot(struct pollfd *fds, nfds_t nfds, bool *has_virtual_out,
     }
 
     if (backing_fds_count > 0) {
-        int backing_ready = backing_poll_wait(backing_fds, (nfds_t)backing_fds_count, 0);
+        int backing_ready = backing_poll_wait(backing_fds, (__kernel_ulong_t)backing_fds_count, 0);
         if (backing_ready < 0) {
             free(backing_fds);
             free(fd_map);
@@ -319,7 +320,7 @@ static int poll_snapshot(struct pollfd *fds, nfds_t nfds, bool *has_virtual_out,
     return ready_count;
 }
 
-static int poll_impl_common(struct pollfd *fds, nfds_t nfds, int timeout, bool record_restart) {
+static int poll_impl_common(struct pollfd *fds, __kernel_ulong_t nfds, int timeout, bool record_restart) {
     int remaining = timeout;
 
     if (!fds && nfds > 0) {
@@ -380,11 +381,11 @@ static int poll_impl_common(struct pollfd *fds, nfds_t nfds, int timeout, bool r
     }
 }
 
-int poll_impl(struct pollfd *fds, nfds_t nfds, int timeout) {
+int poll_impl(struct pollfd *fds, __kernel_ulong_t nfds, int timeout) {
     return poll_impl_common(fds, nfds, timeout, true);
 }
 
-static int timeval_to_timeout_ms(const struct timeval *timeout) {
+static int timeval_to_timeout_ms(const struct kernel_timeval *timeout) {
     if (!timeout) {
         return -1;
     }
@@ -402,7 +403,8 @@ static int timeval_to_timeout_ms(const struct timeval *timeout) {
     return (int)total;
 }
 
-int select_impl(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, struct timeval *timeout) {
+int select_impl(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds,
+                struct kernel_timeval *timeout) {
     fd_set requested_read;
     fd_set requested_write;
     fd_set requested_error;
@@ -499,7 +501,7 @@ int select_impl(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, s
         idx++;
     }
 
-    int ret = poll_impl_common(pfds, (nfds_t)requested, timeout_ms, false);
+    int ret = poll_impl_common(pfds, (__kernel_ulong_t)requested, timeout_ms, false);
     if (ret < 0) {
         if (errno == EINTR) {
             if (readfds && requested_read_ptr) {
@@ -550,10 +552,19 @@ int select_impl(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, s
     return ready_fds;
 }
 
-__attribute__((visibility("default"))) int poll(struct pollfd *fds, nfds_t nfds, int timeout) {
+__attribute__((visibility("default"))) int poll(struct pollfd *fds, __kernel_ulong_t nfds, int timeout) {
     return poll_impl(fds, nfds, timeout);
 }
 
-__attribute__((visibility("default"))) int select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, struct timeval *timeout) {
-    return select_impl(nfds, readfds, writefds, errorfds, timeout);
+__attribute__((visibility("default"))) int select(int nfds, fd_set *readfds, fd_set *writefds,
+                                                  fd_set *errorfds, struct timeval *timeout) {
+    struct kernel_timeval kernel_timeout;
+    struct kernel_timeval *kernel_timeout_ptr = NULL;
+
+    if (timeout) {
+        kernel_timeout.tv_sec = timeout->tv_sec;
+        kernel_timeout.tv_usec = timeout->tv_usec;
+        kernel_timeout_ptr = &kernel_timeout;
+    }
+    return select_impl(nfds, readfds, writefds, errorfds, kernel_timeout_ptr);
 }

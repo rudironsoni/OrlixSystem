@@ -10,17 +10,22 @@
  * the _impl() functions using Darwin's native types directly.
  */
 
+#include "internal/private/kernel_time_compat.h"
+
 #include <errno.h>
 #include <signal.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
+static const clockid_t host_clock_realtime = _CLOCK_REALTIME;
+static const clockid_t host_clock_monotonic = _CLOCK_MONOTONIC;
+
 /* ============================================================================
  * TIME - Darwin implementation using host libc
  * ============================================================================ */
 
-time_t time_impl(time_t *tloc) {
+kernel_time_t time_impl(kernel_time_t *tloc) {
     time_t t = time(NULL);
     if (tloc) {
         *tloc = t;
@@ -32,16 +37,16 @@ time_t time_impl(time_t *tloc) {
  * GETTIMEOFDAY - Darwin implementation
  * ============================================================================ */
 
-int gettimeofday_impl(struct timeval *tv, struct timezone *tz) {
+int gettimeofday_impl(struct kernel_timeval *tv, struct kernel_timezone *tz) {
     uint64_t ns;
 
     if (!tv) {
         errno = EFAULT;
         return -1;
     }
-    ns = clock_gettime_nsec_np(CLOCK_REALTIME);
-    tv->tv_sec = (time_t)(ns / 1000000000ULL);
-    tv->tv_usec = (suseconds_t)((ns % 1000000000ULL) / 1000ULL);
+    ns = clock_gettime_nsec_np(host_clock_realtime);
+    tv->tv_sec = (kernel_time_t)(ns / 1000000000ULL);
+    tv->tv_usec = (kernel_suseconds_t)((ns % 1000000000ULL) / 1000ULL);
     if (tz) {
         tz->tz_minuteswest = 0;
         tz->tz_dsttime = 0;
@@ -49,7 +54,7 @@ int gettimeofday_impl(struct timeval *tv, struct timezone *tz) {
     return 0;
 }
 
-int settimeofday_impl(const struct timeval *tv, const struct timezone *tz) {
+int settimeofday_impl(const struct kernel_timeval *tv, const struct kernel_timezone *tz) {
     (void)tv;
     (void)tz;
     errno = EPERM;
@@ -60,7 +65,7 @@ int settimeofday_impl(const struct timeval *tv, const struct timezone *tz) {
  * CLOCK_GETTIME - Darwin implementation
  * ============================================================================ */
 
-int clock_gettime_impl(clockid_t clk_id, struct timespec *tp) {
+int clock_gettime_impl(__kernel_clockid_t clk_id, struct kernel_timespec *tp) {
     uint64_t ns;
 
     if (!tp) {
@@ -69,10 +74,14 @@ int clock_gettime_impl(clockid_t clk_id, struct timespec *tp) {
     }
 
     switch (clk_id) {
-    case CLOCK_REALTIME:
-    case CLOCK_MONOTONIC:
-        ns = clock_gettime_nsec_np(clk_id);
-        tp->tv_sec = (time_t)(ns / 1000000000ULL);
+    case 0:
+        ns = clock_gettime_nsec_np(host_clock_realtime);
+        tp->tv_sec = (kernel_time_t)(ns / 1000000000ULL);
+        tp->tv_nsec = (long)(ns % 1000000000ULL);
+        return 0;
+    case 1:
+        ns = clock_gettime_nsec_np(host_clock_monotonic);
+        tp->tv_sec = (kernel_time_t)(ns / 1000000000ULL);
         tp->tv_nsec = (long)(ns % 1000000000ULL);
         return 0;
     default:
@@ -81,14 +90,14 @@ int clock_gettime_impl(clockid_t clk_id, struct timespec *tp) {
     }
 }
 
-int clock_getres_impl(clockid_t clk_id, struct timespec *res) {
+int clock_getres_impl(__kernel_clockid_t clk_id, struct kernel_timespec *res) {
     (void)clk_id;
     (void)res;
     errno = ENOSYS;
     return -1;
 }
 
-int clock_settime_impl(clockid_t clk_id, const struct timespec *tp) {
+int clock_settime_impl(__kernel_clockid_t clk_id, const struct kernel_timespec *tp) {
     (void)clk_id;
     (void)tp;
     errno = EPERM;
@@ -111,7 +120,7 @@ int usleep_impl(useconds_t usec) {
  * ITIMER - Interval timers (iOS does not support)
  * ============================================================================ */
 
-int setitimer_impl(int which, const struct itimerval *new_value, struct itimerval *old_value) {
+int setitimer_impl(int which, const struct kernel_itimerval *new_value, struct kernel_itimerval *old_value) {
     (void)which;
     (void)new_value;
     (void)old_value;
@@ -119,7 +128,7 @@ int setitimer_impl(int which, const struct itimerval *new_value, struct itimerva
     return -1;
 }
 
-int getitimer_impl(int which, struct itimerval *curr_value) {
+int getitimer_impl(int which, struct kernel_itimerval *curr_value) {
     (void)which;
     (void)curr_value;
     errno = ENOSYS;

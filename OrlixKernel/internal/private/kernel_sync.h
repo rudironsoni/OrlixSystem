@@ -68,8 +68,8 @@ int kernel_sigaddset(kernel_sigset_t *set, int signo);
 int kernel_sigismember(const kernel_sigset_t *set, int signo);
 int kernel_sleep_ms(int timeout_ms);
 
-struct timespec;
-int kernel_clock_gettime(int clock_id, struct timespec *tp);
+struct kernel_timespec;
+int kernel_clock_gettime(int clock_id, struct kernel_timespec *tp);
 
 #ifdef __cplusplus
 }

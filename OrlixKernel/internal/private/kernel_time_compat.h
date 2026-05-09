@@ -2,60 +2,38 @@
 #define ORLIX_INTERNAL_PRIVATE_KERNEL_TIME_COMPAT_H
 
 /*
- * Kernel-private time compatibility surface for Linux-owner code that needs a
- * concrete timespec and Linux clock constants without importing Darwin libc or
- * package-facing OrlixMLibC headers.
+ * Kernel-private time compatibility surface for Linux-owner code that needs
+ * Linux-owned time structs and Linux clock constants without importing Darwin
+ * libc or package-facing OrlixMLibC headers.
  */
+#include <linux/types.h>
 
-#ifndef _TIME_T
-#define _TIME_T
-typedef __INTPTR_TYPE__ time_t;
-#endif
+typedef __kernel_old_time_t kernel_time_t;
+typedef __kernel_suseconds_t kernel_suseconds_t;
 
-#ifndef _SUSECONDS_T
-#define _SUSECONDS_T
-typedef __INT32_TYPE__ suseconds_t;
-#endif
-
-#ifndef _USECONDS_T
-#define _USECONDS_T
-typedef __UINT32_TYPE__ useconds_t;
-#endif
-
-#ifndef ORLIX_KERNEL_CLOCKID_T
-#define ORLIX_KERNEL_CLOCKID_T
-typedef int clockid_t;
-#endif
-
-#ifndef _STRUCT_TIMESPEC
-#define _STRUCT_TIMESPEC struct timespec
-_STRUCT_TIMESPEC {
-    time_t tv_sec;
+struct kernel_timespec {
+    kernel_time_t tv_sec;
     long tv_nsec;
 };
-#endif
 
-#ifndef _STRUCT_TIMEVAL
-#define _STRUCT_TIMEVAL struct timeval
-_STRUCT_TIMEVAL {
-    time_t tv_sec;
-    suseconds_t tv_usec;
+struct kernel_timeval {
+    kernel_time_t tv_sec;
+    kernel_suseconds_t tv_usec;
 };
-#endif
 
-struct timezone {
+struct kernel_timezone {
     int tz_minuteswest;
     int tz_dsttime;
 };
 
-struct itimerval {
-    struct timeval it_interval;
-    struct timeval it_value;
+struct kernel_itimerval {
+    struct kernel_timeval it_interval;
+    struct kernel_timeval it_value;
 };
 
-struct itimerspec {
-    struct timespec it_interval;
-    struct timespec it_value;
+struct kernel_itimerspec {
+    struct kernel_timespec it_interval;
+    struct kernel_timespec it_value;
 };
 
 #ifndef CLOCK_REALTIME

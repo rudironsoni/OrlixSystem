@@ -13,7 +13,9 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <time.h>
 
 #include <linux/futex.h>
 
@@ -25,7 +27,7 @@
 
 /* ABI truth comes from vendored Linux UAPI: <linux/futex.h> */
 
-static int futex_timeout_ms(const struct timespec *timeout) {
+static int futex_timeout_ms(const struct kernel_timespec *timeout) {
     int64_t ms;
 
     if (!timeout) {
@@ -48,13 +50,20 @@ static int futex_timeout_ms(const struct timespec *timeout) {
 
 __attribute__((visibility("default"))) int futex(int *uaddr, int futex_op, int val,
 const struct timespec *timeout, int *uaddr2, int val3) {
-int timeout_ms;
+    struct kernel_timespec kernel_timeout;
+    const struct kernel_timespec *kernel_timeout_ptr = NULL;
+    int timeout_ms;
 
-timeout_ms = futex_timeout_ms(timeout);
-if (timeout_ms == -2) {
-return -1;
-}
-return futex_op_impl(uaddr, futex_op, val, timeout_ms, uaddr2, val3);
+    if (timeout) {
+        kernel_timeout.tv_sec = timeout->tv_sec;
+        kernel_timeout.tv_nsec = timeout->tv_nsec;
+        kernel_timeout_ptr = &kernel_timeout;
+    }
+    timeout_ms = futex_timeout_ms(kernel_timeout_ptr);
+    if (timeout_ms == -2) {
+        return -1;
+    }
+    return futex_op_impl(uaddr, futex_op, val, timeout_ms, uaddr2, val3);
 }
 
 __attribute__((visibility("default"))) int set_robust_list(void *head, unsigned long len) {

@@ -10,11 +10,11 @@
 
 #include <stddef.h>
 
-struct timeval;
-struct timezone;
-struct itimerval;
-struct timespec;
+struct kernel_timeval;
+struct kernel_timezone;
+struct kernel_itimerval;
+struct kernel_timespec;
 
-int kernel_clock_gettime(int clock_id, struct timespec *tp);
+int kernel_clock_gettime(int clock_id, struct kernel_timespec *tp);
 
 #endif /* KERNEL_TIME_INTERNAL_H */

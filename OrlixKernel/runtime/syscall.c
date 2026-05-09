@@ -295,12 +295,12 @@ extern int execve(const char *pathname, char *const argv[], char *const envp[]);
 extern int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *const envp[],
                          int flags);
 extern void exit_impl(int status);
-extern int nanosleep_impl(const struct timespec *req, struct timespec *rem);
-extern int gettimeofday_impl(struct timeval *tv, void *tz);
-extern int clock_gettime_impl(__kernel_clockid_t clk_id, struct timespec *tp);
-extern int interval_timer_set_impl(int which, const struct itimerval *new_value,
-                                   struct itimerval *old_value);
-extern int interval_timer_get_impl(int which, struct itimerval *curr_value);
+extern int nanosleep_impl(const struct kernel_timespec *req, struct kernel_timespec *rem);
+extern int gettimeofday_impl(struct kernel_timeval *tv, void *tz);
+extern int clock_gettime_impl(__kernel_clockid_t clk_id, struct kernel_timespec *tp);
+extern int interval_timer_set_impl(int which, const struct kernel_itimerval *new_value,
+                                   struct kernel_itimerval *old_value);
+extern int interval_timer_get_impl(int which, struct kernel_itimerval *curr_value);
 extern ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags);
 extern int mount_setattr(int dirfd, const char *pathname, unsigned int flags,
                          struct mount_attr *attr, size_t size);
@@ -375,8 +375,8 @@ static long syscall_prlimit64(int32_t pid, int resource, const uint64_t *new_lim
 static long syscall_clock_nanosleep(__kernel_clockid_t clk_id, int flags,
                                     const struct __kernel_timespec *req,
                                     struct __kernel_timespec *rem) {
-    struct timespec sleep_req;
-    struct timespec sleep_rem;
+    struct kernel_timespec sleep_req;
+    struct kernel_timespec sleep_rem;
 
     if (!req) {
         return -EFAULT;
@@ -386,7 +386,7 @@ static long syscall_clock_nanosleep(__kernel_clockid_t clk_id, int flags,
     }
 
     if ((flags & 1) != 0) {
-        struct timespec now;
+        struct kernel_timespec now;
         if (clock_gettime_impl(clk_id, &now) != 0) {
             return -(long)errno;
         }
@@ -626,7 +626,7 @@ struct syscall_sigmask_arg {
     size_t ss_len;
 };
 
-static int syscall_timespec_to_timeval(const struct __kernel_timespec *timeout, struct timeval *timeval) {
+static int syscall_timespec_to_timeval(const struct __kernel_timespec *timeout, struct kernel_timeval *timeval) {
     if (!timeout || !timeval) {
         return 0;
     }
@@ -1187,8 +1187,8 @@ static long syscall_dispatch_inner_impl(long number,
 
         switch (kind) {
         case TASK_RESTART_NANOSLEEP:
-            ret = nanosleep_impl((const struct timespec *)(uintptr_t)arg0,
-                                 (struct timespec *)(uintptr_t)arg1);
+            ret = nanosleep_impl((const struct kernel_timespec *)(uintptr_t)arg0,
+                                 (struct kernel_timespec *)(uintptr_t)arg1);
             return ret < 0 ? -(long)errno : ret;
         case TASK_RESTART_POLL:
             ret = poll_impl((struct pollfd *)(uintptr_t)arg0, (__kernel_ulong_t)arg1, (int)arg2);
@@ -1208,7 +1208,7 @@ static long syscall_dispatch_inner_impl(long number,
         case TASK_RESTART_SELECT:
             ret = select_impl((int)arg0, (fd_set *)(uintptr_t)arg1,
                               (fd_set *)(uintptr_t)arg2, (fd_set *)(uintptr_t)arg3,
-                              (struct timeval *)(uintptr_t)arg4);
+                              (struct kernel_timeval *)(uintptr_t)arg4);
             return ret < 0 ? -(long)errno : ret;
         case TASK_RESTART_EPOLL_WAIT:
             ret = epoll_wait_impl((int)arg0, (struct epoll_event *)(uintptr_t)arg1,
@@ -1267,8 +1267,8 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)poll_impl((struct pollfd *)(uintptr_t)arg0, (__kernel_ulong_t)arg1, timeout_ms));
     }
     case __NR_pselect6: {
-        struct timeval timeout_value;
-        struct timeval *timeout_ptr = NULL;
+        struct kernel_timeval timeout_value;
+        struct kernel_timeval *timeout_ptr = NULL;
         const struct syscall_sigmask_arg *sigmask_arg = (const struct syscall_sigmask_arg *)(uintptr_t)arg5;
         struct signal_mask_bits old_mask;
         int mask_changed = 0;
@@ -1569,7 +1569,7 @@ static long syscall_dispatch_inner_impl(long number,
                                           (void *)(uintptr_t)arg2,
                                           (void *)(uintptr_t)arg3));
     case __NR_clock_gettime: {
-        struct timespec backing_ts;
+        struct kernel_timespec backing_ts;
         struct __kernel_timespec *linux_ts = (struct __kernel_timespec *)(uintptr_t)arg1;
         long ret;
 
@@ -1587,8 +1587,8 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_nanosleep: {
         const struct __kernel_timespec *linux_req = (const struct __kernel_timespec *)(uintptr_t)arg0;
         struct __kernel_timespec *linux_rem = (struct __kernel_timespec *)(uintptr_t)arg1;
-        struct timespec req;
-        struct timespec rem;
+        struct kernel_timespec req;
+        struct kernel_timespec rem;
 
         if (!linux_req) {
             return -EFAULT;
@@ -1617,7 +1617,7 @@ static long syscall_dispatch_inner_impl(long number,
                                        (struct __kernel_timespec *)(uintptr_t)arg3);
     case __NR_gettimeofday: {
         struct __kernel_old_timeval *linux_tv = (struct __kernel_old_timeval *)(uintptr_t)arg0;
-        struct timeval backing_tv;
+        struct kernel_timeval backing_tv;
         long ret;
 
         if (!linux_tv) {
@@ -1634,7 +1634,7 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_getitimer: {
         struct __kernel_old_itimerval *linux_value =
             (struct __kernel_old_itimerval *)(uintptr_t)arg1;
-        struct itimerval backing_value;
+        struct kernel_itimerval backing_value;
         long ret;
 
         if (!linux_value) {
@@ -1655,9 +1655,9 @@ static long syscall_dispatch_inner_impl(long number,
             (const struct __kernel_old_itimerval *)(uintptr_t)arg1;
         struct __kernel_old_itimerval *linux_old =
             (struct __kernel_old_itimerval *)(uintptr_t)arg2;
-        struct itimerval backing_new;
-        struct itimerval backing_old;
-        const struct itimerval *backing_new_ptr = NULL;
+        struct kernel_itimerval backing_new;
+        struct kernel_itimerval backing_old;
+        const struct kernel_itimerval *backing_new_ptr = NULL;
         long ret;
 
         if (linux_new) {

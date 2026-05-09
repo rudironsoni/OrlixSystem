@@ -121,11 +121,11 @@ static bool socket_is_supported_type(int type) {
     return socket_is_stream(type) || socket_is_dgram(type);
 }
 
-static socklen_t socket_unix_addr_len(size_t name_len) {
+static __u32 socket_unix_addr_len(size_t name_len) {
     if (name_len == 0) {
-        return (socklen_t)offsetof(struct socket_address_un, path);
+        return (__u32)offsetof(struct socket_address_un, path);
     }
-    return (socklen_t)(offsetof(struct socket_address_un, path) + 1 + name_len);
+    return (__u32)(offsetof(struct socket_address_un, path) + 1 + name_len);
 }
 
 static void socket_store_peer_name(struct socket_state *sock,
@@ -146,10 +146,10 @@ static void socket_store_peer_name(struct socket_state *sock,
 static int socket_copy_name_out(const unsigned char *name,
                                 size_t name_len,
                                 struct sockaddr *addr,
-                                socklen_t *addrlen) {
+                                __u32 *addrlen) {
     struct socket_address_un unix_addr;
-    socklen_t actual_len;
-    socklen_t copy_len;
+    __u32 actual_len;
+    __u32 copy_len;
 
     if (!addrlen) {
         errno = EFAULT;
@@ -176,7 +176,7 @@ static int socket_copy_name_out(const unsigned char *name,
 }
 
 static int socket_parse_unix_name(const struct sockaddr *addr,
-                                  socklen_t addrlen,
+                                  __u32 addrlen,
                                   unsigned char *name_out,
                                   size_t *name_len_out) {
     const struct socket_address_un *un;
@@ -591,7 +591,7 @@ int socket_shutdown_impl(struct socket_state *sock, int how) {
     return 0;
 }
 
-int socket_connect_impl(struct socket_state *sock, const struct sockaddr *addr, socklen_t addrlen) {
+int socket_connect_impl(struct socket_state *sock, const struct sockaddr *addr, __u32 addrlen) {
     size_t name_len;
     unsigned char name[ORLIX_UNIX_NAME_MAX];
     struct socket_state *listener = NULL;
@@ -701,7 +701,7 @@ int socket_connect_impl(struct socket_state *sock, const struct sockaddr *addr, 
     return 0;
 }
 
-int socket_bind_impl(struct socket_state *sock, const struct sockaddr *addr, socklen_t addrlen) {
+int socket_bind_impl(struct socket_state *sock, const struct sockaddr *addr, __u32 addrlen) {
     unsigned char name[ORLIX_UNIX_NAME_MAX];
     size_t name_len;
 
@@ -767,7 +767,7 @@ int socket_listen_impl(struct socket_state *sock, int backlog) {
 
 struct socket_state *socket_accept_impl(struct socket_state *sock,
                                         struct sockaddr *addr,
-                                        socklen_t *addrlen,
+                                        __u32 *addrlen,
                                         int flags) {
     bool nonblock = (flags & ORLIX_SOCKET_NONBLOCK) != 0;
     struct socket_state *accepted;
@@ -823,7 +823,7 @@ struct socket_state *socket_accept_impl(struct socket_state *sock,
     return accepted;
 }
 
-int socket_getsockname_impl(struct socket_state *sock, struct sockaddr *addr, socklen_t *addrlen) {
+int socket_getsockname_impl(struct socket_state *sock, struct sockaddr *addr, __u32 *addrlen) {
     unsigned char name[ORLIX_UNIX_NAME_MAX];
     size_t name_len = 0;
 
@@ -841,7 +841,7 @@ int socket_getsockname_impl(struct socket_state *sock, struct sockaddr *addr, so
     return socket_copy_name_out(name, name_len, addr, addrlen);
 }
 
-int socket_getpeername_impl(struct socket_state *sock, struct sockaddr *addr, socklen_t *addrlen) {
+int socket_getpeername_impl(struct socket_state *sock, struct sockaddr *addr, __u32 *addrlen) {
     unsigned char name[ORLIX_UNIX_NAME_MAX];
     size_t name_len = 0;
     bool valid;
@@ -867,21 +867,21 @@ int socket_getpeername_impl(struct socket_state *sock, struct sockaddr *addr, so
     return socket_copy_name_out(name, name_len, addr, addrlen);
 }
 
-static int socket_copy_int_opt(void *optval, socklen_t *optlen, int value) {
+static int socket_copy_int_opt(void *optval, __u32 *optlen, int value) {
     int copy_value = value;
-    socklen_t copy_len;
+    __u32 copy_len;
 
     if (!optlen || !optval) {
         errno = EFAULT;
         return -1;
     }
-    if (*optlen < (socklen_t)sizeof(int)) {
+    if (*optlen < (__u32)sizeof(int)) {
         errno = EINVAL;
         return -1;
     }
-    copy_len = *optlen < (socklen_t)sizeof(copy_value) ? *optlen : (socklen_t)sizeof(copy_value);
+    copy_len = *optlen < (__u32)sizeof(copy_value) ? *optlen : (__u32)sizeof(copy_value);
     memcpy(optval, &copy_value, copy_len);
-    *optlen = (socklen_t)sizeof(copy_value);
+    *optlen = (__u32)sizeof(copy_value);
     return 0;
 }
 
@@ -889,7 +889,7 @@ int socket_getsockopt_impl(struct socket_state *sock,
                            int level,
                            int optname,
                            void *optval,
-                           socklen_t *optlen) {
+                           __u32 *optlen) {
     int value;
 
     if (!sock) {
@@ -944,7 +944,7 @@ int socket_setsockopt_impl(struct socket_state *sock,
                            int level,
                            int optname,
                            const void *optval,
-                           socklen_t optlen) {
+                           __u32 optlen) {
     int value;
 
     if (!sock) {
@@ -955,7 +955,7 @@ int socket_setsockopt_impl(struct socket_state *sock,
         errno = ENOPROTOOPT;
         return -1;
     }
-    if (!optval || optlen < (socklen_t)sizeof(int)) {
+    if (!optval || optlen < (__u32)sizeof(int)) {
         errno = EINVAL;
         return -1;
     }
@@ -994,12 +994,12 @@ int socket_setsockopt_impl(struct socket_state *sock,
     return 0;
 }
 
-ssize_t socket_sendto_impl(struct socket_state *sock,
-                           const void *buf,
-                           size_t len,
-                           int flags,
-                           const struct sockaddr *dest_addr,
-                           socklen_t addrlen) {
+__kernel_ssize_t socket_sendto_impl(struct socket_state *sock,
+                                    const void *buf,
+                                    size_t len,
+                                    int flags,
+                                    const struct sockaddr *dest_addr,
+                                    __u32 addrlen) {
     struct socket_state *peer;
     bool nonblock;
     size_t to_write;
@@ -1095,7 +1095,7 @@ ssize_t socket_sendto_impl(struct socket_state *sock,
         if (to_write >= 0) {
             poll_notify_readiness_impl();
         }
-        return (ssize_t)to_write;
+        return (__kernel_ssize_t)to_write;
     }
 
     wait_queue_lock(&sock->wait);
@@ -1149,15 +1149,15 @@ ssize_t socket_sendto_impl(struct socket_state *sock,
     socket_wake_all_locked(peer);
     wait_queue_unlock(&peer->wait);
     poll_notify_readiness_impl();
-    return (ssize_t)to_write;
+    return (__kernel_ssize_t)to_write;
 }
 
-ssize_t socket_recvfrom_impl(struct socket_state *sock,
-                             void *buf,
-                             size_t len,
-                             int flags,
-                             struct sockaddr *src_addr,
-                             socklen_t *addrlen) {
+__kernel_ssize_t socket_recvfrom_impl(struct socket_state *sock,
+                                      void *buf,
+                                      size_t len,
+                                      int flags,
+                                      struct sockaddr *src_addr,
+                                      __u32 *addrlen) {
     bool nonblock;
 
     if (!sock) {
@@ -1228,7 +1228,7 @@ ssize_t socket_recvfrom_impl(struct socket_state *sock,
             }
         }
         poll_notify_readiness_impl();
-        return (ssize_t)to_read;
+        return (__kernel_ssize_t)to_read;
     }
 
     while (sock->len == 0) {
@@ -1263,15 +1263,15 @@ ssize_t socket_recvfrom_impl(struct socket_state *sock,
         socket_wake_all_locked(sock);
         wait_queue_unlock(&sock->wait);
         poll_notify_readiness_impl();
-        return (ssize_t)to_read;
+        return (__kernel_ssize_t)to_read;
     }
 }
 
-ssize_t socket_send_impl(struct socket_state *sock, const void *buf, size_t len, int flags) {
+__kernel_ssize_t socket_send_impl(struct socket_state *sock, const void *buf, size_t len, int flags) {
     return socket_sendto_impl(sock, buf, len, flags, NULL, 0);
 }
 
-ssize_t socket_recv_impl(struct socket_state *sock, void *buf, size_t len, int flags) {
+__kernel_ssize_t socket_recv_impl(struct socket_state *sock, void *buf, size_t len, int flags) {
     return socket_recvfrom_impl(sock, buf, len, flags, NULL, NULL);
 }
 

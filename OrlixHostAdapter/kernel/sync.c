@@ -19,7 +19,11 @@
 #include <unistd.h>
 
 #include "kernel_sync.h"
+#include "internal/private/kernel_time_compat.h"
 #include "task_current_contract.h"
+
+static const clockid_t host_nsecs_clock_realtime = _CLOCK_REALTIME;
+static const clockid_t host_nsecs_clock_monotonic = _CLOCK_MONOTONIC;
 
 static pthread_mutex_t *kernel_mutex_impl(const kernel_mutex_t *mutex) {
     return mutex ? (pthread_mutex_t *)mutex->impl : NULL;
@@ -196,7 +200,7 @@ int kernel_cond_timedwait_ms(kernel_cond_t *cond, kernel_mutex_t *mutex, int tim
         return -EINVAL;
     }
 
-    uint64_t now_ns = clock_gettime_nsec_np(CLOCK_REALTIME);
+    uint64_t now_ns = clock_gettime_nsec_np(host_nsecs_clock_realtime);
     struct timespec deadline;
     deadline.tv_sec = (time_t)(now_ns / 1000000000ULL) + (timeout_ms / 1000);
     deadline.tv_nsec = (long)(now_ns % 1000000000ULL) + ((long)(timeout_ms % 1000) * 1000000L);
@@ -432,24 +436,26 @@ int kernel_sleep_ms(int timeout_ms) {
  * CLOCK - Darwin implementation
  * ============================================================================ */
 
-int kernel_clock_gettime(int clock_id, struct timespec *tp) {
+int kernel_clock_gettime(int clock_id, struct kernel_timespec *tp) {
+    uint64_t ns;
+
     if (!tp) {
         return -EINVAL;
     }
-    
-    /* Convert Linux clock IDs to Darwin clock IDs */
-    clockid_t darwin_clock;
+
     switch (clock_id) {
     case 0: /* CLOCK_REALTIME */
-        darwin_clock = CLOCK_REALTIME;
+        ns = clock_gettime_nsec_np(host_nsecs_clock_realtime);
         break;
     case 1: /* CLOCK_MONOTONIC */
-        darwin_clock = CLOCK_MONOTONIC;
+        ns = clock_gettime_nsec_np(host_nsecs_clock_monotonic);
         break;
     default:
         errno = EINVAL;
         return -1;
     }
-    
-    return clock_gettime(darwin_clock, tp);
+
+    tp->tv_sec = (kernel_time_t)(ns / 1000000000ULL);
+    tp->tv_nsec = (long)(ns % 1000000000ULL);
+    return 0;
 }

@@ -12,7 +12,7 @@
 #include <linux/magic.h>
 #include <linux/mount.h>
 
-#include "internal/private/kernel_type_compat.h"
+#include <linux/types.h>
 #include "fdtable.h"
 #include "vfs.h"
 
@@ -143,14 +143,14 @@ int fstatfs_impl(int fd, struct statfs *buf) {
     return vfs_fill_statfs(path, buf);
 }
 
-static int posix_fadvise_impl(int fd, off_t offset, off_t len, int advice) {
+static int posix_fadvise_impl(int fd, __kernel_off_t offset, __kernel_off_t len, int advice) {
     (void)offset;
     (void)len;
     (void)advice;
     return fsync_impl(fd);
 }
 
-static int posix_fallocate_impl(int fd, off_t offset, off_t len) {
+static int posix_fallocate_impl(int fd, __kernel_off_t offset, __kernel_off_t len) {
     (void)offset;
     (void)len;
     return fsync_impl(fd);
@@ -180,12 +180,12 @@ __attribute__((visibility("default"))) int fstatfs(int fd, struct statfs *buf) {
     return fstatfs_impl(fd, buf);
 }
 
-__attribute__((visibility("default"))) int posix_fadvise(int fd, off_t offset,
-                                                         off_t len, int advice) {
+__attribute__((visibility("default"))) int posix_fadvise(int fd, __kernel_off_t offset,
+                                                         __kernel_off_t len, int advice) {
     return posix_fadvise_impl(fd, offset, len, advice);
 }
 
-__attribute__((visibility("default"))) int posix_fallocate(int fd, off_t offset,
-                                                           off_t len) {
+__attribute__((visibility("default"))) int posix_fallocate(int fd, __kernel_off_t offset,
+                                                           __kernel_off_t len) {
     return posix_fallocate_impl(fd, offset, len);
 }

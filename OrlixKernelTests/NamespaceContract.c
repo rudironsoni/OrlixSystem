@@ -753,7 +753,7 @@ out:
 int namespace_contract_proc_uid_gid_maps_are_writable_with_setgroups_policy(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child = NULL;
-    gid_t groups[1] = {7};
+    __kernel_gid32_t groups[1] = {7};
     int pid;
     int ret = -1;
 

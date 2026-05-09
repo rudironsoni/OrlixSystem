@@ -21,7 +21,8 @@ No later milestone may regress back to branded adapter-owned kernel-facing vocab
 The roadmap is not starting from zero:
 
 - Milestone 0 is structurally delivered enough to unblock later work.
-- Milestone 1 is the active milestone.
+- Milestone 1 is delivered and simulator-proofed.
+- Milestone 2 is now the active milestone.
 - The current repo already has:
   - `OrlixMLibC` bootstrap ownership for the first package-facing libc header set
   - compile-smoke proof for vendored UAPI, kheaders classification, package-facing libc headers, and configure-style bootstrap probes
@@ -29,8 +30,8 @@ The roadmap is not starting from zero:
 
 The roadmap therefore needs to stay honest about two different truths at once:
 
-- real M1 progress has landed
-- M1 is still partial because broader kernel-owner ownership cleanup and full sysroot completion are not done
+- real M1 closure has landed
+- later milestones still have substantial runtime and userspace work ahead
 
 ## Product Goal
 
@@ -183,19 +184,18 @@ Current delivered learning:
 - package-facing compile smoke now includes both direct libc header proof and a configure-style probe file
 - host-backed directory iteration for `fs/readdir.c` is now behind a kernel-owned private backing contract instead of ambient `dirent.h` usage in Linux-owner code
 
-Current remaining learning:
+Current delivered learning:
 
-- Milestone 1 is still not a license to force every host-libc-shaped kernel include out in one tranche
-- the attempted `time` / `sys/time` / `sys/socket` / `sys/select` kernel cutover exposed mixed simulator ABI conflicts when treated as part of the same bootstrap tranche
-- a bounded follow-on tranche has now landed kernel-private compat proof plus production cleanup for internal `poll` / `select` ownership and the internal socket seam that was leaking host `fd_set`
-- deeper `time` / `sys/time` work and public socket-surface cutovers still remain valid follow-on work, but they must stay deliberate and simulator-proven rather than being mixed into package-facing bootstrap proof
+- Milestone 1 was not a license to force every host-libc-shaped kernel include out in one tranche
+- the attempted `time` / `sys/time` / `sys/socket` / `sys/select` kernel cutover only became valid once it was split into explicit, simulator-proven ownership tranches
+- the repo now has green bounded proof for package-facing bootstrap ownership, internal `poll` / `select` cleanup, internal and public socket-surface cleanup, and `time` / `sys/time` cleanup without host-facing drift
+- the durable rule is to keep package-facing bootstrap proof and deeper kernel-owner cleanup separate unless a tranche proves they can move together safely
 
 Current next executable step:
 
-- keep Milestone 1 active
-- continue ownership cleanup in bounded slices instead of broad concept sweeps
-- treat the remaining Linux-owner `time` / `sys/time` drift plus deeper public socket-surface cleanup as the next dedicated follow-on tranche with its own simulator proof
-- keep package-facing `OrlixMLibC` bootstrap progress and deeper kernel-owner include cleanup as separate concerns unless a tranche proves they can move together safely
+- keep Milestone 2 active
+- move to native exec, shebang, and execution-image plumbing on top of the now-green Milestone 1 ownership baseline
+- preserve the Milestone 1 tranche rule: bounded Linux-owner progress with simulator proof, not broad concept sweeps
 
 Detailed plan:
 

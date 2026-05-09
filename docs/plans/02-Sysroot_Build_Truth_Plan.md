@@ -93,7 +93,7 @@ Milestone 1 is no longer theoretical in this repo. The following slices are alre
   - package-style configure probe bootstrap
 - `OrlixKernel/fs/readdir.c` no longer owns host directory iteration directly; that host mechanism now sits behind a kernel-owned private `backing_dir` contract
 
-Those changes matter because they prove Milestone 1 can advance in bounded slices without pretending the entire libc/sysroot problem is already complete.
+Those changes matter because they prove Milestone 1 can close in bounded slices without pretending the entire runtime roadmap is already complete.
 
 ## Latest Milestone 1 Learning
 
@@ -104,8 +104,15 @@ The current repo teaches an important tranche rule:
 
 The attempted kernel cutover for `time`, `sys/time`, `sys/socket`, and `sys/select` exposed mixed simulator ABI conflicts when forced into the same slice as package-facing bootstrap work.
 
-That does not make those kernel cutovers wrong.
-It means they must be treated as a separate, explicit kernel-owner cleanup tranche with their own proof and compatibility strategy.
+That did not make those kernel cutovers wrong.
+It meant they had to be treated as separate, explicit kernel-owner cleanup tranches with their own proof and compatibility strategy.
+
+That follow-on work is now delivered green:
+
+- `time` / `sys/time` kernel-owner cleanup is simulator-proofed
+- internal and public socket-surface cleanup is simulator-proofed
+- internal `poll` / `select` ownership cleanup is simulator-proofed
+- the shared iPhone 17 suite is green after the cleanup, including the timerfd and UNIX datagram plus `mmsg` Linux-surface proofs
 
 ## Required Decisions
 
@@ -285,7 +292,7 @@ Milestone 1 is not complete until all are true:
 7. Repo docs describe the resulting ownership model clearly enough to keep future tranches aligned.
 8. No Milestone 1 outcome is described as complete if it still depends on branded host-adapter vocabulary as normal kernel-facing contract surface.
 9. Linux-owner code does not keep ambient host directory iteration APIs such as `dirent.h`, `fdopendir()`, `readdir()`, `seekdir()`, `telldir()`, or `closedir()` as part of normal kernel ownership.
-10. Remaining Linux-owner `time` / `sys/time` cleanup plus deeper public socket-surface ownership work is tracked honestly as separate follow-on work if it has not actually landed green.
+10. Remaining Linux-owner cleanup beyond this milestone is tracked honestly as later-milestone work and not misreported as sysroot/build-truth debt.
 
 ## Proof
 
@@ -308,7 +315,7 @@ Milestone 1 succeeds when the repo stops improvising Linux-facing header ownersh
 - `OrlixKernel` keeps only private runtime state and syscall semantics
 - `OrlixHostAdapter` remains mechanism-only implementation
 
-It does not require pretending that every remaining host-libc-shaped kernel include has already been solved.
-Milestone 1 is still partial until those kernel-owner follow-on cutovers are delivered green in their own bounded tranches.
+It does not require pretending that every remaining runtime milestone has already been solved.
+Milestone 1 is complete now that the kernel-owner follow-on cutovers landed green in their own bounded tranches.
 
 That is the minimum build-surface truth required before the roadmap can honestly claim package configure and compile transparency.

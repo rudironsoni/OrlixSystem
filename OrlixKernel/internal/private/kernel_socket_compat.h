@@ -3,10 +3,7 @@
 
 #include <stddef.h>
 
-#ifndef _SOCKLEN_T
-#define _SOCKLEN_T
-typedef __UINT32_TYPE__ socklen_t;
-#endif
+#include <linux/types.h>
 
 typedef unsigned short sa_family_t;
 struct iovec;
@@ -24,7 +21,7 @@ struct sockaddr_storage {
 
 struct msghdr {
     void *msg_name;
-    socklen_t msg_namelen;
+    __u32 msg_namelen;
     struct iovec *msg_iov;
     int msg_iovlen;
     void *msg_control;

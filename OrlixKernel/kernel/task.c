@@ -112,7 +112,7 @@ kernel_mutex_t task_table_lock = KERNEL_MUTEX_INITIALIZER;
 struct task_struct *task_table[TASK_MAX_TASKS] = {NULL};
 
 static uint64_t task_monotonic_time_ns(void) {
-    struct timespec ts;
+    struct kernel_timespec ts;
 
     if (kernel_clock_gettime(1, &ts) != 0) {
         return 0;

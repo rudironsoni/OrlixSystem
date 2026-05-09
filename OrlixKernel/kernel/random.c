@@ -14,20 +14,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "internal/private/kernel_type_compat.h"
+#include <linux/types.h>
 
 #include "../fs/vfs.h"
 
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
-extern ssize_t read_impl(int fd, void *buf, size_t count);
+extern __kernel_ssize_t read_impl(int fd, void *buf, size_t count);
 extern int close_impl(int fd);
 
 /* ============================================================================
  * GETRANDOM - Linux-compatible random bytes
  * ============================================================================ */
 
-ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags) {
-    ssize_t total = 0;
+__kernel_ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags) {
+    __kernel_ssize_t total = 0;
     char *p = buf;
     int fd;
 
@@ -49,7 +49,7 @@ ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags) {
     }
 
     while ((size_t)total < buflen) {
-        ssize_t n = read_impl(fd, p + total, buflen - (size_t)total);
+        __kernel_ssize_t n = read_impl(fd, p + total, buflen - (size_t)total);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
@@ -78,14 +78,14 @@ static int getentropy_impl(void *buffer, size_t length) {
         errno = EIO;
         return -1;
     }
-    return getrandom_impl(buffer, length, 0) == (ssize_t)length ? 0 : -1;
+    return getrandom_impl(buffer, length, 0) == (__kernel_ssize_t)length ? 0 : -1;
 }
 
 /* ============================================================================
  * Public Canonical Syscalls
  * ============================================================================ */
 
-__attribute__((visibility("default"))) ssize_t getrandom(void *buf, size_t buflen, unsigned int flags) {
+__attribute__((visibility("default"))) __kernel_ssize_t getrandom(void *buf, size_t buflen, unsigned int flags) {
     return getrandom_impl(buf, buflen, flags);
 }
 

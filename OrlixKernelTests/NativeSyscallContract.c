@@ -137,7 +137,7 @@ struct native_msghdr {
     struct native_iovec *msg_iov;
     int msg_iovlen;
     void *msg_control;
-    unsigned int msg_controllen;
+    size_t msg_controllen;
     int msg_flags;
 };
 

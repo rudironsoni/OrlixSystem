@@ -620,7 +620,7 @@ out:
 }
 
 int procfs_namespace_contract_proc_status_reports_groups_and_capabilities(void) {
-    gid_t groups[2] = {3000, 3001};
+    __kernel_gid32_t groups[2] = {3000, 3001};
     char content[2048];
 
     reset_procfs_namespace_state();

@@ -29,7 +29,7 @@
 #error "ITIMER_REAL must resolve through kernel-private time compat"
 #endif
 
-static socklen_t kernel_owner_probe_socklen(socklen_t len) {
+static __u32 kernel_owner_probe_socklen(__u32 len) {
     return len;
 }
 
@@ -41,15 +41,15 @@ static size_t kernel_owner_probe_iov_count(const struct msghdr *msg) {
     return (size_t)msg->msg_iovlen;
 }
 
-static time_t kernel_owner_probe_time(time_t value) {
+static kernel_time_t kernel_owner_probe_time(kernel_time_t value) {
     return value;
 }
 
-static long kernel_owner_probe_nsec(const struct timespec *ts) {
+static long kernel_owner_probe_nsec(const struct kernel_timespec *ts) {
     return ts->tv_nsec;
 }
 
-static suseconds_t kernel_owner_probe_usec(const struct timeval *tv) {
+static kernel_suseconds_t kernel_owner_probe_usec(const struct kernel_timeval *tv) {
     return tv->tv_usec;
 }
 
