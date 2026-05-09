@@ -112,6 +112,13 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
             }
             result = pty_get_foreground_pgrp_impl(pty_index, (int32_t *)arg);
             break;
+        case TIOCGSID:
+            if (!arg) {
+                errno = EFAULT;
+                break;
+            }
+            result = pty_get_controlling_sid_impl(pty_index, (int32_t *)arg);
+            break;
         case TIOCSPGRP:
             if (!arg) {
                 errno = EFAULT;
@@ -171,4 +178,14 @@ __attribute__((visibility("default"))) int tcsetpgrp(int fd, __kernel_pid_t pgrp
     int32_t foreground_pgrp = (int32_t)pgrp;
 
     return ioctl_impl(fd, TIOCSPGRP, &foreground_pgrp);
+}
+
+__attribute__((visibility("default"))) __kernel_pid_t tcgetsid(int fd) {
+    int32_t sid = 0;
+
+    if (ioctl_impl(fd, TIOCGSID, &sid) != 0) {
+        return -1;
+    }
+
+    return (__kernel_pid_t)sid;
 }

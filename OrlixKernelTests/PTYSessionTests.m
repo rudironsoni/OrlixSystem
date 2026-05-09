@@ -56,6 +56,10 @@
     XCTAssertEqual(pty_session_contract_controlling_tty_attach_makes_dev_tty_usable(), 0, @"errno %d", errno);
 }
 
+- (void)testTcgetsidMatchesControllingSession {
+    XCTAssertEqual(pty_session_contract_tcgetsid_matches_controlling_session(), 0, @"errno %d", errno);
+}
+
 - (void)testControllingTtySurvivesDupOfSlaveDescriptor {
     XCTAssertEqual(pty_session_contract_controlling_tty_survives_dup_of_slave_descriptor(), 0, @"errno %d", errno);
 }

@@ -37,6 +37,7 @@ extern int32_t getpgrp_impl(void);
 extern int32_t getsid_impl(int32_t pid);
 extern int32_t setsid_impl(void);
 extern void exit_impl(int status);
+extern __kernel_pid_t tcgetsid(int fd);
 
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
 
@@ -607,6 +608,64 @@ int pty_session_contract_controlling_tty_attach_makes_dev_tty_usable(void) {
     }
 
     if (pty_contract_ioctl(tty_fd, TIOCGPGRP, &foreground_pgrp) != 0 || foreground_pgrp != 1) {
+        close_if_open(tty_fd);
+        close_if_open(master_fd);
+        close_if_open(slave_fd);
+        errno = EPROTO;
+        return -1;
+    }
+
+    close_if_open(tty_fd);
+    close_if_open(master_fd);
+    close_if_open(slave_fd);
+    return 0;
+}
+
+int pty_session_contract_tcgetsid_matches_controlling_session(void) {
+    int master_fd = -1;
+    int slave_fd = -1;
+    int tty_fd = -1;
+    unsigned int pty_index = 0;
+    __kernel_pid_t tty_sid = -1;
+
+    if (detach_controlling_tty_if_present() != 0) {
+        return -1;
+    }
+
+    if (alloc_pty_pair(0, 0, &master_fd, &slave_fd, &pty_index) != 0) {
+        return -1;
+    }
+
+    errno = 0;
+    if (tcgetsid(slave_fd) != -1 || errno != ENOTTY) {
+        close_if_open(master_fd);
+        close_if_open(slave_fd);
+        errno = EPROTO;
+        return -1;
+    }
+
+    if (pty_contract_ioctl(slave_fd, TIOCSCTTY, 0) != 0) {
+        close_if_open(master_fd);
+        close_if_open(slave_fd);
+        return -1;
+    }
+
+    tty_sid = tcgetsid(slave_fd);
+    if (tty_sid != (__kernel_pid_t)getsid_impl(0)) {
+        close_if_open(master_fd);
+        close_if_open(slave_fd);
+        errno = EPROTO;
+        return -1;
+    }
+
+    tty_fd = open_impl("/dev/tty", O_RDWR, 0);
+    if (tty_fd < 0) {
+        close_if_open(master_fd);
+        close_if_open(slave_fd);
+        return -1;
+    }
+
+    if (tcgetsid(tty_fd) != tty_sid) {
         close_if_open(tty_fd);
         close_if_open(master_fd);
         close_if_open(slave_fd);

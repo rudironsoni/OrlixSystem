@@ -69,6 +69,7 @@ int pty_get_winsize_impl(unsigned int pty_index, pty_linux_winsize_t *winsize);
 int pty_set_winsize_impl(unsigned int pty_index, const pty_linux_winsize_t *winsize);
 
 int pty_get_foreground_pgrp_impl(unsigned int pty_index, int32_t *pgrp);
+int pty_get_controlling_sid_impl(unsigned int pty_index, int32_t *sid);
 int pty_set_foreground_pgrp_impl(unsigned int pty_index, int32_t pgrp);
 int pty_set_controlling_tty_impl(unsigned int pty_index, int arg);
 int pty_detach_controlling_tty_impl(void);

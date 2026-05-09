@@ -1239,6 +1239,37 @@ int pty_get_foreground_pgrp_impl(unsigned int pty_index, int32_t *pgrp) {
     return 0;
 }
 
+int pty_get_controlling_sid_impl(unsigned int pty_index, int32_t *sid) {
+    if (!sid || !pty_valid_index(pty_index)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    struct task_struct *task = get_current();
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    fs_mutex_lock(&pty_lock);
+    pty_pair_t *pair = &pty_table[pty_index];
+    if (!pair->allocated) {
+        fs_mutex_unlock(&pty_lock);
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (!pair->has_controlling_session || pair->controlling_sid != task->sid) {
+        fs_mutex_unlock(&pty_lock);
+        errno = ENOTTY;
+        return -1;
+    }
+
+    *sid = pair->controlling_sid;
+    fs_mutex_unlock(&pty_lock);
+    return 0;
+}
+
 int pty_set_foreground_pgrp_impl(unsigned int pty_index, int32_t pgrp) {
     if (!pty_valid_index(pty_index) || pgrp <= 0) {
         errno = EINVAL;
