@@ -22,7 +22,8 @@ The roadmap is not starting from zero:
 
 - Milestone 0 is structurally delivered enough to unblock later work.
 - Milestone 1 is delivered and simulator-proofed.
-- Milestone 2 is now the active milestone.
+- Milestone 2 is delivered and simulator-proofed.
+- Milestone 3 is now the active milestone.
 - The current repo already has:
   - `OrlixMLibC` bootstrap ownership for the first package-facing libc header set
   - compile-smoke proof for vendored UAPI, kheaders classification, package-facing libc headers, and configure-style bootstrap probes
@@ -193,9 +194,9 @@ Current delivered learning:
 
 Current next executable step:
 
-- keep Milestone 2 active
-- move to native exec, shebang, and execution-image plumbing on top of the now-green Milestone 1 ownership baseline
-- preserve the Milestone 1 tranche rule: bounded Linux-owner progress with simulator proof, not broad concept sweeps
+- keep Milestone 3 active
+- move to shell-critical task, signal, wait, session, process-group, and PTY semantics on top of the now-green Milestone 2 exec baseline
+- preserve the tranche rule: bounded Linux-owner progress with simulator proof, not broad concept sweeps
 
 Detailed plan:
 
@@ -212,14 +213,20 @@ Goals:
 - make script execution a first-class feature
 - keep exec-path ownership Linux-first, with host mechanics remaining private and non-authoritative
 
+Current delivered learning:
+
+- the common exec pipeline is now simulator-proven for native binaries, shebang scripts, nested shebang interpreter chaining, `execveat`, `fexecve`, and `FD_CLOEXEC`
+- script execution remains Linux-owner: the outer script stays the Linux-visible exec image while the final native interpreter remains a backend detail
+- recursive script loops now fail with `ELOOP` before task transition, preserving Linux-shaped failure semantics instead of partially mutating exec state
+
 Detailed plan:
 
 - `03-Exec_Shebang_Native_Execution_Plan.md`
 
-Activation rule:
+Closeout rule:
 
-- do not treat Milestone 2 as the active coding tranche while Milestone 1 still has known ownership drift that materially affects package configure and build truth
-- Milestone 2 becomes the active tranche only after the remaining M1 build-truth work is narrow enough that exec-path work is no longer being built on ambiguous ownership
+- Milestone 2 is complete only because native exec, shebang, nested interpreter chaining, proc-visible argv and envp state, and close-on-exec behavior are all now proven under `OrlixKernelTests`
+- Milestone 3 is the active coding tranche
 
 ### Milestone 3
 

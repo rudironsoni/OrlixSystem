@@ -1930,6 +1930,147 @@ out:
     return result;
 }
 
+int exec_syscall_contract_nested_script_interpreter_chains_to_native(void) {
+    struct task_struct *task = get_current();
+    char *argv[] = {"outer-name", "arg1", NULL};
+    char *envp[] = {"NESTED=1", NULL};
+    const char *const expected_cmdline[] = {
+        "/usr/bin/interp",
+        "/tmp/exec-inner-script",
+        "/tmp/exec-outer-script",
+        "arg1",
+        NULL,
+    };
+    const char *const expected_environ[] = {"NESTED=1", NULL};
+    char buf[256];
+    ssize_t nread;
+    int status;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    clear_captured_exec();
+    unlink_impl("/tmp/exec-outer-script");
+    unlink_impl("/tmp/exec-inner-script");
+
+    if (create_exec_file("/tmp/exec-outer-script", "#!/tmp/exec-inner-script\n") != 0) {
+        goto out;
+    }
+    if (create_exec_file("/tmp/exec-inner-script", "#!/usr/bin/interp\n") != 0) {
+        goto out;
+    }
+    if (native_register("/usr/bin/interp", native_capture_exec) != 0) {
+        goto out;
+    }
+
+    status = execve("/tmp/exec-outer-script", argv, envp);
+    if (status != 37) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!atomic_load(&task->execed) ||
+        strcmp(task->exe, "/tmp/exec-outer-script") != 0 ||
+        strcmp(task->comm, "outer-name") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!task->exec_image ||
+        strcmp(task->exec_image->path, "/tmp/exec-outer-script") != 0 ||
+        strcmp(task->exec_image->interpreter, "/usr/bin/interp") != 0 ||
+        task->exec_image->type != EXEC_IMAGE_SCRIPT) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (captured_argc != 4 ||
+        strcmp(captured_argv[0], "/usr/bin/interp") != 0 ||
+        strcmp(captured_argv[1], "/tmp/exec-inner-script") != 0 ||
+        strcmp(captured_argv[2], "/tmp/exec-outer-script") != 0 ||
+        strcmp(captured_argv[3], "arg1") != 0 ||
+        strcmp(captured_env0, "NESTED=1") != 0) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    if (read_proc_file("/proc/self/cmdline", buf, sizeof(buf), &nread) != 0) {
+        goto out;
+    }
+    if (expect_nul_vector(buf, nread, expected_cmdline) != 0) {
+        errno = ENOMSG;
+        goto out;
+    }
+
+    if (read_proc_file("/proc/self/environ", buf, sizeof(buf), &nread) != 0) {
+        goto out;
+    }
+    if (expect_nul_vector(buf, nread, expected_environ) != 0) {
+        errno = ENODATA;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    native_registry_clear();
+    unlink_impl("/tmp/exec-outer-script");
+    unlink_impl("/tmp/exec-inner-script");
+    return result;
+}
+
+int exec_syscall_contract_recursive_script_loop_returns_eloop_without_transition(void) {
+    struct task_struct *task = get_current();
+    char *argv[] = {"loop-name", NULL};
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    native_registry_clear();
+    clear_captured_exec();
+    unlink_impl("/tmp/exec-loop-a");
+    unlink_impl("/tmp/exec-loop-b");
+
+    if (create_exec_file("/tmp/exec-loop-a", "#!/tmp/exec-loop-b\n") != 0) {
+        goto out;
+    }
+    if (create_exec_file("/tmp/exec-loop-b", "#!/tmp/exec-loop-a\n") != 0) {
+        goto out;
+    }
+
+    memcpy(task->exe, "/before", 8);
+    memset(task->comm, 0, sizeof(task->comm));
+    memcpy(task->comm, "before", 7);
+    atomic_store(&task->execed, false);
+
+    errno = 0;
+    if (execve("/tmp/exec-loop-a", argv, NULL) != -1) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (expect_errno(ELOOP) != 0) {
+        goto out;
+    }
+    if (verify_state_unchanged(task, "/before", "before", false, -1, -1) != 0) {
+        goto out;
+    }
+    if (captured_argc != 0 || captured_argv[0][0] != '\0' || captured_env0[0] != '\0') {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    unlink_impl("/tmp/exec-loop-a");
+    unlink_impl("/tmp/exec-loop-b");
+    return result;
+}
+
 int exec_syscall_contract_missing_script_interpreter_preserves_state(void) {
     struct task_struct *task = get_current();
     char *argv[] = {"script-name", NULL};

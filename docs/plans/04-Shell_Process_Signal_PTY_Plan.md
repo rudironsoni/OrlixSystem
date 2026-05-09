@@ -7,6 +7,11 @@ This milestone depends on the split plan and inherits its stricter condition:
 - Linux semantics must remain Linux-owner
 - structural target separation alone is not enough if host realization still diverges from Linux-visible shell behavior under simulator proof
 
+Current status:
+
+- active milestone
+- depends on the now-delivered Milestone 2 exec baseline
+
 ## Purpose
 
 Make `zsh` viable as the primary proof target by hardening the task, wait, signal, session, process-group, and PTY model.

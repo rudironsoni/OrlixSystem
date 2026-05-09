@@ -25,6 +25,8 @@ extern int exec_syscall_contract_oversized_argv_returns_e2big_without_transition
 extern int exec_syscall_contract_script_uses_virtual_path_and_native_interpreter(void);
 extern int exec_syscall_contract_script_exec_records_interpreter_proc_cmdline(void);
 extern int exec_syscall_contract_script_symlink_records_resolved_target(void);
+extern int exec_syscall_contract_nested_script_interpreter_chains_to_native(void);
+extern int exec_syscall_contract_recursive_script_loop_returns_eloop_without_transition(void);
 extern int exec_syscall_contract_missing_script_interpreter_preserves_state(void);
 extern int exec_syscall_contract_fexecve_uses_fd_path(void);
 extern int exec_syscall_contract_fexecve_rejects_invalid_fd(void);
@@ -165,6 +167,14 @@ extern int exec_syscall_contract_truncated_elf_returns_enoexec_without_transitio
 
 - (void)testScriptSymlinkRecordsResolvedTarget {
     XCTAssertEqual(exec_syscall_contract_script_symlink_records_resolved_target(), 0, @"errno %d", errno);
+}
+
+- (void)testNestedScriptInterpreterChainsToNative {
+    XCTAssertEqual(exec_syscall_contract_nested_script_interpreter_chains_to_native(), 0, @"errno %d", errno);
+}
+
+- (void)testRecursiveScriptLoopReturnsEloopWithoutTransition {
+    XCTAssertEqual(exec_syscall_contract_recursive_script_loop_returns_eloop_without_transition(), 0, @"errno %d", errno);
 }
 
 - (void)testMissingScriptInterpreterPreservesState {

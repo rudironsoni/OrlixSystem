@@ -6,6 +6,11 @@ This milestone builds on the `OrlixKernel` and `OrlixHostAdapter` split.
 
 It assumes the old branded seam is gone, and it must preserve that by keeping exec-facing contracts kernel-owned and behaviorally Linux-shaped under simulator proof.
 
+Current status:
+
+- delivered and simulator-proofed
+- the next active milestone is `04-Shell_Process_Signal_PTY_Plan.md`
+
 ## Purpose
 
 Build the Version 1 execution path around native iOS execution only, while preserving a backend-neutral architecture for future ELF and WASM support.
@@ -70,3 +75,9 @@ Common exec pipeline must handle:
 3. Nested interpreter behavior is Linux-shaped within supported scope.
 4. `FD_CLOEXEC`, argv, envp, and signal-reset behavior are covered by `OrlixKernelTests`.
 5. Completion claims for this milestone do not rely on branded host-adapter vocabulary as the normal kernel-facing seam.
+
+Delivered proof:
+
+- `ExecSyscallTests` covers native exec, shebang, nested shebang interpreter chaining, `execveat`, `fexecve`, proc-visible argv and envp state, and script-loop `ELOOP` failure without transition
+- `ExecFdTests` proves close-on-exec behavior against the common exec path
+- the full simulator suites for `OrlixKernelTests` and `OrlixHostAdapterTests` are green on the Milestone 2 closeout tranche

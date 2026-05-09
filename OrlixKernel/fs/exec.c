@@ -53,6 +53,11 @@ int exec_native(struct task_struct *task, const char *path, int argc, char **arg
 int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
 int exec_wasi(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
 int exec_script(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
+enum exec_image_type exec_classify(const char *path);
+int exec_build_script_argv(const char *path, int argc, char **argv,
+                           char *interpreter_path, size_t interpreter_path_len,
+                           char *optional_arg, size_t optional_arg_len,
+                           char **script_argv, int *script_argc);
 int exec_build_script_argv_from_line(const char *shebang_line, const char *path, int argc, char **argv,
                                       char *interpreter_path, size_t interpreter_path_len,
                                       char *optional_arg, size_t optional_arg_len,
@@ -77,6 +82,7 @@ struct exec_elf_load_plan {
 #define EXEC_INITIAL_STACK_TOP 0x0000fffffff00000ULL
 #define EXEC_INITIAL_STACK_ALIGN 16ULL
 #define EXEC_PAGE_SIZE 4096ULL
+#define EXEC_SCRIPT_RECURSION_LIMIT 4
 
 static uint64_t exec_align_down(uint64_t value, uint64_t align) {
     return value & ~(align - 1);
@@ -647,6 +653,130 @@ static void exec_free_argv(char **argv) {
         free(argv[i]);
     }
     free(argv);
+}
+
+static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy,
+                                     char *final_path, size_t final_path_len,
+                                     char *final_interpreter_path, size_t final_interpreter_path_len,
+                                     char ***out_launch_argv, int *out_launch_argc,
+                                     enum exec_image_type *out_final_type) {
+    char current_path[MAX_PATH];
+    char **current_argv = argv_copy;
+    int current_argc;
+    int depth = 0;
+
+    if (!resolved_path || !argv_copy || !final_path || final_path_len == 0 ||
+        !final_interpreter_path || final_interpreter_path_len == 0 ||
+        !out_launch_argv || !out_launch_argc || !out_final_type) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (strlen(resolved_path) >= final_path_len) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    strcpy(current_path, resolved_path);
+    current_argc = exec_string_count(current_argv);
+    final_interpreter_path[0] = '\0';
+
+    for (;;) {
+        enum exec_image_type current_type = exec_classify(current_path);
+
+        if (current_type == EXEC_IMAGE_NONE) {
+            errno = ENOENT;
+            goto fail;
+        }
+        if (current_type == EXEC_IMAGE_INVALID || current_type == EXEC_IMAGE_WASI) {
+            errno = ENOEXEC;
+            goto fail;
+        }
+        if (current_type != EXEC_IMAGE_SCRIPT) {
+            if (strlen(current_path) >= final_path_len) {
+                errno = ENAMETOOLONG;
+                goto fail;
+            }
+            strcpy(final_path, current_path);
+            *out_launch_argv = current_argv;
+            *out_launch_argc = current_argc;
+            *out_final_type = current_type;
+            return 0;
+        }
+
+        if (depth >= EXEC_SCRIPT_RECURSION_LIMIT) {
+            errno = ELOOP;
+            goto fail;
+        }
+
+        char interpreter_path[MAX_PATH];
+        char optional_arg[MAX_PATH];
+        char *script_argv[TASK_MAX_ARGS + 4];
+        int script_argc = 0;
+        char **next_argv;
+        native_entry_fn native_entry;
+
+        if (exec_build_script_argv(current_path, current_argc, current_argv,
+                                   interpreter_path, sizeof(interpreter_path),
+                                   optional_arg, sizeof(optional_arg),
+                                   script_argv, &script_argc) < 0) {
+            goto fail;
+        }
+
+        if (strlen(interpreter_path) >= final_interpreter_path_len) {
+            errno = ENAMETOOLONG;
+            goto fail;
+        }
+        strcpy(final_interpreter_path, interpreter_path);
+
+        native_entry = native_lookup(interpreter_path);
+        if (native_entry) {
+            if (strlen(interpreter_path) >= final_path_len) {
+                errno = ENAMETOOLONG;
+                goto fail;
+            }
+            strcpy(final_path, interpreter_path);
+            *out_launch_argv = current_argv;
+            *out_launch_argc = current_argc;
+            *out_final_type = EXEC_IMAGE_NATIVE;
+
+            next_argv = exec_copy_argv(script_argv);
+            if (!next_argv) {
+                errno = ENOMEM;
+                goto fail;
+            }
+            if (current_argv != argv_copy) {
+                exec_free_argv(current_argv);
+            }
+            *out_launch_argv = next_argv;
+            *out_launch_argc = script_argc;
+            return 0;
+        }
+
+        next_argv = exec_copy_argv(script_argv);
+        if (!next_argv) {
+            errno = ENOMEM;
+            goto fail;
+        }
+        if (vfs_resolve_virtual_path_task_follow(interpreter_path, current_path, sizeof(current_path),
+                                                 get_current() ? get_current()->fs : NULL, true) != 0) {
+            int saved_errno = errno;
+            exec_free_argv(next_argv);
+            errno = saved_errno ? saved_errno : ENOENT;
+            goto fail;
+        }
+        if (current_argv != argv_copy) {
+            exec_free_argv(current_argv);
+        }
+        current_argv = next_argv;
+        current_argc = script_argc;
+        depth++;
+    }
+
+fail:
+    if (current_argv != argv_copy) {
+        exec_free_argv(current_argv);
+    }
+    return -1;
 }
 
 /* Internal: Ensure task has an exec_image allocated */
@@ -1222,35 +1352,34 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
 
     int launch_status;
     if (type == EXEC_IMAGE_SCRIPT) {
-        char interpreter_path[MAX_PATH];
-        char optional_arg[MAX_PATH];
-        char *script_argv[TASK_MAX_ARGS + 4];
-        int script_argc = 0;
-        native_entry_fn entry;
+        char final_path[MAX_PATH];
+        char final_interpreter_path[MAX_PATH];
+        char **launch_argv = NULL;
+        int launch_argc = 0;
+        enum exec_image_type final_type;
+        const char *requested_argv0 = argv_copy ? argv_copy[0] : NULL;
 
-        if (exec_build_script_argv(resolved_path, argc, argv_copy,
-                                   interpreter_path, sizeof(interpreter_path),
-                                   optional_arg, sizeof(optional_arg),
-                                   script_argv, &script_argc) < 0) {
+        if (exec_resolve_script_chain(resolved_path, argv_copy,
+                                      final_path, sizeof(final_path),
+                                      final_interpreter_path, sizeof(final_interpreter_path),
+                                      &launch_argv, &launch_argc, &final_type) < 0) {
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
             return -1;
         }
 
-        entry = native_lookup(interpreter_path);
-        if (!entry) {
-            exec_free_argv(argv_copy);
-            exec_free_argv(envp_copy);
-            errno = ENOENT;
-            return -1;
-        }
-
-        if (task_record_exec_strings_impl(script_argv, envp_copy) < 0) {
+        if (task_record_exec_strings_impl(launch_argv, envp_copy) < 0) {
+            if (launch_argv != argv_copy) {
+                exec_free_argv(launch_argv);
+            }
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
             return -1;
         }
-        if (task_exec_transition_impl(resolved_path, argv_copy ? argv_copy[0] : NULL) < 0) {
+        if (task_exec_transition_impl(resolved_path, requested_argv0) < 0) {
+            if (launch_argv != argv_copy) {
+                exec_free_argv(launch_argv);
+            }
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
             return -1;
@@ -1258,8 +1387,29 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
         if (task->signal) {
             exec_reset_signals(task->signal);
         }
-        exec_record_script_image(task, resolved_path, interpreter_path);
-        launch_status = entry(script_argc, script_argv, envp_copy);
+        exec_record_script_image(task, resolved_path, final_interpreter_path);
+        if (final_type == EXEC_IMAGE_ELF) {
+            launch_status = exec_elf(task, final_path, launch_argc, launch_argv, envp_copy);
+            if (launch_status >= 0) {
+                exec_record_script_image(task, resolved_path, final_interpreter_path);
+            }
+        } else {
+            native_program_t program;
+
+            if (native_lookup_program(final_path, &program) != 0) {
+                if (launch_argv != argv_copy) {
+                    exec_free_argv(launch_argv);
+                }
+                exec_free_argv(argv_copy);
+                exec_free_argv(envp_copy);
+                errno = ENOENT;
+                return -1;
+            }
+            launch_status = program.entry(launch_argc, launch_argv, envp_copy);
+        }
+        if (launch_argv != argv_copy) {
+            exec_free_argv(launch_argv);
+        }
     } else if (type == EXEC_IMAGE_ELF) {
         if (exec_validate_elf_interpreter_for_path(resolved_path) != 0) {
             exec_free_argv(argv_copy);
