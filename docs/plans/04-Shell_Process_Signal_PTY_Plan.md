@@ -12,6 +12,11 @@ Current status:
 - active milestone
 - depends on the now-delivered Milestone 2 exec baseline
 
+Current delivered learning:
+
+- the public shell-facing foreground-process-group surface is now covered, not just the PTY ioctl seam
+- `tcgetpgrp()` and `tcsetpgrp()` now ride the kernel-owned PTY job-control machinery and are simulator-proven against Linux-shaped `SIGTTOU` behavior
+
 ## Purpose
 
 Make `zsh` viable as the primary proof target by hardening the task, wait, signal, session, process-group, and PTY model.

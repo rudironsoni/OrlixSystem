@@ -7,7 +7,6 @@
  */
 
 #include <asm/ioctls.h>
-
 #include <errno.h>
 #include <stdbool.h>
 #include <stdarg.h>
@@ -156,4 +155,20 @@ __attribute__((visibility("default"))) int ioctl(int fd, unsigned long request, 
     void *arg = va_arg(args, void *);
     va_end(args);
     return ioctl_impl(fd, request, arg);
+}
+
+__attribute__((visibility("default"))) __kernel_pid_t tcgetpgrp(int fd) {
+    int32_t pgrp = 0;
+
+    if (ioctl_impl(fd, TIOCGPGRP, &pgrp) != 0) {
+        return -1;
+    }
+
+    return (__kernel_pid_t)pgrp;
+}
+
+__attribute__((visibility("default"))) int tcsetpgrp(int fd, __kernel_pid_t pgrp) {
+    int32_t foreground_pgrp = (int32_t)pgrp;
+
+    return ioctl_impl(fd, TIOCSPGRP, &foreground_pgrp);
 }

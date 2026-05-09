@@ -2,7 +2,9 @@
 #define PTY_JOB_CONTROL_CONTRACT_H
 
 int pty_job_control_contract_tiocspgrp_round_trip(void);
+int pty_job_control_contract_tcsetpgrp_round_trip(void);
 int pty_job_control_contract_background_tiocspgrp_delivers_sigttou(void);
+int pty_job_control_contract_background_tcsetpgrp_delivers_sigttou(void);
 int pty_job_control_contract_background_read_delivers_sigttin(void);
 int pty_job_control_contract_background_write_delivers_sigttou(void);
 int pty_job_control_contract_signal_chars_target_foreground_pgrp(void);

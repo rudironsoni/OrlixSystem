@@ -66,8 +66,16 @@ static void reset_pty_job_control_test_kernel_state(void) {
     XCTAssertEqual(pty_job_control_contract_tiocspgrp_round_trip(), 0, @"errno %d", errno);
 }
 
+- (void)testTCSETPGRPRoundTrip {
+    XCTAssertEqual(pty_job_control_contract_tcsetpgrp_round_trip(), 0, @"errno %d", errno);
+}
+
 - (void)testBackgroundTIOCSPGRPDeliversSIGTTOU {
     XCTAssertEqual(pty_job_control_contract_background_tiocspgrp_delivers_sigttou(), 0, @"errno %d", errno);
+}
+
+- (void)testBackgroundTCSETPGRPDeliversSIGTTOU {
+    XCTAssertEqual(pty_job_control_contract_background_tcsetpgrp_delivers_sigttou(), 0, @"errno %d", errno);
 }
 
 - (void)testBackgroundReadDeliversSIGTTIN {

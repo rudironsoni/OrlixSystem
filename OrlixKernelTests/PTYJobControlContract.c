@@ -20,6 +20,8 @@ extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
+extern __kernel_pid_t tcgetpgrp(int fd);
+extern int tcsetpgrp(int fd, __kernel_pid_t pgrp);
 
 static int close_if_open(int fd) {
     if (fd >= 0) {
@@ -199,6 +201,56 @@ out:
     return result;
 }
 
+int pty_job_control_contract_tcsetpgrp_round_trip(void) {
+    struct task_struct *task = get_current();
+    struct task_struct *peer = NULL;
+    int master_fd = -1;
+    int slave_fd = -1;
+    unsigned int pty_index = 0;
+    __kernel_pid_t foreground_pgrp = 0;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    if (detach_controlling_tty_if_present() != 0) {
+        return -1;
+    }
+
+    peer = alloc_session_peer(task->sid, task->pid + 100, task->pid);
+    if (!peer) {
+        return -1;
+    }
+
+    if (alloc_pty_pair(&master_fd, &slave_fd, &pty_index) != 0) {
+        goto out;
+    }
+    if (pty_contract_ioctl(slave_fd, TIOCSCTTY, 0) != 0) {
+        goto out;
+    }
+    if (tcsetpgrp(slave_fd, (__kernel_pid_t)peer->pgid) != 0) {
+        goto out;
+    }
+    foreground_pgrp = tcgetpgrp(slave_fd);
+    if (foreground_pgrp != (__kernel_pid_t)peer->pgid) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    close_if_open(master_fd);
+    close_if_open(slave_fd);
+    if (peer) {
+        free_task(peer);
+    }
+    task->pgid = task->pid;
+    return result;
+}
+
 int pty_job_control_contract_background_tiocspgrp_delivers_sigttou(void) {
     struct task_struct *task = get_current();
     struct task_struct *foreground_peer = NULL;
@@ -242,6 +294,70 @@ int pty_job_control_contract_background_tiocspgrp_delivers_sigttou(void) {
     clear_pending_signal(task, SIGTTOU);
     errno = 0;
     if (pty_contract_ioctl(slave_fd, TIOCSPGRP, &requested_pgrp) == 0 || errno != EINTR) {
+        errno = EPROTO;
+        goto out;
+    }
+    if (!signal_is_pending(task, SIGTTOU)) {
+        errno = EPROTO;
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    task->pgid = saved_pgid;
+    close_if_open(master_fd);
+    close_if_open(slave_fd);
+    if (foreground_peer) {
+        free_task(foreground_peer);
+    }
+    if (target_peer) {
+        free_task(target_peer);
+    }
+    return result;
+}
+
+int pty_job_control_contract_background_tcsetpgrp_delivers_sigttou(void) {
+    struct task_struct *task = get_current();
+    struct task_struct *foreground_peer = NULL;
+    struct task_struct *target_peer = NULL;
+    int master_fd = -1;
+    int slave_fd = -1;
+    unsigned int pty_index = 0;
+    int saved_pgid;
+    int result = -1;
+
+    if (!task) {
+        errno = ESRCH;
+        return -1;
+    }
+
+    if (detach_controlling_tty_if_present() != 0) {
+        return -1;
+    }
+
+    saved_pgid = task->pgid;
+    task->pgid = task->pid;
+    foreground_peer = alloc_session_peer(task->sid, task->pid + 100, task->pid);
+    target_peer = alloc_session_peer(task->sid, task->pid + 200, task->pid);
+    if (!foreground_peer || !target_peer) {
+        goto out;
+    }
+
+    if (alloc_pty_pair(&master_fd, &slave_fd, &pty_index) != 0) {
+        goto out;
+    }
+    if (pty_contract_ioctl(slave_fd, TIOCSCTTY, 0) != 0) {
+        goto out;
+    }
+    if (tcsetpgrp(slave_fd, (__kernel_pid_t)foreground_peer->pgid) != 0) {
+        goto out;
+    }
+
+    task->pgid = target_peer->pgid;
+    clear_pending_signal(task, SIGTTOU);
+    errno = 0;
+    if (tcsetpgrp(slave_fd, (__kernel_pid_t)target_peer->pgid) == 0 || errno != EINTR) {
         errno = EPROTO;
         goto out;
     }
