@@ -43,6 +43,21 @@ ORLIX_LINT_KERNEL_SOURCE_C_FLAGS := \
 	-I$(CURDIR)/third_party/linux/6.12/arm64/uapi/include \
 	-D_XOPEN_SOURCE \
 	-fvisibility=hidden
+ORLIX_LINT_NETWORK_C_FLAGS := \
+	$(ORLIX_LINT_COMMON_FLAGS) \
+	-I$(CURDIR)/OrlixKernel \
+	-I$(CURDIR)/OrlixKernel/include \
+	-I$(CURDIR)/OrlixKernel/internal/private \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/kheaders/generated/arch/arm64/include/generated \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/kheaders/generated/include \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/kheaders/source/arch/arm64/include \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/kheaders/source/include \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/kheaders/generated/arch/arm64/include/generated/uapi \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/kheaders/source/arch/arm64/include/uapi \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/kheaders/generated/include/generated/uapi \
+	-I$(CURDIR)/third_party/linux/6.12/arm64/kheaders/source/include/uapi \
+	-D_XOPEN_SOURCE \
+	-fvisibility=hidden
 ORLIX_LINT_HOST_C_FLAGS := \
 	$(ORLIX_LINT_COMMON_FLAGS) \
 	-I$(CURDIR)/OrlixKernel \
@@ -96,7 +111,9 @@ lint: build-orlix-clang-tidy-module
 			flags="$(ORLIX_LINT_C_FLAGS)"; \
 			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
-			elif [[ "$$file" == OrlixKernel/kernel/net/network.c || "$$file" == OrlixKernel/runtime/syscall.c || "$$file" == OrlixKernel/fs/poll.c || "$$file" == OrlixKernel/fs/eventpoll.c || "$$file" == OrlixKernel/fs/fdtable.c ]]; then \
+			elif [[ "$$file" == OrlixKernel/kernel/net/network.c ]]; then \
+				flags="$(ORLIX_LINT_NETWORK_C_FLAGS)"; \
+			elif [[ "$$file" == OrlixKernel/fs/eventpoll.c || "$$file" == OrlixKernel/fs/fdtable.c ]]; then \
 				flags="$(ORLIX_LINT_KERNEL_SOURCE_C_FLAGS)"; \
 			fi; \
 			"$(CLANG_TIDY)" --load="$$plugin_path" --config-file=.clang-tidy "$$file" -- $$flags; \
@@ -107,8 +124,6 @@ lint: build-orlix-clang-tidy-module
 			flags="$(ORLIX_LINT_C_FLAGS)"; \
 			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
-			elif [[ "$$file" == OrlixKernel/fs/poll.h ]]; then \
-				flags="$(ORLIX_LINT_KERNEL_SOURCE_C_FLAGS)"; \
 			fi; \
 			"$(CLANG_TIDY)" --load="$$plugin_path" --config-file=.clang-tidy "$$file" -- $$flags -x c-header; \
 		done <<< "$$header_files"; \

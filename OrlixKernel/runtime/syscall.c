@@ -159,9 +159,9 @@
 #include <linux/futex.h>
 #include <linux/mount.h>
 #include <linux/mman.h>
+#include <linux/openat2.h>
 #include <linux/pidfd.h>
 #include <linux/sched.h>
-#include <linux/socket.h>
 #include <linux/stat.h>
 #include <linux/time.h>
 #include <linux/time_types.h>
@@ -188,6 +188,10 @@
 #include "../kernel/task.h"
 #include "../kernel/uts.h"
 #include "../kernel/wait.h"
+
+struct sockaddr;
+struct user_msghdr;
+struct mmsghdr;
 
 extern int mount_impl(const char *source, const char *target,
                       const char *filesystemtype, unsigned long mountflags,
@@ -1202,8 +1206,8 @@ static long syscall_dispatch_inner_impl(long number,
             ret = waitpid_impl((__kernel_pid_t)arg0, (int *)(uintptr_t)arg1, (int)arg2);
             return ret < 0 ? -(long)errno : ret;
         case TASK_RESTART_SELECT:
-            ret = select_impl((int)arg0, (fd_set *)(uintptr_t)arg1,
-                              (fd_set *)(uintptr_t)arg2, (fd_set *)(uintptr_t)arg3,
+            ret = select_impl((int)arg0, (__kernel_fd_set *)(uintptr_t)arg1,
+                              (__kernel_fd_set *)(uintptr_t)arg2, (__kernel_fd_set *)(uintptr_t)arg3,
                               (struct __kernel_old_timeval *)(uintptr_t)arg4);
             return ret < 0 ? -(long)errno : ret;
         case TASK_RESTART_EPOLL_WAIT:
@@ -1280,8 +1284,10 @@ static long syscall_dispatch_inner_impl(long number,
         if (syscall_apply_temporary_sigmask(sigmask_arg, &old_mask, &mask_changed) != 0) {
             return -(long)errno;
         }
-        ret = select_impl((int)arg0, (fd_set *)(uintptr_t)arg1, (fd_set *)(uintptr_t)arg2,
-                          (fd_set *)(uintptr_t)arg3, timeout_ptr);
+        ret = select_impl((int)arg0, (__kernel_fd_set *)(uintptr_t)arg1,
+                          (__kernel_fd_set *)(uintptr_t)arg2,
+                          (__kernel_fd_set *)(uintptr_t)arg3,
+                          timeout_ptr);
         syscall_restore_sigmask(&old_mask, mask_changed);
         return syscall_result((long)ret);
     }

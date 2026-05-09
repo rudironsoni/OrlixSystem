@@ -68,11 +68,6 @@ targets:
       group: OrlixKernel/fs
     - path: OrlixKernel/fs/poll.c
       group: OrlixKernel/fs
-      compilerFlags:
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include
     - path: OrlixKernel/fs/pty.c
       group: OrlixKernel/fs
     - path: OrlixKernel/fs/path.c
@@ -110,10 +105,14 @@ targets:
     - path: OrlixKernel/kernel/net/network.c
       group: OrlixKernel/kernel/net
       compilerFlags:
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
       - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
       - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
     - path: OrlixKernel/kernel/net/socket.c
       group: OrlixKernel/kernel/net
     - path: OrlixKernel/kernel/net/socket.h
@@ -152,11 +151,6 @@ targets:
       group: OrlixKernel/runtime/aarch64
     - path: OrlixKernel/runtime/syscall.c
       group: OrlixKernel/runtime
-      compilerFlags:
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include
     - path: OrlixKernel/runtime/native/registry.c
       group: OrlixKernel/runtime/native
     dependencies:

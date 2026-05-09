@@ -5,23 +5,23 @@
  * readiness infrastructure.
  */
 
-#include <errno.h>
-#include <linux/fcntl.h>
-#include <linux/net.h>
-#include <linux/poll.h>
 #include <linux/socket.h>
-#include <linux/time_types.h>
+#include <linux/net.h>
+#include <linux/errno.h>
+#include <linux/fcntl.h>
 #include <linux/un.h>
 #include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "socket.h"
 #include "fs/fdtable.h"
 
-#ifndef SOCK_TYPE_MASK
-#define SOCK_TYPE_MASK 0xf
-#endif
+extern int *__error(void);
+extern void *malloc(size_t);
+extern void free(void *);
+extern void *memcpy(void *, const void *, size_t);
+extern void *memset(void *, int, size_t);
+
+#define errno (*__error())
 #ifndef SOCK_CLOEXEC
 #define SOCK_CLOEXEC O_CLOEXEC
 #endif

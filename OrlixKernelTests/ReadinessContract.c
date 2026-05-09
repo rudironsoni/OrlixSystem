@@ -1,10 +1,13 @@
 #include <asm/ioctls.h>
+#include <asm/socket.h>
 #include <asm/unistd.h>
 #include <linux/eventfd.h>
 #include <linux/fcntl.h>
+#include <linux/net.h>
 #include <linux/poll.h>
 #include <linux/pidfd.h>
 #include <linux/socket.h>
+#include <linux/time.h>
 #include <linux/time_types.h>
 #include <linux/timerfd.h>
 
@@ -19,10 +22,6 @@
 #include <errno.h>
 #include <stddef.h>
 #include <string.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/select.h>
-#include <sys/time.h>
 
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
@@ -32,8 +31,12 @@
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int pipe_impl(int pipefd[2]);
-extern int poll_impl(struct pollfd *fds, nfds_t nfds, int timeout);
-extern int select_impl(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds, struct timeval *timeout);
+extern int poll_impl(struct pollfd *fds, __kernel_ulong_t nfds, int timeout);
+extern int select_impl(int nfds,
+                       __kernel_fd_set *readfds,
+                       __kernel_fd_set *writefds,
+                       __kernel_fd_set *errorfds,
+                       struct __kernel_old_timeval *timeout);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int signal_generate_task(struct task_struct *target, int32_t sig);
@@ -57,6 +60,39 @@ static void clear_pending_signal(struct task_struct *task, int sig) {
     task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
     task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
     task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+}
+
+static void fdset_zero(__kernel_fd_set *set) {
+    if (!set) {
+        return;
+    }
+    memset(set->fds_bits, 0, sizeof(set->fds_bits));
+}
+
+static void fdset_set(int fd, __kernel_fd_set *set) {
+    unsigned int bits_per_word = (unsigned int)(8U * sizeof(set->fds_bits[0]));
+    unsigned int word;
+    unsigned int bit;
+
+    if (!set || fd < 0 || fd >= __FD_SETSIZE) {
+        return;
+    }
+    word = (unsigned int)fd / bits_per_word;
+    bit = (unsigned int)fd % bits_per_word;
+    set->fds_bits[word] |= (1UL << bit);
+}
+
+static int fdset_isset(int fd, const __kernel_fd_set *set) {
+    unsigned int bits_per_word = (unsigned int)(8U * sizeof(set->fds_bits[0]));
+    unsigned int word;
+    unsigned int bit;
+
+    if (!set || fd < 0 || fd >= __FD_SETSIZE) {
+        return 0;
+    }
+    word = (unsigned int)fd / bits_per_word;
+    bit = (unsigned int)fd % bits_per_word;
+    return (set->fds_bits[word] & (1UL << bit)) != 0;
 }
 
 int readiness_contract_eventfd2_counter_read_write_and_poll(void) {
@@ -408,7 +444,7 @@ static int pselect_case_wait_done(struct pselect_mask_case *ctx) {
 
 static void *pselect_mask_thread(void *arg) {
     struct pselect_mask_case *ctx = arg;
-    fd_set readfds;
+    __kernel_fd_set readfds;
     uint64_t sigmask = 1ULL << (SIGUSR1 - 1);
     struct {
         const uint64_t *ss;
@@ -418,12 +454,12 @@ static void *pselect_mask_thread(void *arg) {
     long ret;
 
     set_current(ctx->task);
-    FD_ZERO(&readfds);
-    FD_SET(ctx->fd, &readfds);
+    fdset_zero(&readfds);
+    fdset_set(ctx->fd, &readfds);
     pselect_case_mark_started(ctx);
     ret = syscall_dispatch_impl(__NR_pselect6, ctx->fd + 1, (long)(uintptr_t)&readfds,
                                 0, 0, 0, (long)(uintptr_t)&mask_arg);
-    if (ret != 1 || !FD_ISSET(ctx->fd, &readfds)) {
+    if (ret != 1 || !fdset_isset(ctx->fd, &readfds)) {
         pselect_case_mark_done(ctx, ret < 0 ? (int)-ret : EIO);
         return NULL;
     }
@@ -458,16 +494,16 @@ static void *poll_thread(void *arg) {
 
 static void *select_thread(void *arg) {
     struct readiness_thread_case *ctx = arg;
-    fd_set readfds;
+    __kernel_fd_set readfds;
     int ret;
     if (ctx->task) {
         set_current(ctx->task);
     }
-    FD_ZERO(&readfds);
-    FD_SET(ctx->fd, &readfds);
+    fdset_zero(&readfds);
+    fdset_set(ctx->fd, &readfds);
     case_mark_started(ctx);
     ret = select_impl(ctx->fd + 1, &readfds, NULL, NULL, NULL);
-    if (ret == 1 && FD_ISSET(ctx->fd, &readfds)) {
+    if (ret == 1 && fdset_isset(ctx->fd, &readfds)) {
         case_mark_done(ctx, 0);
     } else if (ret == -1 && errno == EINTR) {
         case_mark_done(ctx, EINTR);
@@ -479,12 +515,12 @@ static void *select_thread(void *arg) {
 
 static void *select_restart_thread(void *arg) {
     struct readiness_thread_case *ctx = arg;
-    fd_set readfds;
+    __kernel_fd_set readfds;
     long ret;
 
     set_current(ctx->task);
-    FD_ZERO(&readfds);
-    FD_SET(ctx->fd, &readfds);
+    fdset_zero(&readfds);
+    fdset_set(ctx->fd, &readfds);
     case_mark_started(ctx);
     ret = select_impl(ctx->fd + 1, &readfds, NULL, NULL, NULL);
     if (ret != -1 || errno != EINTR ||
@@ -500,7 +536,7 @@ static void *select_restart_thread(void *arg) {
     clear_pending_signal(ctx->task, SIGUSR1);
     case_mark_restart_ready(ctx);
     ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
-    if (ret == 1 && FD_ISSET(ctx->fd, &readfds) &&
+    if (ret == 1 && fdset_isset(ctx->fd, &readfds) &&
         ctx->task->mm->signal_frame_restart_kind == TASK_RESTART_NONE) {
         case_mark_done(ctx, 0);
     } else {
@@ -784,12 +820,12 @@ int readiness_contract_select_pipe_read_blocks_until_writer_writes(void) {
 
 int readiness_contract_select_pipe_write_reports_writable(void) {
     int fds[2] = {-1, -1};
-    fd_set writefds;
+    __kernel_fd_set writefds;
     int ret = 0;
     if (pipe_impl(fds) != 0) return errno;
-    FD_ZERO(&writefds);
-    FD_SET(fds[1], &writefds);
-    if (select_impl(fds[1] + 1, NULL, &writefds, NULL, NULL) != 1 || !FD_ISSET(fds[1], &writefds)) ret = errno ? errno : EIO;
+    fdset_zero(&writefds);
+    fdset_set(fds[1], &writefds);
+    if (select_impl(fds[1] + 1, NULL, &writefds, NULL, NULL) != 1 || !fdset_isset(fds[1], &writefds)) ret = errno ? errno : EIO;
     close_if_open(fds[0]);
     close_if_open(fds[1]);
     return ret;
@@ -797,13 +833,13 @@ int readiness_contract_select_pipe_write_reports_writable(void) {
 
 int readiness_contract_select_timeout_returns_zero(void) {
     int fds[2] = {-1, -1};
-    fd_set readfds;
-    struct timeval tv = {.tv_sec = 0, .tv_usec = 5000};
+    __kernel_fd_set readfds;
+    struct __kernel_old_timeval tv = {.tv_sec = 0, .tv_usec = 5000};
     int ret = 0;
     if (pipe_impl(fds) != 0) return errno;
-    FD_ZERO(&readfds);
-    FD_SET(fds[0], &readfds);
-    if (select_impl(fds[0] + 1, &readfds, NULL, NULL, &tv) != 0 || FD_ISSET(fds[0], &readfds)) ret = errno ? errno : EIO;
+    fdset_zero(&readfds);
+    fdset_set(fds[0], &readfds);
+    if (select_impl(fds[0] + 1, &readfds, NULL, NULL, &tv) != 0 || fdset_isset(fds[0], &readfds)) ret = errno ? errno : EIO;
     close_if_open(fds[0]);
     close_if_open(fds[1]);
     return ret;
@@ -905,7 +941,7 @@ int readiness_contract_select_pty_read_wakes_on_peer_write(void) {
 
 int readiness_contract_pselect6_pipe_uses_shared_readiness_engine(void) {
     int fds[2] = {-1, -1};
-    fd_set readfds;
+    __kernel_fd_set readfds;
     struct __kernel_timespec timeout;
     long ret;
     int result = -1;
@@ -917,12 +953,12 @@ int readiness_contract_pselect6_pipe_uses_shared_readiness_engine(void) {
         result = errno ? errno : EIO;
         goto out;
     }
-    FD_ZERO(&readfds);
-    FD_SET(fds[0], &readfds);
+    fdset_zero(&readfds);
+    fdset_set(fds[0], &readfds);
     memset(&timeout, 0, sizeof(timeout));
     ret = syscall_dispatch_impl(__NR_pselect6, fds[0] + 1, (long)(uintptr_t)&readfds,
                                 0, 0, (long)(uintptr_t)&timeout, 0);
-    if (ret != 1 || !FD_ISSET(fds[0], &readfds)) {
+    if (ret != 1 || !fdset_isset(fds[0], &readfds)) {
         result = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }

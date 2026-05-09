@@ -54,7 +54,7 @@ static __kernel_suseconds_t kernel_owner_probe_usec(const struct timeval *tv) {
     return tv->tv_usec;
 }
 
-static int kernel_owner_probe_fdset(fd_set *set, int fd) {
+static int kernel_owner_probe_fdset(__kernel_fd_set *set, int fd) {
     unsigned int bits_per_word = (unsigned int)(8U * sizeof(set->fds_bits[0]));
     unsigned int word = (unsigned int)fd / bits_per_word;
     unsigned int bit = (unsigned int)fd % bits_per_word;

@@ -1,10 +1,11 @@
 #include "poll.h"
 
-#include <errno.h>
+#include <linux/errno.h>
+
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
+
 #include "fdtable.h"
 #include "internal/private/backing_poll.h"
 #include "pipe.h"
@@ -12,6 +13,13 @@
 #include "kernel/net/socket.h"
 #include "../kernel/wait_queue.h"
 #include "../kernel/task.h"
+
+extern int *__error(void);
+extern void *calloc(size_t, size_t);
+extern void free(void *);
+extern void *memset(void *, int, size_t);
+
+#define errno (*__error())
 
 #define POLL_HOST_SLICE_MS 25
 
@@ -383,7 +391,7 @@ int poll_impl(struct pollfd *fds, __kernel_ulong_t nfds, int timeout) {
     return poll_impl_common(fds, nfds, timeout, true);
 }
 
-static int timeval_to_timeout_ms(const struct timeval *timeout) {
+static int timeval_to_timeout_ms(const struct __kernel_old_timeval *timeout) {
     if (!timeout) {
         return -1;
     }
@@ -401,14 +409,14 @@ static int timeval_to_timeout_ms(const struct timeval *timeout) {
     return (int)total;
 }
 
-static void fdset_zero(fd_set *set) {
+static void fdset_zero(__kernel_fd_set *set) {
     if (!set) {
         return;
     }
     memset(set->fds_bits, 0, sizeof(set->fds_bits));
 }
 
-static bool fdset_isset(int fd, const fd_set *set) {
+static bool fdset_isset(int fd, const __kernel_fd_set *set) {
     unsigned int bits_per_word = (unsigned int)(8U * sizeof(set->fds_bits[0]));
     unsigned int word;
     unsigned int bit;
@@ -421,7 +429,7 @@ static bool fdset_isset(int fd, const fd_set *set) {
     return (set->fds_bits[word] & (1UL << bit)) != 0;
 }
 
-static void fdset_set(int fd, fd_set *set) {
+static void fdset_set(int fd, __kernel_fd_set *set) {
     unsigned int bits_per_word = (unsigned int)(8U * sizeof(set->fds_bits[0]));
     unsigned int word;
     unsigned int bit;
@@ -434,14 +442,17 @@ static void fdset_set(int fd, fd_set *set) {
     set->fds_bits[word] |= (1UL << bit);
 }
 
-int select_impl(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds,
-                struct timeval *timeout) {
-    fd_set requested_read;
-    fd_set requested_write;
-    fd_set requested_error;
-    fd_set *requested_read_ptr = NULL;
-    fd_set *requested_write_ptr = NULL;
-    fd_set *requested_error_ptr = NULL;
+int select_impl(int nfds,
+                __kernel_fd_set *readfds,
+                __kernel_fd_set *writefds,
+                __kernel_fd_set *errorfds,
+                struct __kernel_old_timeval *timeout) {
+    __kernel_fd_set requested_read;
+    __kernel_fd_set requested_write;
+    __kernel_fd_set requested_error;
+    __kernel_fd_set *requested_read_ptr = NULL;
+    __kernel_fd_set *requested_write_ptr = NULL;
+    __kernel_fd_set *requested_error_ptr = NULL;
     struct pollfd *pfds;
     int requested = 0;
     int timeout_ms;
@@ -587,10 +598,13 @@ __attribute__((visibility("default"))) int poll(struct pollfd *fds, __kernel_ulo
     return poll_impl(fds, nfds, timeout);
 }
 
-__attribute__((visibility("default"))) int select(int nfds, fd_set *readfds, fd_set *writefds,
-                                                  fd_set *errorfds, struct timeval *timeout) {
-    struct timeval kernel_timeout;
-    struct timeval *kernel_timeout_ptr = NULL;
+__attribute__((visibility("default"))) int select(int nfds,
+                                                  __kernel_fd_set *readfds,
+                                                  __kernel_fd_set *writefds,
+                                                  __kernel_fd_set *errorfds,
+                                                  struct timeval *timeout) {
+    struct __kernel_old_timeval kernel_timeout;
+    struct __kernel_old_timeval *kernel_timeout_ptr = NULL;
 
     if (timeout) {
         kernel_timeout.tv_sec = timeout->tv_sec;
