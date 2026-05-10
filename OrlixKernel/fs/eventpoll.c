@@ -1,16 +1,13 @@
 #include "eventpoll.h"
 
-#include <linux/fcntl.h>
-
-#include <errno.h>
+#include <uapi/linux/errno.h>
+#include <uapi/linux/fcntl.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "fdtable.h"
+#include "internal/slab.h"
 #include "internal/fs/lock.h"
 #include "poll.h"
 #include "../kernel/task.h"
@@ -43,32 +40,36 @@ void epoll_release_fd_impl(struct epoll_instance *instance) {
         epitem_t *item = instance->items;
         while (item) {
             epitem_t *next = item->next;
-            free(item);
+            kfree(item);
             item = next;
         }
         fs_mutex_destroy(&instance->lock);
-        free(instance);
+        kfree(instance);
     }
 }
 
-static struct epoll_instance *epoll_get_from_fd(int epfd) {
+static int epoll_get_from_fd(int epfd, struct epoll_instance **instance_out) {
     fd_entry_t *entry;
     struct epoll_instance *instance;
 
+    if (!instance_out) {
+        return -EINVAL;
+    }
+    *instance_out = NULL;
+
     entry = get_fd_entry_impl(epfd);
     if (!entry) {
-        errno = EBADF;
-        return NULL;
+        return -EBADF;
     }
     if (!get_fd_is_epoll_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return NULL;
+        return -EINVAL;
     }
     instance = get_fd_epoll_instance_impl(entry);
     epoll_retain(instance);
     put_fd_entry_impl(entry);
-    return instance;
+    *instance_out = instance;
+    return 0;
 }
 
 static epitem_t *epoll_find_item(struct epoll_instance *instance, int fd) {
@@ -138,11 +139,11 @@ int epoll_fdinfo_content_impl(struct epoll_instance *instance, char *buf, size_t
 
     fs_mutex_lock(&instance->lock);
     for (epitem_t *item = instance->items; item; item = item->next) {
-        int written = snprintf(buf + *pos, buf_len - *pos,
-                               "tfd:\t%d events:\t%08x data:\t%llx\n",
-                               item->fd,
-                               (unsigned int)item->event.events,
-                               (unsigned long long)item->event.data);
+        int written = scnprintf(buf + *pos, buf_len - *pos,
+                                "tfd:\t%d events:\t%08x data:\t%llx\n",
+                                item->fd,
+                                (unsigned int)item->event.events,
+                                (unsigned long long)item->event.data);
         if (written < 0) {
             ret = -EINVAL;
             break;
@@ -161,16 +162,15 @@ int epoll_fdinfo_content_impl(struct epoll_instance *instance, char *buf, size_t
 int epoll_create1_impl(int flags) {
     struct epoll_instance *instance;
     int fd;
+    int ret;
 
     if (flags & ~EPOLL_CLOEXEC) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    instance = calloc(1, sizeof(*instance));
+    instance = __kmalloc_noprof(sizeof(*instance), GFP_KERNEL | __GFP_ZERO);
     if (!instance) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     atomic_init(&instance->refs, 1);
     fs_mutex_init(&instance->lock);
@@ -178,13 +178,14 @@ int epoll_create1_impl(int flags) {
     fd = alloc_fd_impl();
     if (fd < 0) {
         epoll_release_fd_impl(instance);
-        return -1;
+        return fd;
     }
 
-    if (init_epoll_fd_entry_impl(fd, flags, instance) != 0) {
+    ret = init_epoll_fd_entry_impl(fd, flags, instance);
+    if (ret != 0) {
         free_fd_impl(fd);
         epoll_release_fd_impl(instance);
-        return -1;
+        return ret == -1 ? -ENOMEM : ret;
     }
 
     return fd;
@@ -192,8 +193,7 @@ int epoll_create1_impl(int flags) {
 
 int epoll_create_impl(int size) {
     if (size <= 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     return epoll_create1_impl(0);
 }
@@ -201,19 +201,18 @@ int epoll_create_impl(int size) {
 int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event) {
     struct epoll_instance *instance;
     epitem_t *item;
+    int ret;
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT || !fdtable_is_used_impl(fd)) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (fd == epfd) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    instance = epoll_get_from_fd(epfd);
-    if (!instance) {
-        return -1;
+    ret = epoll_get_from_fd(epfd, &instance);
+    if (ret < 0) {
+        return ret;
     }
 
     fs_mutex_lock(&instance->lock);
@@ -224,21 +223,18 @@ int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event) {
         if (!event) {
             fs_mutex_unlock(&instance->lock);
             epoll_release_fd_impl(instance);
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         if (item) {
             fs_mutex_unlock(&instance->lock);
             epoll_release_fd_impl(instance);
-            errno = EEXIST;
-            return -1;
+            return -EEXIST;
         }
-        item = calloc(1, sizeof(*item));
+        item = __kmalloc_noprof(sizeof(*item), GFP_KERNEL | __GFP_ZERO);
         if (!item) {
             fs_mutex_unlock(&instance->lock);
             epoll_release_fd_impl(instance);
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         item->fd = fd;
         item->event = *event;
@@ -251,14 +247,12 @@ int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event) {
         if (!event) {
             fs_mutex_unlock(&instance->lock);
             epoll_release_fd_impl(instance);
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         if (!item) {
             fs_mutex_unlock(&instance->lock);
             epoll_release_fd_impl(instance);
-            errno = ENOENT;
-            return -1;
+            return -ENOENT;
         }
         item->event = *event;
         item->last_ready_events = 0;
@@ -269,8 +263,7 @@ int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event) {
         if (!item) {
             fs_mutex_unlock(&instance->lock);
             epoll_release_fd_impl(instance);
-            errno = ENOENT;
-            return -1;
+            return -ENOENT;
         }
         while (*cursor && *cursor != item) {
             cursor = &(*cursor)->next;
@@ -278,14 +271,13 @@ int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event) {
         if (*cursor) {
             *cursor = item->next;
         }
-        free(item);
+        kfree(item);
         break;
     }
     default:
         fs_mutex_unlock(&instance->lock);
         epoll_release_fd_impl(instance);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_unlock(&instance->lock);
@@ -300,15 +292,15 @@ int epoll_wait_impl(int epfd, struct epoll_event *events, int maxevents, int tim
 int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout) {
     struct epoll_instance *instance;
     int remaining = timeout;
+    int ret;
 
     if (!events || maxevents <= 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    instance = epoll_get_from_fd(epfd);
-    if (!instance) {
-        return -1;
+    ret = epoll_get_from_fd(epfd, &instance);
+    if (ret < 0) {
+        return ret;
     }
 
     for (;;) {
@@ -323,8 +315,9 @@ int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int ti
             epoll_release_fd_impl(instance);
             return 0;
         }
-        if (poll_wait_for_readiness_impl(wait_ms) < 0) {
-            if (errno == EINTR) {
+        ret = poll_wait_for_readiness_impl(wait_ms);
+        if (ret < 0) {
+            if (ret == -EINTR) {
                 task_restart_record_impl(get_current(), TASK_RESTART_EPOLL_WAIT,
                                          (uint64_t)(int64_t)epfd,
                                          (uint64_t)(uintptr_t)events,
@@ -333,34 +326,10 @@ int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int ti
                                          0, 0);
             }
             epoll_release_fd_impl(instance);
-            return -1;
+            return ret;
         }
         if (timeout > 0) {
             remaining -= wait_ms;
         }
     }
-}
-
-__attribute__((visibility("default"))) int epoll_create(int size) {
-    return epoll_create_impl(size);
-}
-
-__attribute__((visibility("default"))) int epoll_create1(int flags) {
-    return epoll_create1_impl(flags);
-}
-
-__attribute__((visibility("default"))) int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event) {
-    return epoll_ctl_impl(epfd, op, fd, event);
-}
-
-__attribute__((visibility("default"))) int epoll_wait(int epfd, struct epoll_event *events, int maxevents, int timeout) {
-    return epoll_wait_impl(epfd, events, maxevents, timeout);
-}
-
-__attribute__((visibility("default"))) int epoll_pwait(int epfd, struct epoll_event *events, int maxevents, int timeout, const void *sigmask) {
-    if (sigmask) {
-        errno = ENOSYS;
-        return -1;
-    }
-    return epoll_pwait_impl(epfd, events, maxevents, timeout);
 }

@@ -1,14 +1,13 @@
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "ptrace.h"
 
 #include "cred.h"
 #include "signal.h"
 #include "task.h"
 
-#include <errno.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
-
+#include <linux/errno.h>
 #include <linux/types.h>
 #ifdef SIGSTOP
 #undef SIGSTOP
@@ -53,12 +52,10 @@ static bool ptrace_may_attach(const struct task_struct *tracer, const struct tas
 
 int ptrace_may_access_task_impl(const struct task_struct *tracer, const struct task_struct *target) {
     if (!tracer || !target || !tracer->cred || !target->cred) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
     if (!ptrace_may_attach(tracer, target)) {
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
     return 0;
 }
@@ -72,18 +69,15 @@ static int ptrace_get_target(__kernel_pid_t pid, struct task_struct **target_out
     struct task_struct *target;
 
     if (!target_out) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     target = task_lookup(pid);
     if (!target) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
     if (!ptrace_is_tracer(tracer, target)) {
         free_task(target);
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
     *target_out = target;
     return 0;
@@ -94,16 +88,15 @@ static int ptrace_copy_regs_to_user(struct task_struct *target, struct iovec *io
     size_t ncopy;
 
     if (!target || !iov || !iov->iov_base) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
-    memset(&regs, 0, sizeof(regs));
-    memcpy(regs.regs, target->ptrace_regs, sizeof(regs.regs));
+    __builtin_memset(&regs, 0, sizeof(regs));
+    __builtin_memcpy(regs.regs, target->ptrace_regs, sizeof(regs.regs));
     regs.sp = target->ptrace_sp;
     regs.pc = target->ptrace_pc;
     regs.pstate = target->ptrace_pstate;
     ncopy = iov->iov_len < sizeof(regs) ? iov->iov_len : sizeof(regs);
-    memcpy(iov->iov_base, &regs, ncopy);
+    __builtin_memcpy(iov->iov_base, &regs, ncopy);
     iov->iov_len = ncopy;
     return 0;
 }
@@ -113,13 +106,12 @@ static int ptrace_copy_regs_from_user(struct task_struct *target, const struct i
     size_t ncopy;
 
     if (!target || !iov || !iov->iov_base) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
-    memset(&regs, 0, sizeof(regs));
+    __builtin_memset(&regs, 0, sizeof(regs));
     ncopy = iov->iov_len < sizeof(regs) ? iov->iov_len : sizeof(regs);
-    memcpy(&regs, iov->iov_base, ncopy);
-    memcpy(target->ptrace_regs, regs.regs, sizeof(target->ptrace_regs));
+    __builtin_memcpy(&regs, iov->iov_base, ncopy);
+    __builtin_memcpy(target->ptrace_regs, regs.regs, sizeof(target->ptrace_regs));
     target->ptrace_sp = regs.sp;
     target->ptrace_pc = regs.pc;
     target->ptrace_pstate = regs.pstate;
@@ -133,23 +125,22 @@ static long ptrace_copy_syscall_info(struct task_struct *target, void *addr, voi
     size_t ncopy;
 
     if (!target || !info || size == 0) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
-    memset(&snapshot, 0, sizeof(snapshot));
+    __builtin_memset(&snapshot, 0, sizeof(snapshot));
     snapshot.op = target->ptrace_syscall_op;
     snapshot.arch = AUDIT_ARCH_AARCH64;
     snapshot.instruction_pointer = target->ptrace_pc;
     snapshot.stack_pointer = target->ptrace_sp;
     if (target->ptrace_syscall_op == PTRACE_SYSCALL_INFO_ENTRY) {
         snapshot.entry.nr = target->ptrace_syscall_nr;
-        memcpy(snapshot.entry.args, target->ptrace_syscall_args, sizeof(snapshot.entry.args));
+        __builtin_memcpy(snapshot.entry.args, target->ptrace_syscall_args, sizeof(snapshot.entry.args));
     } else if (target->ptrace_syscall_op == PTRACE_SYSCALL_INFO_EXIT) {
         snapshot.exit.rval = target->ptrace_syscall_retval;
         snapshot.exit.is_error = target->ptrace_syscall_is_error ? 1 : 0;
     }
     ncopy = size < sizeof(snapshot) ? size : sizeof(snapshot);
-    memcpy(info, &snapshot, ncopy);
+    __builtin_memcpy(info, &snapshot, ncopy);
     return (long)ncopy;
 }
 
@@ -172,17 +163,16 @@ static void ptrace_record_event_stop(struct task_struct *target, uint64_t event,
 long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
     struct task_struct *tracer = get_current();
     struct task_struct *target;
+    int ret;
 
     if (!tracer) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     switch (request) {
     case PTRACE_TRACEME:
         if (!tracer->parent) {
-            errno = EPERM;
-            return -1;
+            return -EPERM;
         }
         tracer->ptracer_pid = tracer->parent->pid;
         tracer->ptrace_attached = true;
@@ -190,20 +180,17 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
     case PTRACE_ATTACH:
         target = task_lookup(pid);
         if (!target) {
-            errno = ESRCH;
-            return -1;
+            return -ESRCH;
         }
         if (!ptrace_may_attach(tracer, target)) {
             free_task(target);
-            errno = EPERM;
-            return -1;
+            return -EPERM;
         }
         kernel_mutex_lock(&target->lock);
         if (target->ptrace_attached && target->ptracer_pid != tracer->pid) {
             kernel_mutex_unlock(&target->lock);
             free_task(target);
-            errno = EPERM;
-            return -1;
+            return -EPERM;
         }
         target->ptracer_pid = tracer->pid;
         target->ptrace_attached = true;
@@ -219,15 +206,13 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
     case PTRACE_DETACH:
         target = task_lookup(pid);
         if (!target) {
-            errno = ESRCH;
-            return -1;
+            return -ESRCH;
         }
         kernel_mutex_lock(&target->lock);
         if (!target->ptrace_attached || target->ptracer_pid != tracer->pid) {
             kernel_mutex_unlock(&target->lock);
             free_task(target);
-            errno = ESRCH;
-            return -1;
+            return -ESRCH;
         }
         if (data) {
             target->ptrace_signal = (int32_t)(intptr_t)data;
@@ -248,8 +233,9 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
     case PTRACE_SYSCALL:
     {
         int32_t resume_signal;
-        if (ptrace_get_target(pid, &target) != 0) {
-            return -1;
+        ret = ptrace_get_target(pid, &target);
+        if (ret != 0) {
+            return ret;
         }
         kernel_mutex_lock(&target->lock);
         target->ptrace_syscall_trace = request == PTRACE_SYSCALL;
@@ -262,14 +248,12 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
             target->ptrace_signal_bypass = true;
             kernel_mutex_unlock(&target->lock);
         }
-        if (resume_signal != 0 && signal_generate_task(target, resume_signal) != 0) {
-            int saved_errno = errno;
+        if (resume_signal != 0 && (ret = signal_generate_task(target, resume_signal)) != 0) {
             kernel_mutex_lock(&target->lock);
             target->ptrace_signal_bypass = false;
             kernel_mutex_unlock(&target->lock);
             free_task(target);
-            errno = saved_errno;
-            return -1;
+            return ret;
         }
         if (resume_signal != 0) {
             kernel_mutex_lock(&target->lock);
@@ -280,8 +264,9 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         return 0;
     }
     case PTRACE_SETOPTIONS:
-        if (ptrace_get_target(pid, &target) != 0) {
-            return -1;
+        ret = ptrace_get_target(pid, &target);
+        if (ret != 0) {
+            return ret;
         }
         kernel_mutex_lock(&target->lock);
         target->ptrace_options = (uint64_t)(uintptr_t)data;
@@ -289,91 +274,89 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         free_task(target);
         return 0;
     case PTRACE_GETEVENTMSG:
-        if (ptrace_get_target(pid, &target) != 0) {
-            return -1;
+        ret = ptrace_get_target(pid, &target);
+        if (ret != 0) {
+            return ret;
         }
         if (!data) {
             free_task(target);
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         *(unsigned long *)data = (unsigned long)target->ptrace_event_message;
         free_task(target);
         return 0;
     case PTRACE_PEEKDATA:
     case PTRACE_PEEKTEXT:
-        if (ptrace_get_target(pid, &target) != 0) {
-            return -1;
+        ret = ptrace_get_target(pid, &target);
+        if (ret != 0) {
+            return ret;
         }
         {
             long word = 0;
             long nread = task_read_virtual_memory_impl(target, (uint64_t)(uintptr_t)addr,
                                                        &word, sizeof(word));
-            int saved_errno = errno;
             free_task(target);
             if (nread != (long)sizeof(word)) {
-                errno = nread < 0 ? saved_errno : EIO;
-                return -1;
+                return nread < 0 ? nread : -EIO;
             }
             return word;
         }
     case PTRACE_POKEDATA:
     case PTRACE_POKETEXT:
-        if (ptrace_get_target(pid, &target) != 0) {
-            return -1;
+        ret = ptrace_get_target(pid, &target);
+        if (ret != 0) {
+            return ret;
         }
         {
             long word = (long)(intptr_t)data;
             long nwritten = task_write_virtual_memory_impl(target, (uint64_t)(uintptr_t)addr,
                                                            &word, sizeof(word));
-            int saved_errno = errno;
             free_task(target);
             if (nwritten != (long)sizeof(word)) {
-                errno = nwritten < 0 ? saved_errno : EIO;
-                return -1;
+                return nwritten < 0 ? nwritten : -EIO;
             }
             return 0;
         }
     case PTRACE_GETREGSET:
         if ((long)(uintptr_t)addr != NT_PRSTATUS) {
-            errno = EINVAL;
-            return -1;
+            return -EINVAL;
         }
-        if (ptrace_get_target(pid, &target) != 0) {
-            return -1;
+        ret = ptrace_get_target(pid, &target);
+        if (ret != 0) {
+            return ret;
         }
         if (ptrace_copy_regs_to_user(target, (struct iovec *)data) != 0) {
             free_task(target);
-            return -1;
+            return -EFAULT;
         }
         free_task(target);
         return 0;
     case PTRACE_SETREGSET:
         if ((long)(uintptr_t)addr != NT_PRSTATUS) {
-            errno = EINVAL;
-            return -1;
+            return -EINVAL;
         }
-        if (ptrace_get_target(pid, &target) != 0) {
-            return -1;
+        ret = ptrace_get_target(pid, &target);
+        if (ret != 0) {
+            return ret;
         }
         if (ptrace_copy_regs_from_user(target, (const struct iovec *)data) != 0) {
             free_task(target);
-            return -1;
+            return -EFAULT;
         }
         free_task(target);
         return 0;
     case PTRACE_GET_SYSCALL_INFO:
-        if (ptrace_get_target(pid, &target) != 0) {
-            return -1;
-        }
-        {
-            long ret = ptrace_copy_syscall_info(target, addr, data);
-            free_task(target);
+        ret = ptrace_get_target(pid, &target);
+        if (ret != 0) {
             return ret;
         }
+        {
+            long info_ret = ptrace_copy_syscall_info(target, addr, data);
+            free_task(target);
+            return info_ret;
+        }
     default:
-        errno = ENOSYS;
-        return -1;
+        return -ENOSYS;
     }
 }
 

@@ -1,17 +1,29 @@
 #include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stddef.h>
+
+#ifdef __weak
+#undef __weak
+#endif
 
 #include <linux/compiler_types.h>
 #include <linux/types.h>
+#ifndef BIT
+#define BIT(nr) (1UL << (nr))
+#endif
 #include <linux/gfp_types.h>
 
-void *__kmalloc_noprof(size_t size, gfp_t flags) {
+extern void *malloc(size_t size);
+extern void free(void *ptr);
+extern void *memset(void *dst, int ch, size_t size);
+extern void *memcpy(void *dst, const void *src, size_t size);
+extern size_t strlen(const char *s);
+extern int vsnprintf(char *buf, size_t size, const char *fmt, va_list args);
+
+void *__kmalloc_noprof(size_t size, unsigned int flags) {
     size_t actual = size == 0 ? 1 : size;
     void *ptr = malloc(actual);
 
-    if (ptr && (flags & __GFP_ZERO) != 0) {
+    if (ptr && (flags & ___GFP_ZERO) != 0) {
         memset(ptr, 0, actual);
     }
     return ptr;
@@ -21,7 +33,7 @@ void kfree(const void *ptr) {
     free((void *)ptr);
 }
 
-char *kstrdup(const char *src, gfp_t flags) {
+char *kstrdup(const char *src, unsigned int flags) {
     size_t len;
     char *copy;
 

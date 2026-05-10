@@ -10,10 +10,10 @@
  * - setuid(), setgid()
  */
 
+#include <linux/atomic.h>
 #include <linux/errno.h>
 #include <linux/gfp_types.h>
 #include <linux/string.h>
-#include <stdatomic.h>
 
 #include <uapi/linux/limits.h>
 #include <uapi/linux/capability.h>

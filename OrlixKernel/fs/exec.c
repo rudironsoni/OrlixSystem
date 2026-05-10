@@ -8,18 +8,14 @@
  * Linux-shaped canonical owner - iOS mediation as implementation detail
  */
 
-#include <ctype.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 /* Linux UAPI headers for ABI constants and types */
-#include <linux/fcntl.h>
-#include <linux/elf.h>
-#include <linux/auxvec.h>
-#include <linux/stat.h>
-#include <asm-generic/stat.h>
+#include <uapi/linux/errno.h>
+#include <linux/string.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/auxvec.h>
+#include <uapi/linux/stat.h>
+#include <uapi/asm/stat.h>
 #ifdef SIG_DFL
 #undef SIG_DFL
 #endif
@@ -29,24 +25,21 @@
 #ifdef SIG_ERR
 #undef SIG_ERR
 #endif
-#include <asm-generic/signal-defs.h>
+#include <uapi/asm-generic/signal-defs.h>
 
 #include "../kernel/task.h"
-
-/* environ is not available on iOS; use _NSGetEnviron() */
-#include <crt_externs.h>
-#define environ (*_NSGetEnviron())
 
 #include "../kernel/signal.h"
 #include "../kernel/cred.h"
 #include "../runtime/native/registry.h"
+#include "internal/slab.h"
 #include "fdtable.h"
 #include "vfs.h"
 
 extern int open_impl(const char *pathname, int flags, mode_t mode);
 extern int close_impl(int fd);
 extern ssize_t read_impl(int fd, void *buf, size_t count);
-extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
+extern ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 
 /* Forward declarations for exec variants */
 int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
@@ -84,8 +77,44 @@ struct exec_elf_load_plan {
 #define EXEC_PAGE_SIZE 4096ULL
 #define EXEC_SCRIPT_RECURSION_LIMIT 4
 
+static bool exec_isspace(unsigned char ch) {
+    return ch == ' ' || ch == '\t' || ch == '\n' ||
+           ch == '\r' || ch == '\f' || ch == '\v';
+}
+
 static uint64_t exec_align_down(uint64_t value, uint64_t align) {
     return value & ~(align - 1);
+}
+
+static void *exec_alloc(size_t size) {
+    return __kmalloc_noprof(size, GFP_KERNEL);
+}
+
+static void *exec_zalloc(size_t size) {
+    return __kmalloc_noprof(size, GFP_KERNEL | __GFP_ZERO);
+}
+
+static void exec_free(void *ptr) {
+    kfree(ptr);
+}
+
+static void *exec_resize_buffer(void *old_buffer, size_t old_size, size_t new_size) {
+    void *new_buffer;
+
+    if (new_size == 0) {
+        exec_free(old_buffer);
+        return NULL;
+    }
+
+    new_buffer = exec_alloc(new_size);
+    if (!new_buffer) {
+        return NULL;
+    }
+    if (old_buffer && old_size > 0) {
+        memcpy(new_buffer, old_buffer, old_size);
+        exec_free(old_buffer);
+    }
+    return new_buffer;
 }
 
 static int exec_string_count(char *const strings[]) {
@@ -104,14 +133,12 @@ static int exec_stack_place_string(uint64_t *cursor, const char *value, uint64_t
     size_t len;
 
     if (!cursor || !value || !out_addr) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     len = strlen(value) + 1;
     if (*cursor < EXEC_INITIAL_STACK_TOP - EXEC_INITIAL_STACK_SIZE + len) {
-        errno = E2BIG;
-        return -1;
+        return -E2BIG;
     }
 
     *cursor -= len;
@@ -121,14 +148,12 @@ static int exec_stack_place_string(uint64_t *cursor, const char *value, uint64_t
 
 static int exec_stack_offset(const struct mm_struct *mm, uint64_t addr, size_t size, size_t *out_offset) {
     if (!mm || !mm->initial_stack_image || !out_offset) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (addr < mm->initial_stack_base ||
         addr > mm->initial_stack_base + mm->initial_stack_image_size ||
         size > (mm->initial_stack_base + mm->initial_stack_image_size) - addr) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     *out_offset = (size_t)(addr - mm->initial_stack_base);
     return 0;
@@ -136,25 +161,28 @@ static int exec_stack_offset(const struct mm_struct *mm, uint64_t addr, size_t s
 
 static int exec_stack_write(struct mm_struct *mm, uint64_t addr, const void *src, size_t size) {
     size_t offset;
+    int ret;
 
     if (!src && size > 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
-    if (exec_stack_offset(mm, addr, size, &offset) != 0) {
-        return -1;
+    ret = exec_stack_offset(mm, addr, size, &offset);
+    if (ret != 0) {
+        return ret;
     }
     memcpy((unsigned char *)mm->initial_stack_image + offset, src, size);
     return 0;
 }
 
 static int exec_stack_write_u64(struct mm_struct *mm, uint64_t *cursor, uint64_t value) {
+    int ret;
+
     if (!cursor) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
-    if (exec_stack_write(mm, *cursor, &value, sizeof(value)) != 0) {
-        return -1;
+    ret = exec_stack_write(mm, *cursor, &value, sizeof(value));
+    if (ret != 0) {
+        return ret;
     }
     *cursor += sizeof(value);
     return 0;
@@ -162,16 +190,14 @@ static int exec_stack_write_u64(struct mm_struct *mm, uint64_t *cursor, uint64_t
 
 static int exec_stack_write_string(struct mm_struct *mm, uint64_t addr, const char *value) {
     if (!value) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     return exec_stack_write(mm, addr, value, strlen(value) + 1);
 }
 
 static int exec_auxv_append(struct mm_struct *mm, uint64_t type, uint64_t value) {
     if (!mm || mm->auxv_count >= TASK_EXEC_MAX_AUXV) {
-        errno = E2BIG;
-        return -1;
+        return -E2BIG;
     }
 
     mm->auxv[mm->auxv_count].type = type;
@@ -229,12 +255,12 @@ static void exec_clear_segment_images(struct mm_struct *mm) {
         return;
     }
     for (uint32_t i = 0; i < mm->exec_segment_count; i++) {
-        free(mm->exec_segments[i].image);
+        exec_free(mm->exec_segments[i].image);
         mm->exec_segments[i].image = NULL;
         mm->exec_segments[i].image_size = 0;
     }
     for (uint32_t i = 0; i < mm->interp_segment_count; i++) {
-        free(mm->interp_segments[i].image);
+        exec_free(mm->interp_segments[i].image);
         mm->interp_segments[i].image = NULL;
         mm->interp_segments[i].image_size = 0;
     }
@@ -253,8 +279,7 @@ static int exec_materialize_segment_image(const unsigned char *image,
     uint64_t memsz;
 
     if (!image || !plan || !out_image || !out_size || index >= plan->segment_count) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     *out_image = NULL;
@@ -263,14 +288,12 @@ static int exec_materialize_segment_image(const unsigned char *image,
     filesz = plan->segments[index].filesz;
     memsz = plan->segments[index].memsz;
     if (memsz > SIZE_MAX || filesz > memsz || offset > image_size || filesz > image_size - offset) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
-    segment_image = calloc(1, (size_t)memsz);
+    segment_image = exec_zalloc((size_t)memsz);
     if (!segment_image && memsz > 0) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     if (filesz > 0) {
         memcpy(segment_image, image + offset, (size_t)filesz);
@@ -294,14 +317,12 @@ static int exec_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size,
     }
     if (!image || image_size == 0 || image_size < size ||
         mm->vma_count >= TASK_EXEC_MAX_VMAS || size > UINT64_MAX - start) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
     for (uint32_t i = 0; i < mm->vma_count; i++) {
         uint64_t end = start + size;
         if (start < mm->vmas[i].end && end > mm->vmas[i].start) {
-            errno = ENOEXEC;
-            return -1;
+            return -ENOEXEC;
         }
     }
     page_count = size / TASK_VMA_PAGE_SIZE;
@@ -309,18 +330,16 @@ static int exec_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size,
         page_count++;
     }
     if (page_count == 0 || page_count > SIZE_MAX / sizeof(*page_flags)) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
-    page_flags = calloc((size_t)page_count, sizeof(*page_flags));
-    resident_pages = calloc((size_t)page_count, sizeof(*resident_pages));
-    dirty_pages = calloc((size_t)page_count, sizeof(*dirty_pages));
+    page_flags = exec_zalloc((size_t)page_count * sizeof(*page_flags));
+    resident_pages = exec_zalloc((size_t)page_count * sizeof(*resident_pages));
+    dirty_pages = exec_zalloc((size_t)page_count * sizeof(*dirty_pages));
     if (!page_flags || !resident_pages || !dirty_pages) {
-        free(page_flags);
-        free(resident_pages);
-        free(dirty_pages);
-        errno = ENOMEM;
-        return -1;
+        exec_free(page_flags);
+        exec_free(resident_pages);
+        exec_free(dirty_pages);
+        return -ENOMEM;
     }
     for (uint64_t i = 0; i < page_count; i++) {
         page_flags[i] = flags;
@@ -347,19 +366,16 @@ static int exec_dynamic_bytes(struct task_struct *task, uint64_t vaddr, uint64_t
 
     if (!task || !task->mm || !out_entries || !out_count || size == 0 ||
         size % sizeof(Elf64_Dyn) != 0 || size > UINT64_MAX - vaddr) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     vma = task_find_vma_impl(task, vaddr);
     if (!vma || vaddr + size > vma->end || !vma->image) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
     offset = vaddr - vma->start;
     if (offset > vma->image_size || size > vma->image_size - offset) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     *out_entries = (const Elf64_Dyn *)((const unsigned char *)vma->image + offset);
@@ -373,10 +389,10 @@ static int exec_parse_dynamic_info(struct task_struct *task,
                                    struct task_dynamic_info *info) {
     const Elf64_Dyn *entries;
     uint64_t entry_count;
+    int ret;
 
     if (!info) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     memset(info, 0, sizeof(*info));
@@ -386,8 +402,9 @@ static int exec_parse_dynamic_info(struct task_struct *task,
         return 0;
     }
 
-    if (exec_dynamic_bytes(task, vaddr, size, &entries, &entry_count) != 0) {
-        return -1;
+    ret = exec_dynamic_bytes(task, vaddr, size, &entries, &entry_count);
+    if (ret != 0) {
+        return ret;
     }
 
     for (uint64_t i = 0; i < entry_count; i++) {
@@ -396,8 +413,7 @@ static int exec_parse_dynamic_info(struct task_struct *task,
             return 0;
         case DT_NEEDED:
             if (info->needed_count >= TASK_EXEC_MAX_DYNAMIC_NEEDED) {
-                errno = ENOEXEC;
-                return -1;
+                return -ENOEXEC;
             }
             info->needed_offsets[info->needed_count++] = entries[i].d_un.d_val;
             break;
@@ -433,8 +449,7 @@ static int exec_parse_dynamic_info(struct task_struct *task,
         }
     }
 
-    errno = ENOEXEC;
-    return -1;
+    return -ENOEXEC;
 }
 
 static int exec_build_initial_elf_stack(struct task_struct *task,
@@ -449,10 +464,10 @@ static int exec_build_initial_elf_stack(struct task_struct *task,
         0x49, 0x58, 0x4c, 0x41, 0x4e, 0x44, 0x5f, 0x41,
         0x55, 0x58, 0x56, 0x5f, 0x52, 0x4e, 0x44, 0x00,
     };
+    int ret;
 
     if (!task || !task->mm || !plan) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     mm = task->mm;
@@ -462,62 +477,66 @@ static int exec_build_initial_elf_stack(struct task_struct *task,
 
     mm->initial_stack_base = EXEC_INITIAL_STACK_TOP - EXEC_INITIAL_STACK_SIZE;
     mm->initial_stack_size = EXEC_INITIAL_STACK_SIZE;
-    free(mm->initial_stack_image);
-    mm->initial_stack_image = calloc(1, EXEC_INITIAL_STACK_SIZE);
+    exec_free(mm->initial_stack_image);
+    mm->initial_stack_image = exec_zalloc(EXEC_INITIAL_STACK_SIZE);
     if (!mm->initial_stack_image) {
         mm->initial_stack_image_size = 0;
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     mm->initial_stack_image_size = EXEC_INITIAL_STACK_SIZE;
     mm->initial_argc = exec_string_count(task->argv);
     mm->initial_envc = exec_string_count(task->envp);
     mm->auxv_count = 0;
 
-    if (exec_stack_place_string(&cursor, "aarch64", &mm->auxv_platform_addr) != 0 ||
-        exec_stack_place_string(&cursor, task->exe, &mm->auxv_execfn_addr) != 0) {
-        return -1;
+    ret = exec_stack_place_string(&cursor, "aarch64", &mm->auxv_platform_addr);
+    if (ret != 0) {
+        return ret;
+    }
+    ret = exec_stack_place_string(&cursor, task->exe, &mm->auxv_execfn_addr);
+    if (ret != 0) {
+        return ret;
     }
 
     if (cursor < mm->initial_stack_base + 16) {
-        errno = E2BIG;
-        return -1;
+        return -E2BIG;
     }
     cursor -= 16;
     random_addr = cursor;
     mm->auxv_random_addr = random_addr;
 
     for (int i = mm->initial_envc - 1; i >= 0; i--) {
-        if (exec_stack_place_string(&cursor, task->envp[i], &mm->initial_envp[i]) != 0) {
-            return -1;
+        ret = exec_stack_place_string(&cursor, task->envp[i], &mm->initial_envp[i]);
+        if (ret != 0) {
+            return ret;
         }
     }
     for (int i = mm->initial_argc - 1; i >= 0; i--) {
-        if (exec_stack_place_string(&cursor, task->argv[i], &mm->initial_argv[i]) != 0) {
-            return -1;
+        ret = exec_stack_place_string(&cursor, task->argv[i], &mm->initial_argv[i]);
+        if (ret != 0) {
+            return ret;
         }
     }
 
     cursor = exec_align_down(cursor, EXEC_INITIAL_STACK_ALIGN);
 
     cred = get_current_cred();
-    if (exec_auxv_append(mm, AT_PHDR, exec_phdr_vaddr(plan)) != 0 ||
-        exec_auxv_append(mm, AT_PHENT, sizeof(Elf64_Phdr)) != 0 ||
-        exec_auxv_append(mm, AT_PHNUM, plan->ehdr.e_phnum) != 0 ||
-        exec_auxv_append(mm, AT_PAGESZ, EXEC_PAGE_SIZE) != 0 ||
-        exec_auxv_append(mm, AT_BASE, interp_plan ? exec_first_load_vaddr(interp_plan) : 0) != 0 ||
-        exec_auxv_append(mm, AT_FLAGS, 0) != 0 ||
-        exec_auxv_append(mm, AT_ENTRY, plan->ehdr.e_entry) != 0 ||
-        exec_auxv_append(mm, AT_UID, cred ? cred->uid : 0) != 0 ||
-        exec_auxv_append(mm, AT_EUID, cred ? cred->euid : 0) != 0 ||
-        exec_auxv_append(mm, AT_GID, cred ? cred->gid : 0) != 0 ||
-        exec_auxv_append(mm, AT_EGID, cred ? cred->egid : 0) != 0 ||
-        exec_auxv_append(mm, AT_SECURE, task->exec_secure ? 1 : 0) != 0 ||
-        exec_auxv_append(mm, AT_RANDOM, mm->auxv_random_addr) != 0 ||
-        exec_auxv_append(mm, AT_PLATFORM, mm->auxv_platform_addr) != 0 ||
-        exec_auxv_append(mm, AT_EXECFN, mm->auxv_execfn_addr) != 0 ||
-        exec_auxv_append(mm, AT_NULL, 0) != 0) {
-        return -1;
+    if ((ret = exec_auxv_append(mm, AT_PHDR, exec_phdr_vaddr(plan))) != 0 ||
+        (ret = exec_auxv_append(mm, AT_PHENT, sizeof(Elf64_Phdr))) != 0 ||
+        (ret = exec_auxv_append(mm, AT_PHNUM, plan->ehdr.e_phnum)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_PAGESZ, EXEC_PAGE_SIZE)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_BASE, interp_plan ? exec_first_load_vaddr(interp_plan) : 0)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_FLAGS, 0)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_ENTRY, plan->ehdr.e_entry)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_UID, cred ? cred->uid : 0)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_EUID, cred ? cred->euid : 0)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_GID, cred ? cred->gid : 0)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_EGID, cred ? cred->egid : 0)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_SECURE, task->exec_secure ? 1 : 0)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_RANDOM, mm->auxv_random_addr)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_PLATFORM, mm->auxv_platform_addr)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_EXECFN, mm->auxv_execfn_addr)) != 0 ||
+        (ret = exec_auxv_append(mm, AT_NULL, 0)) != 0) {
+        return ret;
     }
 
     pointer_slots = 1ULL +
@@ -525,58 +544,63 @@ static int exec_build_initial_elf_stack(struct task_struct *task,
                     (uint64_t)mm->initial_envc + 1ULL +
                     ((uint64_t)mm->auxv_count * 2ULL);
     if (cursor < mm->initial_stack_base + (pointer_slots * sizeof(uint64_t))) {
-        errno = E2BIG;
-        return -1;
+        return -E2BIG;
     }
     cursor -= pointer_slots * sizeof(uint64_t);
     mm->initial_stack_pointer = exec_align_down(cursor, EXEC_INITIAL_STACK_ALIGN);
     if (mm->initial_stack_pointer < mm->initial_stack_base ||
         mm->initial_stack_pointer >= EXEC_INITIAL_STACK_TOP) {
-        errno = E2BIG;
-        return -1;
+        return -E2BIG;
     }
 
-    if (exec_stack_write_string(mm, mm->auxv_platform_addr, "aarch64") != 0 ||
-        exec_stack_write_string(mm, mm->auxv_execfn_addr, task->exe) != 0 ||
-        exec_stack_write(mm, mm->auxv_random_addr, random_bytes, sizeof(random_bytes)) != 0) {
-        return -1;
+    if ((ret = exec_stack_write_string(mm, mm->auxv_platform_addr, "aarch64")) != 0 ||
+        (ret = exec_stack_write_string(mm, mm->auxv_execfn_addr, task->exe)) != 0 ||
+        (ret = exec_stack_write(mm, mm->auxv_random_addr, random_bytes, sizeof(random_bytes))) != 0) {
+        return ret;
     }
 
     for (int i = 0; i < mm->initial_argc; i++) {
-        if (exec_stack_write_string(mm, mm->initial_argv[i], task->argv[i]) != 0) {
-            return -1;
+        ret = exec_stack_write_string(mm, mm->initial_argv[i], task->argv[i]);
+        if (ret != 0) {
+            return ret;
         }
     }
     for (int i = 0; i < mm->initial_envc; i++) {
-        if (exec_stack_write_string(mm, mm->initial_envp[i], task->envp[i]) != 0) {
-            return -1;
+        ret = exec_stack_write_string(mm, mm->initial_envp[i], task->envp[i]);
+        if (ret != 0) {
+            return ret;
         }
     }
 
     cursor = mm->initial_stack_pointer;
-    if (exec_stack_write_u64(mm, &cursor, (uint64_t)mm->initial_argc) != 0) {
-        return -1;
+    ret = exec_stack_write_u64(mm, &cursor, (uint64_t)mm->initial_argc);
+    if (ret != 0) {
+        return ret;
     }
     for (int i = 0; i < mm->initial_argc; i++) {
-        if (exec_stack_write_u64(mm, &cursor, mm->initial_argv[i]) != 0) {
-            return -1;
+        ret = exec_stack_write_u64(mm, &cursor, mm->initial_argv[i]);
+        if (ret != 0) {
+            return ret;
         }
     }
-    if (exec_stack_write_u64(mm, &cursor, 0) != 0) {
-        return -1;
+    ret = exec_stack_write_u64(mm, &cursor, 0);
+    if (ret != 0) {
+        return ret;
     }
     for (int i = 0; i < mm->initial_envc; i++) {
-        if (exec_stack_write_u64(mm, &cursor, mm->initial_envp[i]) != 0) {
-            return -1;
+        ret = exec_stack_write_u64(mm, &cursor, mm->initial_envp[i]);
+        if (ret != 0) {
+            return ret;
         }
     }
-    if (exec_stack_write_u64(mm, &cursor, 0) != 0) {
-        return -1;
+    ret = exec_stack_write_u64(mm, &cursor, 0);
+    if (ret != 0) {
+        return ret;
     }
     for (uint32_t i = 0; i < mm->auxv_count; i++) {
-        if (exec_stack_write_u64(mm, &cursor, mm->auxv[i].type) != 0 ||
-            exec_stack_write_u64(mm, &cursor, mm->auxv[i].value) != 0) {
-            return -1;
+        if ((ret = exec_stack_write_u64(mm, &cursor, mm->auxv[i].type)) != 0 ||
+            (ret = exec_stack_write_u64(mm, &cursor, mm->auxv[i].value)) != 0) {
+            return ret;
         }
     }
 
@@ -594,18 +618,18 @@ static char **exec_copy_argv(char *const argv[]) {
         argc++;
     }
 
-    char **copy = calloc(argc + 1, sizeof(char *));
+    char **copy = exec_zalloc((size_t)(argc + 1) * sizeof(char *));
     if (!copy) {
         return NULL;
     }
 
     for (int i = 0; i < argc; i++) {
-        copy[i] = strdup(argv[i]);
+        copy[i] = kstrdup(argv[i], GFP_KERNEL);
         if (!copy[i]) {
             for (int j = 0; j < i; j++) {
-                free(copy[j]);
+                exec_free(copy[j]);
             }
-            free(copy);
+            exec_free(copy);
             return NULL;
         }
     }
@@ -624,18 +648,18 @@ static char **exec_copy_envp(char *const envp[]) {
         envc++;
     }
 
-    char **copy = calloc(envc + 1, sizeof(char *));
+    char **copy = exec_zalloc((size_t)(envc + 1) * sizeof(char *));
     if (!copy) {
         return NULL;
     }
 
     for (int i = 0; i < envc; i++) {
-        copy[i] = strdup(envp[i]);
+        copy[i] = kstrdup(envp[i], GFP_KERNEL);
         if (!copy[i]) {
             for (int j = 0; j < i; j++) {
-                free(copy[j]);
+                exec_free(copy[j]);
             }
-            free(copy);
+            exec_free(copy);
             return NULL;
         }
     }
@@ -650,9 +674,9 @@ static void exec_free_argv(char **argv) {
     }
 
     for (int i = 0; argv[i]; i++) {
-        free(argv[i]);
+        exec_free(argv[i]);
     }
-    free(argv);
+    exec_free(argv);
 }
 
 static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy,
@@ -664,17 +688,16 @@ static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy
     char **current_argv = argv_copy;
     int current_argc;
     int depth = 0;
+    int ret;
 
     if (!resolved_path || !argv_copy || !final_path || final_path_len == 0 ||
         !final_interpreter_path || final_interpreter_path_len == 0 ||
         !out_launch_argv || !out_launch_argc || !out_final_type) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (strlen(resolved_path) >= final_path_len) {
-        errno = ENAMETOOLONG;
-        return -1;
+        return -ENAMETOOLONG;
     }
     strcpy(current_path, resolved_path);
     current_argc = exec_string_count(current_argv);
@@ -684,16 +707,16 @@ static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy
         enum exec_image_type current_type = exec_classify(current_path);
 
         if (current_type == EXEC_IMAGE_NONE) {
-            errno = ENOENT;
+            ret = -ENOENT;
             goto fail;
         }
         if (current_type == EXEC_IMAGE_INVALID || current_type == EXEC_IMAGE_WASI) {
-            errno = ENOEXEC;
+            ret = -ENOEXEC;
             goto fail;
         }
         if (current_type != EXEC_IMAGE_SCRIPT) {
             if (strlen(current_path) >= final_path_len) {
-                errno = ENAMETOOLONG;
+                ret = -ENAMETOOLONG;
                 goto fail;
             }
             strcpy(final_path, current_path);
@@ -704,7 +727,7 @@ static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy
         }
 
         if (depth >= EXEC_SCRIPT_RECURSION_LIMIT) {
-            errno = ELOOP;
+            ret = -ELOOP;
             goto fail;
         }
 
@@ -715,15 +738,16 @@ static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy
         char **next_argv;
         native_entry_fn native_entry;
 
-        if (exec_build_script_argv(current_path, current_argc, current_argv,
-                                   interpreter_path, sizeof(interpreter_path),
-                                   optional_arg, sizeof(optional_arg),
-                                   script_argv, &script_argc) < 0) {
+        ret = exec_build_script_argv(current_path, current_argc, current_argv,
+                                     interpreter_path, sizeof(interpreter_path),
+                                     optional_arg, sizeof(optional_arg),
+                                     script_argv, &script_argc);
+        if (ret < 0) {
             goto fail;
         }
 
         if (strlen(interpreter_path) >= final_interpreter_path_len) {
-            errno = ENAMETOOLONG;
+            ret = -ENAMETOOLONG;
             goto fail;
         }
         strcpy(final_interpreter_path, interpreter_path);
@@ -731,7 +755,7 @@ static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy
         native_entry = native_lookup(interpreter_path);
         if (native_entry) {
             if (strlen(interpreter_path) >= final_path_len) {
-                errno = ENAMETOOLONG;
+                ret = -ENAMETOOLONG;
                 goto fail;
             }
             strcpy(final_path, interpreter_path);
@@ -741,7 +765,7 @@ static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy
 
             next_argv = exec_copy_argv(script_argv);
             if (!next_argv) {
-                errno = ENOMEM;
+                ret = -ENOMEM;
                 goto fail;
             }
             if (current_argv != argv_copy) {
@@ -754,14 +778,14 @@ static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy
 
         next_argv = exec_copy_argv(script_argv);
         if (!next_argv) {
-            errno = ENOMEM;
+            ret = -ENOMEM;
             goto fail;
         }
-        if (vfs_resolve_virtual_path_task_follow(interpreter_path, current_path, sizeof(current_path),
-                                                 get_current() ? get_current()->fs : NULL, true) != 0) {
-            int saved_errno = errno;
+        ret = vfs_resolve_virtual_path_task_follow(interpreter_path, current_path, sizeof(current_path),
+                                                   get_current() ? get_current()->fs : NULL, true);
+        if (ret != 0) {
             exec_free_argv(next_argv);
-            errno = saved_errno ? saved_errno : ENOENT;
+            ret = ret < 0 ? ret : -ENOENT;
             goto fail;
         }
         if (current_argv != argv_copy) {
@@ -776,24 +800,22 @@ fail:
     if (current_argv != argv_copy) {
         exec_free_argv(current_argv);
     }
-    return -1;
+    return ret;
 }
 
 /* Internal: Ensure task has an exec_image allocated */
 static int exec_image_ensure(struct task_struct *task) {
     if (!task) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (task->exec_image) {
         return 0;
     }
 
-    task->exec_image = calloc(1, sizeof(struct exec_image));
+    task->exec_image = exec_zalloc(sizeof(struct exec_image));
     if (!task->exec_image) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
     return 0;
@@ -823,8 +845,7 @@ static int exec_elf_header_is_magic(const Elf64_Ehdr *ehdr) {
 
 static int exec_validate_elf64_aarch64(const Elf64_Ehdr *ehdr) {
     if (!exec_elf_header_is_magic(ehdr)) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
     if (ehdr->e_ident[EI_CLASS] != ELFCLASS64 ||
         ehdr->e_ident[EI_DATA] != ELFDATA2LSB ||
@@ -833,8 +854,7 @@ static int exec_validate_elf64_aarch64(const Elf64_Ehdr *ehdr) {
         ehdr->e_machine != EM_AARCH64 ||
         (ehdr->e_type != ET_EXEC && ehdr->e_type != ET_DYN) ||
         ehdr->e_ehsize != sizeof(Elf64_Ehdr)) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
     return 0;
 }
@@ -851,29 +871,28 @@ static int exec_elf_range_in_image(uint64_t offset, uint64_t size, size_t image_
 
 static int exec_build_elf_load_plan(const void *image, size_t image_size, struct exec_elf_load_plan *plan) {
     const unsigned char *bytes = image;
+    int ret;
 
     if (!image || !plan || image_size < sizeof(Elf64_Ehdr)) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     memset(plan, 0, sizeof(*plan));
     memcpy(&plan->ehdr, image, sizeof(plan->ehdr));
-    if (exec_validate_elf64_aarch64(&plan->ehdr) != 0) {
-        return -1;
+    ret = exec_validate_elf64_aarch64(&plan->ehdr);
+    if (ret != 0) {
+        return ret;
     }
 
     if (plan->ehdr.e_phnum > 0) {
         uint64_t ph_size;
 
         if (plan->ehdr.e_phentsize != sizeof(Elf64_Phdr)) {
-            errno = ENOEXEC;
-            return -1;
+            return -ENOEXEC;
         }
         ph_size = (uint64_t)plan->ehdr.e_phentsize * (uint64_t)plan->ehdr.e_phnum;
         if (!exec_elf_range_in_image(plan->ehdr.e_phoff, ph_size, image_size)) {
-            errno = ENOEXEC;
-            return -1;
+            return -ENOEXEC;
         }
     }
 
@@ -886,8 +905,7 @@ static int exec_build_elf_load_plan(const void *image, size_t image_size, struct
             if (plan->segment_count >= TASK_EXEC_MAX_LOAD_SEGMENTS ||
                 phdr.p_filesz > phdr.p_memsz ||
                 !exec_elf_range_in_image(phdr.p_offset, phdr.p_filesz, image_size)) {
-                errno = ENOEXEC;
-                return -1;
+                return -ENOEXEC;
             }
 
             plan->segments[plan->segment_count].vaddr = phdr.p_vaddr;
@@ -900,8 +918,7 @@ static int exec_build_elf_load_plan(const void *image, size_t image_size, struct
             if (phdr.p_memsz == 0 ||
                 phdr.p_filesz > phdr.p_memsz ||
                 !exec_elf_range_in_image(phdr.p_offset, phdr.p_filesz, image_size)) {
-                errno = ENOEXEC;
-                return -1;
+                return -ENOEXEC;
             }
             plan->dynamic_vaddr = phdr.p_vaddr;
             plan->dynamic_size = phdr.p_memsz;
@@ -911,23 +928,20 @@ static int exec_build_elf_load_plan(const void *image, size_t image_size, struct
             if (phdr.p_filesz == 0 ||
                 phdr.p_filesz >= sizeof(plan->interpreter) ||
                 !exec_elf_range_in_image(phdr.p_offset, phdr.p_filesz, image_size)) {
-                errno = ENOEXEC;
-                return -1;
+                return -ENOEXEC;
             }
             interp_len = (size_t)phdr.p_filesz;
             memcpy(plan->interpreter, bytes + phdr.p_offset, interp_len);
             plan->interpreter[sizeof(plan->interpreter) - 1] = '\0';
             if (plan->interpreter[interp_len - 1] != '\0') {
-                errno = ENOEXEC;
-                return -1;
+                return -ENOEXEC;
             }
         }
     }
 
     if (plan->dynamic_size != 0 &&
         !exec_plan_range_is_loaded(plan, plan->dynamic_vaddr, plan->dynamic_size)) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     return 0;
@@ -938,22 +952,21 @@ static int exec_read_image_file(const char *path, void **out_image, size_t *out_
     void *image;
     size_t image_capacity = 4096;
     size_t offset = 0;
+    int ret;
 
     if (!path || !out_image || !out_size) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fd = open_impl(path, O_RDONLY, 0);
     if (fd < 0) {
-        return -1;
+        return fd;
     }
 
-    image = malloc(image_capacity);
+    image = exec_alloc(image_capacity);
     if (!image) {
         close_impl(fd);
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
     for (;;) {
@@ -961,12 +974,11 @@ static int exec_read_image_file(const char *path, void **out_image, size_t *out_
 
         if (offset == image_capacity) {
             size_t new_capacity = image_capacity * 2;
-            void *new_image = realloc(image, new_capacity);
+            void *new_image = exec_resize_buffer(image, image_capacity, new_capacity);
             if (!new_image) {
-                free(image);
+                exec_free(image);
                 close_impl(fd);
-                errno = ENOMEM;
-                return -1;
+                return -ENOMEM;
             }
             image = new_image;
             image_capacity = new_capacity;
@@ -974,11 +986,9 @@ static int exec_read_image_file(const char *path, void **out_image, size_t *out_
 
         nread = read_impl(fd, (char *)image + offset, image_capacity - offset);
         if (nread < 0) {
-            int saved_errno = errno;
-            free(image);
+            exec_free(image);
             close_impl(fd);
-            errno = saved_errno;
-            return -1;
+            return (int)nread;
         }
         if (nread == 0) {
             break;
@@ -996,18 +1006,20 @@ static int exec_read_elf_load_plan(const char *path, void **out_image, size_t *o
                                    struct exec_elf_load_plan *out_plan) {
     void *image = NULL;
     size_t image_size = 0;
+    int ret;
 
     if (!path || !out_image || !out_size || !out_plan) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    if (exec_read_image_file(path, &image, &image_size) != 0) {
-        return -1;
+    ret = exec_read_image_file(path, &image, &image_size);
+    if (ret != 0) {
+        return ret;
     }
-    if (exec_build_elf_load_plan(image, image_size, out_plan) != 0) {
-        free(image);
-        return -1;
+    ret = exec_build_elf_load_plan(image, image_size, out_plan);
+    if (ret != 0) {
+        exec_free(image);
+        return ret;
     }
 
     *out_image = image;
@@ -1019,17 +1031,12 @@ static int exec_resolve_elf_interpreter(const char *interpreter, char *resolved,
     int ret;
 
     if (!interpreter || interpreter[0] == '\0' || !resolved || resolved_len == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     ret = vfs_resolve_virtual_path_task_follow(interpreter, resolved, resolved_len,
                                                get_current() ? get_current()->fs : NULL, true);
-    if (ret != 0) {
-        errno = -ret;
-        return -1;
-    }
-    return 0;
+    return ret;
 }
 
 static int exec_validate_elf_interpreter_for_path(const char *path) {
@@ -1040,7 +1047,7 @@ static int exec_validate_elf_interpreter_for_path(const char *path) {
     if (exec_read_elf_load_plan(path, &image, &image_size, &plan) != 0) {
         return -1;
     }
-    free(image);
+    exec_free(image);
 
     if (plan.interpreter[0] != '\0') {
         char resolved_interp[MAX_PATH];
@@ -1054,7 +1061,7 @@ static int exec_validate_elf_interpreter_for_path(const char *path) {
         if (exec_read_elf_load_plan(resolved_interp, &interp_image, &interp_image_size, &interp_plan) != 0) {
             return -1;
         }
-        free(interp_image);
+        exec_free(interp_image);
     }
 
     (void)image_size;
@@ -1063,28 +1070,28 @@ static int exec_validate_elf_interpreter_for_path(const char *path) {
 
 static int exec_read_shebang_line(const char *path, char *buffer, size_t buffer_len) {
     char resolved_path[MAX_PATH];
+    int ret;
+    int fd;
+    ssize_t nread;
+
     if (!path || !buffer || buffer_len < 3) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    int ret = vfs_resolve_virtual_path_task_follow(path, resolved_path, sizeof(resolved_path), NULL, true);
+    ret = vfs_resolve_virtual_path_task_follow(path, resolved_path, sizeof(resolved_path), NULL, true);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
-    int fd = open_impl(resolved_path, O_RDONLY, 0);
+    fd = open_impl(resolved_path, O_RDONLY, 0);
     if (fd < 0) {
-        return -1;
+        return fd;
     }
 
-    ssize_t nread = read_impl(fd, buffer, buffer_len - 1);
-    int saved_errno = errno;
+    nread = read_impl(fd, buffer, buffer_len - 1);
     close_impl(fd);
-    errno = saved_errno;
     if (nread < 0) {
-        return -1;
+        return (int)nread;
     }
 
     buffer[nread] = '\0';
@@ -1100,15 +1107,17 @@ int exec_build_script_argv(const char *path, int argc, char **argv,
                            char *interpreter_path, size_t interpreter_path_len,
                            char *optional_arg, size_t optional_arg_len,
                            char **script_argv, int *script_argc) {
+    int ret;
+
     if (!path || !interpreter_path || interpreter_path_len == 0 ||
         !optional_arg || optional_arg_len == 0 || !script_argv || !script_argc) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     char shebang[MAX_PATH];
-    if (exec_read_shebang_line(path, shebang, sizeof(shebang)) < 0) {
-        return -1;
+    ret = exec_read_shebang_line(path, shebang, sizeof(shebang));
+    if (ret < 0) {
+        return ret;
     }
 
     return exec_build_script_argv_from_line(shebang, path, argc, argv,
@@ -1123,15 +1132,13 @@ int exec_build_script_argv_from_line(const char *shebang_line, const char *path,
                                       char **script_argv, int *script_argc) {
     if (!shebang_line || !path || !interpreter_path || interpreter_path_len == 0 ||
         !optional_arg || optional_arg_len == 0 || !script_argv || !script_argc) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     optional_arg[0] = '\0';
 
     if (shebang_line[0] != '#' || shebang_line[1] != '!') {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     char linebuf[MAX_PATH];
@@ -1139,17 +1146,16 @@ int exec_build_script_argv_from_line(const char *shebang_line, const char *path,
     linebuf[sizeof(linebuf) - 1] = '\0';
 
     char *cursor = linebuf + 2;
-    while (*cursor && isspace((unsigned char)*cursor)) {
+    while (*cursor && exec_isspace((unsigned char)*cursor)) {
         cursor++;
     }
 
     if (*cursor == '\0') {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     char *interpreter = cursor;
-    while (*cursor && !isspace((unsigned char)*cursor)) {
+    while (*cursor && !exec_isspace((unsigned char)*cursor)) {
         cursor++;
     }
     if (*cursor) {
@@ -1157,31 +1163,28 @@ int exec_build_script_argv_from_line(const char *shebang_line, const char *path,
         cursor++;
     }
 
-    while (*cursor && isspace((unsigned char)*cursor)) {
+    while (*cursor && exec_isspace((unsigned char)*cursor)) {
         cursor++;
     }
     char *optional = cursor;
     char *end = optional + strlen(optional);
-    while (end > optional && isspace((unsigned char)end[-1])) {
+    while (end > optional && exec_isspace((unsigned char)end[-1])) {
         end--;
     }
     *end = '\0';
 
     if (interpreter[0] == '\0') {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     if (strlen(interpreter) >= interpreter_path_len) {
-        errno = ENAMETOOLONG;
-        return -1;
+        return -ENAMETOOLONG;
     }
 
     strcpy(interpreter_path, interpreter);
     if (optional[0] != '\0') {
         if (strlen(optional) >= optional_arg_len) {
-            errno = ENAMETOOLONG;
-            return -1;
+            return -ENAMETOOLONG;
         }
         strcpy(optional_arg, optional);
     }
@@ -1238,10 +1241,10 @@ enum exec_image_type exec_classify(const char *path) {
         struct exec_elf_load_plan plan;
         if (exec_read_image_file(resolved_path, &image, &image_size) != 0 ||
             exec_build_elf_load_plan(image, image_size, &plan) != 0) {
-            free(image);
+            exec_free(image);
             return EXEC_IMAGE_INVALID;
         }
-        free(image);
+        exec_free(image);
         return EXEC_IMAGE_ELF;
     }
 
@@ -1274,73 +1277,60 @@ void exec_reset_signals(struct signal_struct *sighand) {
 static int exec_path_from_fd(int fd, char *path, size_t path_len) {
     fd_entry_t *entry;
     int ret;
-    int saved_errno;
 
     if (!path || path_len == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     ret = get_fd_path_impl(entry, path, path_len);
-    saved_errno = errno;
     put_fd_entry_impl(entry);
-    errno = saved_errno;
-    if (ret != 0) {
-        return -1;
-    }
-    return 0;
+    return ret;
 }
 
 static int execve_resolved_path(const char *resolved_path, char *const argv[], char *const envp[]) {
     struct task_struct *task;
+    int ret;
 
     if (!resolved_path || resolved_path[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     int type = exec_classify(resolved_path);
     if (type == EXEC_IMAGE_NONE) {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
     if (type == EXEC_IMAGE_INVALID) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
     if (type == EXEC_IMAGE_WASI) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     char **argv_copy = exec_copy_argv(argv);
     char **envp_copy = exec_copy_envp(envp);
 
     if (argv && !argv_copy) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     if (envp && !envp_copy) {
         exec_free_argv(argv_copy);
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
-    if (exec_image_ensure(task) < 0) {
+    ret = exec_image_ensure(task);
+    if (ret < 0) {
         exec_free_argv(argv_copy);
         exec_free_argv(envp_copy);
-        return -1;
+        return ret;
     }
 
     int argc = 0;
@@ -1359,13 +1349,14 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
         enum exec_image_type final_type;
         const char *requested_argv0 = argv_copy ? argv_copy[0] : NULL;
 
-        if (exec_resolve_script_chain(resolved_path, argv_copy,
-                                      final_path, sizeof(final_path),
-                                      final_interpreter_path, sizeof(final_interpreter_path),
-                                      &launch_argv, &launch_argc, &final_type) < 0) {
+        ret = exec_resolve_script_chain(resolved_path, argv_copy,
+                                        final_path, sizeof(final_path),
+                                        final_interpreter_path, sizeof(final_interpreter_path),
+                                        &launch_argv, &launch_argc, &final_type);
+        if (ret < 0) {
             exec_free_argv(argv_copy);
             exec_free_argv(envp_copy);
-            return -1;
+            return ret;
         }
 
         if (task_record_exec_strings_impl(launch_argv, envp_copy) < 0) {
@@ -1402,8 +1393,7 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
                 }
                 exec_free_argv(argv_copy);
                 exec_free_argv(envp_copy);
-                errno = ENOENT;
-                return -1;
+                return -ENOENT;
             }
             launch_status = program.entry(launch_argc, launch_argv, envp_copy);
         }
@@ -1453,86 +1443,40 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
     return launch_status;
 }
 
-int execve(const char *pathname, char *const argv[], char *const envp[]) {
+int execve_impl(const char *pathname, char *const argv[], char *const envp[]) {
     char resolved_path[MAX_PATH];
     int ret;
     struct task_struct *task;
 
     if (!pathname) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (pathname[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     ret = vfs_resolve_virtual_path_task_follow(pathname, resolved_path, sizeof(resolved_path), task->fs, true);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
-    return execve_resolved_path(resolved_path, argv, envp);
+    ret = execve_resolved_path(resolved_path, argv, envp);
+    return ret;
 }
 
-int execv(const char *pathname, char *const argv[]) {
-    return execve(pathname, argv, environ);
-}
-
-int execvp(const char *file, char *const argv[]) {
-    if (strchr(file, '/') != NULL) {
-        return execv(file, argv);
-    }
-
-    const char *path_env = getenv("PATH");
-    if (path_env == NULL) {
-        path_env = "/usr/bin:/bin";
-    }
-
-    char *path_copy = strdup(path_env);
-    if (path_copy == NULL) {
-        return -1;
-    }
-
-    char *saveptr = NULL;
-    char *dir = strtok_r(path_copy, ":", &saveptr);
-
-    while (dir != NULL) {
-        char fullpath[MAX_PATH];
-        int len = snprintf(fullpath, sizeof(fullpath), "%s/%s", dir, file);
-
-        if (len > 0 && (size_t)len < sizeof(fullpath)) {
-            int result = execv(fullpath, argv);
-            if (result != -1) {
-                free(path_copy);
-                return result;
-            }
-            if (errno != ENOENT && errno != ENOTDIR) {
-                free(path_copy);
-                return -1;
-            }
-        }
-
-        dir = strtok_r(NULL, ":", &saveptr);
-    }
-
-    free(path_copy);
-    errno = ENOENT;
-    return -1;
-}
-
-int fexecve(int fd, char *const argv[], char *const envp[]) {
+int fexecve_impl(int fd, char *const argv[], char *const envp[]) {
     char path[MAX_PATH];
-    if (exec_path_from_fd(fd, path, sizeof(path)) != 0) {
-        return -1;
+    int ret;
+
+    ret = exec_path_from_fd(fd, path, sizeof(path));
+    if (ret != 0) {
+        return ret;
     }
 
     return execve_resolved_path(path, argv, envp);
@@ -1543,23 +1487,22 @@ int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *con
     char resolved_path[MAX_PATH];
     char link_target[MAX_PATH];
     int ret;
+    ssize_t link_ret;
 
     if (!pathname) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (flags & ~(AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (pathname[0] == '\0') {
         if ((flags & AT_EMPTY_PATH) == 0) {
-            errno = ENOENT;
-            return -1;
+            return -ENOENT;
         }
-        if (exec_path_from_fd(dirfd, resolved_path, sizeof(resolved_path)) != 0) {
-            return -1;
+        ret = exec_path_from_fd(dirfd, resolved_path, sizeof(resolved_path));
+        if (ret != 0) {
+            return ret;
         }
         return execve_resolved_path(resolved_path, argv, envp);
     }
@@ -1567,17 +1510,15 @@ int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *con
     ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_path, sizeof(resolved_path),
                                              (flags & AT_SYMLINK_NOFOLLOW) == 0);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     if ((flags & AT_SYMLINK_NOFOLLOW) != 0) {
-        ret = (int)readlinkat(dirfd, pathname, link_target, sizeof(link_target));
-        if (ret >= 0) {
-            errno = ELOOP;
-            return -1;
+        link_ret = readlinkat_impl(dirfd, pathname, link_target, sizeof(link_target));
+        if (link_ret >= 0) {
+            return -ELOOP;
         }
-        if (errno != EINVAL) {
-            return -1;
+        if (link_ret != -EINVAL) {
+            return (int)link_ret;
         }
     }
 
@@ -1587,8 +1528,7 @@ int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *con
 int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
     native_program_t program;
     if (native_lookup_program(path, &program) != 0) {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     strncpy(task->exec_image->path, path, sizeof(task->exec_image->path) - 1);
@@ -1606,44 +1546,46 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
     size_t interp_image_size = 0;
     struct exec_elf_load_plan interp_plan;
     char resolved_interp[MAX_PATH] = {0};
+    int ret;
 
     (void)argc;
     (void)argv;
     (void)envp;
 
     if (!task || !path || !task->exec_image) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    if (exec_read_elf_load_plan(path, &image, &image_size, &plan) != 0) {
-        return -1;
+    ret = exec_read_elf_load_plan(path, &image, &image_size, &plan);
+    if (ret != 0) {
+        return ret;
     }
 
     if (plan.interpreter[0] != '\0') {
-        if (exec_resolve_elf_interpreter(plan.interpreter, resolved_interp, sizeof(resolved_interp)) != 0) {
-            free(image);
-            return -1;
+        ret = exec_resolve_elf_interpreter(plan.interpreter, resolved_interp, sizeof(resolved_interp));
+        if (ret != 0) {
+            exec_free(image);
+            return ret;
         }
-        if (exec_read_elf_load_plan(resolved_interp, &interp_image, &interp_image_size, &interp_plan) != 0) {
-            free(image);
-            return -1;
+        ret = exec_read_elf_load_plan(resolved_interp, &interp_image, &interp_image_size, &interp_plan);
+        if (ret != 0) {
+            exec_free(image);
+            return ret;
         }
     }
 
     if (!task->mm) {
-        task->mm = calloc(1, sizeof(*task->mm));
+        task->mm = exec_zalloc(sizeof(*task->mm));
         if (!task->mm) {
-            free(image);
-            free(interp_image);
-            errno = ENOMEM;
-            return -1;
+            exec_free(image);
+            exec_free(interp_image);
+            return -ENOMEM;
         }
     }
 
     exec_clear_segment_images(task->mm);
-    free(task->mm->exec_image_base);
-    free(task->mm->interp_image_base);
+    exec_free(task->mm->exec_image_base);
+    exec_free(task->mm->interp_image_base);
     task->mm->exec_image_base = image;
     task->mm->exec_image_size = image_size;
     task->mm->exec_entry = plan.ehdr.e_entry;
@@ -1658,20 +1600,22 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
         task->mm->exec_segments[i].filesz = plan.segments[i].filesz;
         task->mm->exec_segments[i].offset = plan.segments[i].offset;
         task->mm->exec_segments[i].flags = plan.segments[i].flags;
-        if (exec_materialize_segment_image(task->mm->exec_image_base, task->mm->exec_image_size,
-                                           &plan, i,
-                                           &task->mm->exec_segments[i].image,
-                                           &task->mm->exec_segments[i].image_size) != 0) {
-            return -1;
+        ret = exec_materialize_segment_image(task->mm->exec_image_base, task->mm->exec_image_size,
+                                             &plan, i,
+                                             &task->mm->exec_segments[i].image,
+                                             &task->mm->exec_segments[i].image_size);
+        if (ret != 0) {
+            return ret;
         }
-        if (exec_add_vma(task->mm,
-                         task->mm->exec_segments[i].vaddr,
-                         task->mm->exec_segments[i].image_size,
-                         task->mm->exec_segments[i].flags,
-                         TASK_VMA_EXEC,
-                         task->mm->exec_segments[i].image,
-                         task->mm->exec_segments[i].image_size) != 0) {
-            return -1;
+        ret = exec_add_vma(task->mm,
+                           task->mm->exec_segments[i].vaddr,
+                           task->mm->exec_segments[i].image_size,
+                           task->mm->exec_segments[i].flags,
+                           TASK_VMA_EXEC,
+                           task->mm->exec_segments[i].image,
+                           task->mm->exec_segments[i].image_size);
+        if (ret != 0) {
+            return ret;
         }
     }
 
@@ -1696,20 +1640,22 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
             task->mm->interp_segments[i].filesz = interp_plan.segments[i].filesz;
             task->mm->interp_segments[i].offset = interp_plan.segments[i].offset;
             task->mm->interp_segments[i].flags = interp_plan.segments[i].flags;
-            if (exec_materialize_segment_image(task->mm->interp_image_base, task->mm->interp_image_size,
-                                               &interp_plan, i,
-                                               &task->mm->interp_segments[i].image,
-                                               &task->mm->interp_segments[i].image_size) != 0) {
-                return -1;
+            ret = exec_materialize_segment_image(task->mm->interp_image_base, task->mm->interp_image_size,
+                                                 &interp_plan, i,
+                                                 &task->mm->interp_segments[i].image,
+                                                 &task->mm->interp_segments[i].image_size);
+            if (ret != 0) {
+                return ret;
             }
-            if (exec_add_vma(task->mm,
-                             task->mm->interp_segments[i].vaddr,
-                             task->mm->interp_segments[i].image_size,
-                             task->mm->interp_segments[i].flags,
-                             TASK_VMA_INTERP,
-                             task->mm->interp_segments[i].image,
-                             task->mm->interp_segments[i].image_size) != 0) {
-                return -1;
+            ret = exec_add_vma(task->mm,
+                               task->mm->interp_segments[i].vaddr,
+                               task->mm->interp_segments[i].image_size,
+                               task->mm->interp_segments[i].flags,
+                               TASK_VMA_INTERP,
+                               task->mm->interp_segments[i].image,
+                               task->mm->interp_segments[i].image_size);
+            if (ret != 0) {
+                return ret;
             }
         }
         strncpy(task->mm->interp_path, resolved_interp, sizeof(task->mm->interp_path) - 1);
@@ -1717,46 +1663,49 @@ int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, 
         task->mm->entry_point = interp_plan.ehdr.e_entry;
     }
 
-    if (exec_parse_dynamic_info(task,
-                                task->mm->exec_dynamic_vaddr,
-                                task->mm->exec_dynamic_size,
-                                &task->mm->exec_dynamic) != 0) {
-        return -1;
+    ret = exec_parse_dynamic_info(task,
+                                  task->mm->exec_dynamic_vaddr,
+                                  task->mm->exec_dynamic_size,
+                                  &task->mm->exec_dynamic);
+    if (ret != 0) {
+        return ret;
     }
     if (interp_image &&
-        exec_parse_dynamic_info(task,
-                                task->mm->interp_dynamic_vaddr,
-                                task->mm->interp_dynamic_size,
-                                &task->mm->interp_dynamic) != 0) {
-        return -1;
+        (ret = exec_parse_dynamic_info(task,
+                                       task->mm->interp_dynamic_vaddr,
+                                       task->mm->interp_dynamic_size,
+                                       &task->mm->interp_dynamic)) != 0) {
+        return ret;
     }
 
-    if (exec_build_initial_elf_stack(task, &plan, interp_image ? &interp_plan : NULL) != 0) {
-        return -1;
+    ret = exec_build_initial_elf_stack(task, &plan, interp_image ? &interp_plan : NULL);
+    if (ret != 0) {
+        return ret;
     }
-    free(task->mm->stack_guard_image);
-    task->mm->stack_guard_image = calloc(1, TASK_VMA_PAGE_SIZE);
+    exec_free(task->mm->stack_guard_image);
+    task->mm->stack_guard_image = exec_zalloc(TASK_VMA_PAGE_SIZE);
     if (!task->mm->stack_guard_image) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
-    if (exec_add_vma(task->mm,
-                     task->mm->initial_stack_base - TASK_VMA_PAGE_SIZE,
-                     TASK_VMA_PAGE_SIZE,
-                     0,
-                     TASK_VMA_GUARD,
-                     task->mm->stack_guard_image,
-                     TASK_VMA_PAGE_SIZE) != 0) {
-        return -1;
+    ret = exec_add_vma(task->mm,
+                       task->mm->initial_stack_base - TASK_VMA_PAGE_SIZE,
+                       TASK_VMA_PAGE_SIZE,
+                       0,
+                       TASK_VMA_GUARD,
+                       task->mm->stack_guard_image,
+                       TASK_VMA_PAGE_SIZE);
+    if (ret != 0) {
+        return ret;
     }
-    if (exec_add_vma(task->mm,
-                     task->mm->initial_stack_base,
-                     task->mm->initial_stack_image_size,
-                     PF_R | PF_W,
-                     TASK_VMA_STACK,
-                     task->mm->initial_stack_image,
-                     task->mm->initial_stack_image_size) != 0) {
-        return -1;
+    ret = exec_add_vma(task->mm,
+                       task->mm->initial_stack_base,
+                       task->mm->initial_stack_image_size,
+                       PF_R | PF_W,
+                       TASK_VMA_STACK,
+                       task->mm->initial_stack_image,
+                       task->mm->initial_stack_image_size);
+    if (ret != 0) {
+        return ret;
     }
     task->mm->handoff.entry_point = task->mm->entry_point;
     task->mm->handoff.initial_stack_pointer = task->mm->initial_stack_pointer;
@@ -1784,14 +1733,14 @@ int exec_wasi(struct task_struct *task, const char *path, int argc, char **argv,
     (void)argc;
     (void)argv;
     (void)envp;
-    errno = ENOEXEC;
-    return -1;
+    return -ENOEXEC;
 }
 
 int exec_script(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
+    int ret;
+
     if (!task || !path || !argv) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     char interpreter_path[MAX_PATH];
@@ -1799,11 +1748,12 @@ int exec_script(struct task_struct *task, const char *path, int argc, char **arg
     char *script_argv[TASK_MAX_ARGS + 4];
     int script_argc = 0;
 
-    if (exec_build_script_argv(path, argc, argv,
-                               interpreter_path, sizeof(interpreter_path),
-                               optional_arg, sizeof(optional_arg),
-                               script_argv, &script_argc) < 0) {
-        return -1;
+    ret = exec_build_script_argv(path, argc, argv,
+                                 interpreter_path, sizeof(interpreter_path),
+                                 optional_arg, sizeof(optional_arg),
+                                 script_argv, &script_argc);
+    if (ret < 0) {
+        return ret;
     }
 
     if (task->exec_image) {
@@ -1813,8 +1763,7 @@ int exec_script(struct task_struct *task, const char *path, int argc, char **arg
 
     native_entry_fn entry = native_lookup(interpreter_path);
     if (!entry) {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     return entry(script_argc, script_argv, envp);

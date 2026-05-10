@@ -4,16 +4,14 @@
  * AND explicit Linux-shaped boot lifecycle (start_kernel/kernel_shutdown)
  */
 
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
+#include <linux/errno.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
 #include "../runtime/native/registry.h"
 #include "task.h"
 
-extern int execve(const char *pathname, char *const argv[], char *const envp[]);
+extern int execve_impl(const char *pathname, char *const argv[], char *const envp[]);
 
 /* Global initialization state */
 static atomic_int library_initialized = 0;
@@ -190,19 +188,12 @@ static int kernel_try_exec_init_path(const char *path, char *const argv[], char 
         "PATH=/sbin:/bin:/usr/sbin:/usr/bin",
         NULL,
     };
-    int status;
 
     if (!path || path[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
-    status = execve(path, argv ? argv : default_argv, envp ? envp : default_envp);
-    if (status == -1) {
-        return -1;
-    }
-
-    return 0;
+    return execve_impl(path, argv ? argv : default_argv, envp ? envp : default_envp);
 }
 
 int kernel_exec_init(const char *preferred_path, char *const argv[], char *const envp[]) {
@@ -212,10 +203,10 @@ int kernel_exec_init(const char *preferred_path, char *const argv[], char *const
         "/bin/init",
         "/bin/sh",
     };
-    int saved_errno = ENOENT;
+    int saved_error = -ENOENT;
 
     if (!kernel_is_booted() && start_kernel() != 0) {
-        return -1;
+        return -EINVAL;
     }
 
     if (preferred_path) {
@@ -223,12 +214,12 @@ int kernel_exec_init(const char *preferred_path, char *const argv[], char *const
     }
 
     for (size_t i = 0; i < sizeof(init_candidates) / sizeof(init_candidates[0]); i++) {
-        if (kernel_try_exec_init_path(init_candidates[i], argv, envp) == 0) {
+        int ret = kernel_try_exec_init_path(init_candidates[i], argv, envp);
+        if (ret == 0) {
             return 0;
         }
-        saved_errno = errno;
+        saved_error = ret;
     }
 
-    errno = saved_errno;
-    return -1;
+    return saved_error;
 }

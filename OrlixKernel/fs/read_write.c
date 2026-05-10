@@ -2,13 +2,13 @@
  * Virtual read/write/lseek implementation
  */
 
-#include <linux/fcntl.h>
-#include <linux/fs.h>
-#include <linux/uio.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/uio.h>
 
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
+#include <linux/errno.h>
+#include <linux/string.h>
 
 #include "fdtable.h"
 #include "internal/fs/file.h"
@@ -22,46 +22,42 @@
 
 extern int ftruncate_impl(int fd, int64_t length);
 extern int fdatasync_impl(int fd);
+extern void get_random_bytes(void *buf, size_t len);
 
 ssize_t read_impl(int fd, void *buf, size_t count) {
     if (count == 0) {
         return 0;
     }
     if (!buf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     void *entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     /* Directory check comes before access mode (EISDIR is more specific) */
     if (get_fd_is_synthetic_dir_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EISDIR;
-        return -1;
+        return -EISDIR;
     }
 
     /* Enforce read access mode before any dispatch */
     if (!get_fd_is_readable_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (get_fd_is_pipe_impl(entry)) {
         struct pipe_endpoint *endpoint = get_fd_pipe_endpoint_impl(entry);
         bool nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
         ssize_t ret = pipe_read_endpoint_impl(endpoint, buf, count, nonblock);
-        if (ret < 0 && errno == EINTR && !nonblock) {
+        if (ret == -EINTR && !nonblock) {
             task_restart_record_impl(get_current(), TASK_RESTART_PIPE_READ,
                                      (uint64_t)fd, (uint64_t)(uintptr_t)buf,
                                      (uint64_t)count, 0, 0, 0);
@@ -100,11 +96,10 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
             return (ssize_t)count;
         } else if (dev_node == SYNTHETIC_DEV_RANDOM ||
                    dev_node == SYNTHETIC_DEV_URANDOM) {
-            arc4random_buf(buf, count);
+            get_random_bytes(buf, count);
             return (ssize_t)count;
         }
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (get_fd_is_synthetic_pty_impl(entry)) {
@@ -134,8 +129,7 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
                                              content, sizeof(content));
             if (content_len < 0) {
                 put_fd_entry_impl(entry);
-                errno = -content_len;
-                return -1;
+                return content_len;
             }
             int64_t offset = get_fd_offset_impl(entry);
             if (offset < 0) {
@@ -158,8 +152,7 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
             content_len = cgroupfs_read_path(path, content, sizeof(content));
             if (content_len < 0) {
                 put_fd_entry_impl(entry);
-                errno = -content_len;
-                return -1;
+                return content_len;
             }
             int64_t offset = get_fd_offset_impl(entry);
             if (offset < 0) {
@@ -239,8 +232,7 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
 
         if (content_len < 0) {
             put_fd_entry_impl(entry);
-            errno = -content_len;
-            return -1;
+            return content_len;
         }
 
         int64_t offset = get_fd_offset_impl(entry);
@@ -277,40 +269,35 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
         return 0;
     }
     if (!buf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     void *entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     /* Directory check comes before access mode (EISDIR is more specific) */
     if (get_fd_is_synthetic_dir_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EISDIR;
-        return -1;
+        return -EISDIR;
     }
 
     /* Enforce write access mode before any dispatch */
     if (!get_fd_is_writable_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (get_fd_is_pipe_impl(entry)) {
         struct pipe_endpoint *endpoint = get_fd_pipe_endpoint_impl(entry);
         bool nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
         ssize_t ret = pipe_write_endpoint_impl(endpoint, buf, count, nonblock);
-        if (ret < 0 && errno == EINTR && !nonblock) {
+        if (ret == -EINTR && !nonblock) {
             task_restart_record_impl(get_current(), TASK_RESTART_PIPE_WRITE,
                                      (uint64_t)fd, (uint64_t)(uintptr_t)buf,
                                      (uint64_t)count, 0, 0, 0);
@@ -372,8 +359,7 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
                                            (const char *)buf, count);
             put_fd_entry_impl(entry);
             if (ret < 0) {
-                errno = -ret;
-                return -1;
+                return ret;
             }
             return ret;
         }
@@ -383,8 +369,7 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
             long ret = cgroupfs_write_path(path, (const char *)buf, count);
             put_fd_entry_impl(entry);
             if (ret < 0) {
-                errno = (int)-ret;
-                return -1;
+                return ret;
             }
             return (ssize_t)ret;
         }
@@ -398,15 +383,13 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
                                                               (const char *)buf, count);
                 put_fd_entry_impl(entry);
                 if (ret < 0) {
-                    errno = -ret;
-                    return -1;
+                    return ret;
                 }
                 return ret;
             }
         }
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (get_fd_is_memfd_impl(entry) &&
@@ -423,13 +406,11 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
 
         if (end < offset) {
             put_fd_entry_impl(entry);
-            errno = EFBIG;
-            return -1;
+            return -EFBIG;
         }
         if (backing_fstat(real_fd, &st) != 0) {
             put_fd_entry_impl(entry);
-            errno = EIO;
-            return -1;
+            return -EIO;
         }
         if (end > st.st_size && backing_ftruncate(real_fd, end) != 0) {
             put_fd_entry_impl(entry);
@@ -459,32 +440,27 @@ int64_t lseek_impl(int fd, int64_t offset, int whence) {
     void *entry;
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return (int64_t)-1;
+        return -EBADF;
     }
 
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return (int64_t)-1;
+        return -EBADF;
     }
 
     if (get_fd_is_synthetic_dir_impl(entry) || get_fd_is_synthetic_proc_file_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ESPIPE;
-        return (int64_t)-1;
+        return -ESPIPE;
     }
 
     if (get_fd_is_synthetic_dev_impl(entry) || get_fd_is_synthetic_pty_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ESPIPE;
-        return (int64_t)-1;
+        return -ESPIPE;
     }
 
     if (get_fd_is_pipe_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ESPIPE;
-        return (int64_t)-1;
+        return -ESPIPE;
     }
 
     int64_t result = backing_lseek(get_real_fd_impl(entry), offset, whence);
@@ -545,39 +521,33 @@ ssize_t pread_impl(int fd, void *buf, size_t count, int64_t offset) {
         return 0;
     }
     if (!buf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     void *entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     /* Directory check comes before access mode (EISDIR is more specific) */
     if (get_fd_is_synthetic_dir_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EISDIR;
-        return -1;
+        return -EISDIR;
     }
 
     /* Enforce read access mode before any dispatch */
     if (!get_fd_is_readable_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (get_fd_is_pipe_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ESPIPE;
-        return -1;
+        return -ESPIPE;
     }
 
     /* Handle synthetic proc files: pread reads from supplied offset, does not change fd offset */
@@ -592,15 +562,13 @@ ssize_t pread_impl(int fd, void *buf, size_t count, int64_t offset) {
         if (content_len < 0) {
             set_fd_offset_impl((fd_entry_t *)entry, saved_offset);
             put_fd_entry_impl(entry);
-            errno = -content_len;
-            return -1;
+            return content_len;
         }
 
         if (offset < 0) {
             set_fd_offset_impl((fd_entry_t *)entry, saved_offset);
             put_fd_entry_impl(entry);
-            errno = EINVAL;
-            return -1;
+            return -EINVAL;
         }
 
         if ((int64_t)offset >= content_len) {
@@ -627,46 +595,39 @@ ssize_t pwrite_impl(int fd, const void *buf, size_t count, int64_t offset) {
         return 0;
     }
     if (!buf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     void *entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     /* Directory check comes before access mode (EISDIR is more specific) */
     if (get_fd_is_synthetic_dir_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EISDIR;
-        return -1;
+        return -EISDIR;
     }
 
     /* Enforce write access mode before any dispatch */
     if (!get_fd_is_writable_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (get_fd_is_pipe_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ESPIPE;
-        return -1;
+        return -ESPIPE;
     }
 
     /* Synthetic proc files are read-only */
     if (get_fd_is_synthetic_proc_file_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     /* Synthetic devices accept writes without host fallback */
@@ -678,8 +639,7 @@ ssize_t pwrite_impl(int fd, const void *buf, size_t count, int64_t offset) {
     /* PTY writes handled separately */
     if (get_fd_is_synthetic_pty_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (get_fd_is_memfd_impl(entry) && memfd_write_allowed_entry_impl(entry, offset, count) != 0) {
@@ -698,8 +658,7 @@ ssize_t copy_file_range_impl(int fd_in, int64_t *off_in, int fd_out,
     size_t copied = 0;
 
     if (flags != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (len == 0) {
         return 0;
@@ -721,7 +680,7 @@ ssize_t copy_file_range_impl(int fd_in, int64_t *off_in, int fd_out,
             nread = read_impl(fd_in, buffer, chunk);
         }
         if (nread < 0) {
-            return copied > 0 ? (ssize_t)copied : -1;
+            return copied > 0 ? (ssize_t)copied : nread;
         }
         if (nread == 0) {
             break;
@@ -735,11 +694,10 @@ ssize_t copy_file_range_impl(int fd_in, int64_t *off_in, int fd_out,
                 nwritten = write_impl(fd_out, buffer + written, (size_t)nread - written);
             }
             if (nwritten < 0) {
-                return copied > 0 ? (ssize_t)copied : -1;
+                return copied > 0 ? (ssize_t)copied : nwritten;
             }
             if (nwritten == 0) {
-                errno = EIO;
-                return copied > 0 ? (ssize_t)copied : -1;
+                return copied > 0 ? (ssize_t)copied : -EIO;
             }
             if (off_out) {
                 *off_out += (int64_t)nwritten;
@@ -762,41 +720,34 @@ int fallocate_impl(int fd, int mode, int64_t offset, int64_t len) {
     int64_t end;
 
     if (mode != 0) {
-        errno = EOPNOTSUPP;
-        return -1;
+        return -EOPNOTSUPP;
     }
     if (offset < 0 || len < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (len == 0) {
         return 0;
     }
     if (offset > ((__LONG_LONG_MAX__) - len)) {
-        errno = EFBIG;
-        return -1;
+        return -EFBIG;
     }
 
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!get_fd_is_writable_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (get_fd_is_pipe_impl(entry) || get_fd_is_synthetic_dir_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     real_fd = get_real_fd_impl(entry);
     put_fd_entry_impl(entry);
     if (real_fd < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (backing_fstat(real_fd, &st) != 0) {
         return -1;
@@ -813,12 +764,10 @@ int sync_file_range_impl(int fd, int64_t offset, int64_t nbytes, unsigned int fl
     unsigned int allowed = SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE | SYNC_FILE_RANGE_WAIT_AFTER;
 
     if (offset < 0 || nbytes < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if ((flags & ~allowed) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     return fdatasync_impl(fd);
 }
@@ -831,22 +780,19 @@ ssize_t splice_impl(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
     size_t copied = 0;
 
     if (flags != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (len == 0) {
         return 0;
     }
     entry_in = get_fd_entry_impl(fd_in);
     if (!entry_in) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     entry_out = get_fd_entry_impl(fd_out);
     if (!entry_out) {
         put_fd_entry_impl(entry_in);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     put_fd_entry_impl(entry_out);
     put_fd_entry_impl(entry_in);
@@ -866,7 +812,7 @@ ssize_t splice_impl(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
             nread = read_impl(fd_in, buffer, chunk);
         }
         if (nread < 0) {
-            return copied > 0 ? (ssize_t)copied : -1;
+            return copied > 0 ? (ssize_t)copied : nread;
         }
         if (nread == 0) {
             break;
@@ -878,11 +824,10 @@ ssize_t splice_impl(int fd_in, int64_t *off_in, int fd_out, int64_t *off_out,
                 nwritten = write_impl(fd_out, buffer + written, (size_t)nread - written);
             }
             if (nwritten < 0) {
-                return copied > 0 ? (ssize_t)copied : -1;
+                return copied > 0 ? (ssize_t)copied : nwritten;
             }
             if (nwritten == 0) {
-                errno = EIO;
-                return copied > 0 ? (ssize_t)copied : -1;
+                return copied > 0 ? (ssize_t)copied : -EIO;
             }
             written += (size_t)nwritten;
             copied += (size_t)nwritten;
@@ -902,24 +847,21 @@ ssize_t vmsplice_impl(int fd, const struct iovec *iov, unsigned long nr_segs, un
     size_t total = 0;
 
     if (flags != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (!iov && nr_segs > 0) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     for (unsigned long i = 0; i < nr_segs; i++) {
         ssize_t nwritten;
 
         if (!iov[i].iov_base && iov[i].iov_len != 0) {
-            errno = EFAULT;
-            return total > 0 ? (ssize_t)total : -1;
+            return total > 0 ? (ssize_t)total : -EFAULT;
         }
         nwritten = write_impl(fd, iov[i].iov_base, iov[i].iov_len);
         if (nwritten < 0) {
-            return total > 0 ? (ssize_t)total : -1;
+            return total > 0 ? (ssize_t)total : nwritten;
         }
         total += (size_t)nwritten;
         if ((size_t)nwritten < iov[i].iov_len) {
@@ -938,63 +880,36 @@ ssize_t tee_impl(int fd_in, int fd_out, size_t len, unsigned int flags) {
     void *entry;
 
     if (flags != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     entry = get_fd_entry_impl(fd_in);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!get_fd_is_pipe_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     src = get_fd_pipe_endpoint_impl(entry);
     put_fd_entry_impl(entry);
     if (!src) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     entry = get_fd_entry_impl(fd_out);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!get_fd_is_pipe_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     dst = get_fd_pipe_endpoint_impl(entry);
     nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
     put_fd_entry_impl(entry);
     if (!dst) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     written = pipe_tee_between_endpoints_impl(src, dst, len, nonblock);
     return written;
-}
-
-__attribute__((visibility("default"))) ssize_t read(int fd, void *buf, size_t count) {
-    return read_impl(fd, buf, count);
-}
-
-__attribute__((visibility("default"))) ssize_t write(int fd, const void *buf, size_t count) {
-    return write_impl(fd, buf, count);
-}
-
-__attribute__((visibility("default"))) long long lseek(int fd, long long offset, int whence) {
-    return lseek_impl(fd, offset, whence);
-}
-
-__attribute__((visibility("default"))) ssize_t pread(int fd, void *buf, size_t count, long long offset) {
-    return pread_impl(fd, buf, count, offset);
-}
-
-__attribute__((visibility("default"))) ssize_t pwrite(int fd, const void *buf, size_t count, long long offset) {
-    return pwrite_impl(fd, buf, count, offset);
 }

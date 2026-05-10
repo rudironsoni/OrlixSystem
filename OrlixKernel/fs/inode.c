@@ -5,9 +5,11 @@
  * ownership is not the semantic source of truth.
  */
 
-#include <errno.h>
-#include <linux/fcntl.h>
-#include <linux/time_types.h>
+#include <linux/errno.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/time_types.h>
+#include <uapi/asm/stat.h>
 
 #include "fdtable.h"
 #include "vfs.h"
@@ -25,18 +27,15 @@ static int inode_resolve_path_at(int dirfd, const char *pathname, char *resolved
     int ret;
 
     if (!pathname) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (pathname[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     ret = vfs_resolve_virtual_path_at(dirfd, pathname, resolved_path, resolved_path_len);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -46,21 +45,18 @@ static int inode_resolve_fd_path(int fd, char *resolved_path, size_t resolved_pa
     int ret;
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     ret = get_fd_path_impl(entry, resolved_path, resolved_path_len);
     put_fd_entry_impl(entry);
     if (ret != 0) {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
     return 0;
 }
@@ -75,8 +71,7 @@ int chmod_impl(const char *pathname, uint32_t mode) {
 
     ret = vfs_chmod_metadata(resolved_path, mode);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -91,8 +86,7 @@ int fchmod_impl(int fd, uint32_t mode) {
 
     ret = vfs_chmod_metadata(resolved_path, mode);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -102,8 +96,7 @@ int fchmodat_impl(int dirfd, const char *pathname, uint32_t mode, int flags) {
     int ret;
 
     if (flags & ~AT_SYMLINK_NOFOLLOW) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (inode_resolve_path_at(dirfd, pathname, resolved_path, sizeof(resolved_path)) != 0) {
         return -1;
@@ -111,8 +104,7 @@ int fchmodat_impl(int dirfd, const char *pathname, uint32_t mode, int flags) {
 
     ret = vfs_chmod_metadata(resolved_path, mode);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -127,8 +119,7 @@ int chown_impl(const char *pathname, uint32_t owner, uint32_t group) {
 
     ret = vfs_chown_metadata(resolved_path, owner, group);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -143,8 +134,7 @@ int fchown_impl(int fd, uint32_t owner, uint32_t group) {
 
     ret = vfs_chown_metadata(resolved_path, owner, group);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -158,8 +148,7 @@ int fchownat_impl(int dirfd, const char *pathname, uint32_t owner, uint32_t grou
     int ret;
 
     if (flags & ~(AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if ((flags & AT_EMPTY_PATH) && pathname && pathname[0] == '\0') {
         return fchown_impl(dirfd, owner, group);
@@ -170,8 +159,7 @@ int fchownat_impl(int dirfd, const char *pathname, uint32_t owner, uint32_t grou
 
     ret = vfs_chown_metadata(resolved_path, owner, group);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -189,8 +177,7 @@ int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timesp
     int ret;
 
     if ((flags & ~AT_SYMLINK_NOFOLLOW) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     ret = inode_resolve_path_at(dirfd, pathname, resolved_path, sizeof(resolved_path));
     if (ret != 0) {
@@ -198,8 +185,7 @@ int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timesp
     }
     ret = vfs_fstatat(AT_FDCWD, resolved_path, &st, stat_flags);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     atime_sec = st.st_atime;
@@ -226,8 +212,7 @@ int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timesp
                 atime_nsec = (unsigned long)now.tv_nsec;
             } else if (times[0].tv_nsec < 0 || times[0].tv_nsec >= 1000000000LL ||
                        times[0].tv_sec < 0) {
-                errno = EINVAL;
-                return -1;
+                return -EINVAL;
             } else {
                 atime_sec = (long)times[0].tv_sec;
                 atime_nsec = (unsigned long)times[0].tv_nsec;
@@ -239,8 +224,7 @@ int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timesp
                 mtime_nsec = (unsigned long)now.tv_nsec;
             } else if (times[1].tv_nsec < 0 || times[1].tv_nsec >= 1000000000LL ||
                        times[1].tv_sec < 0) {
-                errno = EINVAL;
-                return -1;
+                return -EINVAL;
             } else {
                 mtime_sec = (long)times[1].tv_sec;
                 mtime_nsec = (unsigned long)times[1].tv_nsec;
@@ -250,8 +234,7 @@ int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timesp
 
     ret = vfs_utimens_metadata(resolved_path, atime_sec, atime_nsec, mtime_sec, mtime_nsec);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -275,20 +258,18 @@ int truncate_impl(const char *path, int64_t length) {
     int ret;
 
     if (length < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (inode_resolve_path_at(AT_FDCWD, path, resolved_path, sizeof(resolved_path)) != 0) {
         return -1;
     }
     ret = vfs_translate_path(resolved_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     ret = backing_truncate(translated_path, length);
     if (ret != 0) {
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -299,22 +280,18 @@ int ftruncate_impl(int fd, int64_t length) {
     int ret;
 
     if (length < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (get_fd_is_pipe_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (get_fd_is_memfd_impl(entry) && memfd_truncate_allowed_entry_impl(entry, length) != 0) {
         put_fd_entry_impl(entry);
@@ -323,53 +300,12 @@ int ftruncate_impl(int fd, int64_t length) {
     real_fd = get_real_fd_impl(entry);
     put_fd_entry_impl(entry);
     if (real_fd < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     ret = backing_ftruncate(real_fd, length);
     if (ret != 0) {
-        return -1;
+        return ret;
     }
     mm_note_file_truncate_impl(fd, length);
     return 0;
-}
-
-__attribute__((visibility("default"))) int chmod(const char *pathname, uint32_t mode) {
-    return chmod_impl(pathname, mode);
-}
-
-__attribute__((visibility("default"))) int fchmod(int fd, uint32_t mode) {
-    return fchmod_impl(fd, mode);
-}
-
-__attribute__((visibility("default"))) int fchmodat(int dirfd, const char *pathname, uint32_t mode, int flags) {
-    return fchmodat_impl(dirfd, pathname, mode, flags);
-}
-
-__attribute__((visibility("default"))) int chown(const char *pathname, uint32_t owner, uint32_t group) {
-    return chown_impl(pathname, owner, group);
-}
-
-__attribute__((visibility("default"))) int fchown(int fd, uint32_t owner, uint32_t group) {
-    return fchown_impl(fd, owner, group);
-}
-
-__attribute__((visibility("default"))) int lchown(const char *pathname, uint32_t owner, uint32_t group) {
-    return lchown_impl(pathname, owner, group);
-}
-
-__attribute__((visibility("default"))) int fchownat(int dirfd, const char *pathname, uint32_t owner, uint32_t group, int flags) {
-    return fchownat_impl(dirfd, pathname, owner, group, flags);
-}
-
-__attribute__((visibility("default"))) uint32_t umask(uint32_t mask) {
-    return umask_impl(mask);
-}
-
-__attribute__((visibility("default"))) int truncate(const char *path, int64_t length) {
-    return truncate_impl(path, length);
-}
-
-__attribute__((visibility("default"))) int ftruncate(int fd, int64_t length) {
-    return ftruncate_impl(fd, length);
 }

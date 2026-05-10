@@ -1,13 +1,11 @@
 #include "pty.h"
 
-#include <errno.h>
 #include <stdatomic.h>
-#include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
-#include <linux/poll.h>
+#include <linux/errno.h>
+#include <uapi/linux/poll.h>
+#include <linux/string.h>
 #ifdef SIGINT
 #undef SIGINT
 #endif
@@ -74,6 +72,7 @@
 #include "../kernel/task.h"
 #include "../kernel/wait_queue.h"
 #include "internal/fs/lock.h"
+#include "internal/slab.h"
 
 void poll_notify_readiness_impl(void);
 
@@ -281,8 +280,7 @@ static ssize_t pty_write_master_linedisc_impl(pty_pair_t *pair, const void *buf,
     }
 
     if (accepted == 0) {
-        errno = EAGAIN;
-        return -1;
+        return -EAGAIN;
     }
     return (ssize_t)accepted;
 }
@@ -391,18 +389,15 @@ static int pty_check_background_read_access(pty_pair_t *pair) {
     }
 
     if (pty_is_orphaned_pgrp(task->sid, task->pgid)) {
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     if (signal_is_blocked(task, SIGTTIN) || pty_signal_is_ignored(task, SIGTTIN)) {
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     (void)signal_generate_pgrp(task->pgid, SIGTTIN);
-    errno = EINTR;
-    return -1;
+    return -EINTR;
 }
 
 static int pty_check_background_write_access(pty_pair_t *pair, bool enforce_background_stop, bool blocked_or_ignored_is_error) {
@@ -421,22 +416,19 @@ static int pty_check_background_write_access(pty_pair_t *pair, bool enforce_back
     }
 
     if (pty_is_orphaned_pgrp(task->sid, task->pgid)) {
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     bool blocked_or_ignored = signal_is_blocked(task, SIGTTOU) || pty_signal_is_ignored(task, SIGTTOU);
     if (blocked_or_ignored) {
         if (blocked_or_ignored_is_error) {
-            errno = EIO;
-            return -1;
+            return -EIO;
         }
         return 0;
     }
 
     (void)signal_generate_pgrp(task->pgid, SIGTTOU);
-    errno = EINTR;
-    return -1;
+    return -EINTR;
 }
 
 static void pty_init_defaults(pty_pair_t *pair) {
@@ -467,8 +459,7 @@ static void pty_init_defaults(pty_pair_t *pair) {
 
 int pty_allocate_pair_impl(unsigned int *pty_index) {
     if (!pty_index) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
@@ -495,21 +486,18 @@ int pty_allocate_pair_impl(unsigned int *pty_index) {
     }
 
     fs_mutex_unlock(&pty_lock);
-    errno = EAGAIN;
-    return -1;
+    return -EAGAIN;
 }
 
 int pty_format_slave_path_impl(unsigned int pty_index, char *buf, size_t buf_len) {
     if (!buf || buf_len == 0 || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     static const char prefix[] = "/dev/pts/";
     size_t prefklen = sizeof(prefix) - 1;
     if (buf_len <= prefklen) {
-        errno = ENAMETOOLONG;
-        return -1;
+        return -ENAMETOOLONG;
     }
 
     memcpy(buf, prefix, prefklen);
@@ -523,8 +511,7 @@ int pty_format_slave_path_impl(unsigned int pty_index, char *buf, size_t buf_len
     } while (value != 0 && digit_len < sizeof(digits));
 
     if (value != 0 || (prefklen + digit_len + 1) > buf_len) {
-        errno = ENAMETOOLONG;
-        return -1;
+        return -ENAMETOOLONG;
     }
 
     for (size_t i = 0; i < digit_len; i++) {
@@ -536,28 +523,29 @@ int pty_format_slave_path_impl(unsigned int pty_index, char *buf, size_t buf_len
 
 static int pty_parse_slave_path(const char *path, unsigned int *pty_index) {
     if (!path || !pty_index) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     static const char *prefix = "/dev/pts/";
     size_t prefklen = strlen(prefix);
     if (strncmp(path, prefix, prefklen) != 0) {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     const char *num = path + prefklen;
     if (*num == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
-    char *endptr = NULL;
-    unsigned long value = strtoul(num, &endptr, 10);
-    if (!endptr || *endptr != '\0' || value >= PTY_MAX) {
-        errno = ENOENT;
-        return -1;
+    unsigned long value = 0;
+    for (const char *cursor = num; *cursor != '\0'; ++cursor) {
+        if (*cursor < '0' || *cursor > '9') {
+            return -ENOENT;
+        }
+        value = (value * 10UL) + (unsigned long)(*cursor - '0');
+        if (value >= PTY_MAX) {
+            return -ENOENT;
+        }
     }
 
     *pty_index = (unsigned int)value;
@@ -566,16 +554,16 @@ static int pty_parse_slave_path(const char *path, unsigned int *pty_index) {
 
 int pty_lookup_slave_path_impl(const char *path, unsigned int *pty_index) {
     unsigned int idx;
-    if (pty_parse_slave_path(path, &idx) != 0) {
-        return -1;
+    int ret = pty_parse_slave_path(path, &idx);
+    if (ret != 0) {
+        return ret;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[idx];
     if (!pair->allocated || pair->slave_locked) {
         fs_mutex_unlock(&pty_lock);
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     if (pty_index) {
@@ -592,37 +580,32 @@ bool pty_is_virtual_slave_path_impl(const char *path) {
 
 int pty_open_controlling_slave_impl(unsigned int *pty_index) {
     if (!pty_index) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     struct task_struct *task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     kernel_mutex_lock(&task->lock);
     struct tty_struct *tty = task->tty;
     if (!tty) {
         kernel_mutex_unlock(&task->lock);
-        errno = ENXIO;
-        return -1;
+        return -ENXIO;
     }
     unsigned int idx = (unsigned int)tty->index;
     kernel_mutex_unlock(&task->lock);
 
     if (!pty_valid_index(idx)) {
-        errno = ENXIO;
-        return -1;
+        return -ENXIO;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[idx];
     if (!pair->allocated || pair->slave_open_count == 0) {
         fs_mutex_unlock(&pty_lock);
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     pair->slave_open_count++;
@@ -634,24 +617,22 @@ int pty_open_controlling_slave_impl(unsigned int *pty_index) {
 int pty_open_slave_by_path_impl(const char *path, unsigned int *pty_index) {
     unsigned int idx;
     if (!pty_index) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
-    if (pty_parse_slave_path(path, &idx) != 0) {
-        return -1;
+    int ret = pty_parse_slave_path(path, &idx);
+    if (ret != 0) {
+        return ret;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[idx];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
     if (pair->slave_locked) {
         fs_mutex_unlock(&pty_lock);
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
     pair->slave_open_count++;
     *pty_index = idx;
@@ -682,16 +663,14 @@ int pty_close_end_impl(unsigned int pty_index, bool is_master) {
     bool clear_task_tty_refs = false;
 
     if (!pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (is_master) {
@@ -736,11 +715,9 @@ static ssize_t pty_read_from_ring(pty_ring_buffer_t *ring, bool peer_open, void 
             return 0;
         }
         if (nonblock) {
-            errno = EAGAIN;
-            return -1;
+            return -EAGAIN;
         }
-        errno = EAGAIN;
-        return -1;
+        return -EAGAIN;
     }
 
     return (ssize_t)pty_ring_read(ring, (unsigned char *)buf, count);
@@ -752,14 +729,12 @@ static ssize_t pty_write_to_ring(pty_ring_buffer_t *ring, bool peer_open, const 
         return 0;
     }
     if (!peer_open) {
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     size_t written = pty_ring_write(ring, (const unsigned char *)buf, count);
     if (written == 0) {
-        errno = nonblock ? EAGAIN : EAGAIN;
-        return -1;
+        return nonblock ? -EAGAIN : -EAGAIN;
     }
 
     return (ssize_t)written;
@@ -767,16 +742,14 @@ static ssize_t pty_write_to_ring(pty_ring_buffer_t *ring, bool peer_open, const 
 
 ssize_t pty_read_master_impl(unsigned int pty_index, void *buf, size_t count, bool nonblock) {
     if (!buf || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated || pair->master_open_count == 0) {
         fs_mutex_unlock(&pty_lock);
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     ssize_t ret = pty_read_from_ring(&pair->slave_to_master, pair->slave_open_count > 0, buf, count, nonblock);
@@ -792,28 +765,22 @@ ssize_t pty_read_master_impl(unsigned int pty_index, void *buf, size_t count, bo
 
 ssize_t pty_write_master_impl(unsigned int pty_index, const void *buf, size_t count, bool nonblock) {
     if (!buf || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated || pair->master_open_count == 0) {
         fs_mutex_unlock(&pty_lock);
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     if (pair->slave_open_count == 0) {
         fs_mutex_unlock(&pty_lock);
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     ssize_t ret = pty_write_master_linedisc_impl(pair, buf, count);
-    if (ret < 0 && !nonblock && errno == EAGAIN) {
-        errno = EAGAIN;
-    }
     if (ret > 0) {
         wait_queue_wake_all(&pair->wait);
     }
@@ -826,22 +793,20 @@ ssize_t pty_write_master_impl(unsigned int pty_index, const void *buf, size_t co
 
 ssize_t pty_read_slave_impl(unsigned int pty_index, void *buf, size_t count, bool nonblock) {
     if (!buf || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated || pair->slave_open_count == 0) {
         fs_mutex_unlock(&pty_lock);
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     int access_result = pty_check_background_read_access(pair);
     if (access_result != 0) {
         fs_mutex_unlock(&pty_lock);
-        return -1;
+        return access_result;
     }
 
     if (!pty_termios_has_flag(&pair->termios, PTY_LFLAG_ICANON)) {
@@ -856,13 +821,11 @@ ssize_t pty_read_slave_impl(unsigned int pty_index, void *buf, size_t count, boo
                     return 0;
                 }
                 fs_mutex_unlock(&pty_lock);
-                errno = EAGAIN;
-                return -1;
+                return -EAGAIN;
             }
         } else if (available < vmin) {
             fs_mutex_unlock(&pty_lock);
-            errno = EAGAIN;
-            return -1;
+            return -EAGAIN;
         }
     }
 
@@ -879,23 +842,21 @@ ssize_t pty_read_slave_impl(unsigned int pty_index, void *buf, size_t count, boo
 
 ssize_t pty_write_slave_impl(unsigned int pty_index, const void *buf, size_t count, bool nonblock) {
     if (!buf || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated || pair->slave_open_count == 0) {
         fs_mutex_unlock(&pty_lock);
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     bool tostop = (pair->termios.c_lflag & PTY_LFLAG_TOSTOP) != 0;
     int access_result = pty_check_background_write_access(pair, tostop, false);
     if (access_result != 0) {
         fs_mutex_unlock(&pty_lock);
-        return -1;
+        return access_result;
     }
 
     ssize_t ret = pty_write_to_ring(&pair->slave_to_master, pair->master_open_count > 0, buf, count, nonblock);
@@ -911,16 +872,14 @@ ssize_t pty_write_slave_impl(unsigned int pty_index, const void *buf, size_t cou
 
 int pty_get_readable_bytes_impl(unsigned int pty_index, bool is_master, int *bytes) {
     if (!bytes || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     pty_ring_buffer_t *read_ring = is_master ? &pair->slave_to_master : &pair->master_to_slave;
@@ -989,16 +948,14 @@ void pty_poll_wake_impl(unsigned int pty_index) {
 
 int pty_set_lock_impl(unsigned int pty_index, bool locked) {
     if (!pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     pair->slave_locked = locked;
     fs_mutex_unlock(&pty_lock);
@@ -1007,16 +964,14 @@ int pty_set_lock_impl(unsigned int pty_index, bool locked) {
 
 int pty_get_lock_impl(unsigned int pty_index, int *locked) {
     if (!locked || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     *locked = pair->slave_locked ? 1 : 0;
     fs_mutex_unlock(&pty_lock);
@@ -1025,16 +980,14 @@ int pty_get_lock_impl(unsigned int pty_index, int *locked) {
 
 int pty_get_termios_impl(unsigned int pty_index, pty_linux_termios_t *termios) {
     if (!termios || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     *termios = pair->termios;
     fs_mutex_unlock(&pty_lock);
@@ -1043,26 +996,23 @@ int pty_get_termios_impl(unsigned int pty_index, pty_linux_termios_t *termios) {
 
 int pty_set_termios_with_action_impl(unsigned int pty_index, const pty_linux_termios_t *termios, int action) {
     if (!termios || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (action != PTY_TCSET_ACTION_NOW && action != PTY_TCSET_ACTION_DRAIN && action != PTY_TCSET_ACTION_FLUSH) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     int access_result = pty_check_background_write_access(pair, true, false);
     if (access_result != 0) {
         fs_mutex_unlock(&pty_lock);
-        return -1;
+        return access_result;
     }
 
     if (action == PTY_TCSET_ACTION_FLUSH) {
@@ -1083,16 +1033,14 @@ int pty_set_termios_impl(unsigned int pty_index, const pty_linux_termios_t *term
 
 int pty_get_winsize_impl(unsigned int pty_index, pty_linux_winsize_t *winsize) {
     if (!winsize || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     *winsize = pair->winsize;
     fs_mutex_unlock(&pty_lock);
@@ -1101,8 +1049,7 @@ int pty_get_winsize_impl(unsigned int pty_index, pty_linux_winsize_t *winsize) {
 
 int pty_set_winsize_impl(unsigned int pty_index, const pty_linux_winsize_t *winsize) {
     if (!winsize || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     int32_t foreground_pgrp = 0;
@@ -1112,8 +1059,7 @@ int pty_set_winsize_impl(unsigned int pty_index, const pty_linux_winsize_t *wins
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (memcmp(&pair->winsize, winsize, sizeof(*winsize)) != 0) {
@@ -1135,27 +1081,23 @@ int pty_set_winsize_impl(unsigned int pty_index, const pty_linux_winsize_t *wins
 
 int pty_set_controlling_tty_impl(unsigned int pty_index, int arg) {
     if (!pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     struct task_struct *task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     if (arg != 0) {
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     kernel_mutex_lock(&task->lock);
 
     if (task->sid <= 0 || task->pid != task->sid) {
         kernel_mutex_unlock(&task->lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     if (task->tty && task->tty->index == (int)pty_index) {
@@ -1165,33 +1107,30 @@ int pty_set_controlling_tty_impl(unsigned int pty_index, int arg) {
 
     if (task->tty) {
         kernel_mutex_unlock(&task->lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
-    struct tty_struct *tty = calloc(1, sizeof(*tty));
+    struct tty_struct *tty = __kmalloc_noprof(sizeof(*tty), GFP_KERNEL);
     if (!tty) {
         kernel_mutex_unlock(&task->lock);
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
+    __builtin_memset(tty, 0, sizeof(*tty));
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
         kernel_mutex_unlock(&task->lock);
-        free(tty);
-        errno = EINVAL;
-        return -1;
+        kfree(tty);
+        return -EINVAL;
     }
 
     if (pair->has_controlling_session && pair->controlling_sid != task->sid) {
         fs_mutex_unlock(&pty_lock);
         kernel_mutex_unlock(&task->lock);
-        free(tty);
-        errno = EPERM;
-        return -1;
+        kfree(tty);
+        return -EPERM;
     }
 
     pair->has_controlling_session = true;
@@ -1210,28 +1149,24 @@ int pty_set_controlling_tty_impl(unsigned int pty_index, int arg) {
 
 int pty_get_foreground_pgrp_impl(unsigned int pty_index, int32_t *pgrp) {
     if (!pgrp || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     struct task_struct *task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (!pair->has_controlling_session || pair->controlling_sid != task->sid) {
         fs_mutex_unlock(&pty_lock);
-        errno = ENOTTY;
-        return -1;
+        return -ENOTTY;
     }
 
     *pgrp = pair->foreground_pgrp;
@@ -1241,28 +1176,24 @@ int pty_get_foreground_pgrp_impl(unsigned int pty_index, int32_t *pgrp) {
 
 int pty_get_controlling_sid_impl(unsigned int pty_index, int32_t *sid) {
     if (!sid || !pty_valid_index(pty_index)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     struct task_struct *task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (!pair->has_controlling_session || pair->controlling_sid != task->sid) {
         fs_mutex_unlock(&pty_lock);
-        errno = ENOTTY;
-        return -1;
+        return -ENOTTY;
     }
 
     *sid = pair->controlling_sid;
@@ -1272,42 +1203,36 @@ int pty_get_controlling_sid_impl(unsigned int pty_index, int32_t *sid) {
 
 int pty_set_foreground_pgrp_impl(unsigned int pty_index, int32_t pgrp) {
     if (!pty_valid_index(pty_index) || pgrp <= 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     struct task_struct *task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     fs_mutex_lock(&pty_lock);
     pty_pair_t *pair = &pty_table[pty_index];
     if (!pair->allocated) {
         fs_mutex_unlock(&pty_lock);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (!pair->has_controlling_session || pair->controlling_sid != task->sid) {
         fs_mutex_unlock(&pty_lock);
-        errno = ENOTTY;
-        return -1;
+        return -ENOTTY;
     }
 
     if (!task_session_has_pgrp_impl(task->sid, pgrp)) {
         fs_mutex_unlock(&pty_lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     if (pair->foreground_pgrp > 0 && pair->foreground_pgrp != task->pgid) {
         if (!pty_signal_is_ignored(task, SIGTTOU) && !signal_is_blocked(task, SIGTTOU)) {
             (void)signal_generate_pgrp(task->pgid, SIGTTOU);
             fs_mutex_unlock(&pty_lock);
-            errno = EINTR;
-            return -1;
+            return -EINTR;
         }
     }
 
@@ -1321,16 +1246,14 @@ int pty_detach_controlling_tty_impl(void) {
     int32_t foreground_pgrp = 0;
     bool session_leader = false;
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     kernel_mutex_lock(&task->lock);
 
     if (!task->tty) {
         kernel_mutex_unlock(&task->lock);
-        errno = ENOTTY;
-        return -1;
+        return -ENOTTY;
     }
 
     unsigned int pty_index = (unsigned int)task->tty->index;

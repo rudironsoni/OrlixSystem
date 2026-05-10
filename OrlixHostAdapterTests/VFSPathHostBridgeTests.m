@@ -14,6 +14,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <linux/stat.h>
+
 #include "internal/fs/file.h"
 #include "internal/fs/namei.h"
 #include "fs/fdtable.h"
@@ -34,8 +36,8 @@ struct linux_dirent64 {
 
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
 extern int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);
-extern int stat_impl(const char *path, struct linux_stat *statbuf);
-extern int lstat_impl(const char *path, struct linux_stat *statbuf);
+extern int stat_impl(const char *path, struct stat *statbuf);
+extern int lstat_impl(const char *path, struct stat *statbuf);
 
 static int vfs_test_open_host_path(const char *path, int flags, unsigned int mode) {
 #pragma clang diagnostic push
@@ -114,14 +116,14 @@ static void vfs_test_seed_linux_file(const char *path) {
 @implementation VFSPathHostBridgeTests
 
 - (void)testHostStatMissingPathReturnsLinuxEnoent_HostBacked {
-    struct linux_stat st;
+    struct stat st;
     int ret = backing_stat("/definitely/missing/orlix-host-stat", &st);
 
     XCTAssertEqual(ret, -ENOENT, @"backing_stat should return Linux -ENOENT for missing path");
 }
 
 - (void)testHostLstatMissingPathReturnsLinuxEnoent_HostBacked {
-    struct linux_stat st;
+    struct stat st;
     int ret = backing_lstat("/definitely/missing/orlix-host-lstat", &st);
 
     XCTAssertEqual(ret, -ENOENT, @"backing_lstat should return Linux -ENOENT for missing path");
@@ -144,7 +146,7 @@ static void vfs_test_seed_linux_file(const char *path) {
 }
 
 - (void)testHostFstatReturnsLinuxEbadfForInvalidFd_HostBacked {
-    struct linux_stat st;
+    struct stat st;
     int ret = backing_fstat(-1, &st);
 
     XCTAssertEqual(ret, -EBADF, @"backing_fstat should return Linux -EBADF for invalid fd");
@@ -172,7 +174,7 @@ static void vfs_test_seed_linux_file(const char *path) {
 
 - (void)testHostFstatTranslatesHostStatForValidFd_HostBacked {
     char host_path[MAX_PATH];
-    struct linux_stat st;
+    struct stat st;
     int fd;
     int ret;
 
@@ -298,7 +300,7 @@ static void vfs_test_seed_linux_file(const char *path) {
     int ret = rename("/etc/rename-src", "/etc/rename-dst");
     XCTAssertEqual(ret, 0, @"rename within persistent route should succeed");
 
-    struct linux_stat st;
+    struct stat st;
     XCTAssertEqual(stat_impl("/etc/rename-dst", &st), 0, @"rename destination should exist");
     errno = 0;
     XCTAssertEqual(stat_impl("/etc/rename-src", &st), -1, @"rename source should be gone");
@@ -313,7 +315,7 @@ static void vfs_test_seed_linux_file(const char *path) {
     int ret = renameat(AT_FDCWD, "/etc/renameat-src", AT_FDCWD, "/etc/renameat-dst");
     XCTAssertEqual(ret, 0, @"renameat within persistent route should succeed");
 
-    struct linux_stat st;
+    struct stat st;
     XCTAssertEqual(stat_impl("/etc/renameat-dst", &st), 0, @"renameat destination should exist");
     errno = 0;
     XCTAssertEqual(stat_impl("/etc/renameat-src", &st), -1, @"renameat source should be gone");
@@ -483,7 +485,7 @@ static void vfs_test_seed_linux_file(const char *path) {
     int ret = backing_mkdir(host_path, 0755);
     XCTAssertTrue(ret == 0 || errno == EEXIST, @"directory creation should succeed");
 
-    struct linux_stat st;
+    struct stat st;
     XCTAssertEqual(stat_impl(test_dir, &st), 0, @"stat should succeed for created directory");
     XCTAssertTrue((st.st_mode & S_IFMT) == S_IFDIR, @"created path should be a directory");
 
@@ -504,7 +506,7 @@ static void vfs_test_seed_linux_file(const char *path) {
     int ret = backing_symlink(target, host_link);
     XCTAssertEqual(ret, 0, @"symlink creation should succeed");
 
-    struct linux_stat st;
+    struct stat st;
     XCTAssertEqual(lstat_impl(link_path, &st), 0, @"lstat should succeed for symlink");
     XCTAssertTrue((st.st_mode & S_IFMT) == S_IFLNK, @"created path should be a symlink");
 

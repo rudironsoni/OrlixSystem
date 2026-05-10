@@ -13,9 +13,9 @@
 #include <errno.h>
 
 #include "CredentialContract.h"
-#include "fs/fdtable.h"
 
 extern int cred_init(void);
+extern int close_impl(int fd);
 extern uint32_t getuid_impl(void);
 extern uint32_t geteuid_impl(void);
 extern uint32_t getgid_impl(void);

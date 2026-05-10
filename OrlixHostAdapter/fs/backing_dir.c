@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "backing_io_internal.h"
+#include "errno_translation.h"
 
 struct backing_dir_stream {
     DIR *dir;
@@ -16,22 +17,20 @@ int backing_dir_open(int fd, int64_t offset, struct backing_dir_stream **out_str
     int dup_fd;
 
     if (!out_stream) {
-        errno = EFAULT;
-        return -1;
+        return -linux_errno_from_darwin_errno(EFAULT);
     }
     *out_stream = NULL;
 
     dup_fd = backing_dup(fd);
     if (dup_fd < 0) {
-        return -1;
+        return -linux_errno_from_darwin_errno(errno);
     }
 
     stream = calloc(1, sizeof(*stream));
     if (!stream) {
         int saved_errno = errno;
         backing_close(dup_fd);
-        errno = saved_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(saved_errno);
     }
 
     stream->dir = fdopendir(dup_fd);
@@ -39,8 +38,7 @@ int backing_dir_open(int fd, int64_t offset, struct backing_dir_stream **out_str
         int saved_errno = errno;
         backing_close(dup_fd);
         free(stream);
-        errno = saved_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(saved_errno);
     }
 
     if (offset > 0) {
@@ -56,20 +54,18 @@ int backing_dir_read(struct backing_dir_stream *stream, struct backing_dir_recor
     size_t name_len;
 
     if (!stream || !stream->dir || !record) {
-        errno = EFAULT;
-        return -1;
+        return -linux_errno_from_darwin_errno(EFAULT);
     }
 
     errno = 0;
     native = readdir(stream->dir);
     if (!native) {
-        return (errno == 0) ? 0 : -1;
+        return (errno == 0) ? 0 : -linux_errno_from_darwin_errno(errno);
     }
 
     name_len = strlen(native->d_name);
     if (name_len >= sizeof(record->name)) {
-        errno = ENAMETOOLONG;
-        return -1;
+        return -linux_errno_from_darwin_errno(ENAMETOOLONG);
     }
 
     record->ino = native->d_ino;

@@ -2,8 +2,9 @@
 
 #include <errno.h>
 
-#include "fs/fdtable.h"
 #include "kernel/init.h"
+
+extern int close_impl(int fd);
 
 extern int exec_syscall_contract_rejects_null_path_without_transition(void);
 extern int exec_syscall_contract_rejects_empty_path_without_transition(void);

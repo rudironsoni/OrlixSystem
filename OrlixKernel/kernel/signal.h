@@ -21,7 +21,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdatomic.h>
-#include <stdbool.h>
 
 #include "internal/mutex.h"
 
@@ -122,7 +121,7 @@ int signal_dequeue(struct task_struct *task, struct signal_mask_bits *mask, int3
 void signal_recompute_pending(struct task_struct *task);
 
 /* Signal wakeup - wake the right task after signal generation */
-void signal_wake_task(struct task_struct *task, bool group_wide);
+void signal_wake_task(struct task_struct *task, _Bool group_wide);
 
 /* Internal signal generation */
 int signal_generate_task(struct task_struct *target, int32_t sig);
@@ -133,9 +132,9 @@ int signal_generate_pgrp(int32_t pgid, int32_t sig);
 int signal_generate_orphaned_pgrp(int32_t pgid);
 
 /* Check if signal is blocked */
-bool signal_is_blocked(const struct task_struct *task, int32_t sig);
-bool signal_is_pending(const struct task_struct *task, int32_t sig);
-bool signal_has_unblocked_pending(const struct task_struct *task);
+_Bool signal_is_blocked(const struct task_struct *task, int32_t sig);
+_Bool signal_is_pending(const struct task_struct *task, int32_t sig);
+_Bool signal_has_unblocked_pending(const struct task_struct *task);
 
 /* ============================================================================
  * INTERNAL SYSCALL IMPLEMENTATIONS (for host-bridge use)

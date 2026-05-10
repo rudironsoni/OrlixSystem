@@ -2,11 +2,12 @@
 
 #include <errno.h>
 
-#include "fs/fdtable.h"
 #include "kernel/init.h"
 #include "NativeSyscallContract.h"
 #include "SignalSyscallContract.h"
 #include "SyscallUioContract.h"
+
+extern int close_impl(int fd);
 
 @interface NativeSyscallTests : XCTestCase
 @end

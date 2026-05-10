@@ -3,9 +3,9 @@
 
 #include <stdint.h>
 
-#include <linux/poll.h>
-#include <linux/time.h>
-#include <linux/types.h>
+#include <uapi/linux/poll.h>
+#include <uapi/linux/time.h>
+#include <uapi/linux/types.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,5 +1,8 @@
 #include "OrlixTestPolicyCheck.h"
 
+#include "clang/AST/Decl.h"
+#include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Basic/Linkage.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
@@ -10,7 +13,13 @@
 
 namespace clang::tidy::orlix {
 
+using namespace clang::ast_matchers;
+
 namespace {
+
+bool isObjectiveCKernelTest(llvm::StringRef Path) {
+  return Path.ends_with(".m") || Path.ends_with(".mm");
+}
 
 struct RegexRule {
   const char *Pattern;
@@ -59,10 +68,19 @@ public:
                           SrcMgr::CharacteristicKind) override {
     if (KernelTests) {
       if (FileName.starts_with("linux/") || FileName.starts_with("asm/")) {
-        if (StringRef(Path).ends_with(".m") || StringRef(Path).ends_with(".mm")) {
+        if (isObjectiveCKernelTest(Path)) {
           Check.diag(HashLoc,
                      "Objective-C LinuxKernel tests must not include Linux UAPI headers");
         }
+      }
+
+      if (isObjectiveCKernelTest(Path) &&
+          (FileName == "kernel/task.h" || FileName == "kernel/signal.h" ||
+           FileName == "kernel/wait.h" || FileName == "kernel/futex.h" ||
+           FileName == "fs/fdtable.h" || FileName == "fs/vfs.h" ||
+           FileName == "fs/path.h" || FileName == "fs/pty.h")) {
+        Check.diag(HashLoc,
+                   "Objective-C LinuxKernel tests must stay harness-only and must not include kernel-private owner headers");
       }
 
       if (FileName.contains("internal/ios") ||
@@ -92,11 +110,79 @@ const std::vector<RegexRule> KernelTestRules = {
      "snprintf is forbidden in test support"},
 };
 
+const std::vector<RegexRule> HostAdapterRules = {
+    {R"(__attribute__\s*\(\(\s*visibility\s*\(\s*"default"\s*\)\s*\)\))",
+     "OrlixHostAdapter serves OrlixKernel only and must not export public/default-visible libc-style entry points"},
+};
+
+bool shouldSkipLocation(SourceLocation Loc, const SourceManager &SM) {
+  return Loc.isInvalid() || SM.isInSystemHeader(Loc);
+}
+
+bool isForbiddenHostAdapterWrapperName(llvm::StringRef Name) {
+  return llvm::StringSwitch<bool>(Name)
+      .Cases("getuid", "geteuid", "getgid", "getegid", true)
+      .Cases("setuid", "setgid", "seteuid", "setegid", true)
+      .Cases("setresuid", "setresgid", "setreuid", "setregid", true)
+      .Cases("getresuid", "getresgid", "setfsuid", "setfsgid", true)
+      .Cases("getgroups", "setgroups", "prctl", "capget", true)
+      .Cases("capset", "getrandom", "getentropy", "futex", true)
+      .Cases("set_robust_list", "get_robust_list", "time", "gettimeofday",
+             true)
+      .Cases("settimeofday", "clock_gettime", "clock_getres",
+             "clock_settime", true)
+      .Cases("sleep", "usleep", "nanosleep", "setitimer", true)
+      .Cases("getitimer", "alarm", "uname", "gethostname", true)
+      .Cases("sethostname", "getdomainname", "setdomainname", "sigaction",
+             true)
+      .Cases("signal", "kill", "sigprocmask", "sigpending", true)
+      .Cases("sigsuspend", "raise", "pause", "killpg", true)
+      .Cases("getrlimit", "setrlimit", "getrlimit64", "setrlimit64", true)
+      .Cases("times", "getrusage", "prlimit", "waitpid", true)
+      .Cases("wait4", "wait", "wait3", "waitid", true)
+      .Cases("open", "openat", "creat", "close", true)
+      .Cases("pipe", "pipe2", "stat", "fstat", true)
+      .Cases("lstat", "access", "faccessat", "fstatat", true)
+      .Cases("newfstatat", "statx", "poll", "select", true)
+      .Cases("execve", "execv", "execvp", "fexecve", true)
+      .Cases("ioctl", "tcgetpgrp", "tcsetpgrp", "tcgetsid", true)
+      .Cases("isatty", "dup", "dup2", "dup3", true)
+      .Cases("flock", "fcntl", "getdents", "getdents64", true)
+      .Cases("setxattr", "lsetxattr", "fsetxattr", "getxattr", true)
+      .Cases("lgetxattr", "fgetxattr", "removexattr", "lremovexattr", true)
+      .Cases("fremovexattr", "listxattr", "llistxattr", "flistxattr", true)
+      .Cases("chmod", "fchmod", "fchmodat", "chown", true)
+      .Cases("fchown", "lchown", "fchownat", "umask", true)
+      .Cases("truncate", "ftruncate", "epoll_create", "epoll_create1", true)
+      .Cases("epoll_ctl", "epoll_wait", "epoll_pwait", "mount", true)
+      .Cases("umount", "umount2", "mount_setattr", "open_tree", true)
+      .Cases("move_mount", "pivot_root", "sync", "fsync", true)
+      .Cases("fdatasync", "syncfs", "statfs", "fstatfs", true)
+      .Cases("posix_fadvise", "posix_fallocate", "read", "write", true)
+      .Cases("lseek", "pread", "pwrite", "chdir", true)
+      .Cases("fchdir", "getcwd", "mkdir", "mkdirat", true)
+      .Cases("rmdir", "unlink", "unlinkat", "link", true)
+      .Cases("linkat", "symlink", "symlinkat", "readlink", true)
+      .Cases("readlinkat", "rename", "renameat", "renameat2", true)
+      .Cases("chroot", "readv", "writev", "preadv", true)
+      .Cases("pwritev", "preadv2", "pwritev2", true)
+      .Default(false);
+}
+
 } // namespace
 
 OrlixTestPolicyCheck::OrlixTestPolicyCheck(llvm::StringRef Name,
                                              ClangTidyContext *Context)
     : ClangTidyCheck(Name, Context) {}
+
+void OrlixTestPolicyCheck::registerMatchers(MatchFinder *Finder) {
+  Finder->addMatcher(functionDecl(isDefinition(), unless(isImplicit())).bind("func"),
+                     this);
+}
+
+bool OrlixTestPolicyCheck::isHostAdapterPath(llvm::StringRef Path) const {
+  return Path.contains("OrlixHostAdapter/");
+}
 
 bool OrlixTestPolicyCheck::isKernelTestPath(llvm::StringRef Path) const {
   return Path.contains("OrlixKernelTests/");
@@ -106,8 +192,40 @@ bool OrlixTestPolicyCheck::isHostTestPath(llvm::StringRef Path) const {
   return Path.contains("OrlixHostAdapterTests/");
 }
 
-bool OrlixTestPolicyCheck::isAnyTestPath(llvm::StringRef Path) const {
-  return isKernelTestPath(Path) || isHostTestPath(Path);
+bool OrlixTestPolicyCheck::isAnyPolicyPath(llvm::StringRef Path) const {
+  return isHostAdapterPath(Path) || isKernelTestPath(Path) ||
+         isHostTestPath(Path);
+}
+
+void OrlixTestPolicyCheck::check(const MatchFinder::MatchResult &Result) {
+  const auto *Func = Result.Nodes.getNodeAs<FunctionDecl>("func");
+  if (!Func || !Result.SourceManager)
+    return;
+
+  const SourceManager &SM = *Result.SourceManager;
+  SourceLocation Loc = Func->getLocation();
+  if (shouldSkipLocation(Loc, SM))
+    return;
+
+  auto Entry = SM.getFileEntryRefForID(SM.getFileID(Loc));
+  if (!Entry)
+    return;
+  llvm::StringRef Path = Entry->getName();
+  if (!isHostAdapterPath(Path))
+    return;
+
+  if (!Func->isExternallyVisible())
+    return;
+
+  llvm::StringRef Name = Func->getName();
+  if (!isForbiddenHostAdapterWrapperName(Name))
+    return;
+
+  diag(Loc,
+       "OrlixHostAdapter serves OrlixKernel only and must not define public "
+       "libc/syscall-facing function '%0'; move the public wrapper to "
+       "OrlixMLibC and keep only private kernel seam entry points here")
+      << Name;
 }
 
 void OrlixTestPolicyCheck::registerPPCallbacks(const SourceManager &SM,
@@ -117,7 +235,7 @@ void OrlixTestPolicyCheck::registerPPCallbacks(const SourceManager &SM,
   if (!Entry)
     return;
   StringRef Path = Entry->getName();
-  if (!isAnyTestPath(Path))
+  if (!isAnyPolicyPath(Path))
     return;
   CurrentSM = &SM;
   PP->addPPCallbacks(
@@ -135,10 +253,13 @@ void OrlixTestPolicyCheck::scanMainFile() {
   if (!Entry)
     return;
   StringRef Path = Entry->getName();
-  if (!isAnyTestPath(Path))
+  if (!isAnyPolicyPath(Path))
     return;
 
   StringRef Buffer = SM.getBufferData(FID);
+  if (isHostAdapterPath(Path)) {
+    scanLines(*this, SM, Buffer, HostAdapterRules);
+  }
   if (isKernelTestPath(Path)) {
     scanLines(*this, SM, Buffer, KernelTestRules);
   }

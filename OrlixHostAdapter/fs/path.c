@@ -16,14 +16,46 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <dirent.h>
+#include <regex.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include "errno_translation.h"
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+static regex_t ios_sandbox_regex;
+static regex_t ios_simulator_regex;
+static regex_t ios_external_regex;
+static bool regex_initialized = false;
+
+enum {
+    host_linux_at_fdcwd = -100,
+    host_linux_at_symlink_follow = 0x400,
+    host_linux_at_rename_noreplace = 0x0001,
+    host_linux_at_rename_exchange = 0x0002,
+};
+
+static void backing_path_init_regex(void) {
+    if (regex_initialized) {
+        return;
+    }
+
+    regcomp(&ios_sandbox_regex, "^/var/mobile/Containers/Data/Application/[A-Fa-f0-9-]+/",
+            REG_EXTENDED | REG_NOSUB);
+    regcomp(&ios_simulator_regex,
+            "/Library/Developer/CoreSimulator/Devices/[A-Fa-f0-9-]+/data/Containers/Data/"
+            "Application/[A-Fa-f0-9-]+/",
+            REG_EXTENDED | REG_NOSUB);
+    regcomp(&ios_external_regex,
+            "^(/private/var/mobile/Library/Mobile "
+            "Documents/|/private/var/mobile/Containers/Shared/AppGroup/|file-provider://)",
+            REG_EXTENDED | REG_NOSUB);
+
+    regex_initialized = true;
+}
 
 
 static void capture_backing_stat(const struct stat *source, struct backing_stat_data *target) {
@@ -81,6 +113,44 @@ int backing_access(const char *path, int mode)
     return -linux_errno_from_darwin_errno(errno);
 }
 
+bool backing_path_is_own_sandbox(const char *path)
+{
+    if (!path || !*path) {
+        return false;
+    }
+
+    backing_path_init_regex();
+    if (regexec(&ios_sandbox_regex, path, 0, NULL, 0) == 0) {
+        return true;
+    }
+    if (regexec(&ios_simulator_regex, path, 0, NULL, 0) == 0) {
+        return true;
+    }
+    if (strstr(path, "/Library/") || strstr(path, "/Library")) {
+        return true;
+    }
+    return false;
+}
+
+bool backing_path_is_external(const char *path)
+{
+    if (!path || !*path) {
+        return false;
+    }
+
+    backing_path_init_regex();
+    if (regexec(&ios_external_regex, path, 0, NULL, 0) == 0) {
+        return true;
+    }
+    if (strstr(path, "/Mobile Documents/")) {
+        return true;
+    }
+    if (strstr(path, "/Containers/Shared/AppGroup/")) {
+        return true;
+    }
+    return false;
+}
+
 int backing_directory_is_empty(const char *path)
 {
     DIR *dir = opendir(path);
@@ -104,56 +174,103 @@ int backing_directory_is_empty(const char *path)
 /* Host rename operation (Darwin renameatx_np) */
 int backing_rename_with_flags(int fromfd, const char *from, int tofd, const char *to, unsigned int flags)
 {
-    return renameatx_np(fromfd, from, tofd, to, flags);
+    unsigned int host_flags = 0;
+    if ((flags & host_linux_at_rename_noreplace) != 0) {
+        host_flags |= RENAME_EXCL;
+    }
+    if ((flags & host_linux_at_rename_exchange) != 0) {
+        host_flags |= RENAME_SWAP;
+    }
+    int ret = renameatx_np(fromfd, from, tofd, to, host_flags);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 int backing_rename_exchange(const char *from, const char *to)
 {
-    return renameatx_np(AT_FDCWD, from, AT_FDCWD, to, RENAME_SWAP);
+    int ret = renameatx_np(host_linux_at_fdcwd, from, host_linux_at_fdcwd, to, RENAME_SWAP);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 /* Directory operations */
 int backing_mkdir(const char *pathname, uint32_t mode)
 {
-    return (int)syscall(SYS_mkdir, pathname, (mode_t)mode);
+    int ret = (int)syscall(SYS_mkdir, pathname, (mode_t)mode);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 int backing_rmdir(const char *pathname)
 {
-    return (int)syscall(SYS_rmdir, pathname);
+    int ret = (int)syscall(SYS_rmdir, pathname);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 /* File operations */
 int backing_unlink(const char *pathname)
 {
-    return (int)syscall(SYS_unlink, pathname);
+    int ret = (int)syscall(SYS_unlink, pathname);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 int backing_link(const char *oldpath, const char *newpath)
 {
-    return (int)syscall(SYS_link, oldpath, newpath);
+    int ret = (int)syscall(SYS_link, oldpath, newpath);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 int backing_linkat(const char *oldpath, const char *newpath, int follow_symlink)
 {
-    return (int)syscall(SYS_linkat, AT_FDCWD, oldpath, AT_FDCWD, newpath,
-                        follow_symlink ? AT_SYMLINK_FOLLOW : 0);
+    int ret = (int)syscall(SYS_linkat, host_linux_at_fdcwd, oldpath, host_linux_at_fdcwd, newpath,
+                           follow_symlink ? host_linux_at_symlink_follow : 0);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 int backing_symlink(const char *target, const char *linkpath)
 {
-    return (int)syscall(SYS_symlink, target, linkpath);
+    int ret = (int)syscall(SYS_symlink, target, linkpath);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 long backing_readlink(const char *pathname, char *buf, size_t bufsiz)
 {
-    return (long)syscall(SYS_readlink, pathname, buf, bufsiz);
+    long ret = (long)syscall(SYS_readlink, pathname, buf, bufsiz);
+    if (ret >= 0) {
+        return ret;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 /* Fchdir */
 int backing_fchdir(int fd)
 {
-    return (int)syscall(SYS_fchdir, fd);
+    int ret = (int)syscall(SYS_fchdir, fd);
+    if (ret == 0) {
+        return 0;
+    }
+    return -linux_errno_from_darwin_errno(errno);
 }
 
 #pragma clang diagnostic pop

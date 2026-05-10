@@ -4,14 +4,12 @@
  * Host filesystem statistics do not define the Linux-facing contract here.
  */
 
-#include <errno.h>
-#include <string.h>
-
 #include <asm/statfs.h>
-#include <linux/fcntl.h>
+#include <linux/errno.h>
 #include <linux/magic.h>
-#include <linux/mount.h>
-
+#include <linux/string.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/mount.h>
 #include <linux/types.h>
 #include "fdtable.h"
 #include "vfs.h"
@@ -52,8 +50,7 @@ static int vfs_fill_statfs(const char *resolved_path, struct statfs *buf) {
     unsigned long mount_flags;
 
     if (!buf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     memset(buf, 0, sizeof(*buf));
@@ -90,8 +87,7 @@ void sync_impl(void) {
 int fsync_impl(int fd) {
     void *entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     put_fd_entry_impl(entry);
     return 0;
@@ -110,14 +106,12 @@ int statfs_impl(const char *path, struct statfs *buf) {
     int ret;
 
     if (!path) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     ret = vfs_resolve_virtual_path_at(AT_FDCWD, path, resolved_path, sizeof(resolved_path));
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     return vfs_fill_statfs(resolved_path, buf);
@@ -130,62 +124,26 @@ int fstatfs_impl(int fd, struct statfs *buf) {
 
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     ret = get_fd_path_impl(entry, path, sizeof(path));
     put_fd_entry_impl(entry);
     if (ret != 0) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     return vfs_fill_statfs(path, buf);
 }
 
-static int posix_fadvise_impl(int fd, __kernel_off_t offset, __kernel_off_t len, int advice) {
+int posix_fadvise_impl(int fd, __kernel_off_t offset, __kernel_off_t len, int advice) {
     (void)offset;
     (void)len;
     (void)advice;
     return fsync_impl(fd);
 }
 
-static int posix_fallocate_impl(int fd, __kernel_off_t offset, __kernel_off_t len) {
+int posix_fallocate_impl(int fd, __kernel_off_t offset, __kernel_off_t len) {
     (void)offset;
     (void)len;
     return fsync_impl(fd);
-}
-
-__attribute__((visibility("default"))) void sync(void) {
-    sync_impl();
-}
-
-__attribute__((visibility("default"))) int fsync(int fd) {
-    return fsync_impl(fd);
-}
-
-__attribute__((visibility("default"))) int fdatasync(int fd) {
-    return fdatasync_impl(fd);
-}
-
-__attribute__((visibility("default"))) int syncfs(int fd) {
-    return syncfs_impl(fd);
-}
-
-__attribute__((visibility("default"))) int statfs(const char *path, struct statfs *buf) {
-    return statfs_impl(path, buf);
-}
-
-__attribute__((visibility("default"))) int fstatfs(int fd, struct statfs *buf) {
-    return fstatfs_impl(fd, buf);
-}
-
-__attribute__((visibility("default"))) int posix_fadvise(int fd, __kernel_off_t offset,
-                                                         __kernel_off_t len, int advice) {
-    return posix_fadvise_impl(fd, offset, len, advice);
-}
-
-__attribute__((visibility("default"))) int posix_fallocate(int fd, __kernel_off_t offset,
-                                                           __kernel_off_t len) {
-    return posix_fallocate_impl(fd, offset, len);
 }

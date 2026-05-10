@@ -1,26 +1,9 @@
 #ifndef VFS_H
 #define VFS_H
 
+#include <asm/statfs.h>
+#include <linux/atomic.h>
 #include <linux/types.h>
-
-#include <stddef.h>
-#include <stdatomic.h>
-#include <stdint.h>
-
-/* Linux statfs (minimal definition for VFS) */
-struct statfs {
-    long f_type;
-    long f_bsize;
-    uint64_t f_blocks;
-    uint64_t f_bfree;
-    uint64_t f_bavail;
-    uint64_t f_files;
-    uint64_t f_ffree;
-    long f_fsid;
-    long f_namelen;
-    long f_frsize;
-    long f_flags;
-};
 
 #include "fdtable.h"
 #include "internal/fs/lock.h"
@@ -143,7 +126,7 @@ struct inode {
     struct timespec *i_atime;
     struct timespec *i_mtime;
     struct timespec *i_ctime;
-    atomic_int i_count;
+    atomic_t i_count;
     void *i_private;
     struct super_block *i_sb;
     const struct inode_operations *i_op;
@@ -156,7 +139,7 @@ struct dentry {
     struct inode *d_inode;
     struct super_block *d_sb;
     const unsigned char *d_name;
-    atomic_int d_count;
+    atomic_t d_count;
     struct dentry *d_parent;
     void *d_fsdata;
 };
@@ -176,8 +159,8 @@ struct mount {
     struct super_block *mnt_sb;
     int mnt_flags;
     char mnt_devname[MAX_PATH];
-    atomic_int mnt_count;
-    atomic_int mnt_ondie;
+    atomic_t mnt_count;
+    atomic_t mnt_ondie;
     struct mount *mnt_parent;
 };
 
@@ -187,7 +170,7 @@ struct fs_struct {
     struct dentry *root;
     struct dentry *pwd;
     uint32_t umask;
-    atomic_int users;
+    atomic_t users;
     fs_mutex_t lock;
     /* Task-aware path resolution state */
     char root_path[MAX_PATH];      /* Virtual root path (absolute, normalized) */
@@ -393,6 +376,7 @@ const char *vfs_temp_backing_root(void);
 /* Stat operations */
 int vfs_stat_path(const char *pathname, struct stat *statbuf);
 int vfs_lstat(const char *pathname, struct stat *statbuf);
+int vfs_path_exists(const char *pathname);
 int vfs_access(const char *pathname, int mode);
 int vfs_fstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags);
 int vfs_faccessat(int dirfd, const char *pathname, int mode, int flags);

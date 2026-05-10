@@ -1,11 +1,12 @@
 /* OrlixKernel/fs/stat.c
  * Virtual stat/fstat implementation
  */
-#include <linux/fcntl.h>
-#include <linux/stat.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/stat.h>
 
-#include <errno.h>
-#include <string.h>
+#include <linux/errno.h>
+#include <linux/string.h>
 
 #include "vfs.h"
 #include "fdtable.h"
@@ -22,23 +23,20 @@ int stat_impl(const char *pathname, struct stat *statbuf) {
     int ret;
 
     if (!pathname || !statbuf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (vfs_path_is_linux_route(pathname)) {
         ret = vfs_fstatat(AT_FDCWD, pathname, statbuf, 0);
         if (ret != 0) {
-            errno = -ret;
-            return -1;
+            return ret;
         }
         return 0;
     }
 
     ret = backing_stat(pathname, statbuf);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -50,19 +48,16 @@ int fstat_impl(int fd, struct stat *statbuf) {
     void *entry;
 
     if (!statbuf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (get_fd_is_pipe_impl(entry)) {
@@ -88,8 +83,7 @@ int fstat_impl(int fd, struct stat *statbuf) {
         }
         put_fd_entry_impl(entry);
         if (ret != 0) {
-            errno = -ret;
-            return -1;
+            return ret;
         }
         return 0;
     }
@@ -97,13 +91,12 @@ int fstat_impl(int fd, struct stat *statbuf) {
     ret = get_fd_path_impl(entry, path, sizeof(path));
     put_fd_entry_impl(entry);
     if (ret != 0) {
-        return -1;
+        return ret;
     }
 
     ret = vfs_fstatat(AT_FDCWD, path, statbuf, 0);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -112,23 +105,20 @@ int lstat_impl(const char *pathname, struct stat *statbuf) {
     int ret;
 
     if (!pathname || !statbuf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (vfs_path_is_linux_route(pathname)) {
         ret = vfs_fstatat(AT_FDCWD, pathname, statbuf, AT_SYMLINK_NOFOLLOW);
         if (ret != 0) {
-            errno = -ret;
-            return -1;
+            return ret;
         }
         return 0;
     }
 
     ret = backing_lstat(pathname, statbuf);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -137,14 +127,12 @@ int access_impl(const char *pathname, int mode) {
     int ret;
 
     if (!pathname) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     ret = vfs_access(pathname, mode);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -153,14 +141,12 @@ int fstatat_impl(int dirfd, const char *pathname, struct stat *statbuf, int flag
     int ret;
 
     if (!pathname || !statbuf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     ret = vfs_fstatat(dirfd, pathname, statbuf, flags);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -169,14 +155,12 @@ int faccessat_impl(int dirfd, const char *pathname, int mode, int flags) {
     int ret;
 
     if (!pathname) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     ret = vfs_faccessat(dirfd, pathname, mode, flags);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -225,14 +209,12 @@ int statx_impl(int dirfd, const char *pathname, int flags, unsigned int mask,
     int ret;
 
     if (!pathname || !statxbuf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if ((mask & STATX__RESERVED) != 0 ||
         (flags & ~(AT_EMPTY_PATH | AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
                    AT_STATX_SYNC_TYPE)) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if ((flags & AT_EMPTY_PATH) != 0 && pathname[0] == '\0') {
         ret = fstat_impl(dirfd, &st);
@@ -240,41 +222,8 @@ int statx_impl(int dirfd, const char *pathname, int flags, unsigned int mask,
         ret = fstatat_impl(dirfd, pathname, &st, stat_flags);
     }
     if (ret != 0) {
-        return -1;
+        return ret;
     }
     statx_from_linux_stat(statxbuf, &st, mask);
     return 0;
-}
-
-__attribute__((visibility("default"))) int stat(const char *pathname, struct stat *statbuf) {
-    return stat_impl(pathname, statbuf);
-}
-
-__attribute__((visibility("default"))) int fstat(int fd, struct stat *statbuf) {
-    return fstat_impl(fd, statbuf);
-}
-
-__attribute__((visibility("default"))) int lstat(const char *pathname, struct stat *statbuf) {
-    return lstat_impl(pathname, statbuf);
-}
-
-__attribute__((visibility("default"))) int access(const char *pathname, int mode) {
-    return access_impl(pathname, mode);
-}
-
-__attribute__((visibility("default"))) int faccessat(int dirfd, const char *pathname, int mode, int flags) {
-    return faccessat_impl(dirfd, pathname, mode, flags);
-}
-
-__attribute__((visibility("default"))) int fstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags) {
-    return fstatat_impl(dirfd, pathname, statbuf, flags);
-}
-
-__attribute__((visibility("default"))) int newfstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags) {
-    return fstatat_impl(dirfd, pathname, statbuf, flags);
-}
-
-__attribute__((visibility("default"))) int statx(int dirfd, const char *pathname, int flags,
-                                                  unsigned int mask, struct statx *statxbuf) {
-    return statx_impl(dirfd, pathname, flags, mask, statxbuf);
 }

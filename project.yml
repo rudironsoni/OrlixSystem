@@ -38,13 +38,15 @@ targets:
         - $(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
         - $(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
       SYSTEM_HEADER_SEARCH_PATHS:
-        - $(TOOLCHAIN_DIR)/usr/lib/clang/21/include
+        - $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include
+        - $(SDKROOT)/usr/include
       GCC_PREPROCESSOR_DEFINITIONS:
       - __KERNEL__
       - _XOPEN_SOURCE
       - _DARWIN_C_SOURCE
       - _POSIX_C_SOURCE=200112L
       USE_HEADERMAP: false
+      CLANG_ENABLE_MODULES: false
       CLANG_ENABLE_OBJC_ARC: true
       CLANG_WARN_DOCUMENTATION_COMMENTS: true
       OTHER_CFLAGS:
@@ -74,6 +76,8 @@ targets:
       group: OrlixKernel/fs
     - path: OrlixKernel/fs/exec.c
       group: OrlixKernel/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_ROOT)
     - path: OrlixKernel/fs/fcntl.c
       group: OrlixKernel/fs
     - path: OrlixKernel/fs/fdtable.c
@@ -126,6 +130,9 @@ targets:
       group: OrlixKernel/kernel
     - path: OrlixKernel/kernel/net/network.c
       group: OrlixKernel/kernel/net
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_UAPI_ROOT)
     - path: OrlixKernel/kernel/net/socket.c
       group: OrlixKernel/kernel/net
     - path: OrlixKernel/kernel/net/socket.h
@@ -134,6 +141,9 @@ targets:
       group: OrlixKernel/kernel
     - path: OrlixKernel/kernel/ptrace.c
       group: OrlixKernel/kernel
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_UAPI_ROOT)
     - path: OrlixKernel/kernel/random.c
       group: OrlixKernel/kernel
     - path: OrlixKernel/kernel/resource.c
@@ -148,10 +158,12 @@ targets:
       group: OrlixKernel/kernel
     - path: OrlixKernel/kernel/time.c
       group: OrlixKernel/kernel
+      compilerFlags:
+      - -I$(LINUX_UAPI_ROOT)
     - path: OrlixKernel/kernel/uts.c
       group: OrlixKernel/kernel
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_UAPI_ROOT)
     - path: OrlixKernel/kernel/wait_queue.c
       group: OrlixKernel/kernel
     - path: OrlixKernel/kernel/wait.c
@@ -179,6 +191,7 @@ targets:
         - $(SRCROOT)/OrlixKernel
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
+        - $(LINUX_UAPI_INCLUDE_ROOT)
       GCC_PREPROCESSOR_DEFINITIONS:
       - _XOPEN_SOURCE
       CLANG_ENABLE_OBJC_ARC: true
@@ -204,41 +217,14 @@ targets:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: OrlixHostAdapter/fs/path.c
       group: OrlixHostAdapter/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: OrlixHostAdapter/fs/memfd.c
       group: OrlixHostAdapter/fs
     - path: OrlixHostAdapter/fs/backing_paths.m
       group: OrlixHostAdapter/fs
-    - path: OrlixHostAdapter/fs/epoll_mask.c
-      group: OrlixHostAdapter/fs
-    - path: OrlixHostAdapter/kernel/signal.c
+    - path: OrlixHostAdapter/kernel/fork.c
       group: OrlixHostAdapter/kernel
-    - path: OrlixHostAdapter/kernel/futex.c
-      group: OrlixHostAdapter/kernel
-    - path: OrlixHostAdapter/kernel/cred.c
-      group: OrlixHostAdapter/kernel
-      compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: OrlixHostAdapter/kernel/wait.c
-      group: OrlixHostAdapter/kernel
-      compilerFlags:
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
-    - path: OrlixHostAdapter/kernel/resource.c
-      group: OrlixHostAdapter/kernel
-      compilerFlags:
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
-    - path: OrlixHostAdapter/kernel/uts.c
-      group: OrlixHostAdapter/kernel
-      compilerFlags:
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
     - path: OrlixHostAdapter/kernel/slab.c
       group: OrlixHostAdapter/kernel
       compilerFlags:
@@ -263,26 +249,152 @@ targets:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: OrlixHostAdapter/fs/sync.c
       group: OrlixHostAdapter/fs
+  OrlixMLibC:
+    type: library.static
+    platform: iOS
+    deploymentTarget:
+      iOS: '16.0'
+    settings:
+      HEADER_SEARCH_PATHS:
+        - $(SRCROOT)
+        - $(SRCROOT)/OrlixKernel
+        - $(SRCROOT)/OrlixKernel/include
+        - $(SRCROOT)/OrlixKernel/internal
+        - $(LINUX_UAPI_INCLUDE_ROOT)
+      GCC_PREPROCESSOR_DEFINITIONS:
+      - _XOPEN_SOURCE
+      CLANG_ENABLE_OBJC_ARC: true
+      CLANG_WARN_DOCUMENTATION_COMMENTS: true
+      OTHER_CFLAGS:
+      - -fvisibility=hidden
+    sources:
+    - path: OrlixMLibC/sysdeps/orlix/fs/open.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/fcntl.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/inode.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+    - path: OrlixMLibC/sysdeps/orlix/fs/stat.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/super.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/namei.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/mount.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/xattr.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/pipe.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+    - path: OrlixMLibC/sysdeps/orlix/fs/poll.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
+    - path: OrlixMLibC/sysdeps/orlix/fs/read_write.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/readdir.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+    - path: OrlixMLibC/sysdeps/orlix/fs/uio.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/exec.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+    - path: OrlixMLibC/sysdeps/orlix/fs/epoll.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/fs/epoll_mask.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+    - path: OrlixMLibC/sysdeps/orlix/fs/epoll_mask.h
+      group: OrlixMLibC/sysdeps/orlix/fs
+    - path: OrlixMLibC/sysdeps/orlix/fs/ioctl.c
+      group: OrlixMLibC/sysdeps/orlix/fs
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/kernel/cred.c
+      group: OrlixMLibC/sysdeps/orlix/kernel
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixMLibC/sysdeps/orlix/kernel/futex.c
+      group: OrlixMLibC/sysdeps/orlix/kernel
+    - path: OrlixMLibC/sysdeps/orlix/kernel/wait.c
+      group: OrlixMLibC/sysdeps/orlix/kernel
+      compilerFlags:
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+    - path: OrlixMLibC/sysdeps/orlix/kernel/resource.c
+      group: OrlixMLibC/sysdeps/orlix/kernel
+      compilerFlags:
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+    - path: OrlixMLibC/sysdeps/orlix/kernel/uts.c
+      group: OrlixMLibC/sysdeps/orlix/kernel
+      compilerFlags:
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+    - path: OrlixMLibC/sysdeps/orlix/kernel/random.c
+      group: OrlixMLibC/sysdeps/orlix/kernel
+    - path: OrlixMLibC/sysdeps/orlix/kernel/signal.c
+      group: OrlixMLibC/sysdeps/orlix/kernel
+      compilerFlags:
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
+      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
+      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+    - path: OrlixMLibC/sysdeps/orlix/kernel/time.c
+      group: OrlixMLibC/sysdeps/orlix/kernel
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    dependencies:
+    - target: OrlixKernel
   OrlixKernelTests:
     type: bundle.unit-test
     platform: iOS
     deploymentTarget:
       iOS: '16.0'
     sources:
-    - OrlixKernelTests/SignalTests.m
-    - OrlixKernelTests/TaskGroupTests.m
-    - OrlixKernelTests/ProcessGroupSessionTests.m
+    - OrlixKernelTests/LinuxKernelDynamicTestCase.m
+    - OrlixKernelTests/KernelProcessGroupSessionTests.m
+    - OrlixKernelTests/KernelTaskGroupTests.m
+    - OrlixKernelTests/KernelSignalTests.m
+    - OrlixKernelTests/KernelFutexTests.m
+    - OrlixKernelTests/KernelWaitTests.m
+    - OrlixKernelTests/FsPTYJobControlTests.m
+    - OrlixKernelTests/FsPipeTests.m
+    - OrlixKernelTests/FsVFSPathTests.m
+    - OrlixKernelTests/FsRootfsBootstrapTests.m
     - OrlixKernelTests/CgroupTests.m
     - OrlixKernelTests/CredentialTests.m
-    - OrlixKernelTests/VFSPathTests.m
-    - OrlixKernelTests/FutexTests.m
-    - OrlixKernelTests/RootfsBootstrapTests.m
     - OrlixKernelTests/KernelBootTests.m
     - OrlixKernelTests/KernelInitTests.m
     - OrlixKernelTests/PTYSessionTests.m
-    - OrlixKernelTests/PTYJobControlTests.m
-    - OrlixKernelTests/WaitJobControlTests.m
-    - OrlixKernelTests/PipeTests.m
     - OrlixKernelTests/ReadinessTests.m
     - OrlixKernelTests/EpollTests.m
     - OrlixKernelTests/FcntlTests.m
@@ -328,22 +440,35 @@ targets:
     - path: OrlixKernelTests/KernelBoot.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - OrlixKernelTests/kunit/kunit.c
+    - path: OrlixKernelTests/kernel/signal/signal_test.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixKernelTests/kernel/task/task_group_test.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: OrlixKernelTests/KernelInitContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: OrlixKernelTests/PTYSessionContract.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: OrlixKernelTests/PTYJobControlContract.c
+    - path: OrlixKernelTests/fs/pty/pty_job_control_test.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: OrlixKernelTests/WaitJobControlContract.c
+    - path: OrlixKernelTests/kernel/wait/wait_test.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: OrlixKernelTests/ProcessGroupSessionContract.c
+    - path: OrlixKernelTests/kernel/task/process_group_session_test.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: OrlixKernelTests/PipeContract.c
+    - path: OrlixKernelTests/fs/pipe/pipe_test.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixKernelTests/fs/vfs/vfs_path_test.c
+      compilerFlags:
+      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+    - path: OrlixKernelTests/fs/rootfs/rootfs_bootstrap_test.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - path: OrlixKernelTests/ReadinessContract.c
@@ -356,9 +481,6 @@ targets:
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
     - OrlixKernelTests/PTYSessionContract.h
-    - OrlixKernelTests/PTYJobControlContract.h
-    - OrlixKernelTests/WaitJobControlContract.h
-    - OrlixKernelTests/PipeContract.h
     - OrlixKernelTests/ReadinessContract.h
     - OrlixKernelTests/EpollContract.h
     - OrlixKernelTests/PtraceContract.h
@@ -371,10 +493,9 @@ targets:
     - path: OrlixKernelTests/FutexUAPICompileSmoke.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - path: OrlixKernelTests/FutexContract.c
+    - path: OrlixKernelTests/kernel/futex/futex_test.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - OrlixKernelTests/FutexContract.h
     - path: OrlixKernelTests/LinuxUAPITestSupport.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)
@@ -431,10 +552,11 @@ targets:
     - OrlixKernelTests/SeccompContract.h
     dependencies:
     - target: OrlixKernel
-    - target: OrlixHostAdapter
+    - target: OrlixMLibC
     settings:
       GENERATE_INFOPLIST_FILE: true
       HEADER_SEARCH_PATHS:
+        - $(SRCROOT)/OrlixKernelTests
         - $(SRCROOT)/OrlixKernel
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
@@ -463,6 +585,7 @@ targets:
         - $(SRCROOT)/OrlixHostAdapterTests
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
+        - $(LINUX_UAPI_INCLUDE_ROOT)
       BUNDLE_LOADER: ''
 configurations:
   Debug:
@@ -481,6 +604,7 @@ schemes:
       targets:
         OrlixKernel: all
         OrlixHostAdapter: all
+        OrlixMLibC: all
         OrlixKernelTests: all
         OrlixHostAdapterTests: all
     test:

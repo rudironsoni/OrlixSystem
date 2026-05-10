@@ -10,30 +10,34 @@
 #include "ptrace.h"
 #include "seccomp.h"
 #include "uts.h"
+#include "internal/timekeeping.h"
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
 
-#include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
 
-#include <linux/fcntl.h>
-#include <linux/capability.h>
-#include <linux/elf.h>
-#include <linux/mount.h>
-#include <linux/sched.h>
-#include <linux/stat.h>
-#include <asm/stat.h>
-#include <linux/time_types.h>
+#include <linux/errno.h>
+#include <linux/gfp_types.h>
+#include <linux/string.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/stat.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/time_types.h>
 #ifdef RLIM_NLIMITS
 #undef RLIM_NLIMITS
 #endif
-#include <asm-generic/resource.h>
+#include <uapi/asm-generic/resource.h>
 
 extern void poll_notify_readiness_impl(void);
+extern void *__kmalloc_noprof(size_t size, gfp_t flags);
+extern void kfree(const void *objp);
+extern char *kstrdup(const char *src, gfp_t flags);
 
 #ifdef SIGCHLD
 #undef SIGCHLD
@@ -89,13 +93,11 @@ enum {
 
 static struct mm_struct *task_ensure_mm_impl(struct task_struct *task) {
     if (!task) {
-        errno = ESRCH;
         return NULL;
     }
     if (!task->mm) {
-        task->mm = calloc(1, sizeof(*task->mm));
+        task->mm = __kmalloc_noprof(sizeof(*task->mm), GFP_KERNEL | __GFP_ZERO);
         if (!task->mm) {
-            errno = ENOMEM;
             return NULL;
         }
         atomic_init(&task->mm->refs, 1);
@@ -142,27 +144,23 @@ int task_pidfd_getfd_access_impl(struct task_struct *target) {
     struct task_struct *live_target;
 
     if (!caller || !target || !caller->cred || !target->cred) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     if (caller == target || caller->tgid == target->tgid) {
         if (atomic_load(&target->exited)) {
-            errno = ESRCH;
-            return -1;
+            return -ESRCH;
         }
         return 0;
     }
 
     live_target = task_lookup(target->pid);
     if (!live_target) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
     if (atomic_load(&live_target->exited)) {
         free_task(live_target);
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
     free_task(live_target);
 
@@ -204,9 +202,9 @@ static void task_clear_exec_strings(struct task_struct *task) {
     }
 
     for (int i = 0; i < TASK_MAX_ARGS; i++) {
-        free(task->argv[i]);
+        kfree(task->argv[i]);
         task->argv[i] = NULL;
-        free(task->envp[i]);
+        kfree(task->envp[i]);
         task->envp[i] = NULL;
     }
     task->argc = 0;
@@ -218,7 +216,7 @@ static void task_free_exec_string_vector(char **strings, int count) {
         return;
     }
     for (int i = 0; i < count; i++) {
-        free(strings[i]);
+        kfree(strings[i]);
     }
 }
 
@@ -226,8 +224,7 @@ static int task_copy_exec_string_vector(char *const input[], char **output, int 
     int count = 0;
 
     if (!output || !out_count) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     *out_count = 0;
@@ -237,14 +234,12 @@ static int task_copy_exec_string_vector(char *const input[], char **output, int 
 
     while (input[count]) {
         if (count >= TASK_MAX_ARGS - 1) {
-            errno = E2BIG;
-            return -1;
+            return -E2BIG;
         }
-        output[count] = strdup(input[count]);
+        output[count] = kstrdup(input[count], GFP_KERNEL);
         if (!output[count]) {
             task_free_exec_string_vector(output, count);
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         count++;
     }
@@ -262,16 +257,21 @@ int task_record_exec_strings_impl(char *const argv[], char *const envp[]) {
     int new_envc = 0;
 
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
-    if (task_copy_exec_string_vector(argv, new_argv, &new_argc) != 0) {
-        return -1;
+    {
+        int ret = task_copy_exec_string_vector(argv, new_argv, &new_argc);
+        if (ret < 0) {
+            return ret;
+        }
     }
-    if (task_copy_exec_string_vector(envp, new_envp, &new_envc) != 0) {
-        task_free_exec_string_vector(new_argv, new_argc);
-        return -1;
+    {
+        int ret = task_copy_exec_string_vector(envp, new_envp, &new_envc);
+        if (ret < 0) {
+            task_free_exec_string_vector(new_argv, new_argc);
+            return ret;
+        }
     }
 
     task_clear_exec_strings(task);
@@ -332,8 +332,7 @@ int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64
     uint64_t end;
 
     if (!task || !task->mm || size == 0 || size > UINT64_MAX - addr) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     end = addr + size;
@@ -341,8 +340,7 @@ int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64
     while (cursor < end) {
         found = task_find_vma_impl(task, cursor);
         if (!found) {
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         cursor = found->end < end ? found->end : end;
     }
@@ -357,16 +355,14 @@ int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64
         found = task_find_vma_impl(task, cursor);
         vma = &task->mm->vmas[found - task->mm->vmas];
         if (!vma->page_flags || vma->page_count == 0) {
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
 
         segment_end = vma->end < end ? vma->end : end;
         start_page = (cursor - vma->start) / TASK_VMA_PAGE_SIZE;
         end_page = ((segment_end - 1) - vma->start) / TASK_VMA_PAGE_SIZE;
         if (end_page >= vma->page_count) {
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         for (uint64_t i = start_page; i <= end_page; i++) {
             vma->page_flags[i] = flags;
@@ -455,26 +451,26 @@ void task_clear_vmas_impl(struct mm_struct *mm) {
                 for (uint64_t page = 0; page < mm->vmas[i].page_count; page++) {
                     mm_shared_mapping_put_impl(mm->vmas[i].shared_pages[page]);
                 }
-                free(mm->vmas[i].shared_pages);
+                kfree(mm->vmas[i].shared_pages);
             } else if (mm->vmas[i].private_pages) {
                 for (uint64_t page = 0; page < mm->vmas[i].page_count; page++) {
                     mm_private_page_put_impl(mm->vmas[i].private_pages[page]);
                 }
-                free(mm->vmas[i].private_pages);
+                kfree(mm->vmas[i].private_pages);
             } else if (mm->vmas[i].shared_mapping) {
                 mm_shared_mapping_put_impl(mm->vmas[i].shared_mapping);
             } else {
-                free(mm->vmas[i].image);
+                kfree(mm->vmas[i].image);
             }
             mm->vmas[i].image = NULL;
             mm->vmas[i].shared_pages = NULL;
             mm->vmas[i].private_pages = NULL;
         }
-        free(mm->vmas[i].page_flags);
+        kfree(mm->vmas[i].page_flags);
         mm->vmas[i].page_flags = NULL;
-        free(mm->vmas[i].resident_pages);
+        kfree(mm->vmas[i].resident_pages);
         mm->vmas[i].resident_pages = NULL;
-        free(mm->vmas[i].dirty_pages);
+        kfree(mm->vmas[i].dirty_pages);
         mm->vmas[i].dirty_pages = NULL;
         mm->vmas[i].page_count = 0;
     }
@@ -501,17 +497,17 @@ void task_mm_put_impl(struct mm_struct *mm) {
         return;
     }
     for (uint32_t i = 0; i < mm->exec_segment_count; i++) {
-        free(mm->exec_segments[i].image);
+        kfree(mm->exec_segments[i].image);
     }
     for (uint32_t i = 0; i < mm->interp_segment_count; i++) {
-        free(mm->interp_segments[i].image);
+        kfree(mm->interp_segments[i].image);
     }
     task_clear_vmas_impl(mm);
-    free(mm->exec_image_base);
-    free(mm->interp_image_base);
-    free(mm->stack_guard_image);
-    free(mm->initial_stack_image);
-    free(mm);
+    kfree(mm->exec_image_base);
+    kfree(mm->interp_image_base);
+    kfree(mm->stack_guard_image);
+    kfree(mm->initial_stack_image);
+    kfree(mm);
 }
 
 void task_mm_update_high_water_impl(struct mm_struct *mm) {
@@ -554,16 +550,14 @@ static long task_read_vma(struct task_vma *vma, uint64_t addr, void *buf, size_t
         return 0;
     }
     if ((uint64_t)vma->image_size > UINT64_MAX - vma->start) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (addr >= vma->end) {
         return 0;
     }
     flags = task_vma_page_flags_impl(vma, addr);
     if ((flags & PF_R) == 0) {
-        errno = EACCES;
-        return -1;
+        return -EACCES;
     }
     if (vma->kind == TASK_VMA_FILE) {
         uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
@@ -577,8 +571,7 @@ static long task_read_vma(struct task_vma *vma, uint64_t addr, void *buf, size_t
             uint64_t backing_file_offset = vma->backing_offset + (uint64_t)file_offset;
 
             if (backing_page_start >= (uint64_t)file_size) {
-                errno = ENXIO;
-                return -1;
+                return -ENXIO;
             }
             if (backing_file_offset >= (uint64_t)file_size) {
                 size_t page_offset = file_offset % TASK_VMA_PAGE_SIZE;
@@ -629,16 +622,14 @@ static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf,
         return 0;
     }
     if ((uint64_t)vma->image_size > UINT64_MAX - vma->start) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (addr >= vma->end) {
         return 0;
     }
     flags = task_vma_page_flags_impl(vma, addr);
     if ((flags & PF_W) == 0) {
-        errno = EACCES;
-        return -1;
+        return -EACCES;
     }
     if (vma->kind == TASK_VMA_FILE) {
         uint64_t page_index = (addr - vma->start) / TASK_VMA_PAGE_SIZE;
@@ -649,8 +640,7 @@ static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf,
              vma->dirty_pages[page_index] == 0) &&
             file_size >= 0 &&
             vma->backing_offset + (uint64_t)page_start >= (uint64_t)file_size) {
-            errno = ENXIO;
-            return -1;
+            return -ENXIO;
         }
     }
     if (vma->shared_pages) {
@@ -693,10 +683,12 @@ static int task_grow_stack_down_impl(struct task_struct *task, uint64_t fault_ad
     uint64_t new_size;
     uint64_t new_base;
     uint64_t new_pages;
+    size_t page_flags_bytes;
+    size_t resident_bytes;
+    size_t dirty_bytes;
 
     if (!task || !task->mm) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     mm = task->mm;
     for (uint32_t i = 0; i < mm->vma_count; i++) {
@@ -715,17 +707,14 @@ static int task_grow_stack_down_impl(struct task_struct *task, uint64_t fault_ad
     old_image = stack->image;
     old_size = stack->image_size;
     if (old_size > UINT64_MAX - TASK_VMA_PAGE_SIZE) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     new_size = old_size + TASK_VMA_PAGE_SIZE;
     if (new_size > task->rlimits[RLIMIT_STACK].cur) {
-        errno = EACCES;
-        return -1;
+        return -EACCES;
     }
     if (mm->initial_stack_base < TASK_VMA_PAGE_SIZE) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     new_base = mm->initial_stack_base - TASK_VMA_PAGE_SIZE;
     new_pages = new_size / TASK_VMA_PAGE_SIZE;
@@ -733,21 +722,22 @@ static int task_grow_stack_down_impl(struct task_struct *task, uint64_t fault_ad
         new_pages > SIZE_MAX / sizeof(*new_page_flags) ||
         new_pages > SIZE_MAX / sizeof(*new_resident_pages) ||
         new_pages > SIZE_MAX / sizeof(*new_dirty_pages)) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
+    page_flags_bytes = (size_t)new_pages * sizeof(*new_page_flags);
+    resident_bytes = (size_t)new_pages * sizeof(*new_resident_pages);
+    dirty_bytes = (size_t)new_pages * sizeof(*new_dirty_pages);
 
-    new_image = calloc(1, (size_t)new_size);
-    new_page_flags = calloc((size_t)new_pages, sizeof(*new_page_flags));
-    new_resident_pages = calloc((size_t)new_pages, sizeof(*new_resident_pages));
-    new_dirty_pages = calloc((size_t)new_pages, sizeof(*new_dirty_pages));
+    new_image = __kmalloc_noprof((size_t)new_size, GFP_KERNEL | __GFP_ZERO);
+    new_page_flags = __kmalloc_noprof(page_flags_bytes, GFP_KERNEL | __GFP_ZERO);
+    new_resident_pages = __kmalloc_noprof(resident_bytes, GFP_KERNEL | __GFP_ZERO);
+    new_dirty_pages = __kmalloc_noprof(dirty_bytes, GFP_KERNEL | __GFP_ZERO);
     if (!new_image || !new_page_flags || !new_resident_pages || !new_dirty_pages) {
-        free(new_image);
-        free(new_page_flags);
-        free(new_resident_pages);
-        free(new_dirty_pages);
-        errno = ENOMEM;
-        return -1;
+        kfree(new_image);
+        kfree(new_page_flags);
+        kfree(new_resident_pages);
+        kfree(new_dirty_pages);
+        return -ENOMEM;
     }
 
     memcpy((unsigned char *)new_image + TASK_VMA_PAGE_SIZE, old_image, (size_t)old_size);
@@ -764,15 +754,15 @@ static int task_grow_stack_down_impl(struct task_struct *task, uint64_t fault_ad
                                  : 0;
     }
 
-    free(old_image);
+    kfree(old_image);
     mm->initial_stack_image = new_image;
     mm->initial_stack_image_size = (size_t)new_size;
     mm->initial_stack_base = new_base;
     mm->initial_stack_size = new_size;
 
-    free(stack->page_flags);
-    free(stack->resident_pages);
-    free(stack->dirty_pages);
+    kfree(stack->page_flags);
+    kfree(stack->resident_pages);
+    kfree(stack->dirty_pages);
     stack->start = new_base;
     stack->end = new_base + new_size;
     stack->image = mm->initial_stack_image;
@@ -856,15 +846,13 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
     long copied;
 
     if (!buf && count > 0) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (count == 0) {
         return 0;
     }
     if (!task || !task->mm) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     mm = task->mm;
@@ -873,16 +861,14 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
             if (total > 0) {
                 return (long)total;
             }
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         if (task_addr_is_below_stack_guard(task, addr + total)) {
             task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             if (total > 0) {
                 return (long)total;
             }
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         copied = 0;
         for (uint32_t i = 0; i < mm->vma_count; i++) {
@@ -892,22 +878,20 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
             }
         }
         if (copied < 0) {
-            if (errno == ENXIO) {
-                errno = EFAULT;
+            if (copied == -ENXIO) {
                 task_note_memory_signal_fault_impl(task, SIGBUS, BUS_ADRERR, addr + total);
             } else {
                 task_note_memory_fault_impl(task, addr + total,
-                                            errno == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
+                                            copied == -EACCES ? SEGV_ACCERR : SEGV_MAPERR);
             }
-            return total > 0 ? (long)total : -1;
+            return total > 0 ? (long)total : copied;
         }
         if (copied == 0) {
             task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             if (total > 0) {
                 return (long)total;
             }
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         total += (size_t)copied;
     }
@@ -919,15 +903,13 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
     long copied;
 
     if (!buf && count > 0) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (count == 0) {
         return 0;
     }
     if (!task || !task->mm) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     mm = task->mm;
@@ -936,8 +918,7 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
             if (total > 0) {
                 return (long)total;
             }
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         {
             int grow_ret = task_grow_stack_down_impl(task, addr + total);
@@ -950,8 +931,7 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
             if (total > 0) {
                 return (long)total;
             }
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         copied = 0;
         for (uint32_t i = 0; i < mm->vma_count; i++) {
@@ -966,22 +946,20 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
             }
         }
         if (copied < 0) {
-            if (errno == ENXIO) {
-                errno = EFAULT;
+            if (copied == -ENXIO) {
                 task_note_memory_signal_fault_impl(task, SIGBUS, BUS_ADRERR, addr + total);
             } else {
                 task_note_memory_fault_impl(task, addr + total,
-                                            errno == EACCES ? SEGV_ACCERR : SEGV_MAPERR);
+                                            copied == -EACCES ? SEGV_ACCERR : SEGV_MAPERR);
             }
-            return total > 0 ? (long)total : -1;
+            return total > 0 ? (long)total : copied;
         }
         if (copied == 0) {
             task_note_memory_fault_impl(task, addr + total, SEGV_MAPERR);
             if (total > 0) {
                 return (long)total;
             }
-            errno = EFAULT;
-            return -1;
+            return -EFAULT;
         }
         total += (size_t)copied;
     }
@@ -990,7 +968,6 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
 
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task) {
     if (!task || !task->mm) {
-        errno = EFAULT;
         return NULL;
     }
     return &task->mm->handoff;
@@ -1016,7 +993,7 @@ int task_restart_record_impl(struct task_struct *task, enum task_restart_kind ki
         return -EINVAL;
     }
     if (!task_ensure_mm_impl(task)) {
-        return -errno;
+        return -ENOMEM;
     }
     task->mm->signal_frame_restart_kind = (uint64_t)kind;
     task->mm->signal_frame_restart_arg0 = arg0;
@@ -1029,7 +1006,7 @@ int task_restart_record_impl(struct task_struct *task, enum task_restart_kind ki
 }
 
 struct task_struct *alloc_task(void) {
-    struct task_struct *task = calloc(1, sizeof(struct task_struct));
+    struct task_struct *task = __kmalloc_noprof(sizeof(struct task_struct), GFP_KERNEL | __GFP_ZERO);
     if (!task)
         return NULL;
 
@@ -1103,7 +1080,7 @@ struct task_struct *alloc_task(void) {
             kernel_mutex_destroy(&task->wait_lock);
             kernel_mutex_destroy(&task->lock);
             free_pid(task->pid);
-            free(task);
+            kfree(task);
             return NULL;
         }
         cgroup_put(root);
@@ -1113,7 +1090,7 @@ struct task_struct *alloc_task(void) {
         kernel_mutex_destroy(&task->wait_lock);
         kernel_mutex_destroy(&task->lock);
         free_pid(task->pid);
-        free(task);
+        kfree(task);
         return NULL;
     }
     task->cgroup_ns_root = cgroup_get(task->cgroup);
@@ -1127,7 +1104,7 @@ struct task_struct *alloc_task(void) {
         kernel_mutex_destroy(&task->wait_lock);
         kernel_mutex_destroy(&task->lock);
         free_pid(task->pid);
-        free(task);
+        kfree(task);
         return NULL;
     }
 
@@ -1150,13 +1127,11 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
     struct task_struct *child;
 
     if (!parent) {
-        errno = ESRCH;
         return NULL;
     }
 
     child = alloc_task();
     if (!child) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -1186,14 +1161,12 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         child->cred = dup_cred(parent->cred);
         if (!child->cred) {
             free_task(child);
-            errno = ENOMEM;
             return NULL;
         }
     }
     if (parent->cgroup) {
         if (task_attach_cgroup(child, parent->cgroup) != 0) {
             free_task(child);
-            errno = ENOMEM;
             return NULL;
         }
     }
@@ -1212,7 +1185,6 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         child->fs = dup_fs_struct(parent->fs);
         if (!child->fs) {
             free_task(child);
-            errno = ENOMEM;
             return NULL;
         }
     }
@@ -1223,14 +1195,12 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         child->files = dup_files(parent->files);
         if (!child->files) {
             free_task(child);
-            errno = ENOMEM;
             return NULL;
         }
     }
 
     if ((flags & CLONE_VM) != 0 && !task_ensure_mm_impl(parent)) {
         free_task(child);
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -1241,7 +1211,6 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         child->mm = task_mm_dup_impl(parent->mm);
         if (!child->mm) {
             free_task(child);
-            errno = ENOMEM;
             return NULL;
         }
     }
@@ -1253,12 +1222,10 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         child->signal = dup_signal_struct(parent->signal);
         if (!child->signal) {
             free_task(child);
-            errno = ENOMEM;
             return NULL;
         }
     } else if (signal_init_task(child) != 0) {
         free_task(child);
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -1443,7 +1410,7 @@ void free_task(struct task_struct *task) {
     if (task->mm)
         task_mm_put_impl(task->mm);
     if (task->exec_image)
-        free(task->exec_image);
+        kfree(task->exec_image);
     if (task->uts_ns)
         uts_put(task->uts_ns);
     task_clear_exec_strings(task);
@@ -1453,7 +1420,7 @@ void free_task(struct task_struct *task) {
     kernel_mutex_destroy(&task->lock);
 
     free_pid(task->pid);
-    free(task);
+    kfree(task);
 }
 
 struct task_struct *task_lookup(int32_t pid) {
@@ -1480,12 +1447,10 @@ int task_reassign_pid_impl(struct task_struct *task, int32_t pid) {
     int new_idx;
 
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
     if (pid <= 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (task->pid == pid) {
         return 0;
@@ -1506,8 +1471,7 @@ int task_reassign_pid_impl(struct task_struct *task, int32_t pid) {
     if (*link != task) {
         kernel_mutex_unlock(&task_table_lock);
         free_pid(pid);
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     *link = task->hash_next;
@@ -1648,8 +1612,7 @@ int32_t getppid_impl(void) {
 int32_t getpgrp_impl(void) {
     struct task_struct *task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
     return task->pgid;
 }
@@ -1661,8 +1624,7 @@ int32_t getpgid_impl(int32_t pid) {
 
     struct task_struct *task = task_lookup(pid);
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     int32_t pgid = task->pgid;
@@ -1673,8 +1635,7 @@ int32_t getpgid_impl(int32_t pid) {
 int setpgid_impl(int32_t pid, int32_t pgid) {
     struct task_struct *current = get_current();
     if (!current) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     if (pid == 0) {
@@ -1683,8 +1644,7 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
 
     /* Linux: reject negative pgid */
     if (pgid < 0 && pgid != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (pgid == 0) {
@@ -1693,8 +1653,7 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
 
     struct task_struct *target = task_lookup(pid);
     if (!target) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     kernel_mutex_lock(&target->lock);
@@ -1703,24 +1662,21 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
     if (target->ppid != current->pid && target->pid != current->pid) {
         kernel_mutex_unlock(&target->lock);
         free_task(target);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     /* Linux: session match - can't move to different session */
     if (target->sid != current->sid) {
         kernel_mutex_unlock(&target->lock);
         free_task(target);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     /* Linux: cannot change PGID of a session leader */
     if (target->pid == target->sid) {
         kernel_mutex_unlock(&target->lock);
         free_task(target);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     /* Linux: if joining existing group, group must exist in same session */
@@ -1741,8 +1697,7 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
         if (!found_group) {
             kernel_mutex_unlock(&target->lock);
             free_task(target);
-            errno = EPERM;
-            return -1;
+            return -EPERM;
         }
     }
 
@@ -1750,8 +1705,7 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
     if (target->pid != current->pid && atomic_load(&target->execed)) {
         kernel_mutex_unlock(&target->lock);
         free_task(target);
-        errno = EACCES;
-        return -1;
+        return -EACCES;
     }
 
     target->pgid = pgid;
@@ -1765,16 +1719,14 @@ int32_t getsid_impl(int32_t pid) {
     if (pid == 0) {
         struct task_struct *task = get_current();
         if (!task) {
-            errno = ESRCH;
-            return -1;
+            return -ESRCH;
         }
         return task->sid;
     }
 
     struct task_struct *task = task_lookup(pid);
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     int32_t sid = task->sid;
@@ -1785,8 +1737,7 @@ int32_t getsid_impl(int32_t pid) {
 int32_t setsid_impl(void) {
     struct task_struct *task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     kernel_mutex_lock(&task->lock);
@@ -1794,8 +1745,7 @@ int32_t setsid_impl(void) {
     /* Check if already process group leader */
     if (task->pgid == task->pid) {
         kernel_mutex_unlock(&task->lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     if (task->tty) {
@@ -1872,23 +1822,19 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
 
     task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     if (!path) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     closed = vfs_normalize_linux_path(path, normalized_path, sizeof(normalized_path));
     if (closed < 0) {
-        errno = -closed;
-        return -1;
+        return closed;
     }
     if ((vfs_mount_flags_for_path(normalized_path) & MS_NOEXEC) != 0) {
-        errno = EACCES;
-        return -1;
+        return -EACCES;
     }
 
     if (task->cred) {

@@ -2,10 +2,12 @@
  * Virtual getdents/getdents64 implementation
  */
 
-#include <errno.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include <linux/errno.h>
+#include <linux/stdarg.h>
+#include <linux/types.h>
+#include <linux/dirent.h>
+#include <linux/sprintf.h>
+#include <linux/string.h>
 
 #include "internal/fs/readdir.h"
 #include "fdtable.h"
@@ -15,14 +17,6 @@
 #include "vfs.h"
 #include "kernel/cgroup.h"
 #include "kernel/task.h"
-
-struct linux_dirent64 {
-    uint64_t d_ino;
-    int64_t d_off;
-    unsigned short d_reclen;
-    unsigned char d_type;
-    char d_name[];
-};
 
 #define LINUX_DT_UNKNOWN 0
 #define LINUX_DT_FIFO 1
@@ -88,8 +82,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
     /* Check unsupported class BEFORE writing any records */
     synthetic_dir_class_t dir_class = get_fd_synthetic_dir_class_impl(entry);
     if (dir_class == SYNTHETIC_DIR_GENERIC) {
-        errno = ENOTSUP;
-        return -1;
+        return -EOPNOTSUPP;
     }
 
     size_t written = 0;
@@ -118,8 +111,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
         size_t idx = (size_t)(cursor - 2);
 
         if (get_fd_path_impl(entry, dir_path, sizeof(dir_path)) != 0) {
-            errno = ENOENT;
-            return -1;
+            return -ENOENT;
         }
         if (strcmp(dir_path, "/sys/fs") == 0) {
             if (idx == 0) {
@@ -253,14 +245,12 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
         int scan_pid = (cursor >= 2) ? ((int)cursor - 2) : 0;
 
         if (get_fd_path_impl(entry, dir_path, sizeof(dir_path)) != 0) {
-            errno = ENOENT;
-            return -1;
+            return -ENOENT;
         }
         target_pid = vfs_proc_target_pid_for_path(dir_path);
         target = task_lookup(target_pid);
         if (!target) {
-            errno = ENOENT;
-            return -1;
+            return -ENOENT;
         }
 
         kernel_mutex_lock(&task_table_lock);
@@ -274,8 +264,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
                     if (ret < 0 || (size_t)ret >= sizeof(name)) {
                         kernel_mutex_unlock(&task_table_lock);
                         free_task(target);
-                        errno = ENAMETOOLONG;
-                        return -1;
+                        return -ENAMETOOLONG;
                     }
                     rc = append_linux_dirent64(dirp, count, &written, 1,
                                                (int64_t)(task->pid + 2), LINUX_DT_DIR, name);
@@ -402,19 +391,16 @@ done:
 
 ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
     if (dirp == NULL) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (count == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fd_entry_t *entry = get_fd_entry_impl(fd);
     if (entry == NULL) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     int real_fd = get_real_fd_impl(entry);
@@ -424,15 +410,13 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
 
     if (get_fd_is_pipe_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ENOTDIR;
-        return -1;
+        return -ENOTDIR;
     }
 
     if (is_dir && get_fd_path_impl(entry, fd_path, sizeof(fd_path)) == 0 &&
         vfs_path_is_synthetic(fd_path) && !get_fd_is_synthetic_dir_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ENOTSUP;
-        return -1;
+        return -EOPNOTSUPP;
     }
 
     if (get_fd_is_synthetic_dir_impl(entry)) {
@@ -446,20 +430,19 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
     int64_t latest_offset = saved_offset;
     struct backing_dir_record native;
 
-    if (backing_dir_open(real_fd, saved_offset, &stream) != 0) {
+    int open_result = backing_dir_open(real_fd, saved_offset, &stream);
+    if (open_result < 0) {
         put_fd_entry_impl(entry);
-        return -1;
+        return open_result;
     }
 
     while (true) {
         int read_result = backing_dir_read(stream, &native);
         if (read_result <= 0) {
             if (read_result < 0 && written == 0) {
-                int saved_errno = errno;
                 backing_dir_close(stream);
                 put_fd_entry_impl(entry);
-                errno = saved_errno;
-                return -1;
+                return read_result;
             }
             break;
         }
@@ -472,8 +455,7 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
             if (written == 0) {
                 backing_dir_close(stream);
                 put_fd_entry_impl(entry);
-                errno = EINVAL;
-                return -1;
+                return -EINVAL;
             }
             break;
         }
@@ -500,13 +482,5 @@ ssize_t getdents64_impl(int fd, void *dirp, size_t count) {
 }
 
 ssize_t getdents_impl(int fd, void *dirp, size_t count) {
-    return getdents64_impl(fd, dirp, count);
-}
-
-__attribute__((visibility("default"))) ssize_t getdents(int fd, void *dirp, size_t count) {
-    return getdents_impl(fd, dirp, count);
-}
-
-__attribute__((visibility("default"))) ssize_t getdents64(int fd, void *dirp, size_t count) {
     return getdents64_impl(fd, dirp, count);
 }

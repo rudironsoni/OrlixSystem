@@ -7,10 +7,8 @@
  */
 
 #include <asm/ioctls.h>
-#include <errno.h>
-#include <stdbool.h>
-#include <stdarg.h>
-#include <stdint.h>
+#include <linux/errno.h>
+#include <linux/types.h>
 
 #include "fdtable.h"
 #include "pty.h"
@@ -19,8 +17,7 @@
 
 int ioctl_impl(int fd, unsigned long request, void *arg) {
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (fd <= 2) {
@@ -29,8 +26,7 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
 
     void *entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (get_fd_is_synthetic_pty_impl(entry)) {
@@ -41,7 +37,7 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
         switch (request) {
         case TIOCGPTN:
             if (!is_master || !arg) {
-                errno = !arg ? EFAULT : EINVAL;
+                result = !arg ? -EFAULT : -EINVAL;
                 break;
             }
             *(unsigned int *)arg = pty_index;
@@ -49,21 +45,21 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
             break;
         case TIOCSPTLCK:
             if (!is_master || !arg) {
-                errno = !arg ? EFAULT : EINVAL;
+                result = !arg ? -EFAULT : -EINVAL;
                 break;
             }
             result = pty_set_lock_impl(pty_index, (*(const int *)arg) != 0);
             break;
         case TCGETS:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_get_termios_impl(pty_index, (pty_linux_termios_t *)arg);
             break;
         case TCSETS:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_set_termios_with_action_impl(pty_index, (const pty_linux_termios_t *)arg,
@@ -71,7 +67,7 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
             break;
         case TCSETSW:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_set_termios_with_action_impl(pty_index, (const pty_linux_termios_t *)arg,
@@ -79,7 +75,7 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
             break;
         case TCSETSF:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_set_termios_with_action_impl(pty_index, (const pty_linux_termios_t *)arg,
@@ -87,14 +83,14 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
             break;
         case TIOCGWINSZ:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_get_winsize_impl(pty_index, (pty_linux_winsize_t *)arg);
             break;
         case TIOCSWINSZ:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_set_winsize_impl(pty_index, (const pty_linux_winsize_t *)arg);
@@ -107,35 +103,35 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
             break;
         case TIOCGPGRP:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_get_foreground_pgrp_impl(pty_index, (int32_t *)arg);
             break;
         case TIOCGSID:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_get_controlling_sid_impl(pty_index, (int32_t *)arg);
             break;
         case TIOCSPGRP:
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_set_foreground_pgrp_impl(pty_index, *(const int32_t *)arg);
             break;
         case FIONREAD: {
             if (!arg) {
-                errno = EFAULT;
+                result = -EFAULT;
                 break;
             }
             result = pty_get_readable_bytes_impl(pty_index, is_master, (int *)arg);
             break;
         }
         default:
-            errno = ENOTTY;
+            result = -ENOTTY;
             break;
         }
 
@@ -147,55 +143,10 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
     if (get_fd_is_synthetic_dev_impl(entry) || get_fd_is_synthetic_dir_impl(entry) ||
         get_fd_is_synthetic_proc_file_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ENOTTY;
-        return -1;
+        return -ENOTTY;
     }
 
     result = backing_ioctl(get_real_fd_impl(entry), request, arg);
     put_fd_entry_impl(entry);
     return result;
-}
-
-__attribute__((visibility("default"))) int ioctl(int fd, unsigned long request, ...) {
-    va_list args;
-    va_start(args, request);
-    void *arg = va_arg(args, void *);
-    va_end(args);
-    return ioctl_impl(fd, request, arg);
-}
-
-__attribute__((visibility("default"))) __kernel_pid_t tcgetpgrp(int fd) {
-    int32_t pgrp = 0;
-
-    if (ioctl_impl(fd, TIOCGPGRP, &pgrp) != 0) {
-        return -1;
-    }
-
-    return (__kernel_pid_t)pgrp;
-}
-
-__attribute__((visibility("default"))) int tcsetpgrp(int fd, __kernel_pid_t pgrp) {
-    int32_t foreground_pgrp = (int32_t)pgrp;
-
-    return ioctl_impl(fd, TIOCSPGRP, &foreground_pgrp);
-}
-
-__attribute__((visibility("default"))) __kernel_pid_t tcgetsid(int fd) {
-    int32_t sid = 0;
-
-    if (ioctl_impl(fd, TIOCGSID, &sid) != 0) {
-        return -1;
-    }
-
-    return (__kernel_pid_t)sid;
-}
-
-__attribute__((visibility("default"))) int isatty(int fd) {
-    pty_linux_termios_t termios;
-
-    if (ioctl_impl(fd, TCGETS, &termios) == 0) {
-        return 1;
-    }
-
-    return 0;
 }

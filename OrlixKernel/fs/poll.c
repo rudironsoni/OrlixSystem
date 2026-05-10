@@ -199,18 +199,10 @@ int poll_wait_for_readiness_impl(int timeout) {
     }
     wait_queue_unlock(&readiness_wait);
 
-    if (ret == -EINTR) {
-        errno = EINTR;
-        return -1;
-    }
     if (ret == -ETIMEDOUT) {
         return 0;
     }
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
-    }
-    return 0;
+    return ret;
 }
 
 static int poll_wait_after_snapshot(uint64_t observed_generation, int timeout) {
@@ -230,18 +222,10 @@ static int poll_wait_after_snapshot(uint64_t observed_generation, int timeout) {
     }
     wait_queue_unlock(&readiness_wait);
 
-    if (ret == -EINTR) {
-        errno = EINTR;
-        return -1;
-    }
     if (ret == -ETIMEDOUT) {
         return 0;
     }
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
-    }
-    return 0;
+    return ret;
 }
 
 static int poll_snapshot(struct pollfd *fds, __kernel_ulong_t nfds, bool *has_virtual_out, bool *has_backing_out) {
@@ -339,7 +323,7 @@ static int poll_impl_common(struct pollfd *fds, __kernel_ulong_t nfds, int timeo
             return 0;
         }
         int ret = poll_wait_for_readiness_impl(timeout);
-        if (ret < 0 && errno == EINTR) {
+        if (ret == -EINTR) {
             if (record_restart) {
                 task_restart_record_impl(get_current(), TASK_RESTART_POLL,
                                          (uint64_t)(uintptr_t)fds, (uint64_t)nfds,
@@ -373,13 +357,16 @@ static int poll_impl_common(struct pollfd *fds, __kernel_ulong_t nfds, int timeo
             wait_ms = POLL_HOST_SLICE_MS;
         }
 
-        if (poll_wait_after_snapshot(observed_generation, wait_ms) < 0) {
-            if (errno == EINTR && record_restart) {
-                task_restart_record_impl(get_current(), TASK_RESTART_POLL,
-                                         (uint64_t)(uintptr_t)fds, (uint64_t)nfds,
-                                         (uint64_t)(int64_t)timeout, 0, 0, 0);
+        {
+            int ret = poll_wait_after_snapshot(observed_generation, wait_ms);
+            if (ret < 0) {
+                if (ret == -EINTR && record_restart) {
+                    task_restart_record_impl(get_current(), TASK_RESTART_POLL,
+                                             (uint64_t)(uintptr_t)fds, (uint64_t)nfds,
+                                             (uint64_t)(int64_t)timeout, 0, 0, 0);
+                }
+                return ret;
             }
-            return -1;
         }
         if (timeout > 0) {
             remaining -= wait_ms;
@@ -592,24 +579,4 @@ int select_impl(int nfds,
 
     free(pfds);
     return ready_fds;
-}
-
-__attribute__((visibility("default"))) int poll(struct pollfd *fds, __kernel_ulong_t nfds, int timeout) {
-    return poll_impl(fds, nfds, timeout);
-}
-
-__attribute__((visibility("default"))) int select(int nfds,
-                                                  __kernel_fd_set *readfds,
-                                                  __kernel_fd_set *writefds,
-                                                  __kernel_fd_set *errorfds,
-                                                  struct timeval *timeout) {
-    struct __kernel_old_timeval kernel_timeout;
-    struct __kernel_old_timeval *kernel_timeout_ptr = NULL;
-
-    if (timeout) {
-        kernel_timeout.tv_sec = timeout->tv_sec;
-        kernel_timeout.tv_usec = timeout->tv_usec;
-        kernel_timeout_ptr = &kernel_timeout;
-    }
-    return select_impl(nfds, readfds, writefds, errorfds, kernel_timeout_ptr);
 }

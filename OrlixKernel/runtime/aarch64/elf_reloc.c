@@ -4,21 +4,18 @@
 
 #include "elf_reloc.h"
 
-#include <errno.h>
+#include <linux/errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <linux/elf.h>
+#include <uapi/linux/elf.h>
 
 #include "../../kernel/task.h"
 
 static int read_exact(struct task_struct *task, uint64_t addr, void *buf, size_t size) {
     long nread = task_read_virtual_memory_impl(task, addr, buf, size);
     if (nread != (long)size) {
-        if (nread >= 0) {
-            errno = EFAULT;
-        }
-        return -1;
+        return nread >= 0 ? -EFAULT : (int)nread;
     }
     return 0;
 }
@@ -26,10 +23,7 @@ static int read_exact(struct task_struct *task, uint64_t addr, void *buf, size_t
 static int write_u64(struct task_struct *task, uint64_t addr, uint64_t value) {
     long nwritten = task_write_virtual_memory_impl(task, addr, &value, sizeof(value));
     if (nwritten != (long)sizeof(value)) {
-        if (nwritten >= 0) {
-            errno = EFAULT;
-        }
-        return -1;
+        return nwritten >= 0 ? -EFAULT : (int)nwritten;
     }
     return 0;
 }
@@ -41,8 +35,7 @@ static int relocation_symbol_value(struct task_struct *task,
     Elf64_Sym sym;
 
     if (!out_value) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (symbol_index == 0) {
         *out_value = 0;
@@ -50,8 +43,7 @@ static int relocation_symbol_value(struct task_struct *task,
     }
     if (!dynamic || dynamic->symtab_vaddr == 0 ||
         symbol_index > (UINT64_MAX - dynamic->symtab_vaddr) / sizeof(sym)) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
     if (read_exact(task, dynamic->symtab_vaddr + (symbol_index * sizeof(sym)), &sym, sizeof(sym)) != 0) {
         return -1;
@@ -69,8 +61,7 @@ static int apply_rela(struct task_struct *task,
     uint64_t value;
 
     if (!task || !dynamic || !rela) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     type = ELF64_R_TYPE(rela->r_info);
@@ -84,14 +75,16 @@ static int apply_rela(struct task_struct *task,
     case R_AARCH64_ABS64:
     case R_AARCH64_GLOB_DAT:
     case R_AARCH64_JUMP_SLOT:
-        if (relocation_symbol_value(task, dynamic, symbol_index, &value) != 0) {
-            return -1;
+        {
+            int ret = relocation_symbol_value(task, dynamic, symbol_index, &value);
+            if (ret != 0) {
+                return ret;
+            }
         }
         value += (uint64_t)rela->r_addend;
         return write_u64(task, rela->r_offset, value);
     default:
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 }
 
@@ -108,20 +101,26 @@ static int apply_rela_table(struct task_struct *task,
         return 0;
     }
     if (rela_entry_size != sizeof(Elf64_Rela) || (rela_size % sizeof(Elf64_Rela)) != 0) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     count = rela_size / sizeof(Elf64_Rela);
     for (uint64_t i = 0; i < count; i++) {
         Elf64_Rela rela;
         if (i > (UINT64_MAX - rela_vaddr) / sizeof(rela)) {
-            errno = ENOEXEC;
-            return -1;
+            return -ENOEXEC;
         }
-        if (read_exact(task, rela_vaddr + (i * sizeof(rela)), &rela, sizeof(rela)) != 0 ||
-            apply_rela(task, dynamic, load_base, &rela) != 0) {
-            return -1;
+        {
+            int ret = read_exact(task, rela_vaddr + (i * sizeof(rela)), &rela, sizeof(rela));
+            if (ret != 0) {
+                return ret;
+            }
+        }
+        {
+            int ret = apply_rela(task, dynamic, load_base, &rela);
+            if (ret != 0) {
+                return ret;
+            }
         }
         if (applied) {
             (*applied)++;
@@ -137,8 +136,7 @@ int aarch64_apply_dynamic_relocations(struct task_struct *task,
     uint32_t applied = 0;
 
     if (!task || !dynamic) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (apply_rela_table(task, dynamic, load_base,
@@ -148,8 +146,7 @@ int aarch64_apply_dynamic_relocations(struct task_struct *task,
     }
     if (dynamic->plt_rela_type != 0 &&
         dynamic->plt_rela_type != DT_RELA) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
     if (apply_rela_table(task, dynamic, load_base,
                          dynamic->plt_rela_vaddr, dynamic->plt_rela_size,

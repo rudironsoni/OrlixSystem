@@ -9,6 +9,8 @@ struct stat;
 int backing_stat(const char *path, struct stat *statbuf);
 int backing_lstat(const char *path, struct stat *statbuf);
 int backing_access(const char *path, int mode);
+_Bool backing_path_is_own_sandbox(const char *path);
+_Bool backing_path_is_external(const char *path);
 int backing_directory_is_empty(const char *path);
 int backing_rename_with_flags(int fromfd, const char *from, int tofd, const char *to, unsigned int flags);
 int backing_rename_exchange(const char *from, const char *to);

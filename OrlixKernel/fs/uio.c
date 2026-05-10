@@ -1,6 +1,6 @@
-#include <linux/uio.h>
+#include <uapi/linux/uio.h>
 
-#include <errno.h>
+#include <linux/errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -24,31 +24,27 @@ static long uio_preadv_common(int fd,
     long total = 0;
 
     if (offset < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (iovcnt < 0 || iovcnt > UIO_MAXIOV) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (iovcnt == 0) {
         return 0;
     }
     if (!iov) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     for (int i = 0; i < iovcnt; i++) {
         long nread;
 
         if (iov[i].iov_len != 0 && !iov[i].iov_base) {
-            errno = EFAULT;
-            return total > 0 ? total : -1;
+            return total > 0 ? total : -EFAULT;
         }
         nread = pread_impl(fd, iov[i].iov_base, iov[i].iov_len, offset);
         if (nread < 0) {
-            return total > 0 ? total : -1;
+            return total > 0 ? total : nread;
         }
         total += nread;
         offset += nread;
@@ -67,31 +63,27 @@ static long uio_pwritev_common(int fd,
     long total = 0;
 
     if (offset < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (iovcnt < 0 || iovcnt > UIO_MAXIOV) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (iovcnt == 0) {
         return 0;
     }
     if (!iov) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     for (int i = 0; i < iovcnt; i++) {
         long nwritten;
 
         if (iov[i].iov_len != 0 && !iov[i].iov_base) {
-            errno = EFAULT;
-            return total > 0 ? total : -1;
+            return total > 0 ? total : -EFAULT;
         }
         nwritten = pwrite_impl(fd, iov[i].iov_base, iov[i].iov_len, offset);
         if (nwritten < 0) {
-            return total > 0 ? total : -1;
+            return total > 0 ? total : nwritten;
         }
         total += nwritten;
         offset += nwritten;
@@ -107,27 +99,24 @@ long readv_impl(int fd, const struct iovec *iov, int iovcnt) {
     long total = 0;
 
     if (iovcnt < 0 || iovcnt > UIO_MAXIOV) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (iovcnt == 0) {
         return 0;
     }
     if (!iov) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     for (int i = 0; i < iovcnt; i++) {
         long nread;
 
         if (iov[i].iov_len != 0 && !iov[i].iov_base) {
-            errno = EFAULT;
-            return total > 0 ? total : -1;
+            return total > 0 ? total : -EFAULT;
         }
         nread = read_impl(fd, iov[i].iov_base, iov[i].iov_len);
         if (nread < 0) {
-            return total > 0 ? total : -1;
+            return total > 0 ? total : nread;
         }
         total += nread;
         if ((__kernel_size_t)nread < iov[i].iov_len) {
@@ -142,27 +131,24 @@ long writev_impl(int fd, const struct iovec *iov, int iovcnt) {
     long total = 0;
 
     if (iovcnt < 0 || iovcnt > UIO_MAXIOV) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (iovcnt == 0) {
         return 0;
     }
     if (!iov) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     for (int i = 0; i < iovcnt; i++) {
         long nwritten;
 
         if (iov[i].iov_len != 0 && !iov[i].iov_base) {
-            errno = EFAULT;
-            return total > 0 ? total : -1;
+            return total > 0 ? total : -EFAULT;
         }
         nwritten = write_impl(fd, iov[i].iov_base, iov[i].iov_len);
         if (nwritten < 0) {
-            return total > 0 ? total : -1;
+            return total > 0 ? total : nwritten;
         }
         total += nwritten;
         if ((__kernel_size_t)nwritten < iov[i].iov_len) {
@@ -171,14 +157,6 @@ long writev_impl(int fd, const struct iovec *iov, int iovcnt) {
     }
 
     return total;
-}
-
-__attribute__((visibility("default"))) long readv(int fd, const struct iovec *iov, int iovcnt) {
-    return readv_impl(fd, iov, iovcnt);
-}
-
-__attribute__((visibility("default"))) long writev(int fd, const struct iovec *iov, int iovcnt) {
-    return writev_impl(fd, iov, iovcnt);
 }
 
 long preadv_impl(int fd, const struct iovec *iov, int iovcnt, unsigned long pos_l, unsigned long pos_h) {
@@ -194,10 +172,9 @@ long preadv2_impl(int fd,
                   int iovcnt,
                   unsigned long pos_l,
                   unsigned long pos_h,
-                  int flags) {
+    int flags) {
     if (flags != 0) {
-        errno = EOPNOTSUPP;
-        return -1;
+        return -EOPNOTSUPP;
     }
     return uio_preadv_common(fd, iov, iovcnt, uio_combine_offset(pos_l, pos_h));
 }
@@ -207,10 +184,9 @@ long pwritev2_impl(int fd,
                    int iovcnt,
                    unsigned long pos_l,
                    unsigned long pos_h,
-                   int flags) {
+    int flags) {
     if (flags != 0) {
-        errno = EOPNOTSUPP;
-        return -1;
+        return -EOPNOTSUPP;
     }
     return uio_pwritev_common(fd, iov, iovcnt, uio_combine_offset(pos_l, pos_h));
 }

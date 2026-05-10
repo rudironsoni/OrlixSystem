@@ -45,9 +45,7 @@ int backing_open(const char *path, int flags, uint32_t mode) {
                                             O_NONBLOCK, O_DIRECTORY, O_NOFOLLOW);
     int ret = syscall(SYS_openat, AT_FDCWD, path, darwin_flags, (mode_t)mode);
     if (ret < 0) {
-        int darwin_errno = errno;
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(errno);
     }
     return ret;
 }
@@ -116,9 +114,7 @@ int backing_fstat(int fd, struct stat *statbuf) {
 ssize_t backing_read(int fd, void *buf, size_t count) {
     ssize_t ret = syscall(SYS_read, fd, buf, count);
     if (ret < 0) {
-        int darwin_errno = errno;
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(errno);
     }
     return ret;
 }
@@ -126,9 +122,7 @@ ssize_t backing_read(int fd, void *buf, size_t count) {
 ssize_t backing_write(int fd, const void *buf, size_t count) {
     ssize_t ret = syscall(SYS_write, fd, buf, count);
     if (ret < 0) {
-        int darwin_errno = errno;
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(errno);
     }
     return ret;
 }
@@ -136,9 +130,7 @@ ssize_t backing_write(int fd, const void *buf, size_t count) {
 int64_t backing_lseek(int fd, int64_t offset, int whence) {
     off_t ret = syscall(SYS_lseek, fd, (off_t)offset, whence);
     if (ret < 0) {
-        int darwin_errno = errno;
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(errno);
     }
     return ret;
 }
@@ -150,24 +142,22 @@ int64_t backing_pread(int fd, void *buf, size_t count, int64_t offset) {
         if (darwin_errno == ENOTSUP) {
             off_t original = syscall(SYS_lseek, fd, 0, SEEK_CUR);
             if (original < 0) {
-                return -1;
+                return -linux_errno_from_darwin_errno(errno);
             }
             if (syscall(SYS_lseek, fd, (off_t)offset, SEEK_SET) < 0) {
-                return -1;
+                return -linux_errno_from_darwin_errno(errno);
             }
             ret = syscall(SYS_read_nocancel, fd, buf, count);
             int saved_errno = errno;
             if (syscall(SYS_lseek, fd, original, SEEK_SET) < 0 && ret >= 0) {
-                return -1;
+                return -linux_errno_from_darwin_errno(errno);
             }
             if (ret < 0) {
-                errno = saved_errno;
-                return -1;
+                return -linux_errno_from_darwin_errno(saved_errno);
             }
             return ret;
         }
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(darwin_errno);
     }
     return ret;
 }
@@ -179,24 +169,22 @@ int64_t backing_pwrite(int fd, const void *buf, size_t count, int64_t offset) {
         if (darwin_errno == ENOTSUP) {
             off_t original = syscall(SYS_lseek, fd, 0, SEEK_CUR);
             if (original < 0) {
-                return -1;
+                return -linux_errno_from_darwin_errno(errno);
             }
             if (syscall(SYS_lseek, fd, (off_t)offset, SEEK_SET) < 0) {
-                return -1;
+                return -linux_errno_from_darwin_errno(errno);
             }
             ret = syscall(SYS_write_nocancel, fd, buf, count);
             int saved_errno = errno;
             if (syscall(SYS_lseek, fd, original, SEEK_SET) < 0 && ret >= 0) {
-                return -1;
+                return -linux_errno_from_darwin_errno(errno);
             }
             if (ret < 0) {
-                errno = saved_errno;
-                return -1;
+                return -linux_errno_from_darwin_errno(saved_errno);
             }
             return ret;
         }
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(darwin_errno);
     }
     return ret;
 }
@@ -234,9 +222,7 @@ int backing_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
 int backing_ioctl(int fd, unsigned long request, void *arg) {
     int ret = syscall(SYS_ioctl, fd, request, arg);
     if (ret < 0) {
-        int darwin_errno = errno;
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(errno);
     }
     return ret;
 }
@@ -244,9 +230,7 @@ int backing_ioctl(int fd, unsigned long request, void *arg) {
 int backing_truncate(const char *path, int64_t length) {
     int ret = syscall(SYS_truncate, path, (off_t)length);
     if (ret < 0) {
-        int darwin_errno = errno;
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(errno);
     }
     return ret;
 }
@@ -254,9 +238,7 @@ int backing_truncate(const char *path, int64_t length) {
 int backing_ftruncate(int fd, int64_t length) {
     int ret = syscall(SYS_ftruncate, fd, (off_t)length);
     if (ret < 0) {
-        int darwin_errno = errno;
-        errno = darwin_errno;
-        return -1;
+        return -linux_errno_from_darwin_errno(errno);
     }
     return ret;
 }

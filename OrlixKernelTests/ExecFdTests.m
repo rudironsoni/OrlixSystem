@@ -1,7 +1,8 @@
 #import <XCTest/XCTest.h>
 
-#include "fs/fdtable.h"
 #include "kernel/init.h"
+
+extern int close_impl(int fd);
 
 extern int exec_fd_contract_close_on_exec_closes_only_cloexec_descriptor(void);
 extern int exec_fd_contract_close_on_exec_preserves_descriptor_without_cloexec(void);

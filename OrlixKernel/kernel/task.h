@@ -16,11 +16,8 @@
 #ifndef KERNEL_TASK_H
 #define KERNEL_TASK_H
 
+#include <linux/atomic.h>
 #include <linux/types.h>
-
-#include <stdatomic.h>
-#include <stddef.h>
-#include <stdint.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
@@ -134,12 +131,12 @@ struct task_rlimit {
 struct tty_struct {
     int index;
     int32_t foreground_pgrp;
-    atomic_int refs;
+    atomic_t refs;
 };
 
 /* MM structure - virtual kernel internal */
 struct mm_struct {
-    atomic_int refs;
+    atomic_t refs;
     void *exec_image_base;
     size_t exec_image_size;
     uint64_t exec_entry;
@@ -289,20 +286,20 @@ struct task_struct {
     int32_t pid_ns_level;
 
     /* Virtual task lifecycle state */
-    atomic_int state;
+    atomic_t state;
     int exit_status;
-    atomic_bool exited;
-    atomic_bool signaled;
-    atomic_int termsig;
-    atomic_bool stopped;
-    atomic_int stopsig;
-    atomic_bool continued;
-    atomic_bool stop_report_pending;
-    atomic_bool continue_report_pending;
-    atomic_bool execed;     /* Set after execve() - blocks setpgid per Linux semantics */
+    atomic_t exited;
+    atomic_t signaled;
+    atomic_t termsig;
+    atomic_t stopped;
+    atomic_t stopsig;
+    atomic_t continued;
+    atomic_t stop_report_pending;
+    atomic_t continue_report_pending;
+    atomic_t execed;     /* Set after execve() - blocks setpgid per Linux semantics */
     uint64_t clone_flags;
     uint64_t thread_pending_signals;
-    atomic_bool new_pid_namespace_pending;
+    atomic_t new_pid_namespace_pending;
 
     /* Host thread backing for this virtual task */
     kernel_thread_t thread;
@@ -379,7 +376,7 @@ struct task_struct {
     uint64_t start_time_ns;
 
     /* Reference counting and locking */
-    atomic_int refs;
+    atomic_t refs;
     kernel_mutex_t lock;
 };
 

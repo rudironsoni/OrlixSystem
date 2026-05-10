@@ -2,10 +2,7 @@
 #define FDTABLE_H
 
 #include <linux/types.h>
-
-#include <stdatomic.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <linux/atomic.h>
 
 #include "internal/fs/lock.h"
 
@@ -29,14 +26,14 @@ struct file {
     int64_t pos;
     char path[MAX_PATH];
     void *private_data;
-    atomic_int refs;
+    atomic_t refs;
 };
 
 struct files_struct {
     struct file **fd;
     size_t max_fds;
     fs_mutex_t lock;
-    atomic_int refs;
+    atomic_t refs;
 };
 
 struct files_struct *alloc_files(size_t max_fds);

@@ -1,4 +1,5 @@
-#include <linux/fcntl.h>
+#include <uapi/linux/errno.h>
+#include <uapi/linux/fcntl.h>
 #ifdef SIGPIPE
 #undef SIGPIPE
 #endif
@@ -6,15 +7,14 @@
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 
-#include <linux/poll.h>
+#include <uapi/linux/poll.h>
 
 #include "pipe.h"
 
-#include <errno.h>
 #include <stdatomic.h>
-#include <stdlib.h>
-#include <string.h>
+#include <linux/string.h>
 
+#include "internal/slab.h"
 #include "../kernel/signal.h"
 #include "../kernel/task.h"
 #include "../kernel/wait_queue.h"
@@ -46,7 +46,7 @@ static size_t pipe_space_locked(const struct pipe_object *pipe) {
 }
 
 static void pipe_free_endpoint(struct pipe_endpoint *endpoint) {
-    free(endpoint);
+    kfree(endpoint);
 }
 
 int pipe_create_endpoint_pair(struct pipe_endpoint **read_end, struct pipe_endpoint **write_end) {
@@ -55,20 +55,21 @@ int pipe_create_endpoint_pair(struct pipe_endpoint **read_end, struct pipe_endpo
     struct pipe_endpoint *writer;
 
     if (!read_end || !write_end) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    pipe = calloc(1, sizeof(*pipe));
-    reader = calloc(1, sizeof(*reader));
-    writer = calloc(1, sizeof(*writer));
+    pipe = __kmalloc_noprof(sizeof(*pipe), GFP_KERNEL);
+    reader = __kmalloc_noprof(sizeof(*reader), GFP_KERNEL);
+    writer = __kmalloc_noprof(sizeof(*writer), GFP_KERNEL);
     if (!pipe || !reader || !writer) {
-        free(pipe);
-        free(reader);
-        free(writer);
-        errno = ENOMEM;
-        return -1;
+        kfree(pipe);
+        kfree(reader);
+        kfree(writer);
+        return -ENOMEM;
     }
+    __builtin_memset(pipe, 0, sizeof(*pipe));
+    __builtin_memset(reader, 0, sizeof(*reader));
+    __builtin_memset(writer, 0, sizeof(*writer));
 
     pipe->readers = 1;
     pipe->writers = 1;
@@ -113,7 +114,7 @@ void pipe_close_endpoint_impl(struct pipe_endpoint *endpoint) {
     pipe_free_endpoint(endpoint);
     if (should_free_pipe) {
         wait_queue_destroy(&pipe->wait);
-        free(pipe);
+        kfree(pipe);
     }
     poll_notify_readiness_impl();
 }
@@ -135,12 +136,10 @@ ssize_t pipe_read_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
     size_t first;
 
     if (!endpoint || !endpoint->pipe || !endpoint->read_end) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!buf && count > 0) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (count == 0) {
         return 0;
@@ -155,13 +154,11 @@ ssize_t pipe_read_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
         }
         if (nonblock) {
             wait_queue_unlock(&pipe->wait);
-            errno = EAGAIN;
-            return -1;
+            return -EAGAIN;
         }
         if (wait_queue_wait_locked_interruptible(&pipe->wait) != 0) {
             wait_queue_unlock(&pipe->wait);
-            errno = EINTR;
-            return -1;
+            return -EINTR;
         }
     }
 
@@ -170,9 +167,9 @@ ssize_t pipe_read_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
     if (first > PIPE_BUFFER_SIZE - pipe->head) {
         first = PIPE_BUFFER_SIZE - pipe->head;
     }
-    memcpy(buf, pipe->buffer + pipe->head, first);
+    __builtin_memcpy(buf, pipe->buffer + pipe->head, first);
     if (first < to_read) {
-        memcpy((unsigned char *)buf + first, pipe->buffer, to_read - first);
+        __builtin_memcpy((unsigned char *)buf + first, pipe->buffer, to_read - first);
     }
     pipe->head = (pipe->head + to_read) % PIPE_BUFFER_SIZE;
     pipe->len -= to_read;
@@ -190,12 +187,10 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     size_t first;
 
     if (!endpoint || !endpoint->pipe || endpoint->read_end) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!buf && count > 0) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (count == 0) {
         return 0;
@@ -206,8 +201,7 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     if (pipe->readers == 0) {
         wait_queue_unlock(&pipe->wait);
         signal_generate_task(get_current(), SIGPIPE);
-        errno = EPIPE;
-        return -1;
+        return -EPIPE;
     }
 
     space = pipe_space_locked(pipe);
@@ -215,18 +209,15 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
         if (pipe->readers == 0) {
             wait_queue_unlock(&pipe->wait);
             signal_generate_task(get_current(), SIGPIPE);
-            errno = EPIPE;
-            return -1;
+            return -EPIPE;
         }
         if (nonblock) {
             wait_queue_unlock(&pipe->wait);
-            errno = EAGAIN;
-            return -1;
+            return -EAGAIN;
         }
         if (wait_queue_wait_locked_interruptible(&pipe->wait) != 0) {
             wait_queue_unlock(&pipe->wait);
-            errno = EINTR;
-            return -1;
+            return -EINTR;
         }
         space = pipe_space_locked(pipe);
     }
@@ -237,9 +228,9 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     if (first > PIPE_BUFFER_SIZE - tail) {
         first = PIPE_BUFFER_SIZE - tail;
     }
-    memcpy(pipe->buffer + tail, buf, first);
+    __builtin_memcpy(pipe->buffer + tail, buf, first);
     if (first < to_write) {
-        memcpy(pipe->buffer, (const unsigned char *)buf + first, to_write - first);
+        __builtin_memcpy(pipe->buffer, (const unsigned char *)buf + first, to_write - first);
     }
     pipe->len += to_write;
     wait_queue_wake_all_locked(&pipe->wait);
@@ -254,12 +245,10 @@ ssize_t pipe_peek_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
     size_t first;
 
     if (!endpoint || !endpoint->pipe || !endpoint->read_end) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!buf && count > 0) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (count == 0) {
         return 0;
@@ -273,9 +262,9 @@ ssize_t pipe_peek_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
         first = PIPE_BUFFER_SIZE - pipe->head;
     }
     if (to_read > 0) {
-        memcpy(buf, pipe->buffer + pipe->head, first);
+        __builtin_memcpy(buf, pipe->buffer + pipe->head, first);
         if (first < to_read) {
-            memcpy((unsigned char *)buf + first, pipe->buffer, to_read - first);
+            __builtin_memcpy((unsigned char *)buf + first, pipe->buffer, to_read - first);
         }
     }
     wait_queue_unlock(&pipe->wait);
@@ -292,8 +281,7 @@ ssize_t pipe_tee_between_endpoints_impl(struct pipe_endpoint *src, struct pipe_e
     size_t dst_first;
 
     if (!src || !dst || !src->pipe || !dst->pipe) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (count == 0) {
         return 0;
@@ -309,9 +297,9 @@ ssize_t pipe_tee_between_endpoints_impl(struct pipe_endpoint *src, struct pipe_e
         src_first = PIPE_BUFFER_SIZE - src_pipe->head;
     }
     if (to_copy > 0) {
-        memcpy(buffer, src_pipe->buffer + src_pipe->head, src_first);
+        __builtin_memcpy(buffer, src_pipe->buffer + src_pipe->head, src_first);
         if (src_first < to_copy) {
-            memcpy(buffer + src_first, src_pipe->buffer, to_copy - src_first);
+            __builtin_memcpy(buffer + src_first, src_pipe->buffer, to_copy - src_first);
         }
     }
     wait_queue_unlock(&src_pipe->wait);
@@ -324,18 +312,15 @@ ssize_t pipe_tee_between_endpoints_impl(struct pipe_endpoint *src, struct pipe_e
     while (pipe_space_locked(dst_pipe) == 0) {
         if (dst_pipe->readers == 0) {
             wait_queue_unlock(&dst_pipe->wait);
-            errno = EPIPE;
-            return -1;
+            return -EPIPE;
         }
         if (nonblock) {
             wait_queue_unlock(&dst_pipe->wait);
-            errno = EAGAIN;
-            return -1;
+            return -EAGAIN;
         }
         if (wait_queue_wait_locked_interruptible(&dst_pipe->wait) != 0) {
             wait_queue_unlock(&dst_pipe->wait);
-            errno = EINTR;
-            return -1;
+            return -EINTR;
         }
     }
     if (to_copy > pipe_space_locked(dst_pipe)) {
@@ -346,9 +331,9 @@ ssize_t pipe_tee_between_endpoints_impl(struct pipe_endpoint *src, struct pipe_e
     if (dst_first > PIPE_BUFFER_SIZE - dst_tail) {
         dst_first = PIPE_BUFFER_SIZE - dst_tail;
     }
-    memcpy(dst_pipe->buffer + dst_tail, buffer, dst_first);
+    __builtin_memcpy(dst_pipe->buffer + dst_tail, buffer, dst_first);
     if (dst_first < to_copy) {
-        memcpy(dst_pipe->buffer, buffer + dst_first, to_copy - dst_first);
+        __builtin_memcpy(dst_pipe->buffer, buffer + dst_first, to_copy - dst_first);
     }
     dst_pipe->len += to_copy;
     wait_queue_wake_all_locked(&dst_pipe->wait);
@@ -419,8 +404,7 @@ short pipe_poll_wait_revents_impl(struct pipe_endpoint *endpoint, short events) 
 
         if (wait_queue_wait_locked_interruptible(&pipe->wait) != 0) {
             wait_queue_unlock(&pipe->wait);
-            errno = EINTR;
-            return -1;
+            return -EINTR;
         }
     }
 }
@@ -443,41 +427,39 @@ int pipe2_impl(int pipefd[2], int flags) {
     int supported_flags = O_CLOEXEC | O_NONBLOCK;
 
     if (!pipefd) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (flags & ~supported_flags) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (pipe_create_endpoint_pair(&read_end, &write_end) != 0) {
-        return -1;
+        return -ENOMEM;
     }
 
     read_fd = alloc_fd_impl();
     if (read_fd < 0) {
         pipe_close_endpoint_impl(read_end);
         pipe_close_endpoint_impl(write_end);
-        return -1;
+        return read_fd;
     }
     if (init_pipe_fd_entry_impl(read_fd, O_RDONLY | (flags & supported_flags), read_end) != 0) {
         free_fd_impl(read_fd);
         pipe_close_endpoint_impl(read_end);
         pipe_close_endpoint_impl(write_end);
-        return -1;
+        return -ENOMEM;
     }
 
     write_fd = alloc_fd_impl();
     if (write_fd < 0) {
         free_fd_impl(read_fd);
         pipe_close_endpoint_impl(write_end);
-        return -1;
+        return write_fd;
     }
     if (init_pipe_fd_entry_impl(write_fd, O_WRONLY | (flags & supported_flags), write_end) != 0) {
         free_fd_impl(read_fd);
         free_fd_impl(write_fd);
         pipe_close_endpoint_impl(write_end);
-        return -1;
+        return -ENOMEM;
     }
 
     pipefd[0] = read_fd;
@@ -487,12 +469,4 @@ int pipe2_impl(int pipefd[2], int flags) {
 
 int pipe_impl(int pipefd[2]) {
     return pipe2_impl(pipefd, 0);
-}
-
-__attribute__((visibility("default"))) int pipe(int pipefd[2]) {
-    return pipe_impl(pipefd);
-}
-
-__attribute__((visibility("default"))) int pipe2(int pipefd[2], int flags) {
-    return pipe2_impl(pipefd, flags);
 }

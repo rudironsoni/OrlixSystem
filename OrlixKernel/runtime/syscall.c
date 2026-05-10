@@ -1,10 +1,10 @@
 #include "syscall.h"
 
-#include <asm/unistd.h>
+#include <uapi/asm/unistd.h>
 #define sigaction syscall_sigaction_frame
 #define sigset_t syscall_sigset_frame
 #define stack_t syscall_sigaltstack_frame
-#include <asm/signal.h>
+#include <uapi/asm/signal.h>
 #undef sigaction
 #undef sigset_t
 #undef stack_t
@@ -155,26 +155,21 @@
 #ifdef SA_RESTORER
 #undef SA_RESTORER
 #endif
-#include <linux/fcntl.h>
-#include <linux/futex.h>
-#include <linux/mount.h>
-#include <linux/mman.h>
-#include <linux/openat2.h>
-#include <linux/pidfd.h>
-#include <linux/sched.h>
-#include <linux/stat.h>
-#include <linux/time.h>
-#include <linux/time_types.h>
-#include <linux/utsname.h>
-#include <linux/xattr.h>
+#include <uapi/linux/errno.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/futex.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/openat2.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/time.h>
+#include <uapi/linux/time_types.h>
+#include <uapi/linux/types.h>
 
-#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "../fs/fdtable.h"
-#include "../fs/eventpoll.h"
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
@@ -194,7 +189,13 @@ extern int mount_impl(const char *source, const char *target,
                       const void *data);
 extern int umount2_impl(const char *target, int flags);
 
+struct epoll_instance;
+struct epoll_event;
 extern int openat_impl(int dirfd, const char *pathname, int flags, uint32_t mode);
+extern int epoll_create1_impl(int flags);
+extern int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event);
+extern int epoll_wait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout);
+extern int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout);
 extern long sys_socket(int domain, int type, int protocol);
 extern long sys_socketpair(int domain, int type, int protocol, int *sv);
 extern long sys_connect(int sockfd, void *addr, int addrlen);
@@ -249,7 +250,7 @@ extern int statx_impl(int dirfd, const char *pathname, int flags, unsigned int m
 extern int truncate_impl(const char *path, int64_t length);
 extern int ftruncate_impl(int fd, int64_t length);
 extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
-extern char *getcwd_impl(char *buf, size_t size);
+extern int getcwd_impl(char *buf, size_t size);
 extern int chdir_impl(const char *path);
 extern int fchdir_impl(int fd);
 extern int fchmod_impl(int fd, uint32_t mode);
@@ -287,7 +288,7 @@ extern int mkdirat_impl(int dirfd, const char *pathname, uint32_t mode);
 extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
                           const char *newpath, unsigned int flags);
-extern int execve(const char *pathname, char *const argv[], char *const envp[]);
+extern int execve_impl(const char *pathname, char *const argv[], char *const envp[]);
 extern int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *const envp[],
                          int flags);
 extern void exit_impl(int status);
@@ -317,13 +318,21 @@ extern int removexattr_impl(const char *path, const char *name);
 extern int lremovexattr_impl(const char *path, const char *name);
 extern int fremovexattr_impl(int fd, const char *name);
 
+struct syscall_sigaction_frame {
+    __sighandler_t sa_handler;
+    unsigned long sa_flags;
+    __sigrestore_t sa_restorer;
+    syscall_sigset_frame sa_mask;
+};
+
+static long syscall_result(long ret);
+
 static int syscall_copy_sigset_to_mask(const uint64_t *sigset, size_t sigsetsize,
                                        struct signal_mask_bits *mask) {
     if (!mask || sigsetsize != sizeof(uint64_t)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
-    memset(mask, 0, sizeof(*mask));
+    __builtin_memset(mask, 0, sizeof(*mask));
     if (sigset) {
         mask->sig[0] = *sigset;
     }
@@ -333,8 +342,7 @@ static int syscall_copy_sigset_to_mask(const uint64_t *sigset, size_t sigsetsize
 static int syscall_copy_mask_to_sigset(const struct signal_mask_bits *mask, uint64_t *sigset,
                                        size_t sigsetsize) {
     if (!mask || !sigset || sigsetsize != sizeof(uint64_t)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     *sigset = mask->sig[0];
     return 0;
@@ -383,8 +391,9 @@ static long syscall_clock_nanosleep(__kernel_clockid_t clk_id, int flags,
 
     if ((flags & 1) != 0) {
         struct __kernel_timespec now;
-        if (clock_gettime_impl(clk_id, &now) != 0) {
-            return -(long)errno;
+        long ret = clock_gettime_impl(clk_id, &now);
+        if (ret < 0) {
+            return ret;
         }
         if (req->tv_sec < now.tv_sec ||
             (req->tv_sec == now.tv_sec && req->tv_nsec <= now.tv_nsec)) {
@@ -401,12 +410,15 @@ static long syscall_clock_nanosleep(__kernel_clockid_t clk_id, int flags,
         sleep_req.tv_nsec = (long)req->tv_nsec;
     }
 
-    if (nanosleep_impl(&sleep_req, rem ? &sleep_rem : NULL) != 0) {
-        if (rem && (flags & 1) == 0) {
-            rem->tv_sec = sleep_rem.tv_sec;
-            rem->tv_nsec = sleep_rem.tv_nsec;
+    {
+        long ret = nanosleep_impl(&sleep_req, rem ? &sleep_rem : NULL);
+        if (ret < 0) {
+            if (rem && (flags & 1) == 0) {
+                rem->tv_sec = sleep_rem.tv_sec;
+                rem->tv_nsec = sleep_rem.tv_nsec;
+            }
+            return ret;
         }
-        return -(long)errno;
     }
     if (rem && (flags & 1) == 0) {
         rem->tv_sec = 0;
@@ -466,7 +478,7 @@ static long syscall_pidfd_send_signal(int pidfd, int32_t sig, const void *info,
     target = pidfd_get_task_entry_impl(entry);
     put_fd_entry_impl(entry);
     if (!target) {
-        return errno == 0 ? -ESRCH : -(long)errno;
+        return -ESRCH;
     }
 
     result = signal_send_process(target, sig);
@@ -495,17 +507,19 @@ static long syscall_pidfd_getfd(int pidfd, int targetfd, unsigned int flags) {
     target = pidfd_get_task_entry_impl(entry);
     put_fd_entry_impl(entry);
     if (!target) {
-        return errno == 0 ? -ESRCH : -(long)errno;
+        return -ESRCH;
     }
-    if (task_pidfd_getfd_access_impl(target) != 0) {
-        long err = errno == 0 ? EPERM : errno;
+    {
+        long err = task_pidfd_getfd_access_impl(target);
+        if (err != 0) {
         free_task(target);
-        return -err;
+        return err < 0 ? err : -EPERM;
+        }
     }
 
     dupfd = pidfd_getfd_impl(target, targetfd, flags);
     free_task(target);
-    return dupfd < 0 ? -(long)errno : (long)dupfd;
+    return syscall_result((long)dupfd);
 }
 
 static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) {
@@ -519,7 +533,7 @@ static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) 
 
     child_pid = clone_impl((uint64_t)flags);
     if (child_pid < 0) {
-        return -(long)errno;
+        return child_pid;
     }
 
     child = task_lookup(child_pid);
@@ -541,7 +555,7 @@ static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) 
 
 static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *linux_act,
                                          struct signal_action_slot *act) {
-    memset(act, 0, sizeof(*act));
+    __builtin_memset(act, 0, sizeof(*act));
     if (!linux_act) {
         return;
     }
@@ -553,7 +567,7 @@ static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *l
 
 static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
                                        struct syscall_sigaction_frame *linux_act) {
-    memset(linux_act, 0, sizeof(*linux_act));
+    __builtin_memset(linux_act, 0, sizeof(*linux_act));
     if (!act) {
         return;
     }
@@ -565,7 +579,7 @@ static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
 
 static void syscall_sigaltstack_from_linux(const syscall_sigaltstack_frame *linux_stack,
                                            struct signal_altstack *stack) {
-    memset(stack, 0, sizeof(*stack));
+    __builtin_memset(stack, 0, sizeof(*stack));
     if (!linux_stack) {
         return;
     }
@@ -576,7 +590,7 @@ static void syscall_sigaltstack_from_linux(const syscall_sigaltstack_frame *linu
 
 static void syscall_sigaltstack_to_linux(const struct signal_altstack *stack,
                                          syscall_sigaltstack_frame *linux_stack) {
-    memset(linux_stack, 0, sizeof(*linux_stack));
+    __builtin_memset(linux_stack, 0, sizeof(*linux_stack));
     if (!stack) {
         return;
     }
@@ -587,11 +601,10 @@ static void syscall_sigaltstack_to_linux(const struct signal_altstack *stack,
 
 static long syscall_result(long ret) {
     if (ret < 0) {
-        int saved_errno = errno;
-        if (saved_errno <= 0) {
-            saved_errno = EINVAL;
+        if (ret >= -4095) {
+            return ret;
         }
-        return -(long)saved_errno;
+        return -EINVAL;
     }
     return ret;
 }
@@ -603,16 +616,15 @@ static int ppoll_timeout_ms(const struct __kernel_timespec *timeout) {
         return -1;
     }
     if (timeout->tv_sec < 0 || timeout->tv_nsec < 0 || timeout->tv_nsec >= 1000000000L) {
-        errno = EINVAL;
-        return -2;
+        return -EINVAL;
     }
-    if (timeout->tv_sec > (INT64_MAX / 1000)) {
-        return INT32_MAX;
+    if (timeout->tv_sec > 9223372036854775LL) {
+        return 2147483647;
     }
     ms = (int64_t)timeout->tv_sec * 1000;
     ms += (timeout->tv_nsec + 999999L) / 1000000L;
-    if (ms > INT32_MAX) {
-        return INT32_MAX;
+    if (ms > 2147483647LL) {
+        return 2147483647;
     }
     return (int)ms;
 }
@@ -627,8 +639,7 @@ static int syscall_timespec_to_timeval(const struct __kernel_timespec *timeout, 
         return 0;
     }
     if (timeout->tv_sec < 0 || timeout->tv_nsec < 0 || timeout->tv_nsec >= 1000000000L) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     timeval->tv_sec = timeout->tv_sec;
     timeval->tv_usec = (int)((timeout->tv_nsec + 999L) / 1000L);
@@ -652,14 +663,16 @@ static int syscall_apply_temporary_sigmask(const struct syscall_sigmask_arg *arg
         return 0;
     }
     if (arg->ss_len != sizeof(uint64_t)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (syscall_copy_sigset_to_mask(arg->ss, arg->ss_len, &new_mask) != 0) {
-        return -1;
+        return -EINVAL;
     }
-    if (do_sigsetmask(&new_mask, old_mask) != 0) {
-        return -1;
+    {
+        int ret = do_sigsetmask(&new_mask, old_mask);
+        if (ret != 0) {
+            return ret;
+        }
     }
     *changed = 1;
     return 0;
@@ -1074,8 +1087,8 @@ static long syscall_dispatch_inner_impl(long number,
         }
         if ((op == FUTEX_WAIT || op == FUTEX_WAIT_BITSET) && arg3) {
             timeout_ms = ppoll_timeout_ms((const struct __kernel_timespec *)(uintptr_t)arg3);
-            if (timeout_ms == -2) {
-                return -(long)errno;
+            if (timeout_ms < 0) {
+                return timeout_ms;
             }
         }
         if (op == FUTEX_WAIT) {
@@ -1191,31 +1204,31 @@ static long syscall_dispatch_inner_impl(long number,
         case TASK_RESTART_NANOSLEEP:
             ret = nanosleep_impl((const struct __kernel_timespec *)(uintptr_t)arg0,
                                  (struct __kernel_timespec *)(uintptr_t)arg1);
-            return ret < 0 ? -(long)errno : ret;
+            return syscall_result(ret);
         case TASK_RESTART_POLL:
             ret = poll_impl((struct pollfd *)(uintptr_t)arg0, (__kernel_ulong_t)arg1, (int)arg2);
-            return ret < 0 ? -(long)errno : ret;
+            return syscall_result(ret);
         case TASK_RESTART_PIPE_READ:
             ret = read_impl((int)arg0, (void *)(uintptr_t)arg1, (size_t)arg2);
-            return ret < 0 ? -(long)errno : ret;
+            return syscall_result(ret);
         case TASK_RESTART_PIPE_WRITE:
             ret = write_impl((int)arg0, (const void *)(uintptr_t)arg1, (size_t)arg2);
-            return ret < 0 ? -(long)errno : ret;
+            return syscall_result(ret);
         case TASK_RESTART_FUTEX_WAIT:
             ret = futex_wait_impl((int *)(uintptr_t)arg0, (int)arg1, (int)arg2);
-            return ret < 0 ? -(long)errno : ret;
+            return syscall_result(ret);
         case TASK_RESTART_WAITPID:
             ret = waitpid_impl((__kernel_pid_t)arg0, (int *)(uintptr_t)arg1, (int)arg2);
-            return ret < 0 ? -(long)errno : ret;
+            return syscall_result(ret);
         case TASK_RESTART_SELECT:
             ret = select_impl((int)arg0, (__kernel_fd_set *)(uintptr_t)arg1,
                               (__kernel_fd_set *)(uintptr_t)arg2, (__kernel_fd_set *)(uintptr_t)arg3,
                               (struct __kernel_old_timeval *)(uintptr_t)arg4);
-            return ret < 0 ? -(long)errno : ret;
+            return syscall_result(ret);
         case TASK_RESTART_EPOLL_WAIT:
             ret = epoll_wait_impl((int)arg0, (struct epoll_event *)(uintptr_t)arg1,
                                   (int)arg2, (int)arg3);
-            return ret < 0 ? -(long)errno : ret;
+            return syscall_result(ret);
         default:
             (void)arg4;
             (void)arg5;
@@ -1232,8 +1245,9 @@ static long syscall_dispatch_inner_impl(long number,
             return -EINVAL;
         }
         if (arg1) {
-            if (syscall_copy_sigset_to_mask((const uint64_t *)(uintptr_t)arg1, (size_t)arg3, &set) != 0) {
-                return -(long)errno;
+            int ret = syscall_copy_sigset_to_mask((const uint64_t *)(uintptr_t)arg1, (size_t)arg3, &set);
+            if (ret != 0) {
+                return ret;
             }
             set_ptr = &set;
         }
@@ -1246,8 +1260,11 @@ static long syscall_dispatch_inner_impl(long number,
                 return ret;
             }
         }
-        if (arg2 && syscall_copy_mask_to_sigset(&oldset, (uint64_t *)(uintptr_t)arg2, (size_t)arg3) != 0) {
-            return -(long)errno;
+        if (arg2) {
+            int ret = syscall_copy_mask_to_sigset(&oldset, (uint64_t *)(uintptr_t)arg2, (size_t)arg3);
+            if (ret != 0) {
+                return ret;
+            }
         }
         return 0;
     }
@@ -1266,8 +1283,8 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)getdents64_impl((int)arg0, (void *)(uintptr_t)arg1, (size_t)arg2));
     case __NR_ppoll: {
         int timeout_ms = ppoll_timeout_ms((const struct __kernel_timespec *)(uintptr_t)arg2);
-        if (timeout_ms == -2) {
-            return -(long)errno;
+        if (timeout_ms < 0 && timeout_ms != -1) {
+            return timeout_ms;
         }
         return syscall_result((long)poll_impl((struct pollfd *)(uintptr_t)arg0, (__kernel_ulong_t)arg1, timeout_ms));
     }
@@ -1280,14 +1297,18 @@ static long syscall_dispatch_inner_impl(long number,
         int ret;
 
         if (arg4) {
-            if (syscall_timespec_to_timeval((const struct __kernel_timespec *)(uintptr_t)arg4,
-                                            &timeout_value) != 0) {
-                return -(long)errno;
+            int err = syscall_timespec_to_timeval((const struct __kernel_timespec *)(uintptr_t)arg4,
+                                                  &timeout_value);
+            if (err != 0) {
+                return err;
             }
             timeout_ptr = &timeout_value;
         }
-        if (syscall_apply_temporary_sigmask(sigmask_arg, &old_mask, &mask_changed) != 0) {
-            return -(long)errno;
+        {
+            int err = syscall_apply_temporary_sigmask(sigmask_arg, &old_mask, &mask_changed);
+            if (err != 0) {
+                return err;
+            }
         }
         ret = select_impl((int)arg0, (__kernel_fd_set *)(uintptr_t)arg1,
                           (__kernel_fd_set *)(uintptr_t)arg2,
@@ -1310,8 +1331,11 @@ static long syscall_dispatch_inner_impl(long number,
         int mask_changed = 0;
         int ret;
 
-        if (syscall_apply_temporary_sigmask(arg4 ? &sigmask_arg : NULL, &old_mask, &mask_changed) != 0) {
-            return -(long)errno;
+        {
+            int err = syscall_apply_temporary_sigmask(arg4 ? &sigmask_arg : NULL, &old_mask, &mask_changed);
+            if (err != 0) {
+                return err;
+            }
         }
         ret = epoll_pwait_impl((int)arg0, (struct epoll_event *)(uintptr_t)arg1,
                                (int)arg2, (int)arg3);
@@ -1359,10 +1383,28 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_getcwd: {
         char *buf = (char *)(uintptr_t)arg0;
         size_t size = (size_t)arg1;
-        if (!getcwd_impl(buf, size)) {
-            return -(long)errno;
+        struct task_struct *task = get_current();
+        char virtual_path[MAX_PATH];
+        int ret;
+
+        if (!buf) {
+            return -EFAULT;
         }
-        return (long)strlen(buf) + 1;
+        if (size == 0) {
+            return -EINVAL;
+        }
+        if (!task || !task->fs) {
+            return -ESRCH;
+        }
+        ret = vfs_getcwd_path_task(task->fs, virtual_path, sizeof(virtual_path));
+        if (ret != 0) {
+            return ret;
+        }
+        if (__builtin_strlen(virtual_path) >= size) {
+            return -ERANGE;
+        }
+        __builtin_memcpy(buf, virtual_path, __builtin_strlen(virtual_path) + 1);
+        return (long)__builtin_strlen(virtual_path) + 1;
     }
     case __NR_chdir:
         return syscall_result((long)chdir_impl((const char *)(uintptr_t)arg0));
@@ -1596,6 +1638,7 @@ static long syscall_dispatch_inner_impl(long number,
         struct __kernel_timespec *linux_rem = (struct __kernel_timespec *)(uintptr_t)arg1;
         struct __kernel_timespec req;
         struct __kernel_timespec rem;
+        long ret;
 
         if (!linux_req) {
             return -EFAULT;
@@ -1605,12 +1648,13 @@ static long syscall_dispatch_inner_impl(long number,
         }
         req.tv_sec = (__kernel_old_time_t)linux_req->tv_sec;
         req.tv_nsec = (long)linux_req->tv_nsec;
-        if (nanosleep_impl(&req, linux_rem ? &rem : NULL) != 0) {
+        ret = nanosleep_impl(&req, linux_rem ? &rem : NULL);
+        if (ret < 0) {
             if (linux_rem) {
                 linux_rem->tv_sec = rem.tv_sec;
                 linux_rem->tv_nsec = rem.tv_nsec;
             }
-            return -(long)errno;
+            return ret;
         }
         if (linux_rem) {
             linux_rem->tv_sec = 0;
@@ -1691,9 +1735,9 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)getrandom_impl((void *)(uintptr_t)arg0, (size_t)arg1,
                                                    (unsigned int)arg2));
     case __NR_execve:
-        return syscall_result((long)execve((const char *)(uintptr_t)arg0,
-                                           (char *const *)(uintptr_t)arg1,
-                                           (char *const *)(uintptr_t)arg2));
+        return syscall_result((long)execve_impl((const char *)(uintptr_t)arg0,
+                                                (char *const *)(uintptr_t)arg1,
+                                                (char *const *)(uintptr_t)arg2));
     case __NR_execveat:
         return syscall_result((long)execveat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                   (char *const *)(uintptr_t)arg2,

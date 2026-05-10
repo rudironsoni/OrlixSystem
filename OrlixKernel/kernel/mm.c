@@ -7,15 +7,18 @@
 
 #include "../fs/fdtable.h"
 
-#include <errno.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
-#include <linux/elf.h>
-#include <linux/fcntl.h>
-#include <linux/mman.h>
+#include <uapi/linux/errno.h>
+#include <linux/gfp_types.h>
+#include <linux/string.h>
+
+#include <uapi/linux/elf.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#define BUILD_VDSO 1
+#include <uapi/linux/mman.h>
+#undef BUILD_VDSO
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
@@ -57,8 +60,37 @@ extern long long read_impl(int fd, void *buf, size_t count);
 extern long long write_impl(int fd, const void *buf, size_t count);
 extern int open_impl(const char *path, int flags, unsigned int mode);
 extern int close_impl(int fd);
+extern void *__kmalloc_noprof(size_t size, gfp_t flags);
+extern void kfree(const void *objp);
 
 static long long mm_fd_pread(int fd, void *buf, size_t count, long long offset);
+
+static void *err_ptr_impl(long error) {
+    return (void *)(intptr_t)error;
+}
+
+static long ptr_err_impl(const void *ptr) {
+    return (long)(intptr_t)ptr;
+}
+
+static bool is_err_impl(const void *ptr) {
+    long error = ptr_err_impl(ptr);
+    return error < 0 && error >= -4095;
+}
+
+#define ERR_PTR(err) err_ptr_impl(err)
+#define PTR_ERR(ptr) ptr_err_impl(ptr)
+#define IS_ERR(ptr) is_err_impl(ptr)
+
+static void *mm_alloc_array(uint64_t count, size_t elem_size) {
+    size_t bytes;
+
+    if (count == 0 || elem_size == 0 || count > SIZE_MAX / elem_size) {
+        return NULL;
+    }
+    bytes = (size_t)count * elem_size;
+    return __kmalloc_noprof(bytes, GFP_KERNEL | __GFP_ZERO);
+}
 
 static void mm_shared_mapping_get(struct vm_shared_mapping *mapping) {
     if (mapping) {
@@ -85,7 +117,7 @@ static void mm_shared_mapping_put(struct vm_shared_mapping *mapping) {
     }
     kernel_mutex_unlock(&mm_shared_mapping_lock);
 
-    free(mapping);
+    kfree(mapping);
 }
 
 void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping) {
@@ -97,10 +129,9 @@ void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping) {
 }
 
 static struct vm_private_page *mm_private_page_alloc(const void *source, size_t source_len) {
-    struct vm_private_page *page = calloc(1, sizeof(*page));
+    struct vm_private_page *page = __kmalloc_noprof(sizeof(*page), GFP_KERNEL | __GFP_ZERO);
 
     if (!page) {
-        errno = ENOMEM;
         return NULL;
     }
     atomic_init(&page->refs, 1);
@@ -130,7 +161,7 @@ void mm_private_page_put_impl(struct vm_private_page *page) {
         return;
     }
     if (atomic_fetch_sub(&page->refs, 1) == 1) {
-        free(page);
+        kfree(page);
     }
 }
 
@@ -141,7 +172,7 @@ static void mm_private_pages_put(struct vm_private_page **pages, uint64_t page_c
     for (uint64_t i = 0; i < page_count; i++) {
         mm_private_page_put_impl(pages[i]);
     }
-    free(pages);
+    kfree(pages);
 }
 
 static int mm_private_vma_enable_cow(struct task_vma *vma) {
@@ -152,13 +183,11 @@ static int mm_private_vma_enable_cow(struct task_vma *vma) {
         return 0;
     }
     if (!vma->image || vma->page_count == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
-    pages = calloc((size_t)vma->page_count, sizeof(*pages));
+    pages = __kmalloc_noprof((size_t)vma->page_count * sizeof(*pages), GFP_KERNEL | __GFP_ZERO);
     if (!pages) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     for (uint64_t i = 0; i < vma->page_count; i++) {
         size_t offset = (size_t)(i * TASK_VMA_PAGE_SIZE);
@@ -167,10 +196,10 @@ static int mm_private_vma_enable_cow(struct task_vma *vma) {
         pages[i] = mm_private_page_alloc((const unsigned char *)vma->image + offset, remaining);
         if (!pages[i]) {
             mm_private_pages_put(pages, vma->page_count);
-            return -1;
+            return -ENOMEM;
         }
     }
-    free(vma->image);
+    kfree(vma->image);
     vma->image = pages[0]->image;
     vma->private_pages = pages;
     return 0;
@@ -188,8 +217,7 @@ long mm_private_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, si
     offset = addr - vma->start;
     page_index = offset / TASK_VMA_PAGE_SIZE;
     if (page_index >= vma->page_count || !vma->private_pages[page_index]) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     page_offset = (size_t)(offset % TASK_VMA_PAGE_SIZE);
     to_copy = count;
@@ -218,8 +246,7 @@ long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *
     offset = addr - vma->start;
     page_index = offset / TASK_VMA_PAGE_SIZE;
     if (page_index >= vma->page_count || !vma->private_pages[page_index]) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     page = vma->private_pages[page_index];
     if (atomic_load(&page->refs) > 1) {
@@ -296,8 +323,7 @@ static struct vm_shared_mapping *mm_shared_mapping_get_or_create(int fd, uint64_
     long long bytes;
 
     if (file_identity == 0) {
-        errno = EBADF;
-        return NULL;
+        return ERR_PTR(-EBADF);
     }
 
     kernel_mutex_lock(&mm_shared_mapping_lock);
@@ -307,18 +333,15 @@ static struct vm_shared_mapping *mm_shared_mapping_get_or_create(int fd, uint64_
         return mapping;
     }
 
-    mapping = calloc(1, sizeof(*mapping));
+    mapping = __kmalloc_noprof(sizeof(*mapping), GFP_KERNEL | __GFP_ZERO);
     if (!mapping) {
-        errno = ENOMEM;
-        return NULL;
+        return ERR_PTR(-ENOMEM);
     }
     bytes = mm_fd_pread(fd, mapping->image, TASK_VMA_PAGE_SIZE,
                         (long long)(page_index * TASK_VMA_PAGE_SIZE));
     if (bytes < 0) {
-        int saved_errno = errno;
-        free(mapping);
-        errno = saved_errno;
-        return NULL;
+        kfree(mapping);
+        return ERR_PTR((int)bytes);
     }
     mapping->file_identity = file_identity;
     mapping->page_index = page_index;
@@ -328,7 +351,7 @@ static struct vm_shared_mapping *mm_shared_mapping_get_or_create(int fd, uint64_
     struct vm_shared_mapping *existing = mm_shared_mapping_lookup_locked(file_identity, page_index);
     if (existing) {
         kernel_mutex_unlock(&mm_shared_mapping_lock);
-        free(mapping);
+        kfree(mapping);
         return existing;
     }
     mapping->next = mm_shared_mappings;
@@ -344,7 +367,7 @@ static void mm_shared_pages_put(struct vm_shared_mapping **pages, uint64_t page_
     for (uint64_t i = 0; i < page_count; i++) {
         mm_shared_mapping_put(pages[i]);
     }
-    free(pages);
+    kfree(pages);
 }
 
 static struct vm_shared_mapping **mm_shared_pages_get_or_create(int fd, uint64_t offset,
@@ -354,19 +377,18 @@ static struct vm_shared_mapping **mm_shared_pages_get_or_create(int fd, uint64_t
     struct vm_shared_mapping **pages;
 
     if (file_identity == 0 || page_count == 0 || page_count > SIZE_MAX / sizeof(*pages)) {
-        errno = file_identity == 0 ? EBADF : ENOMEM;
-        return NULL;
+        return ERR_PTR(file_identity == 0 ? -EBADF : -ENOMEM);
     }
-    pages = calloc((size_t)page_count, sizeof(*pages));
+    pages = mm_alloc_array(page_count, sizeof(*pages));
     if (!pages) {
-        errno = ENOMEM;
-        return NULL;
+        return ERR_PTR(-ENOMEM);
     }
     for (uint64_t i = 0; i < page_count; i++) {
         pages[i] = mm_shared_mapping_get_or_create(fd, file_identity, first_page + i);
-        if (!pages[i]) {
+        if (IS_ERR(pages[i])) {
+            long err = PTR_ERR(pages[i]);
             mm_shared_pages_put(pages, i);
-            return NULL;
+            return ERR_PTR(err);
         }
     }
     return pages;
@@ -416,8 +438,7 @@ static long long mm_shared_file_remaining(const struct task_vma *vma, size_t off
             mm_file_size_notes[i].file_identity == identity) {
             file_offset = vma->backing_offset + (uint64_t)offset;
             if (file_offset >= mm_file_size_notes[i].size) {
-                errno = ENXIO;
-                return -1;
+                return -ENXIO;
             }
             return (long long)(mm_file_size_notes[i].size - file_offset);
         }
@@ -432,23 +453,16 @@ long long mm_vma_file_remaining_impl(const struct task_vma *vma, size_t offset) 
 static long long mm_fd_size(int fd) {
     long long original;
     long long size;
-    int saved_errno;
-
     if (fd < 0) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     original = lseek_impl(fd, 0, SEEK_CUR);
     if (original < 0) {
-        return -1;
+        return original;
     }
     size = lseek_impl(fd, 0, SEEK_END);
-    saved_errno = errno;
     if (lseek_impl(fd, original, SEEK_SET) < 0 && size >= 0) {
-        return -1;
-    }
-    if (size < 0) {
-        errno = saved_errno;
+        return -EIO;
     }
     return size;
 }
@@ -477,7 +491,6 @@ long long mm_vma_file_size_impl(const struct task_vma *vma) {
         if (size >= 0) {
             return size;
         }
-        errno = 0;
     }
     return (long long)vma->image_size;
 }
@@ -501,8 +514,7 @@ long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, siz
         uint64_t file_offset = vma->backing_offset + (uint64_t)offset;
 
         if (file_page_start >= (uint64_t)file_size) {
-            errno = ENXIO;
-            return -1;
+            return -ENXIO;
         }
         if (file_offset >= (uint64_t)file_size) {
             page_offset = offset % TASK_VMA_PAGE_SIZE;
@@ -517,7 +529,7 @@ long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, siz
     }
     file_remaining = mm_shared_file_remaining(vma, offset);
     if (file_remaining < 0) {
-        return -1;
+        return (long)file_remaining;
     }
     page_index = offset / TASK_VMA_PAGE_SIZE;
     if (page_index >= vma->page_count || !vma->shared_pages[page_index]) {
@@ -559,8 +571,7 @@ long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *b
         uint64_t file_offset = vma->backing_offset + (uint64_t)offset;
 
         if (file_page_start >= (uint64_t)file_size) {
-            errno = ENXIO;
-            return -1;
+            return -ENXIO;
         }
         if (file_offset < (uint64_t)file_size) {
             file_remaining = (long long)((uint64_t)file_size - file_offset);
@@ -568,7 +579,7 @@ long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *b
     } else {
         file_remaining = mm_shared_file_remaining(vma, offset);
         if (file_remaining < 0) {
-            return -1;
+            return (long)file_remaining;
         }
     }
     page_index = offset / TASK_VMA_PAGE_SIZE;
@@ -631,32 +642,26 @@ static int mm_validate_mmap_flags(int flags, int fd) {
     int allowed = MAP_PRIVATE | MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED | MAP_FIXED_NOREPLACE;
 
     if ((flags & ~allowed) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (((flags & MAP_PRIVATE) != 0) == ((flags & MAP_SHARED) != 0)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if ((flags & MAP_ANONYMOUS) != 0 && fd != -1) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if ((flags & MAP_ANONYMOUS) == 0 && fd < 0) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     return 0;
 }
 
 static int mm_validate_prot(int prot) {
     if ((prot & ~(PROT_READ | PROT_WRITE | PROT_EXEC | PROT_NONE)) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if ((prot & PROT_NONE) != 0 && (prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     return 0;
 }
@@ -670,32 +675,27 @@ static int mm_validate_madvise(int advice) {
     case MADV_DONTNEED:
         return 0;
     default:
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 }
 
 static long long mm_fd_pread(int fd, void *buf, size_t count, long long offset) {
     long long bytes = pread_impl(fd, buf, count, offset);
 
-    if (bytes >= 0 || errno != ENOTSUP) {
+    if (bytes >= 0) {
         return bytes;
     }
 
     long long original = lseek_impl(fd, 0, SEEK_CUR);
     if (original < 0) {
-        return -1;
+        return original;
     }
     if (lseek_impl(fd, offset, SEEK_SET) < 0) {
-        return -1;
+        return -ESPIPE;
     }
     bytes = read_impl(fd, buf, count);
-    int saved_errno = errno;
     if (lseek_impl(fd, original, SEEK_SET) < 0 && bytes >= 0) {
-        return -1;
-    }
-    if (bytes < 0) {
-        errno = saved_errno;
+        return -EIO;
     }
     return bytes;
 }
@@ -703,24 +703,20 @@ static long long mm_fd_pread(int fd, void *buf, size_t count, long long offset) 
 static long long mm_fd_pwrite(int fd, const void *buf, size_t count, long long offset) {
     long long bytes = pwrite_impl(fd, buf, count, offset);
 
-    if (bytes >= 0 || errno != ENOTSUP) {
+    if (bytes >= 0) {
         return bytes;
     }
 
     long long original = lseek_impl(fd, 0, SEEK_CUR);
     if (original < 0) {
-        return -1;
+        return original;
     }
     if (lseek_impl(fd, offset, SEEK_SET) < 0) {
-        return -1;
+        return -ESPIPE;
     }
     bytes = write_impl(fd, buf, count);
-    int saved_errno = errno;
     if (lseek_impl(fd, original, SEEK_SET) < 0 && bytes >= 0) {
-        return -1;
-    }
-    if (bytes < 0) {
-        errno = saved_errno;
+        return -EIO;
     }
     return bytes;
 }
@@ -729,35 +725,28 @@ static long long mm_vma_pread(const struct task_vma *vma, void *buf, size_t coun
                               long long offset) {
     long long bytes;
     int reopened;
-    int saved_errno;
 
     if (!vma || !buf) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (vma->backing_fd >= 0) {
         bytes = mm_fd_pread(vma->backing_fd, buf, count, offset);
-        if (bytes >= 0 || errno != EBADF) {
+        if (bytes >= 0 || vma->backing_path[0] == '\0') {
             return bytes;
         }
     }
     if (vma->backing_path[0] == '\0') {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     reopened = open_impl(vma->backing_path, O_RDONLY, 0);
     if (reopened < 0) {
-        return -1;
+        return reopened;
     }
     bytes = mm_fd_pread(reopened, buf, count, offset);
-    saved_errno = errno;
     if (close_impl(reopened) != 0 && bytes >= 0) {
-        return -1;
-    }
-    if (bytes < 0) {
-        errno = saved_errno;
+        return -EIO;
     }
     return bytes;
 }
@@ -766,16 +755,14 @@ static long long mm_vma_pwrite(struct task_vma *vma, const void *buf, size_t cou
                                long long offset) {
     long long bytes;
     int reopened;
-    int saved_errno;
 
     if (!vma) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (vma->backing_fd >= 0) {
         bytes = mm_fd_pwrite(vma->backing_fd, buf, count, offset);
-        if (bytes >= 0 || errno != EBADF) {
+        if (bytes >= 0 || vma->backing_path[0] == '\0') {
             return bytes;
         }
     }
@@ -783,24 +770,19 @@ static long long mm_vma_pwrite(struct task_vma *vma, const void *buf, size_t cou
         if (vma->shared_pages) {
             return (long long)count;
         }
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     reopened = open_impl(vma->backing_path, O_RDWR, 0);
     if (reopened < 0) {
-        if (errno == ENOENT && vma->shared_pages) {
+        if (vma->shared_pages) {
             return (long long)count;
         }
-        return -1;
+        return reopened;
     }
     bytes = mm_fd_pwrite(reopened, buf, count, offset);
-    saved_errno = errno;
     if (close_impl(reopened) != 0 && bytes >= 0) {
-        return -1;
-    }
-    if (bytes < 0) {
-        errno = saved_errno;
+        return -EIO;
     }
     return bytes;
 }
@@ -837,12 +819,10 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
     uint64_t page_count;
 
     if (!mm || !image || size == 0 || size > UINT64_MAX - start || mm->vma_count >= TASK_EXEC_MAX_VMAS) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     if (mm_range_overlaps(mm, start, start + size)) {
-        errno = EEXIST;
-        return -1;
+        return -EEXIST;
     }
 
     page_count = size / TASK_VMA_PAGE_SIZE;
@@ -850,8 +830,7 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
         page_count++;
     }
     if (page_count == 0 || page_count > SIZE_MAX / sizeof(uint32_t)) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
     vma = &mm->vmas[mm->vma_count];
@@ -865,26 +844,23 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
     vma->backing_fd = -1;
     vma->backing_file_identity = 0;
     vma->page_count = page_count;
-    vma->page_flags = calloc((size_t)page_count, sizeof(*vma->page_flags));
+    vma->page_flags = mm_alloc_array(page_count, sizeof(*vma->page_flags));
     if (!vma->page_flags) {
         memset(vma, 0, sizeof(*vma));
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
-    vma->resident_pages = calloc((size_t)page_count, sizeof(*vma->resident_pages));
+    vma->resident_pages = mm_alloc_array(page_count, sizeof(*vma->resident_pages));
     if (!vma->resident_pages) {
-        free(vma->page_flags);
+        kfree(vma->page_flags);
         memset(vma, 0, sizeof(*vma));
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
-    vma->dirty_pages = calloc((size_t)page_count, sizeof(*vma->dirty_pages));
+    vma->dirty_pages = mm_alloc_array(page_count, sizeof(*vma->dirty_pages));
     if (!vma->dirty_pages) {
-        free(vma->resident_pages);
-        free(vma->page_flags);
+        kfree(vma->resident_pages);
+        kfree(vma->page_flags);
         memset(vma, 0, sizeof(*vma));
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     for (uint64_t i = 0; i < page_count; i++) {
         vma->page_flags[i] = pf_flags;
@@ -909,12 +885,12 @@ static void mm_remove_vma_at(struct mm_struct *mm, uint32_t index) {
         } else if (vma->shared_mapping) {
             mm_shared_mapping_put(vma->shared_mapping);
         } else {
-            free(vma->image);
+            kfree(vma->image);
         }
     }
-    free(vma->page_flags);
-    free(vma->resident_pages);
-    free(vma->dirty_pages);
+    kfree(vma->page_flags);
+    kfree(vma->resident_pages);
+    kfree(vma->dirty_pages);
     for (uint32_t i = index + 1; i < mm->vma_count; i++) {
         mm->vmas[i - 1] = mm->vmas[i];
     }
@@ -961,21 +937,18 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
 
     if (!source || !dest || start < source->start ||
         end > source->end || start >= end) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     size = end - start;
     if (size > SIZE_MAX) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     page_count = size / TASK_VMA_PAGE_SIZE;
     if ((size % TASK_VMA_PAGE_SIZE) != 0) {
         page_count++;
     }
     if (page_count == 0 || page_count > SIZE_MAX / sizeof(uint32_t)) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
     memset(dest, 0, sizeof(*dest));
@@ -994,10 +967,9 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
     dest->page_count = page_count;
     if (source->shared_pages) {
         uint64_t first_page = (start - source->start) / TASK_VMA_PAGE_SIZE;
-        dest->shared_pages = calloc((size_t)page_count, sizeof(*dest->shared_pages));
+        dest->shared_pages = mm_alloc_array(page_count, sizeof(*dest->shared_pages));
         if (!dest->shared_pages) {
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         for (uint64_t i = 0; i < page_count; i++) {
             dest->shared_pages[i] = source->shared_pages[first_page + i];
@@ -1006,10 +978,9 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
         dest->image = dest->shared_pages[0] ? dest->shared_pages[0]->image : NULL;
     } else if (source->private_pages) {
         uint64_t first_page = (start - source->start) / TASK_VMA_PAGE_SIZE;
-        dest->private_pages = calloc((size_t)page_count, sizeof(*dest->private_pages));
+        dest->private_pages = mm_alloc_array(page_count, sizeof(*dest->private_pages));
         if (!dest->private_pages) {
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         for (uint64_t i = 0; i < page_count; i++) {
             dest->private_pages[i] = source->private_pages[first_page + i];
@@ -1020,13 +991,12 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
         mm_shared_mapping_get(dest->shared_mapping);
         dest->image = dest->shared_mapping->image + dest->shared_mapping_offset;
     } else {
-        dest->image = calloc(1, dest->image_size);
+        dest->image = __kmalloc_noprof(dest->image_size, GFP_KERNEL | __GFP_ZERO);
         if (!dest->image) {
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
     }
-    dest->page_flags = calloc((size_t)page_count, sizeof(*dest->page_flags));
+    dest->page_flags = mm_alloc_array(page_count, sizeof(*dest->page_flags));
     if (!dest->page_flags) {
         if (dest->shared_pages) {
             mm_shared_pages_put(dest->shared_pages, page_count);
@@ -1035,15 +1005,14 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
         } else if (dest->shared_mapping) {
             mm_shared_mapping_put(dest->shared_mapping);
         } else {
-            free(dest->image);
+            kfree(dest->image);
         }
         memset(dest, 0, sizeof(*dest));
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
-    dest->resident_pages = calloc((size_t)page_count, sizeof(*dest->resident_pages));
+    dest->resident_pages = mm_alloc_array(page_count, sizeof(*dest->resident_pages));
     if (!dest->resident_pages) {
-        free(dest->page_flags);
+        kfree(dest->page_flags);
         if (dest->shared_pages) {
             mm_shared_pages_put(dest->shared_pages, page_count);
         } else if (dest->private_pages) {
@@ -1051,16 +1020,15 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
         } else if (dest->shared_mapping) {
             mm_shared_mapping_put(dest->shared_mapping);
         } else {
-            free(dest->image);
+            kfree(dest->image);
         }
         memset(dest, 0, sizeof(*dest));
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
-    dest->dirty_pages = calloc((size_t)page_count, sizeof(*dest->dirty_pages));
+    dest->dirty_pages = mm_alloc_array(page_count, sizeof(*dest->dirty_pages));
     if (!dest->dirty_pages) {
-        free(dest->resident_pages);
-        free(dest->page_flags);
+        kfree(dest->resident_pages);
+        kfree(dest->page_flags);
         if (dest->shared_pages) {
             mm_shared_pages_put(dest->shared_pages, page_count);
         } else if (dest->private_pages) {
@@ -1068,11 +1036,10 @@ static int mm_copy_vma_slice(struct task_vma *source, uint64_t start, uint64_t e
         } else if (dest->shared_mapping) {
             mm_shared_mapping_put(dest->shared_mapping);
         } else {
-            free(dest->image);
+            kfree(dest->image);
         }
         memset(dest, 0, sizeof(*dest));
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
     source_offset = (size_t)(start - source->start);
@@ -1104,8 +1071,7 @@ static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
     struct vm_shared_mapping **shared_pages = NULL;
 
     if (!vma || new_len == 0 || new_len > SIZE_MAX) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     old_len = vma->end - vma->start;
     if (new_len <= old_len) {
@@ -1117,19 +1083,17 @@ static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
         new_pages++;
     }
     if (new_pages <= old_pages || new_pages > SIZE_MAX / sizeof(uint32_t)) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
-    page_flags = calloc((size_t)new_pages, sizeof(*page_flags));
-    resident_pages = calloc((size_t)new_pages, sizeof(*resident_pages));
-    dirty_pages = calloc((size_t)new_pages, sizeof(*dirty_pages));
+    page_flags = __kmalloc_noprof((size_t)new_pages * sizeof(*page_flags), GFP_KERNEL | __GFP_ZERO);
+    resident_pages = __kmalloc_noprof((size_t)new_pages * sizeof(*resident_pages), GFP_KERNEL | __GFP_ZERO);
+    dirty_pages = __kmalloc_noprof((size_t)new_pages * sizeof(*dirty_pages), GFP_KERNEL | __GFP_ZERO);
     if (!page_flags || !resident_pages || !dirty_pages) {
-        free(page_flags);
-        free(resident_pages);
-        free(dirty_pages);
-        errno = ENOMEM;
-        return -1;
+        kfree(page_flags);
+        kfree(resident_pages);
+        kfree(dirty_pages);
+        return -ENOMEM;
     }
     memcpy(page_flags, vma->page_flags, (size_t)old_pages * sizeof(*page_flags));
     memcpy(resident_pages, vma->resident_pages, (size_t)old_pages * sizeof(*resident_pages));
@@ -1140,13 +1104,12 @@ static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
     }
 
     if (vma->private_pages) {
-        private_pages = calloc((size_t)new_pages, sizeof(*private_pages));
+        private_pages = __kmalloc_noprof((size_t)new_pages * sizeof(*private_pages), GFP_KERNEL | __GFP_ZERO);
         if (!private_pages) {
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = ENOMEM;
-            return -1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return -ENOMEM;
         }
         memcpy(private_pages, vma->private_pages, (size_t)old_pages * sizeof(*private_pages));
         for (uint64_t i = old_pages; i < new_pages; i++) {
@@ -1155,21 +1118,20 @@ static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
                 for (uint64_t j = old_pages; j < i; j++) {
                     mm_private_page_put_impl(private_pages[j]);
                 }
-                free(private_pages);
-                free(page_flags);
-                free(resident_pages);
-                free(dirty_pages);
-                return -1;
+                kfree(private_pages);
+                kfree(page_flags);
+                kfree(resident_pages);
+                kfree(dirty_pages);
+                return -ENOMEM;
             }
         }
     } else if (vma->shared_pages && vma->backing_fd >= 0) {
-        shared_pages = calloc((size_t)new_pages, sizeof(*shared_pages));
+        shared_pages = __kmalloc_noprof((size_t)new_pages * sizeof(*shared_pages), GFP_KERNEL | __GFP_ZERO);
         if (!shared_pages) {
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = ENOMEM;
-            return -1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return -ENOMEM;
         }
         memcpy(shared_pages, vma->shared_pages, (size_t)old_pages * sizeof(*shared_pages));
         for (uint64_t i = old_pages; i < new_pages; i++) {
@@ -1180,55 +1142,52 @@ static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
                 for (uint64_t j = old_pages; j < i; j++) {
                     mm_shared_mapping_put(shared_pages[j]);
                 }
-                free(shared_pages);
-                free(page_flags);
-                free(resident_pages);
-                free(dirty_pages);
+                kfree(shared_pages);
+                kfree(page_flags);
+                kfree(resident_pages);
+                kfree(dirty_pages);
                 return -1;
             }
             shared_pages[i] = page[0];
-            free(page);
+            kfree(page);
         }
     } else if (vma->shared_mapping) {
         if (vma->backing_fd < 0) {
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = EBADF;
-            return -1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return -EBADF;
         }
         shared_pages = mm_shared_pages_get_or_create(vma->backing_fd, vma->backing_offset, new_pages);
-        if (!shared_pages) {
-            int saved_errno = errno;
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = saved_errno;
-            return -1;
+        if (IS_ERR(shared_pages)) {
+            long err = PTR_ERR(shared_pages);
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return (int)err;
         }
     } else {
-        new_image = calloc(1, (size_t)new_len);
+        new_image = __kmalloc_noprof((size_t)new_len, GFP_KERNEL | __GFP_ZERO);
         if (!new_image) {
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = ENOMEM;
-            return -1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return -ENOMEM;
         }
         memcpy(new_image, vma->image, (size_t)old_len);
     }
 
-    free(vma->page_flags);
-    free(vma->resident_pages);
-    free(vma->dirty_pages);
+    kfree(vma->page_flags);
+    kfree(vma->resident_pages);
+    kfree(vma->dirty_pages);
     vma->page_flags = page_flags;
     vma->resident_pages = resident_pages;
     vma->dirty_pages = dirty_pages;
     if (private_pages) {
-        free(vma->private_pages);
+        kfree(vma->private_pages);
         vma->private_pages = private_pages;
     } else if (shared_pages) {
-        free(vma->shared_pages);
+        kfree(vma->shared_pages);
         vma->shared_pages = shared_pages;
         if (vma->shared_mapping) {
             mm_shared_mapping_put(vma->shared_mapping);
@@ -1237,7 +1196,7 @@ static int mm_extend_copied_vma(struct task_vma *vma, uint64_t new_len) {
         }
         vma->image = shared_pages[0] ? shared_pages[0]->image : NULL;
     } else if (new_image) {
-        free(vma->image);
+        kfree(vma->image);
         vma->image = new_image;
     }
     vma->end = vma->start + new_len;
@@ -1252,7 +1211,7 @@ static void *mm_dup_bytes(const void *source, size_t size) {
     if (!source || size == 0) {
         return NULL;
     }
-    copy = malloc(size);
+    copy = __kmalloc_noprof(size, GFP_KERNEL);
     if (!copy) {
         return NULL;
     }
@@ -1266,9 +1225,8 @@ struct mm_struct *task_mm_dup_impl(const struct mm_struct *source) {
     if (!source) {
         return NULL;
     }
-    copy = calloc(1, sizeof(*copy));
+    copy = __kmalloc_noprof(sizeof(*copy), GFP_KERNEL | __GFP_ZERO);
     if (!copy) {
-        errno = ENOMEM;
         return NULL;
     }
     atomic_init(&copy->refs, 1);
@@ -1379,7 +1337,6 @@ struct mm_struct *task_mm_dup_impl(const struct mm_struct *source) {
 
 oom:
     task_mm_put_impl(copy);
-    errno = ENOMEM;
     return NULL;
 }
 
@@ -1395,12 +1352,12 @@ static void mm_free_vma_contents(struct task_vma *vma) {
         } else if (vma->shared_mapping) {
             mm_shared_mapping_put(vma->shared_mapping);
         } else {
-            free(vma->image);
+            kfree(vma->image);
         }
     }
-    free(vma->page_flags);
-    free(vma->resident_pages);
-    free(vma->dirty_pages);
+    kfree(vma->page_flags);
+    kfree(vma->resident_pages);
+    kfree(vma->dirty_pages);
     memset(vma, 0, sizeof(*vma));
 }
 
@@ -1412,12 +1369,10 @@ static int mm_replace_vma_with_slices(struct mm_struct *mm, uint32_t index,
     uint32_t replacement_count = (has_left ? 1U : 0U) + (has_right ? 1U : 0U);
 
     if (!mm || index >= mm->vma_count) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (mm->vma_count - 1 + replacement_count > TASK_EXEC_MAX_VMAS) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
     mm_free_vma_contents(&mm->vmas[index]);
@@ -1448,12 +1403,10 @@ static int mm_insert_vma_sorted(struct mm_struct *mm, const struct task_vma *vma
     uint32_t index = 0;
 
     if (!mm || !vma || vma->start >= vma->end) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (mm->vma_count >= TASK_EXEC_MAX_VMAS) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     while (index < mm->vma_count && mm->vmas[index].start < vma->start) {
         index++;
@@ -1535,8 +1488,7 @@ static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
     struct vm_shared_mapping **shared_pages = NULL;
 
     if (!mm || index + 1 >= mm->vma_count) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     left = &mm->vmas[index];
     right = &mm->vmas[index + 1];
@@ -1544,8 +1496,7 @@ static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
         return 0;
     }
     if (left->end > UINT64_MAX - (right->end - right->start)) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     left_pages = left->page_count;
     right_pages = right->page_count;
@@ -1556,19 +1507,17 @@ static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
         merged_pages > SIZE_MAX / sizeof(*resident_pages) ||
         merged_pages > SIZE_MAX / sizeof(*dirty_pages) ||
         merged_size > SIZE_MAX) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
 
-    page_flags = calloc((size_t)merged_pages, sizeof(*page_flags));
-    resident_pages = calloc((size_t)merged_pages, sizeof(*resident_pages));
-    dirty_pages = calloc((size_t)merged_pages, sizeof(*dirty_pages));
+    page_flags = __kmalloc_noprof((size_t)merged_pages * sizeof(*page_flags), GFP_KERNEL | __GFP_ZERO);
+    resident_pages = __kmalloc_noprof((size_t)merged_pages * sizeof(*resident_pages), GFP_KERNEL | __GFP_ZERO);
+    dirty_pages = __kmalloc_noprof((size_t)merged_pages * sizeof(*dirty_pages), GFP_KERNEL | __GFP_ZERO);
     if (!page_flags || !resident_pages || !dirty_pages) {
-        free(page_flags);
-        free(resident_pages);
-        free(dirty_pages);
-        errno = ENOMEM;
-        return -1;
+        kfree(page_flags);
+        kfree(resident_pages);
+        kfree(dirty_pages);
+        return -ENOMEM;
     }
     memcpy(page_flags, left->page_flags, (size_t)left_pages * sizeof(*page_flags));
     memcpy(page_flags + left_pages, right->page_flags, (size_t)right_pages * sizeof(*page_flags));
@@ -1579,26 +1528,24 @@ static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
     memcpy(dirty_pages + left_pages, right->dirty_pages, (size_t)right_pages * sizeof(*dirty_pages));
 
     if (left->shared_pages) {
-        shared_pages = calloc((size_t)merged_pages, sizeof(*shared_pages));
+        shared_pages = __kmalloc_noprof((size_t)merged_pages * sizeof(*shared_pages), GFP_KERNEL | __GFP_ZERO);
         if (!shared_pages) {
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = ENOMEM;
-            return -1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return -ENOMEM;
         }
         memcpy(shared_pages, left->shared_pages, (size_t)left_pages * sizeof(*shared_pages));
         memcpy(shared_pages + left_pages, right->shared_pages,
                (size_t)right_pages * sizeof(*shared_pages));
         image = shared_pages[0] ? shared_pages[0]->image : NULL;
     } else if (left->private_pages) {
-        private_pages = calloc((size_t)merged_pages, sizeof(*private_pages));
+        private_pages = __kmalloc_noprof((size_t)merged_pages * sizeof(*private_pages), GFP_KERNEL | __GFP_ZERO);
         if (!private_pages) {
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = ENOMEM;
-            return -1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return -ENOMEM;
         }
         memcpy(private_pages, left->private_pages, (size_t)left_pages * sizeof(*private_pages));
         memcpy(private_pages + left_pages, right->private_pages,
@@ -1607,33 +1554,32 @@ static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
     } else if (left->shared_mapping) {
         image = left->shared_mapping->image + left->shared_mapping_offset;
     } else {
-        image = calloc(1, (size_t)merged_size);
+        image = __kmalloc_noprof((size_t)merged_size, GFP_KERNEL | __GFP_ZERO);
         if (!image) {
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = ENOMEM;
-            return -1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return -ENOMEM;
         }
         memcpy(image, left->image, left->image_size);
         memcpy((unsigned char *)image + left->image_size, right->image, right->image_size);
     }
 
     if (!left->shared_pages && !left->private_pages && !left->shared_mapping) {
-        free(left->image);
-        free(right->image);
+        kfree(left->image);
+        kfree(right->image);
     }
-    free(left->page_flags);
-    free(left->resident_pages);
-    free(left->dirty_pages);
-    free(right->page_flags);
-    free(right->resident_pages);
-    free(right->dirty_pages);
+    kfree(left->page_flags);
+    kfree(left->resident_pages);
+    kfree(left->dirty_pages);
+    kfree(right->page_flags);
+    kfree(right->resident_pages);
+    kfree(right->dirty_pages);
     if (left->shared_pages || left->private_pages) {
-        free(left->shared_pages);
-        free(right->shared_pages);
-        free(left->private_pages);
-        free(right->private_pages);
+        kfree(left->shared_pages);
+        kfree(right->shared_pages);
+        kfree(left->private_pages);
+        kfree(right->private_pages);
     }
 
     left->end = right->end;
@@ -1656,8 +1602,7 @@ static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
 
 static int mm_merge_adjacent_vmas(struct mm_struct *mm) {
     if (!mm) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     for (uint32_t i = 0; i + 1 < mm->vma_count;) {
         int ret = mm_merge_vma_pair(mm, i);
@@ -1674,8 +1619,7 @@ static int mm_merge_adjacent_vmas(struct mm_struct *mm) {
 
 static int mm_remove_exact_vma(struct mm_struct *mm, uint64_t start, uint64_t end) {
     if (!mm) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     for (uint32_t i = 0; i < mm->vma_count; i++) {
         if (mm->vmas[i].start == start && mm->vmas[i].end == end) {
@@ -1683,8 +1627,7 @@ static int mm_remove_exact_vma(struct mm_struct *mm, uint64_t start, uint64_t en
             return 0;
         }
     }
-    errno = ENOENT;
-    return -1;
+    return -ENOENT;
 }
 
 static int mm_unmap_vma_range(struct mm_struct *mm, uint32_t index,
@@ -1696,8 +1639,7 @@ static int mm_unmap_vma_range(struct mm_struct *mm, uint32_t index,
     int has_right;
 
     if (!mm || index >= mm->vma_count || start >= end) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     source = mm->vmas[index];
     if (start <= source.start && end >= source.end) {
@@ -1741,95 +1683,86 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
     long long bytes;
 
     if (!task) {
-        errno = ESRCH;
-        return (void *)-1;
+        return ERR_PTR(-ESRCH);
     }
     if (!task->mm) {
-        task->mm = calloc(1, sizeof(*task->mm));
+        task->mm = __kmalloc_noprof(sizeof(*task->mm), GFP_KERNEL | __GFP_ZERO);
         if (!task->mm) {
-            errno = ENOMEM;
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
         atomic_init(&task->mm->refs, 1);
     }
     if (length == 0 || mm_validate_prot(prot) != 0) {
-        if (length == 0) {
-            errno = EINVAL;
-        }
-        return (void *)-1;
+        return ERR_PTR(-EINVAL);
     }
-    if (mm_validate_mmap_flags(flags, fd) != 0) {
-        return (void *)-1;
+    {
+        int ret = mm_validate_mmap_flags(flags, fd);
+        if (ret != 0) {
+            return ERR_PTR(ret);
+        }
     }
     if ((flags & MAP_ANONYMOUS) == 0 && ((uint64_t)offset % TASK_VMA_PAGE_SIZE) != 0) {
-        errno = EINVAL;
-        return (void *)-1;
+        return ERR_PTR(-EINVAL);
     }
 
     map_len = mm_align_up((uint64_t)length, TASK_VMA_PAGE_SIZE);
     if (map_len == 0 || map_len > SIZE_MAX) {
-        errno = ENOMEM;
-        return (void *)-1;
+        return ERR_PTR(-ENOMEM);
     }
 
     if ((flags & (MAP_FIXED | MAP_FIXED_NOREPLACE)) != 0) {
         map_addr = (uint64_t)(uintptr_t)addr;
         if ((map_addr % TASK_VMA_PAGE_SIZE) != 0 || map_addr == 0 ||
             map_len > UINT64_MAX - map_addr) {
-            errno = EINVAL;
-            return (void *)-1;
+            return ERR_PTR(-EINVAL);
         }
         if ((flags & MAP_FIXED_NOREPLACE) != 0 &&
             mm_range_overlaps(task->mm, map_addr, map_addr + map_len)) {
-            errno = EEXIST;
-            return (void *)-1;
+            return ERR_PTR(-EEXIST);
         }
     } else {
         map_addr = mm_alloc_addr(task->mm, map_len);
         if (map_addr == 0) {
-            errno = ENOMEM;
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
     }
 
     if ((flags & MAP_FIXED) != 0 &&
         munmap_impl((void *)(uintptr_t)map_addr, (size_t)map_len) != 0) {
-        return (void *)-1;
+        return ERR_PTR(-EFAULT);
     }
 
     kind = (flags & MAP_ANONYMOUS) != 0 ? TASK_VMA_ANON : TASK_VMA_FILE;
     int synthetic_zero = kind == TASK_VMA_FILE && mm_fd_is_synthetic_zero(fd);
     if (kind == TASK_VMA_FILE && (flags & MAP_SHARED) != 0 && !synthetic_zero) {
         shared_pages = mm_shared_pages_get_or_create(fd, (uint64_t)offset, map_len / TASK_VMA_PAGE_SIZE);
-        if (!shared_pages) {
-            return (void *)-1;
+        if (IS_ERR(shared_pages)) {
+            return ERR_CAST(shared_pages);
         }
         image = shared_pages[0] ? shared_pages[0]->image : NULL;
     } else {
-        image = calloc(1, (size_t)map_len);
+        image = __kmalloc_noprof((size_t)map_len, GFP_KERNEL | __GFP_ZERO);
         if (!image) {
-            errno = ENOMEM;
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
     }
     if (kind == TASK_VMA_FILE && !shared_pages && !synthetic_zero) {
         bytes = mm_fd_pread(fd, image, (size_t)map_len, (long long)offset);
         if (bytes < 0) {
-            int saved_errno = errno;
-            free(image);
-            errno = saved_errno;
-            return (void *)-1;
+            kfree(image);
+            return ERR_PTR((int)bytes);
         }
     }
-    if (mm_add_vma(task->mm, map_addr, map_len, mm_prot_to_pf(prot), kind, image) != 0) {
-        int saved_errno = errno;
-        if (shared_pages) {
-            mm_shared_pages_put(shared_pages, map_len / TASK_VMA_PAGE_SIZE);
-        } else {
-            free(image);
+    {
+        int ret = mm_add_vma(task->mm, map_addr, map_len, mm_prot_to_pf(prot), kind, image);
+        if (ret != 0) {
+            if (shared_pages) {
+                mm_shared_pages_put(shared_pages, map_len / TASK_VMA_PAGE_SIZE);
+            } else {
+                kfree(image);
+            }
+            return ERR_PTR(ret);
         }
-        errno = saved_errno;
-        return (void *)-1;
     }
     if (kind == TASK_VMA_FILE) {
         struct task_vma *vma = task_find_vma_mutable_impl(task, map_addr);
@@ -1864,19 +1797,14 @@ int mprotect_impl(void *addr, size_t len, int prot) {
     uint64_t size;
 
     if (!task || !task->mm) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (len == 0 || (start % TASK_VMA_PAGE_SIZE) != 0 || mm_validate_prot(prot) != 0) {
-        if (len == 0 || (start % TASK_VMA_PAGE_SIZE) != 0) {
-            errno = EINVAL;
-        }
-        return -1;
+        return -EINVAL;
     }
     size = mm_align_up((uint64_t)len, TASK_VMA_PAGE_SIZE);
     if (size == 0 || size > UINT64_MAX - start) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     return task_set_vma_page_flags_impl(task, start, size, mm_prot_to_pf(prot));
 }
@@ -1889,17 +1817,14 @@ int munmap_impl(void *addr, size_t len) {
     int unmapped = 0;
 
     if (!task || !task->mm) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (len == 0 || (start % TASK_VMA_PAGE_SIZE) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     size = mm_align_up((uint64_t)len, TASK_VMA_PAGE_SIZE);
     if (size == 0 || size > UINT64_MAX - start) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     end = start + size;
     for (uint32_t i = 0; i < task->mm->vma_count;) {
@@ -1915,7 +1840,7 @@ int munmap_impl(void *addr, size_t len) {
         overlap_end = end < vma->end ? end : vma->end;
         if (overlap_start < overlap_end) {
             if (mm_unmap_vma_range(task->mm, i, overlap_start, overlap_end) != 0) {
-                return -1;
+                return -EFAULT;
             }
             unmapped = 1;
             continue;
@@ -1936,8 +1861,7 @@ static int mm_load_private_file_page(const struct task_vma *vma, uint64_t page_i
 
     if (!vma || !page_image || vma->kind != TASK_VMA_FILE || vma->shared ||
         page_index >= vma->page_count) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     memset(page_image, 0, TASK_VMA_PAGE_SIZE);
@@ -1945,8 +1869,8 @@ static int mm_load_private_file_page(const struct task_vma *vma, uint64_t page_i
     file_offset = vma->backing_offset + image_offset;
     if (vma->backing_fd >= 0 || vma->backing_path[0] != '\0') {
         bytes = mm_vma_pread(vma, page_image, TASK_VMA_PAGE_SIZE, (long long)file_offset);
-        if (bytes < 0 && errno != ENXIO) {
-            return -1;
+        if (bytes < 0 && bytes != -ENXIO) {
+            return (int)bytes;
         }
         if (bytes >= 0) {
             source_len = (size_t)bytes;
@@ -1992,13 +1916,11 @@ static int mm_restore_private_file_image_page(struct task_vma *vma, uint64_t pag
         return -1;
     }
     if (!vma->image) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     image_offset = (size_t)(page_index * TASK_VMA_PAGE_SIZE);
     if (image_offset >= vma->image_size) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     to_copy = vma->image_size - image_offset;
     if (to_copy > TASK_VMA_PAGE_SIZE) {
@@ -2061,22 +1983,17 @@ int madvise_impl(void *addr, size_t length, int advice) {
     uint64_t end;
 
     if (!task || !task->mm) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     if (length == 0) {
         return 0;
     }
     if ((start % TASK_VMA_PAGE_SIZE) != 0 || mm_validate_madvise(advice) != 0) {
-        if ((start % TASK_VMA_PAGE_SIZE) != 0) {
-            errno = EINVAL;
-        }
-        return -1;
+        return -EINVAL;
     }
     size = mm_align_up((uint64_t)length, TASK_VMA_PAGE_SIZE);
     if (size == 0 || size > UINT64_MAX - start) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     if (advice != MADV_DONTNEED) {
         return 0;
@@ -2093,7 +2010,7 @@ int madvise_impl(void *addr, size_t length, int advice) {
         overlap_start = start > vma->start ? start : vma->start;
         overlap_end = end < vma->end ? end : vma->end;
         if (mm_zero_vma_range(vma, overlap_start, overlap_end) != 0) {
-            return -1;
+            return -EFAULT;
         }
     }
     return 0;
@@ -2106,24 +2023,20 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
     uint64_t page_count;
 
     if (!task || !task->mm) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     if (!vec) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (length == 0) {
         return 0;
     }
     if ((start % TASK_VMA_PAGE_SIZE) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     size = mm_align_up((uint64_t)length, TASK_VMA_PAGE_SIZE);
     if (size == 0 || size > UINT64_MAX - start) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     page_count = size / TASK_VMA_PAGE_SIZE;
 
@@ -2133,26 +2046,22 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
         uint64_t page_index;
 
         if (!vma) {
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         page_index = (addr_for_page - vma->start) / TASK_VMA_PAGE_SIZE;
         if (page_index >= vma->page_count) {
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         if (vma->kind == TASK_VMA_FILE) {
             long long file_size = mm_vma_file_size_impl(vma);
             uint64_t page_file_offset;
 
             if (page_index > (UINT64_MAX - vma->backing_offset) / TASK_VMA_PAGE_SIZE) {
-                errno = ENOMEM;
-                return -1;
+                return -ENOMEM;
             }
             page_file_offset = vma->backing_offset + (page_index * TASK_VMA_PAGE_SIZE);
             if (file_size >= 0 && page_file_offset >= (uint64_t)file_size) {
                 vec[page] = 0U;
-                errno = 0;
                 continue;
             }
         }
@@ -2173,67 +2082,53 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
     void *mapped;
     size_t copy_len;
 
-    errno = 0;
     if (!task || !task->mm) {
-        errno = EFAULT;
-        return (void *)-1;
+        return ERR_PTR(-EFAULT);
     }
     if ((flags & ~(MREMAP_MAYMOVE | MREMAP_FIXED)) != 0 ||
         ((flags & MREMAP_FIXED) != 0 && (flags & MREMAP_MAYMOVE) == 0)) {
-        errno = EINVAL;
-        return (void *)-1;
+        return ERR_PTR(-EINVAL);
     }
     if (old_size == 0 || new_size == 0 || (old_start % TASK_VMA_PAGE_SIZE) != 0) {
-        errno = EINVAL;
-        return (void *)-1;
+        return ERR_PTR(-EINVAL);
     }
     old_len = mm_align_up((uint64_t)old_size, TASK_VMA_PAGE_SIZE);
     new_len = mm_align_up((uint64_t)new_size, TASK_VMA_PAGE_SIZE);
     if (old_len == 0 || new_len == 0 || old_len > UINT64_MAX - old_start) {
-        errno = ENOMEM;
-        return (void *)-1;
+        return ERR_PTR(-ENOMEM);
     }
     found = task_find_vma_impl(task, old_start);
     if (!found || old_start + old_len > found->end) {
-        errno = EFAULT;
-        return (void *)-1;
+        return ERR_PTR(-EFAULT);
     }
     if ((flags & MREMAP_FIXED) != 0 &&
         (new_start == 0 || (new_start % TASK_VMA_PAGE_SIZE) != 0 ||
          new_len > UINT64_MAX - new_start)) {
-        errno = EINVAL;
-        return (void *)-1;
+        return ERR_PTR(-EINVAL);
     }
     if ((flags & MREMAP_FIXED) != 0 &&
         new_start < old_start + old_len && new_start + new_len > old_start) {
-        errno = EINVAL;
-        return (void *)-1;
+        return ERR_PTR(-EINVAL);
     }
     if ((flags & MREMAP_FIXED) != 0 && old_len == new_len) {
         struct task_vma moved_vma;
 
         if (mm_copy_vma_slice((struct task_vma *)found, old_start, old_start + old_len, &moved_vma) != 0) {
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
         moved_vma.start = new_start;
         moved_vma.end = new_start + new_len;
         if (munmap_impl(new_address, (size_t)new_len) != 0) {
-            int saved_errno = errno;
             mm_free_vma_contents(&moved_vma);
-            errno = saved_errno;
-            return (void *)-1;
+            return ERR_PTR(-EFAULT);
         }
         if (mm_insert_vma_sorted(task->mm, &moved_vma) != 0) {
-            int saved_errno = errno;
             mm_free_vma_contents(&moved_vma);
-            errno = saved_errno;
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
         if (munmap_impl(old_address, (size_t)old_len) != 0) {
-            int saved_errno = errno;
             mm_remove_exact_vma(task->mm, new_start, new_start + new_len);
-            errno = saved_errno;
-            return (void *)-1;
+            return ERR_PTR(-EFAULT);
         }
         (void)mm_merge_adjacent_vmas(task->mm);
         task_mm_update_high_water_impl(task->mm);
@@ -2243,33 +2138,25 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         struct task_vma moved_vma;
 
         if (mm_copy_vma_slice((struct task_vma *)found, old_start, old_start + old_len, &moved_vma) != 0) {
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
         moved_vma.start = new_start;
         moved_vma.end = new_start + old_len;
         if (mm_extend_copied_vma(&moved_vma, new_len) != 0) {
-            int saved_errno = errno;
             mm_free_vma_contents(&moved_vma);
-            errno = saved_errno;
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
         if (munmap_impl(new_address, (size_t)new_len) != 0) {
-            int saved_errno = errno;
             mm_free_vma_contents(&moved_vma);
-            errno = saved_errno;
-            return (void *)-1;
+            return ERR_PTR(-EFAULT);
         }
         if (mm_insert_vma_sorted(task->mm, &moved_vma) != 0) {
-            int saved_errno = errno;
             mm_free_vma_contents(&moved_vma);
-            errno = saved_errno;
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
         if (munmap_impl(old_address, (size_t)old_len) != 0) {
-            int saved_errno = errno;
             mm_remove_exact_vma(task->mm, new_start, new_start + new_len);
-            errno = saved_errno;
-            return (void *)-1;
+            return ERR_PTR(-EFAULT);
         }
         (void)mm_merge_adjacent_vmas(task->mm);
         task_mm_update_high_water_impl(task->mm);
@@ -2278,7 +2165,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
     if (new_len <= old_len) {
         if (new_len < old_len &&
             munmap_impl((void *)(uintptr_t)(old_start + new_len), (size_t)(old_len - new_len)) != 0) {
-            return (void *)-1;
+            return ERR_PTR(-EFAULT);
         }
         return old_address;
     }
@@ -2291,19 +2178,18 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         uint64_t old_pages = vma->page_count;
 
         uint64_t new_pages = old_pages + added_pages;
-        uint32_t *page_flags = calloc((size_t)new_pages, sizeof(*page_flags));
-        uint8_t *resident_pages = calloc((size_t)new_pages, sizeof(*resident_pages));
-        uint8_t *dirty_pages = calloc((size_t)new_pages, sizeof(*dirty_pages));
+        uint32_t *page_flags = __kmalloc_noprof((size_t)new_pages * sizeof(*page_flags), GFP_KERNEL | __GFP_ZERO);
+        uint8_t *resident_pages = __kmalloc_noprof((size_t)new_pages * sizeof(*resident_pages), GFP_KERNEL | __GFP_ZERO);
+        uint8_t *dirty_pages = __kmalloc_noprof((size_t)new_pages * sizeof(*dirty_pages), GFP_KERNEL | __GFP_ZERO);
         void *new_image = NULL;
         struct vm_private_page **private_pages = NULL;
         struct vm_shared_mapping **shared_pages = NULL;
 
         if (!page_flags || !resident_pages || !dirty_pages) {
-            free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = ENOMEM;
-            return (void *)-1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return ERR_PTR(-ENOMEM);
         }
         memcpy(page_flags, vma->page_flags, (size_t)old_pages * sizeof(*page_flags));
         memcpy(resident_pages, vma->resident_pages, (size_t)old_pages * sizeof(*resident_pages));
@@ -2313,23 +2199,21 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
             resident_pages[i] = 1;
         }
         if (!vma->private_pages && !vma->shared_pages && !vma->shared_mapping) {
-            new_image = calloc(1, (size_t)new_len);
+            new_image = __kmalloc_noprof((size_t)new_len, GFP_KERNEL | __GFP_ZERO);
             if (!new_image) {
-                free(page_flags);
-                free(resident_pages);
-                free(dirty_pages);
-                errno = ENOMEM;
-                return (void *)-1;
+                kfree(page_flags);
+                kfree(resident_pages);
+                kfree(dirty_pages);
+                return ERR_PTR(-ENOMEM);
             }
             memcpy(new_image, vma->image, (size_t)old_len);
         } else if (vma->private_pages) {
-            private_pages = calloc((size_t)new_pages, sizeof(*private_pages));
+            private_pages = __kmalloc_noprof((size_t)new_pages * sizeof(*private_pages), GFP_KERNEL | __GFP_ZERO);
             if (!private_pages) {
-                free(page_flags);
-                free(resident_pages);
-                free(dirty_pages);
-                errno = ENOMEM;
-                return (void *)-1;
+                kfree(page_flags);
+                kfree(resident_pages);
+                kfree(dirty_pages);
+                return ERR_PTR(-ENOMEM);
             }
             memcpy(private_pages, vma->private_pages, (size_t)old_pages * sizeof(*private_pages));
             for (uint64_t i = old_pages; i < new_pages; i++) {
@@ -2338,21 +2222,20 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                     for (uint64_t j = old_pages; j < i; j++) {
                         mm_private_page_put_impl(private_pages[j]);
                     }
-                    free(private_pages);
-                    free(page_flags);
-                    free(resident_pages);
-                    free(dirty_pages);
-                    return (void *)-1;
+                    kfree(private_pages);
+                    kfree(page_flags);
+                    kfree(resident_pages);
+                    kfree(dirty_pages);
+                    return ERR_PTR(-ENOMEM);
                 }
             }
         } else if (vma->shared_pages && vma->backing_fd >= 0) {
-            shared_pages = calloc((size_t)new_pages, sizeof(*shared_pages));
+            shared_pages = __kmalloc_noprof((size_t)new_pages * sizeof(*shared_pages), GFP_KERNEL | __GFP_ZERO);
             if (!shared_pages) {
-                free(page_flags);
-                free(resident_pages);
-                free(dirty_pages);
-                errno = ENOMEM;
-                return (void *)-1;
+                kfree(page_flags);
+                kfree(resident_pages);
+                kfree(dirty_pages);
+                return ERR_PTR(-ENOMEM);
             }
             memcpy(shared_pages, vma->shared_pages, (size_t)old_pages * sizeof(*shared_pages));
             for (uint64_t i = old_pages; i < new_pages; i++) {
@@ -2363,43 +2246,41 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                     for (uint64_t j = old_pages; j < i; j++) {
                         mm_shared_mapping_put(shared_pages[j]);
                     }
-                    free(shared_pages);
-                   free(page_flags);
-                    free(resident_pages);
-                    free(dirty_pages);
-                    return (void *)-1;
+                    kfree(shared_pages);
+                    kfree(page_flags);
+                    kfree(resident_pages);
+                    kfree(dirty_pages);
+                    return ERR_PTR(-ENOMEM);
                 }
                 shared_pages[i] = page[0];
-                free(page);
+                kfree(page);
             }
         } else if (vma->shared_mapping && vma->backing_fd >= 0) {
             shared_pages = mm_shared_pages_get_or_create(vma->backing_fd, vma->backing_offset, new_pages);
-            if (!shared_pages) {
-                int saved_errno = errno;
-                free(page_flags);
-                free(resident_pages);
-                free(dirty_pages);
-                errno = saved_errno;
-                return (void *)-1;
+            if (IS_ERR(shared_pages)) {
+                long err = PTR_ERR(shared_pages);
+                kfree(page_flags);
+                kfree(resident_pages);
+                kfree(dirty_pages);
+                return ERR_PTR(err);
             }
         } else {
-           free(page_flags);
-            free(resident_pages);
-            free(dirty_pages);
-            errno = ENOSYS;
-            return (void *)-1;
+            kfree(page_flags);
+            kfree(resident_pages);
+            kfree(dirty_pages);
+            return ERR_PTR(-ENOSYS);
         }
-        free(vma->page_flags);
-        free(vma->resident_pages);
-        free(vma->dirty_pages);
+        kfree(vma->page_flags);
+        kfree(vma->resident_pages);
+        kfree(vma->dirty_pages);
         vma->page_flags = page_flags;
         vma->resident_pages = resident_pages;
         vma->dirty_pages = dirty_pages;
         if (private_pages) {
-            free(vma->private_pages);
+            kfree(vma->private_pages);
             vma->private_pages = private_pages;
         } else if (shared_pages) {
-            free(vma->shared_pages);
+            kfree(vma->shared_pages);
             vma->shared_pages = shared_pages;
             if (vma->shared_mapping) {
                 mm_shared_mapping_put(vma->shared_mapping);
@@ -2408,7 +2289,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
             }
             vma->image = shared_pages[0] ? shared_pages[0]->image : NULL;
         } else {
-            free(vma->image);
+            kfree(vma->image);
             vma->image = new_image;
         }
         for (uint64_t i = old_pages; i < old_pages + added_pages; i++) {
@@ -2422,8 +2303,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
         return old_address;
     }
     if ((flags & MREMAP_MAYMOVE) == 0) {
-        errno = ENOMEM;
-        return (void *)-1;
+        return ERR_PTR(-ENOMEM);
     }
     vma_flags = found->flags;
     mapped = mmap_impl((flags & MREMAP_FIXED) ? new_address : NULL, (size_t)new_len,
@@ -2433,31 +2313,26 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                        MAP_PRIVATE | MAP_ANONYMOUS | ((flags & MREMAP_FIXED) ? MAP_FIXED : 0),
                        -1, 0);
     if ((long)(uintptr_t)mapped < 0) {
-        return (void *)-1;
+        return mapped;
     }
     copy_len = old_size < new_size ? old_size : new_size;
     if (copy_len > 0) {
-        void *tmp = malloc(copy_len);
+        void *tmp = __kmalloc_noprof(copy_len, GFP_KERNEL);
         if (!tmp) {
             munmap_impl(mapped, new_len);
-            errno = ENOMEM;
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
         if (task_read_virtual_memory_impl(task, old_start, tmp, copy_len) != (long)copy_len ||
             task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, tmp, copy_len) != (long)copy_len) {
-            int saved_errno = errno;
-            free(tmp);
+            kfree(tmp);
             munmap_impl(mapped, new_len);
-            errno = saved_errno;
-            return (void *)-1;
+            return ERR_PTR(-EFAULT);
         }
-        free(tmp);
+        kfree(tmp);
     }
     if (munmap_impl(old_address, old_len) != 0) {
-        int saved_errno = errno;
         munmap_impl(mapped, new_len);
-        errno = saved_errno;
-        return (void *)-1;
+        return ERR_PTR(-EFAULT);
     }
     (void)mm_merge_adjacent_vmas(task->mm);
     task_mm_update_high_water_impl(task->mm);
@@ -2473,24 +2348,20 @@ int msync_impl(void *addr, size_t len, int flags) {
 
     if ((flags & ~(MS_ASYNC | MS_SYNC | MS_INVALIDATE)) != 0 ||
         ((flags & MS_ASYNC) != 0 && (flags & MS_SYNC) != 0)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (!task || !task->mm) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     if (len == 0) {
         return 0;
     }
     if ((start % TASK_VMA_PAGE_SIZE) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     size = mm_align_up((uint64_t)len, TASK_VMA_PAGE_SIZE);
     if (size == 0 || size > UINT64_MAX - start) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     end = start + size;
     for (uint32_t i = 0; i < task->mm->vma_count; i++) {
@@ -2552,8 +2423,7 @@ int msync_impl(void *addr, size_t len, int flags) {
                 return -1;
             }
             if ((size_t)written != to_write) {
-                errno = EIO;
-                return -1;
+                return -EIO;
             }
             if (vma->dirty_pages && full_page_writeback) {
                 vma->dirty_pages[page] = 0;
@@ -2562,8 +2432,7 @@ int msync_impl(void *addr, size_t len, int flags) {
         synced = 1;
     }
     if (!synced) {
-        errno = ENOMEM;
-        return -1;
+        return -ENOMEM;
     }
     return 0;
 }
@@ -2576,14 +2445,12 @@ void *brk_impl(void *addr) {
     int has_brk_vma;
 
     if (!task) {
-        errno = ESRCH;
-        return (void *)-1;
+        return ERR_PTR(-ESRCH);
     }
     if (!task->mm) {
-        task->mm = calloc(1, sizeof(*task->mm));
+        task->mm = __kmalloc_noprof(sizeof(*task->mm), GFP_KERNEL | __GFP_ZERO);
         if (!task->mm) {
-            errno = ENOMEM;
-            return (void *)-1;
+            return ERR_PTR(-ENOMEM);
         }
         atomic_init(&task->mm->refs, 1);
     }
@@ -2613,12 +2480,12 @@ void *brk_impl(void *addr) {
     }
 
     if (!has_brk_vma) {
-        void *image = calloc(1, (size_t)aligned);
+        void *image = __kmalloc_noprof((size_t)aligned, GFP_KERNEL | __GFP_ZERO);
         if (!image) {
             return (void *)(uintptr_t)task->mm->brk_current;
         }
         if (mm_add_vma(task->mm, task->mm->brk_start, aligned, PF_R | PF_W, TASK_VMA_ANON, image) != 0) {
-            free(image);
+            kfree(image);
             return (void *)(uintptr_t)task->mm->brk_current;
         }
     } else {
@@ -2634,13 +2501,13 @@ void *brk_impl(void *addr) {
             return (void *)(uintptr_t)task->mm->brk_current;
         }
 
-        resized_image = calloc(1, (size_t)aligned);
+        resized_image = __kmalloc_noprof((size_t)aligned, GFP_KERNEL | __GFP_ZERO);
         if (!resized_image) {
             return (void *)(uintptr_t)task->mm->brk_current;
         }
-        resized_flags = calloc((size_t)page_count, sizeof(*resized_flags));
+        resized_flags = __kmalloc_noprof((size_t)page_count * sizeof(*resized_flags), GFP_KERNEL | __GFP_ZERO);
         if (!resized_flags) {
-            free(resized_image);
+            kfree(resized_image);
             return (void *)(uintptr_t)task->mm->brk_current;
         }
         copy_size = vma->image_size < (size_t)aligned ? vma->image_size : (size_t)aligned;
@@ -2648,8 +2515,8 @@ void *brk_impl(void *addr) {
         for (uint64_t i = 0; i < page_count; i++) {
             resized_flags[i] = PF_R | PF_W;
         }
-        free(vma->image);
-        free(vma->page_flags);
+        kfree(vma->image);
+        kfree(vma->page_flags);
         vma->image = resized_image;
         vma->image_size = (size_t)aligned;
         vma->page_flags = resized_flags;

@@ -9,8 +9,6 @@
 #define KERNEL_CRED_H
 
 #include <linux/types.h>
-#include <stddef.h>
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {

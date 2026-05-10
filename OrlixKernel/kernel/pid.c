@@ -1,6 +1,5 @@
 #include <linux/errno.h>
 #include <stdatomic.h>
-#include <stdbool.h>
 
 #include <linux/types.h>
 
@@ -27,7 +26,7 @@ static int32_t pid_alloc_impl(void) {
     int top = atomic_load(&pid_stack_top);
     if (top <= 0) {
         kernel_mutex_unlock(&pid_lock);
-        return -1; /* No PIDs available */
+        return -ENOSPC;
     }
 
     top--;
@@ -98,8 +97,7 @@ int32_t alloc_pid(void) {
 
 int pid_reserve(int32_t pid) {
     if (pid < PID_MIN || pid > PID_MAX) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (!atomic_load(&pid_initialized)) {
@@ -118,8 +116,7 @@ int pid_reserve(int32_t pid) {
     }
     kernel_mutex_unlock(&pid_lock);
 
-    errno = EEXIST;
-    return -1;
+    return -EEXIST;
 }
 
 void free_pid(int32_t pid) {

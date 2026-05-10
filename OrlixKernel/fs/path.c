@@ -4,15 +4,11 @@
 
 #include "path.h"
 
-#include <errno.h>
-#include <limits.h>
-#include <regex.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <linux/errno.h>
+#include <linux/string.h>
 
 #include "fdtable.h"
+#include "internal/fs/namei.h"
 #include "vfs.h"
 #include "../kernel/task.h"
 
@@ -147,8 +143,7 @@ void path_normalize(char *path) {
 int path_normalize_with_len(char *path, size_t path_len) {
     (void)path_len;
     if (!path) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     path_normalize(path);
     return 0;
@@ -162,16 +157,14 @@ int path_translate(const char *virtual_path, char *backing_path, size_t backing_
     int ret;
 
     if (!virtual_path || !backing_path || backing_path_len == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     switch (path_classify(virtual_path)) {
     case PATH_OWN_SANDBOX:
     case PATH_ABSOLUTE_HOST:
         if (strlen(virtual_path) >= backing_path_len) {
-            errno = ENAMETOOLONG;
-            return -1;
+            return -ENAMETOOLONG;
         }
         strncpy(backing_path, virtual_path, backing_path_len - 1);
         backing_path[backing_path_len - 1] = '\0';
@@ -180,14 +173,12 @@ int path_translate(const char *virtual_path, char *backing_path, size_t backing_
     case PATH_VIRTUAL_LINUX:
         ret = vfs_translate_path(virtual_path, backing_path, backing_path_len);
         if (ret != 0) {
-            errno = -ret;
-            return -1;
+            return ret;
         }
         return 0;
 
     default:
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 }
 
@@ -199,14 +190,12 @@ int path_reverse_translate(const char *backing_path, char *virtual_path, size_t 
     int ret;
 
     if (!backing_path || !virtual_path || virtual_path_len == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     ret = vfs_reverse_translate(backing_path, virtual_path, virtual_path_len);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     return 0;
@@ -229,7 +218,7 @@ bool path_is_valid(const char *path) {
     }
 
     /* Reject paths that are too long */
-    if (strlen(path) >= PATH_MAX) {
+    if (strlen(path) >= MAX_PATH) {
         return false;
     }
 
@@ -259,8 +248,7 @@ int path_resolve(const char *path, char *resolved, size_t resolved_len) {
     int ret;
 
     if (!path || !resolved || resolved_len == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     switch (path_classify(path)) {
@@ -268,8 +256,7 @@ int path_resolve(const char *path, char *resolved, size_t resolved_len) {
     case PATH_EXTERNAL:
     case PATH_ABSOLUTE_HOST:
         if (strlen(path) >= resolved_len) {
-            errno = ENAMETOOLONG;
-            return -1;
+            return -ENAMETOOLONG;
         }
         strncpy(resolved, path, resolved_len - 1);
         resolved[resolved_len - 1] = '\0';
@@ -280,14 +267,12 @@ int path_resolve(const char *path, char *resolved, size_t resolved_len) {
         task = get_current();
         ret = vfs_translate_path_task(path, resolved, resolved_len, task ? task->fs : NULL);
         if (ret != 0) {
-            errno = -ret;
-            return -1;
+            return ret;
         }
         return 0;
 
     default:
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 }
 
@@ -320,10 +305,14 @@ void path_join(const char *base, const char *rel, char *result, size_t result_le
         return;
     }
 
+    memcpy(result, base, base_len);
     if (base_len > 0 && base[base_len - 1] == '/') {
-        snprintf(result, result_len, "%s%s", base, rel);
+        memcpy(result + base_len, rel, rel_len);
+        result[base_len + rel_len] = '\0';
     } else {
-        snprintf(result, result_len, "%s/%s", base, rel);
+        result[base_len] = '/';
+        memcpy(result + base_len + 1, rel, rel_len);
+        result[base_len + rel_len + 1] = '\0';
     }
 }
 
@@ -343,42 +332,6 @@ bool path_in_sandbox(const char *path) {
  * 3. External paths (security-scoped) - need special handling
  * ============================================================================ */
 
-/* Compiled regex patterns (initialized on first use) */
-static regex_t ios_sandbox_regex;
-static regex_t ios_simulator_regex;
-static regex_t ios_external_regex;
-static bool regex_initialized = false;
-
-/* Initialize regex patterns for path detection */
-static void path_init_regex_impl(void) {
-    extern regex_t ios_sandbox_regex;
-    extern regex_t ios_simulator_regex;
-    extern regex_t ios_external_regex;
-    extern bool regex_initialized;
-    if (regex_initialized)
-        return;
-
-    /* Device sandbox: /var/mobile/Containers/Data/Application/<UUID>/ */
-    regcomp(&ios_sandbox_regex, "^/var/mobile/Containers/Data/Application/[A-Fa-f0-9-]+/",
-            REG_EXTENDED | REG_NOSUB);
-
-    /* Simulator sandbox:
-     * ~/Library/Developer/CoreSimulator/Devices/<SIM-UUID>/data/Containers/Data/Application/<APP-UUID>/
-     */
-    regcomp(&ios_simulator_regex,
-            "/Library/Developer/CoreSimulator/Devices/[A-Fa-f0-9-]+/data/Containers/Data/"
-            "Application/[A-Fa-f0-9-]+/",
-            REG_EXTENDED | REG_NOSUB);
-
-    /* External paths: file-provider, iCloud, shared containers */
-    regcomp(&ios_external_regex,
-            "^(/private/var/mobile/Library/Mobile "
-            "Documents/|/private/var/mobile/Containers/Shared/AppGroup/|file-provider://)",
-            REG_EXTENDED | REG_NOSUB);
-
-    regex_initialized = true;
-}
-
 /* Check if path is a virtual Linux path (needs VFS translation) */
 bool path_is_virtual_linux(const char *path) {
     if (!path || !*path)
@@ -391,72 +344,27 @@ bool path_is_virtual_linux(const char *path) {
 bool path_is_own_sandbox(const char *path) {
     if (!path || !*path)
         return false;
-
-    path_init_regex_impl();
-
-    /* Check device sandbox pattern */
-    if (regexec(&ios_sandbox_regex, path, 0, NULL, 0) == 0) {
-        return true;
-    }
-
-    /* Check simulator sandbox pattern */
-    if (regexec(&ios_simulator_regex, path, 0, NULL, 0) == 0) {
-        return true;
-    }
-
-    /* Also check common writable locations that are always accessible */
-    /* These are subdirectories that might be passed without full sandbox path */
-    if (strstr(path, "/Library/") || strstr(path, "/Library")) {
-        return true;
-    }
-
-    return false;
+    return backing_path_is_own_sandbox(path);
 }
 
 /* Check if path is external (requires security-scoped access) */
 bool path_is_external(const char *path) {
     if (!path || !*path)
         return false;
-
-    path_init_regex_impl();
-
-    /* Check external path patterns */
-    if (regexec(&ios_external_regex, path, 0, NULL, 0) == 0) {
-        return true;
-    }
-
-    /* Check for iCloud Drive patterns */
-    if (strstr(path, "/Mobile Documents/")) {
-        return true;
-    }
-
-    /* Check for shared app groups */
-    if (strstr(path, "/Containers/Shared/AppGroup/")) {
-        return true;
-    }
-
-    /* If it's not a Linux-visible route and not own sandbox, treat as external */
-    if (!vfs_path_is_linux_route(path) && !path_is_own_sandbox(path)) {
-        /* This is a catch-all for paths we can't categorize */
-        /* The iOS kernel will ultimately enforce permissions */
-        return true;
-    }
-
-    return false;
+    return backing_path_is_external(path);
 }
 
 /* Convert virtual Linux path to iOS path using VFS */
 int path_virtual_to_ios(const char *vpath, char *ios_path, size_t ios_path_len) {
     if (!vpath || !ios_path || ios_path_len == 0) {
-        return -1;
+        return -EINVAL;
     }
 
     /* Check if it's actually a virtual path */
     if (!path_is_virtual_linux(vpath)) {
         /* Not a virtual path, copy as-is */
         if (strlen(vpath) >= ios_path_len) {
-            errno = ENAMETOOLONG;
-            return -1;
+            return -ENAMETOOLONG;
         }
         strncpy(ios_path, vpath, ios_path_len - 1);
         ios_path[ios_path_len - 1] = '\0';
@@ -467,8 +375,7 @@ int path_virtual_to_ios(const char *vpath, char *ios_path, size_t ios_path_len) 
     /* This function will be called from VFS layer */
     /* For now, return the path as-is and let VFS handle it */
     if (strlen(vpath) >= ios_path_len) {
-        errno = ENAMETOOLONG;
-        return -1;
+        return -ENAMETOOLONG;
     }
     strncpy(ios_path, vpath, ios_path_len - 1);
     ios_path[ios_path_len - 1] = '\0';

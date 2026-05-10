@@ -2,8 +2,9 @@
 
 #include <errno.h>
 
-#include "fs/fdtable.h"
 #include "kernel/init.h"
+
+extern int close_impl(int fd);
 
 extern int task_exec_contract_rejects_missing_current_task(void);
 extern int task_exec_contract_rejects_null_path(void);

@@ -33,6 +33,10 @@ bool fileNameMatchesLinuxRename(llvm::StringRef FileName) {
   return std::regex_search(FileName.str(), Pattern);
 }
 
+bool isForbiddenStdHeader(llvm::StringRef FileName) {
+  return FileName.starts_with("std") && FileName.ends_with(".h");
+}
+
 class IncludeBoundaryPPCallbacks : public PPCallbacks {
 public:
   IncludeBoundaryPPCallbacks(OrlixIncludeBoundaryCheck &Check,
@@ -80,6 +84,11 @@ public:
                      "forbidden host header is included from Linux-owner code");
         }
       }
+    }
+
+    if (isForbiddenStdHeader(FileName)) {
+      Check.diag(HashLoc,
+                 "host toolchain std*.h headers are forbidden in Linux-owner code; use vendored Linux truth from third_party/linux/6.12/arm64 instead");
     }
 
     if (FileName.starts_with("OrlixHostAdapter/") ||

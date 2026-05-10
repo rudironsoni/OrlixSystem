@@ -2,9 +2,10 @@
 
 #include <errno.h>
 
-#include "fs/fdtable.h"
 #include "kernel/init.h"
 #include "EpollContract.h"
+
+extern int close_impl(int fd);
 
 @interface EpollTests : XCTestCase
 @end
@@ -14,18 +15,14 @@
 - (void)setUp {
     [super setUp];
     XCTAssertEqual(start_kernel(), 0);
-    for (int fd = 3; fd < NR_OPEN_DEFAULT; fd++) {
-        if (fdtable_is_used_impl(fd)) {
-            close_impl(fd);
-        }
+    for (int fd = 3; fd < 256; fd++) {
+        close_impl(fd);
     }
 }
 
 - (void)tearDown {
-    for (int fd = 3; fd < NR_OPEN_DEFAULT; fd++) {
-        if (fdtable_is_used_impl(fd)) {
-            close_impl(fd);
-        }
+    for (int fd = 3; fd < 256; fd++) {
+        close_impl(fd);
     }
     [super tearDown];
 }

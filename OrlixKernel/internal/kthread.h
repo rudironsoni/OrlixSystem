@@ -1,7 +1,7 @@
 #ifndef INTERNAL_KTHREAD_H
 #define INTERNAL_KTHREAD_H
 
-#include <stddef.h>
+#include <linux/types.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -9,8 +9,8 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 
-#include <linux/capability.h>
-#include <linux/utsname.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/utsname.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);

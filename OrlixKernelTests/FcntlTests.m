@@ -1,7 +1,8 @@
 #import <XCTest/XCTest.h>
 
-#include "fs/fdtable.h"
 #include "kernel/init.h"
+
+extern int close_impl(int fd);
 
 extern int fcntl_contract_dup_returns_lowest_available_fd(void);
 extern int fcntl_contract_dup_shares_offset(void);

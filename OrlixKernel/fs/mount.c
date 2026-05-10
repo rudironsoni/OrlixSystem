@@ -7,14 +7,14 @@
  * Virtual mount behavior against Orlix's own VFS, NOT host mount(2).
  *
  */
+#include <linux/errno.h>
+#include <linux/string.h>
 
-#include <errno.h>
-#include <string.h>
-
-#include <linux/fcntl.h>
-#include <linux/fs.h>
-#include <linux/mount.h>
-#include <linux/stat.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/stat.h>
+#include <uapi/asm/stat.h>
 
 #include "linux_umount2_flags.h"
 #include "vfs.h"
@@ -66,27 +66,19 @@ int mount_impl(const char *source, const char *target,
                const char *filesystemtype, unsigned long mountflags,
                const void *data) {
     if ((!source && (mountflags & MS_REMOUNT) == 0) || !target) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     /* Validate inputs */
     if (((mountflags & MS_REMOUNT) == 0 && source[0] == '\0') || target[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     if (filesystemtype && strlen(filesystemtype) == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    int ret = vfs_mount(source, target, filesystemtype, mountflags, data);
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
-    }
-    return ret;
+    return vfs_mount(source, target, filesystemtype, mountflags, data);
 }
 
 /* ============================================================================
@@ -95,21 +87,14 @@ int mount_impl(const char *source, const char *target,
 
 int umount_impl(const char *target) {
     if (!target) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (target[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
-    int ret = vfs_umount(target);
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
-    }
-    return ret;
+    return vfs_umount(target);
 }
 
 /* ============================================================================
@@ -118,35 +103,29 @@ int umount_impl(const char *target) {
 
 int umount2_impl(const char *target, int flags) {
     if (!target) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (target[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     if ((flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW)) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if ((flags & MNT_EXPIRE) != 0 && (flags & (MNT_FORCE | MNT_DETACH)) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if ((flags & UMOUNT_NOFOLLOW) != 0) {
         int is_symlink = 0;
         int follow_ret = umount_target_is_symlink(target, &is_symlink);
         if (follow_ret < 0) {
-            errno = -follow_ret;
-            return -1;
+            return follow_ret;
         }
         if (is_symlink) {
-            errno = EINVAL;
-            return -1;
+            return -EINVAL;
         }
     }
 
@@ -159,72 +138,6 @@ int umount2_impl(const char *target, int flags) {
         ret = vfs_umount_force(target);
     } else {
         ret = vfs_umount(target);
-    }
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
-    }
-    return ret;
-}
-
-/* ============================================================================
- * Public Canonical Syscalls
- * ============================================================================ */
-
-__attribute__((visibility("default"))) int mount(const char *source,
-                                                   const char *target,
-                                                   const char *filesystemtype,
-                                                   unsigned long mountflags,
-                                                   const void *data) {
-    return mount_impl(source, target, filesystemtype, mountflags, data);
-}
-
-__attribute__((visibility("default"))) int umount(const char *target) {
-    return umount_impl(target);
-}
-
-__attribute__((visibility("default"))) int umount2(const char *target, int flags) {
-    return umount2_impl(target, flags);
-}
-
-__attribute__((visibility("default"))) int mount_setattr(int dirfd, const char *pathname,
-                                                         unsigned int flags,
-                                                         struct mount_attr *attr,
-                                                         size_t size) {
-    int ret = vfs_mount_setattr(dirfd, pathname, flags, attr, size);
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
-    }
-    return ret;
-}
-
-__attribute__((visibility("default"))) int open_tree(int dirfd, const char *pathname,
-                                                     unsigned int flags) {
-    int ret = vfs_open_tree(dirfd, pathname, flags);
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
-    }
-    return ret;
-}
-
-__attribute__((visibility("default"))) int move_mount(int from_dirfd, const char *from_pathname,
-                                                      int to_dirfd, const char *to_pathname,
-                                                      unsigned int flags) {
-    int ret = vfs_move_mount(from_dirfd, from_pathname, to_dirfd, to_pathname, flags);
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
-    }
-    return ret;
-}
-
-__attribute__((visibility("default"))) int pivot_root(const char *new_root, const char *put_old) {
-    int ret = vfs_pivot_root(new_root, put_old);
-    if (ret < 0) {
-        errno = -ret;
-        return -1;
     }
     return ret;
 }

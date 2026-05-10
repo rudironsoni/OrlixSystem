@@ -1,11 +1,10 @@
 #include "socket.h"
 
 #include <linux/errno.h>
-#include <linux/err.h>
 #include <linux/gfp_types.h>
-#include <linux/limits.h>
 #include <linux/string.h>
 #include <stdatomic.h>
+#include <stdint.h>
 
 #include "internal/mutex.h"
 #include "../signal.h"
@@ -20,6 +19,23 @@ extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
 
 void poll_notify_readiness_impl(void);
+
+static void *err_ptr_impl(long error) {
+    return (void *)(intptr_t)error;
+}
+
+static long ptr_err_impl(const void *ptr) {
+    return (long)(intptr_t)ptr;
+}
+
+static bool is_err_impl(const void *ptr) {
+    long error = ptr_err_impl(ptr);
+    return error < 0 && error >= -4095;
+}
+
+#define ERR_PTR(err) err_ptr_impl(err)
+#define PTR_ERR(ptr) ptr_err_impl(ptr)
+#define IS_ERR(ptr) is_err_impl(ptr)
 
 #define SOCKET_BUFFER_SIZE 65536U
 #define UNIX_NAME_MAX ((size_t)(MAX_PATH - 1))

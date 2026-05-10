@@ -8,12 +8,11 @@
 #include "task.h"
 
 #include <linux/errno.h>
+#include <linux/atomic.h>
 #include <linux/gfp_types.h>
 #include <linux/stdarg.h>
 #include <linux/sprintf.h>
 #include <linux/string.h>
-#include <stdatomic.h>
-#include <stdbool.h>
 
 #include <uapi/linux/capability.h>
 
@@ -22,7 +21,7 @@ extern void kfree(const void *objp);
 
 struct cgroup {
     char path[MAX_PATH];
-    atomic_int refs;
+    atomic_t refs;
     unsigned int members;
     int pids_max;
     bool freezer_frozen;
@@ -36,7 +35,7 @@ struct cgroup {
 
 static struct cgroup *root_cgroup;
 static kernel_mutex_t cgroup_lock = KERNEL_MUTEX_INITIALIZER;
-static atomic_ullong next_cgroup_ns_id = 2;
+static atomic64_t next_cgroup_ns_id = ATOMIC64_INIT(2);
 
 static bool cgroupfs_current_can_control(void) {
     struct task_struct *task = get_current();

@@ -1,19 +1,21 @@
 #include "fdtable.h"
 
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <uapi/linux/close_range.h>
+#include <linux/errno.h>
+#include <uapi/linux/fcntl.h>
+#ifndef _LINUX_FCNTL_H
+#define _LINUX_FCNTL_H
+#endif
+#include <uapi/linux/eventfd.h>
+#include <uapi/linux/memfd.h>
+#include <uapi/linux/pidfd.h>
+#include <linux/string.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/time_types.h>
+#include <uapi/linux/timerfd.h>
+#include <uapi/asm/stat.h>
 
-#include <linux/close_range.h>
-#include <linux/eventfd.h>
-#include <linux/fcntl.h>
-#include <linux/memfd.h>
-#include <linux/pidfd.h>
-#include <linux/stat.h>
-#include <linux/time_types.h>
-#include <linux/timerfd.h>
-
+#include "internal/slab.h"
 #include "internal/fs/lock.h"
 
 /* Standard file descriptors - local definitions to avoid Darwin <unistd.h> */
@@ -35,23 +37,21 @@ static void release_fd_description(struct fd_description *desc);
 static struct file *copy_file_descriptor(struct file *file);
 extern void poll_notify_readiness_impl(void);
 extern int kernel_clock_gettime(int clock_id, struct __kernel_timespec *tp);
+extern int scnprintf(char *buf, size_t size, const char *fmt, ...);
 
 struct files_struct *alloc_files(size_t max_fds) {
     if (max_fds == 0) {
-        errno = EINVAL;
         return NULL;
     }
 
-    struct files_struct *files = calloc(1, sizeof(struct files_struct));
+    struct files_struct *files = __kmalloc_noprof(sizeof(struct files_struct), GFP_KERNEL | __GFP_ZERO);
     if (!files) {
-        errno = ENOMEM;
         return NULL;
     }
 
-    files->fd = calloc(max_fds, sizeof(struct file *));
+    files->fd = __kmalloc_noprof(max_fds * sizeof(struct file *), GFP_KERNEL | __GFP_ZERO);
     if (!files->fd) {
-        free(files);
-        errno = ENOMEM;
+        kfree(files);
         return NULL;
     }
 
@@ -77,9 +77,9 @@ void free_files(struct files_struct *files) {
     }
     fs_mutex_unlock(&files->lock);
 
-    free(files->fd);
+    kfree(files->fd);
     fs_mutex_destroy(&files->lock);
-    free(files);
+    kfree(files);
 }
 
 struct files_struct *get_files(struct files_struct *files) {
@@ -91,7 +91,6 @@ struct files_struct *get_files(struct files_struct *files) {
 
 struct files_struct *dup_files(struct files_struct *parent) {
     if (!parent) {
-        errno = EINVAL;
         return NULL;
     }
 
@@ -106,7 +105,6 @@ struct files_struct *dup_files(struct files_struct *parent) {
             if (!child->fd[i]) {
                 fs_mutex_unlock(&parent->lock);
                 free_files(child);
-                errno = ENOMEM;
                 return NULL;
             }
         }
@@ -117,7 +115,7 @@ struct files_struct *dup_files(struct files_struct *parent) {
 }
 
 struct file *alloc_file(void) {
-    struct file *file = calloc(1, sizeof(struct file));
+    struct file *file = __kmalloc_noprof(sizeof(struct file), GFP_KERNEL | __GFP_ZERO);
     if (file) {
         atomic_init(&file->refs, 1);
     }
@@ -129,7 +127,7 @@ void free_file(struct file *file) {
         return;
     if (atomic_fetch_sub(&file->refs, 1) == 1) {
         release_fd_description((fd_description_t *)file->private_data);
-        free(file);
+        kfree(file);
     }
 }
 
@@ -165,8 +163,7 @@ static struct file *copy_file_descriptor(struct file *file) {
 
 int alloc_fd(struct files_struct *files, struct file *file) {
     if (!files || !file) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&files->lock);
@@ -179,22 +176,19 @@ int alloc_fd(struct files_struct *files, struct file *file) {
     }
     fs_mutex_unlock(&files->lock);
 
-    errno = EMFILE;
-    return -1;
+    return -EMFILE;
 }
 
 int free_fd(struct files_struct *files, int fd) {
     if (!files || fd < 0 || (size_t)fd >= files->max_fds) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     fs_mutex_lock(&files->lock);
     struct file *file = files->fd[fd];
     if (!file) {
         fs_mutex_unlock(&files->lock);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     files->fd[fd] = NULL;
@@ -206,7 +200,6 @@ int free_fd(struct files_struct *files, int fd) {
 
 struct file *fget(struct files_struct *files, int fd) {
     if (!files || fd < 0 || (size_t)fd >= files->max_fds) {
-        errno = EBADF;
         return NULL;
     }
 
@@ -219,16 +212,14 @@ struct file *fget(struct files_struct *files, int fd) {
 
 int dup_fd(struct files_struct *files, int oldfd) {
     if (!files || oldfd < 0 || (size_t)oldfd >= files->max_fds) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     fs_mutex_lock(&files->lock);
     struct file *file = files->fd[oldfd];
     if (!file) {
         fs_mutex_unlock(&files->lock);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     for (size_t i = 0; i < files->max_fds; i++) {
@@ -241,15 +232,13 @@ int dup_fd(struct files_struct *files, int oldfd) {
     }
     fs_mutex_unlock(&files->lock);
 
-    errno = EMFILE;
-    return -1;
+    return -EMFILE;
 }
 
 int do_dup2(struct files_struct *files, int oldfd, int newfd) {
     if (!files || oldfd < 0 || newfd < 0 || (size_t)oldfd >= files->max_fds ||
         (size_t)newfd >= files->max_fds) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     // dup2 to same FD is a no-op
@@ -261,8 +250,7 @@ int do_dup2(struct files_struct *files, int oldfd, int newfd) {
     struct file *file = files->fd[oldfd];
     if (!file) {
         fs_mutex_unlock(&files->lock);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (files->fd[newfd]) {
@@ -278,16 +266,14 @@ int do_dup2(struct files_struct *files, int oldfd, int newfd) {
 
 int set_cloexec(struct files_struct *files, int fd, bool cloexec) {
     if (!files || fd < 0 || (size_t)fd >= files->max_fds) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     fs_mutex_lock(&files->lock);
     struct file *file = files->fd[fd];
     if (!file) {
         fs_mutex_unlock(&files->lock);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (cloexec) {
@@ -318,8 +304,7 @@ bool get_cloexec(struct files_struct *files, int fd) {
 
 int close_on_exec(struct files_struct *files) {
     if (!files) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     int closed = 0;
@@ -578,9 +563,8 @@ static void fdtable_remove_task_file(int fd) {
 }
 
 static fd_description_t *alloc_fd_description(int real_fd, int flags, uint32_t mode, const char *path) {
-    fd_description_t *desc = calloc(1, sizeof(fd_description_t));
+    fd_description_t *desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -601,11 +585,10 @@ static fd_description_t *alloc_fd_description(int real_fd, int flags, uint32_t m
     desc->pty_is_master = false;
     desc->pipe_endpoint = NULL;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
-    desc->synthetic_state = calloc(1, sizeof(synthetic_dir_state_t));
+    desc->synthetic_state = __kmalloc_noprof(sizeof(synthetic_dir_state_t), GFP_KERNEL | __GFP_ZERO);
 
     if (!desc->synthetic_state) {
-        free(desc);
-        errno = ENOMEM;
+        kfree(desc);
         return NULL;
     }
     ((synthetic_dir_state_t *)desc->synthetic_state)->dir_class = SYNTHETIC_DIR_GENERIC;
@@ -629,9 +612,8 @@ static fd_description_t *alloc_fd_description_with_identity(int real_fd, int fla
 }
 
 static fd_description_t *alloc_synthetic_subdir_fd_description(int flags, uint32_t mode, const char *path, synthetic_dir_class_t dir_class) {
-    fd_description_t *desc = calloc(1, sizeof(fd_description_t));
+    fd_description_t *desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
     desc->type = FD_TYPE_SYNTHETIC_DIR;
@@ -648,10 +630,9 @@ static fd_description_t *alloc_synthetic_subdir_fd_description(int flags, uint32
     desc->pty_is_master = false;
     desc->pipe_endpoint = NULL;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
-    desc->synthetic_state = calloc(1, sizeof(synthetic_dir_state_t));
+    desc->synthetic_state = __kmalloc_noprof(sizeof(synthetic_dir_state_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc->synthetic_state) {
-        free(desc);
-        errno = ENOMEM;
+        kfree(desc);
         return NULL;
     }
     ((synthetic_dir_state_t *)desc->synthetic_state)->dir_class = dir_class;
@@ -665,9 +646,8 @@ static fd_description_t *alloc_synthetic_subdir_fd_description(int flags, uint32
 }
 
 static fd_description_t *alloc_synthetic_dev_fd_description(int flags, uint32_t mode, const char *path, synthetic_dev_node_t dev_node) {
-    fd_description_t *desc = calloc(1, sizeof(fd_description_t));
+    fd_description_t *desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
     desc->type = FD_TYPE_SYNTHETIC_DEV;
@@ -695,9 +675,8 @@ static fd_description_t *alloc_synthetic_dev_fd_description(int flags, uint32_t 
 }
 
 static fd_description_t *alloc_synthetic_proc_file_fd_description(int flags, uint32_t mode, const char *path, synthetic_proc_file_t proc_file) {
-    fd_description_t *desc = calloc(1, sizeof(fd_description_t));
+    fd_description_t *desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
     desc->type = FD_TYPE_SYNTHETIC_PROC_FILE;
@@ -727,9 +706,8 @@ static fd_description_t *alloc_synthetic_proc_file_fd_description(int flags, uin
 
 static fd_description_t *alloc_synthetic_pty_fd_description(int flags, uint32_t mode, const char *path,
                                                              unsigned int pty_index, bool is_master) {
-    fd_description_t *desc = calloc(1, sizeof(fd_description_t));
+    fd_description_t *desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
     desc->type = FD_TYPE_SYNTHETIC_PTY;
@@ -762,18 +740,16 @@ static fd_description_t *alloc_pipe_fd_description(int flags, struct pipe_endpoi
     unsigned long long pipe_id;
 
     if (!endpoint) {
-        errno = EINVAL;
         return NULL;
     }
 
-    desc = calloc(1, sizeof(fd_description_t));
+    desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
     pipe_id = pipe_endpoint_id_impl(endpoint);
-    snprintf(path, sizeof(path), "pipe:[%llu]", pipe_id);
+    scnprintf(path, sizeof(path), "pipe:[%llu]", pipe_id);
 
     desc->type = FD_TYPE_PIPE;
     desc->fd = -1;
@@ -801,13 +777,11 @@ static fd_description_t *alloc_socket_fd_description(int flags, struct socket_st
     unsigned long long socket_id;
 
     if (!socket) {
-        errno = EINVAL;
         return NULL;
     }
 
-    desc = calloc(1, sizeof(fd_description_t));
+    desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -831,7 +805,7 @@ static fd_description_t *alloc_socket_fd_description(int flags, struct socket_st
     atomic_init(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     socket_id = socket_identity_impl(socket);
-    snprintf(desc->path, sizeof(desc->path), "socket:[%llu]", socket_id);
+    scnprintf(desc->path, sizeof(desc->path), "socket:[%llu]", socket_id);
     return desc;
 }
 
@@ -839,13 +813,11 @@ static fd_description_t *alloc_epoll_fd_description(int flags, struct epoll_inst
     fd_description_t *desc;
 
     if (!instance) {
-        errno = EINVAL;
         return NULL;
     }
 
-    desc = calloc(1, sizeof(fd_description_t));
+    desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -872,9 +844,8 @@ static fd_description_t *alloc_epoll_fd_description(int flags, struct epoll_inst
 }
 
 static fd_description_t *alloc_eventfd_description(unsigned int initval, int flags) {
-    fd_description_t *desc = calloc(1, sizeof(fd_description_t));
+    fd_description_t *desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -910,15 +881,13 @@ static int timerfd_now_ns(int clockid, uint64_t *now_out) {
     struct __kernel_timespec ts;
 
     if (!now_out || !timerfd_clock_allowed(clockid)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (kernel_clock_gettime(clockid, &ts) != 0) {
         return -1;
     }
     if (ts.tv_sec < 0 || ts.tv_nsec < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     *now_out = (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
     return 0;
@@ -969,9 +938,8 @@ static void timerfd_snapshot_locked(fd_description_t *desc, uint64_t now_ns,
 }
 
 static fd_description_t *alloc_timerfd_description(int clockid, int flags) {
-    fd_description_t *desc = calloc(1, sizeof(fd_description_t));
+    fd_description_t *desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -1002,9 +970,8 @@ static fd_description_t *alloc_memfd_description(int real_fd, const char *name, 
     fd_description_t *desc;
     int ret;
 
-    desc = calloc(1, sizeof(fd_description_t));
+    desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -1029,12 +996,11 @@ static fd_description_t *alloc_memfd_description(int real_fd, const char *name, 
     desc->memfd_seals = (flags & MFD_ALLOW_SEALING) ? 0 : F_SEAL_SEAL;
     atomic_init(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
-    ret = snprintf(desc->path, sizeof(desc->path), "/memfd:%s", name ? name : "");
+    ret = scnprintf(desc->path, sizeof(desc->path), "/memfd:%s", name ? name : "");
     if (ret < 0 || (size_t)ret >= sizeof(desc->path)) {
         fs_mutex_destroy(&desc->lock);
         backing_close(real_fd);
-        free(desc);
-        errno = ENAMETOOLONG;
+        kfree(desc);
         return NULL;
     }
     return desc;
@@ -1044,13 +1010,11 @@ static fd_description_t *alloc_pidfd_description(struct task_struct *task, int f
     fd_description_t *desc;
 
     if (!task) {
-        errno = ESRCH;
         return NULL;
     }
 
-    desc = calloc(1, sizeof(fd_description_t));
+    desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -1083,13 +1047,11 @@ static fd_description_t *alloc_mount_fd_description(int flags, const struct vfs_
     int ret;
 
     if (!mount_fd || mount_fd->entry_count == 0 || mount_fd->entries[0].target[0] == '\0') {
-        errno = EINVAL;
         return NULL;
     }
 
-    desc = calloc(1, sizeof(fd_description_t));
+    desc = __kmalloc_noprof(sizeof(fd_description_t), GFP_KERNEL | __GFP_ZERO);
     if (!desc) {
-        errno = ENOMEM;
         return NULL;
     }
 
@@ -1111,11 +1073,10 @@ static fd_description_t *alloc_mount_fd_description(int flags, const struct vfs_
     desc->synthetic_state = NULL;
     atomic_init(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
-    ret = snprintf(desc->path, sizeof(desc->path), "mnt:[%s]", mount_fd->entries[0].target);
+    ret = scnprintf(desc->path, sizeof(desc->path), "mnt:[%s]", mount_fd->entries[0].target);
     if (ret < 0 || (size_t)ret >= sizeof(desc->path)) {
         fs_mutex_destroy(&desc->lock);
-        free(desc);
-        errno = ENAMETOOLONG;
+        kfree(desc);
         return NULL;
     }
     return desc;
@@ -1146,10 +1107,10 @@ static void release_fd_description(fd_description_t *desc) {
             free_task(desc->pidfd_task);
         }
         if (desc->synthetic_state) {
-            free(desc->synthetic_state);
+            kfree(desc->synthetic_state);
         }
         fs_mutex_destroy(&desc->lock);
-        free(desc);
+        kfree(desc);
     }
 }
 
@@ -1226,8 +1187,7 @@ int alloc_fd_impl(void) {
     }
 
     fs_mutex_unlock(&fd_table_lock);
-    errno = EMFILE;
-    return -1;
+    return -EMFILE;
 }
 
 void free_fd_impl(int fd) {
@@ -1256,7 +1216,6 @@ fd_entry_t *get_fd_entry_impl(int fd) {
     fd_description_t *task_desc;
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
         return NULL;
     }
 
@@ -1266,14 +1225,12 @@ fd_entry_t *get_fd_entry_impl(int fd) {
         fs_mutex_lock(&task->files->lock);
         if ((size_t)fd >= task->files->max_fds || !task->files->fd[fd]) {
             fs_mutex_unlock(&task->files->lock);
-            errno = EBADF;
             return NULL;
         }
         file = task->files->fd[fd];
         task_desc = (fd_description_t *)file->private_data;
         if (!task_desc) {
             fs_mutex_unlock(&task->files->lock);
-            errno = EBADF;
             return NULL;
         }
         memset(&fd_task_local_entry, 0, sizeof(fd_task_local_entry));
@@ -1288,13 +1245,11 @@ fd_entry_t *get_fd_entry_impl(int fd) {
 
     int ret = fs_mutex_lock(&fd_table_lock);
     if (ret != 0) {
-        errno = ret;
         return NULL;
     }
 
     if (!fd_table[fd].used) {
         fs_mutex_unlock(&fd_table_lock);
-        errno = EBADF;
         return NULL;
     }
 
@@ -1302,14 +1257,12 @@ fd_entry_t *get_fd_entry_impl(int fd) {
     ret = fs_mutex_lock(&entry->lock);
     if (ret != 0) {
         fs_mutex_unlock(&fd_table_lock);
-        errno = ret;
         return NULL;
     }
 
     if (!entry->used) {
         fs_mutex_unlock(&entry->lock);
         fs_mutex_unlock(&fd_table_lock);
-        errno = EBADF;
         return NULL;
     }
 
@@ -1359,14 +1312,12 @@ int get_fd_path_impl(fd_entry_t *entry, char *path, size_t path_len) {
     size_t len;
 
     if (!entry || !entry->desc || !path || path_len == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     len = strlen(entry->desc->path);
     if (len >= path_len) {
-        errno = ENAMETOOLONG;
-        return -1;
+        return -ENAMETOOLONG;
     }
 
     memcpy(path, entry->desc->path, len + 1);
@@ -1481,8 +1432,7 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     fd_description_t *desc;
 
     if (minfd < 0 || minfd >= NR_OPEN_DEFAULT) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     task = get_current();
@@ -1491,16 +1441,14 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
         struct file *new_file;
 
         if (oldfd < 0 || oldfd >= NR_OPEN_DEFAULT || (size_t)oldfd >= task->files->max_fds) {
-            errno = EBADF;
-            return -1;
+            return -EBADF;
         }
 
         fs_mutex_lock(&task->files->lock);
         old_file = task->files->fd[oldfd];
         if (!old_file || !old_file->private_data) {
             fs_mutex_unlock(&task->files->lock);
-            errno = EBADF;
-            return -1;
+            return -EBADF;
         }
         newfd = -1;
         for (int i = minfd; (size_t)i < task->files->max_fds; i++) {
@@ -1511,14 +1459,12 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
         }
         if (newfd < 0) {
             fs_mutex_unlock(&task->files->lock);
-            errno = EMFILE;
-            return -1;
+            return -EMFILE;
         }
         new_file = alloc_file();
         if (!new_file) {
             fs_mutex_unlock(&task->files->lock);
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         desc = (fd_description_t *)old_file->private_data;
         retain_fd_description(desc);
@@ -1537,8 +1483,7 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     fs_mutex_lock(&fd_table_lock);
     if (!fd_table[oldfd].used || !fd_table[oldfd].desc) {
         fs_mutex_unlock(&fd_table_lock);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     old_entry = &fd_table[oldfd];
@@ -1560,8 +1505,7 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
 
     if (newfd < 0) {
         release_fd_description(desc);
-        errno = EMFILE;
-        return -1;
+        return -EMFILE;
     }
 
     return newfd;
@@ -1578,29 +1522,24 @@ int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flag
     bool same_files;
 
     if (flags != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (!target || targetfd < 0) {
-        errno = target ? EBADF : ESRCH;
-        return -1;
+        return target ? -EBADF : -ESRCH;
     }
     if (atomic_load(&target->exited)) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     current = get_current();
     if (!current || !current->files || !target->files) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     source_files = target->files;
     dest_files = current->files;
     if ((size_t)targetfd >= source_files->max_fds) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     same_files = source_files == dest_files;
@@ -1616,7 +1555,6 @@ int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flag
 
     source_file = source_files->fd[targetfd];
     if (!source_file || !source_file->private_data) {
-        errno = EBADF;
         goto out_unlock;
     }
 
@@ -1627,13 +1565,11 @@ int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flag
         }
     }
     if (newfd < 0) {
-        errno = EMFILE;
         goto out_unlock;
     }
 
     new_file = alloc_file();
     if (!new_file) {
-        errno = ENOMEM;
         goto out_unlock;
     }
 
@@ -1666,8 +1602,7 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
     fd_description_t *new_desc;
 
     if (newfd < 0 || newfd >= NR_OPEN_DEFAULT || oldfd < 0 || oldfd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     task = get_current();
@@ -1677,21 +1612,18 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
         struct file *replaced_file = NULL;
 
         if ((size_t)oldfd >= task->files->max_fds || (size_t)newfd >= task->files->max_fds) {
-            errno = EBADF;
-            return -1;
+            return -EBADF;
         }
         fs_mutex_lock(&task->files->lock);
         old_file = task->files->fd[oldfd];
         if (!old_file || !old_file->private_data) {
             fs_mutex_unlock(&task->files->lock);
-            errno = EBADF;
-            return -1;
+            return -EBADF;
         }
         new_file = alloc_file();
         if (!new_file) {
             fs_mutex_unlock(&task->files->lock);
-            errno = ENOMEM;
-            return -1;
+            return -ENOMEM;
         }
         old_desc = (fd_description_t *)old_file->private_data;
         retain_fd_description(old_desc);
@@ -1712,8 +1644,7 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
     fs_mutex_lock(&fd_table_lock);
     if (!fd_table[oldfd].used || !fd_table[oldfd].desc) {
         fs_mutex_unlock(&fd_table_lock);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     old_desc = fd_table[oldfd].desc;
@@ -1735,8 +1666,7 @@ int close_impl(int fd) {
 
     file_init_impl();
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     task = get_current();
     if (task && task->files) {
@@ -1749,8 +1679,7 @@ int close_impl(int fd) {
         return 0;
     }
     if (!fd_table[fd].used) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     free_fd_impl(fd);
     return 0;
@@ -1763,8 +1692,7 @@ int close_range_impl(unsigned int first, unsigned int last, unsigned int flags) 
 
     file_init_impl();
     if ((flags & ~allowed_flags) != 0 || first > last) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (first >= NR_OPEN_DEFAULT) {
         return 0;
@@ -1794,8 +1722,9 @@ int close_range_impl(unsigned int first, unsigned int last, unsigned int flags) 
     }
 
     for (unsigned int fd = first; fd <= upper; fd++) {
-        if (close_impl((int)fd) != 0 && errno != EBADF) {
-            return -1;
+        int ret = close_impl((int)fd);
+        if (ret != 0 && ret != -EBADF) {
+            return ret;
         }
     }
     return 0;
@@ -1939,7 +1868,7 @@ int init_mount_fd_entry_impl(int fd, int flags, const struct vfs_mount_fd *mount
     entry->desc = alloc_mount_fd_description(flags, mount_fd);
     if (!entry->desc) {
         fs_mutex_unlock(&entry->lock);
-        return -1;
+        return -ENOMEM;
     }
     entry->fd_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
     fdtable_sync_task_file_locked(fd, entry);
@@ -1967,8 +1896,7 @@ int eventfd2_impl(unsigned int initval, int flags) {
     int fd;
 
     if ((flags & ~allowed_flags) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fd = alloc_fd_impl();
@@ -2032,8 +1960,7 @@ int timerfd_create_impl(int clockid, int flags) {
     int fd;
 
     if (!timerfd_clock_allowed(clockid) || (flags & ~allowed_flags) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fd = alloc_fd_impl();
@@ -2053,12 +1980,10 @@ int memfd_create_impl(const char *name, unsigned int flags) {
     int real_fd;
 
     if (!name) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if ((flags & ~allowed_flags) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     real_fd = backing_memfd_create();
@@ -2082,12 +2007,10 @@ int pidfd_create_for_task_impl(struct task_struct *task, int flags) {
     int fd;
 
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
     if ((flags & ~allowed_flags) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fd = alloc_fd_impl();
@@ -2107,14 +2030,12 @@ int pidfd_open_impl(int32_t pid, unsigned int flags) {
     unsigned int allowed_flags = PIDFD_NONBLOCK;
 
     if ((flags & ~allowed_flags) != 0 || (flags & PIDFD_THREAD) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     task = task_lookup(pid);
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     fd = pidfd_create_for_task_impl(task, (flags & PIDFD_NONBLOCK) ? O_NONBLOCK : 0);
@@ -2186,8 +2107,7 @@ int get_fd_mount_impl(void *entry, struct vfs_mount_fd *mount_fd) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_MOUNT || !mount_fd) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     memcpy(mount_fd, &fd_entry->desc->mount_fd, sizeof(*mount_fd));
@@ -2205,24 +2125,20 @@ long eventfd_read_entry_impl(void *entry, void *buf, size_t count) {
     uint64_t value;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_EVENTFD) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!buf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (count < sizeof(uint64_t)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     desc = fd_entry->desc;
     fs_mutex_lock(&desc->lock);
     if (desc->eventfd_counter == 0) {
         fs_mutex_unlock(&desc->lock);
-        errno = EAGAIN;
-        return -1;
+        return -EAGAIN;
     }
     if (desc->eventfd_semaphore) {
         value = 1;
@@ -2244,29 +2160,24 @@ long eventfd_write_entry_impl(void *entry, const void *buf, size_t count) {
     uint64_t value;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_EVENTFD) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!buf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (count < sizeof(uint64_t)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     memcpy(&value, buf, sizeof(value));
     if (value == UINT64_MAX) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     desc = fd_entry->desc;
     fs_mutex_lock(&desc->lock);
     if (UINT64_MAX - 1 - desc->eventfd_counter < value) {
         fs_mutex_unlock(&desc->lock);
-        errno = EAGAIN;
-        return -1;
+        return -EAGAIN;
     }
     desc->eventfd_counter += value;
     fs_mutex_unlock(&desc->lock);
@@ -2318,8 +2229,7 @@ static int timerfd_entry_snapshot(void *entry, struct __kernel_itimerspec *value
     uint64_t now_ns;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_TIMERFD || !value) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     desc = fd_entry->desc;
@@ -2338,8 +2248,7 @@ int timerfd_gettime_impl(int fd, struct __kernel_itimerspec *curr_value) {
     int ret;
 
     if (!curr_value) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     entry = get_fd_entry_impl(fd);
     if (!entry) {
@@ -2361,17 +2270,14 @@ int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimerspec *ne
     int ret = 0;
 
     if ((flags & ~allowed_flags) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (!new_value) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (!timerfd_timespec_valid(&new_value->it_value) ||
         !timerfd_timespec_valid(&new_value->it_interval)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     entry = get_fd_entry_impl(fd);
@@ -2381,8 +2287,7 @@ int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimerspec *ne
     fd_entry = (fd_entry_t *)entry;
     if (!fd_entry->desc || fd_entry->desc->type != FD_TYPE_TIMERFD) {
         put_fd_entry_impl(entry);
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     desc = fd_entry->desc;
@@ -2420,16 +2325,13 @@ long timerfd_read_entry_impl(void *entry, void *buf, size_t count) {
     uint64_t expirations;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_TIMERFD) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!buf) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (count < sizeof(uint64_t)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     desc = fd_entry->desc;
@@ -2441,8 +2343,7 @@ long timerfd_read_entry_impl(void *entry, void *buf, size_t count) {
     expirations = desc->timerfd_expirations;
     if (expirations == 0) {
         fs_mutex_unlock(&desc->lock);
-        errno = EAGAIN;
-        return -1;
+        return -EAGAIN;
     }
     desc->timerfd_expirations = 0;
     fs_mutex_unlock(&desc->lock);
@@ -2456,8 +2357,7 @@ long timerfd_write_entry_impl(void *entry, const void *buf, size_t count) {
     (void)entry;
     (void)buf;
     (void)count;
-    errno = EINVAL;
-    return -1;
+    return -EINVAL;
 }
 
 bool timerfd_read_ready_entry_impl(void *entry) {
@@ -2497,7 +2397,6 @@ struct task_struct *pidfd_get_task_entry_impl(void *entry) {
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_PIDFD ||
         !fd_entry->desc->pidfd_task) {
-        errno = EINVAL;
         return NULL;
     }
 
@@ -2522,8 +2421,7 @@ int memfd_get_seals_entry_impl(void *entry) {
     int seals;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_MEMFD) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     fs_mutex_lock(&fd_entry->desc->lock);
     seals = fd_entry->desc->memfd_seals;
@@ -2538,20 +2436,17 @@ int memfd_add_seals_entry_impl(void *entry, int seals) {
                         F_SEAL_WRITE | F_SEAL_FUTURE_WRITE | F_SEAL_EXEC;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_MEMFD) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if ((seals & ~allowed_seals) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     desc = fd_entry->desc;
     fs_mutex_lock(&desc->lock);
     if ((desc->memfd_seals & F_SEAL_SEAL) != 0) {
         fs_mutex_unlock(&desc->lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
     desc->memfd_seals |= seals;
     fs_mutex_unlock(&desc->lock);
@@ -2571,8 +2466,7 @@ int memfd_write_allowed_entry_impl(void *entry, int64_t offset, size_t count) {
     fs_mutex_lock(&desc->lock);
     if ((desc->memfd_seals & (F_SEAL_WRITE | F_SEAL_FUTURE_WRITE)) != 0) {
         fs_mutex_unlock(&desc->lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
     fs_mutex_unlock(&desc->lock);
     return 0;
@@ -2587,26 +2481,22 @@ int memfd_truncate_allowed_entry_impl(void *entry, int64_t length) {
         return 0;
     }
     if (backing_fstat(get_real_fd_impl(entry), &st) != 0) {
-        errno = EIO;
-        return -1;
+        return -EIO;
     }
 
     desc = fd_entry->desc;
     fs_mutex_lock(&desc->lock);
     if ((desc->memfd_seals & F_SEAL_GROW) != 0 && length > (int64_t)st.st_size) {
         fs_mutex_unlock(&desc->lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
     if ((desc->memfd_seals & F_SEAL_SHRINK) != 0 && length < (int64_t)st.st_size) {
         fs_mutex_unlock(&desc->lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
     if ((desc->memfd_seals & (F_SEAL_WRITE | F_SEAL_FUTURE_WRITE)) != 0) {
         fs_mutex_unlock(&desc->lock);
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
     fs_mutex_unlock(&desc->lock);
     return 0;
@@ -2709,13 +2599,11 @@ int get_fd_cgroupfs_path_impl(void *entry, char *path, size_t path_len) {
     size_t len;
 
     if (!fd_entry->desc || !path || path_len == 0 || fd_entry->desc->cgroupfs_path[0] != '/') {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     len = strlen(fd_entry->desc->cgroupfs_path);
     if (len >= path_len) {
-        errno = ENAMETOOLONG;
-        return -1;
+        return -ENAMETOOLONG;
     }
     memcpy(path, fd_entry->desc->cgroupfs_path, len + 1);
     return 0;
@@ -2927,12 +2815,10 @@ int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size
     const char deleted_suffix[] = " (deleted)";
 
     if (!path || path_len == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     fs_mutex_lock(&task->files->lock);
@@ -2940,8 +2826,7 @@ int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size
     desc = file ? (fd_description_t *)file->private_data : NULL;
     if (!file || file->path[0] == '\0') {
         fs_mutex_unlock(&task->files->lock);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     len = strlen(file->path);
@@ -2950,8 +2835,7 @@ int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size
     }
     if (len + suffix_len >= path_len) {
         fs_mutex_unlock(&task->files->lock);
-        errno = ENAMETOOLONG;
-        return -1;
+        return -ENAMETOOLONG;
     }
     memcpy(path, file->path, len + 1);
     if (suffix_len != 0) {
@@ -2970,20 +2854,17 @@ int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned 
     int ret;
 
     if (!buf || buf_len == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     fs_mutex_lock(&task->files->lock);
     file = task->files->fd[fd];
     if (!file) {
         fs_mutex_unlock(&task->files->lock);
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     fd_description_t *desc = (fd_description_t *)file->private_data;
     pos = desc ? (int64_t)desc->offset : file->pos;
@@ -2995,11 +2876,10 @@ int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned 
         flags |= O_CLOEXEC;
     }
 
-    ret = snprintf(buf, buf_len, "pos:\t%lld\nflags:\t0%o\nmnt_id:\t%llu\n",
+    ret = scnprintf(buf, buf_len, "pos:\t%lld\nflags:\t0%o\nmnt_id:\t%llu\n",
                    (long long)pos, flags, mnt_id);
     if (ret < 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
     if ((size_t)ret >= buf_len) {
         return (int)(buf_len - 1);

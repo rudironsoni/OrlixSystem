@@ -17,6 +17,14 @@ bool pathHasComponent(llvm::StringRef Path, llvm::StringRef Needle) {
   return Path.contains(Needle);
 }
 
+bool isVendoredLinuxDecl(const NamedDecl &Decl, const SourceManager &SM) {
+  SourceLocation Loc = Decl.getLocation();
+  if (Loc.isInvalid())
+    return false;
+  auto Entry = SM.getFileEntryRefForID(SM.getFileID(Loc));
+  return Entry && pathHasComponent(Entry->getName(), "third_party/linux/");
+}
+
 llvm::StringRef kindLabel(const NamedDecl &Decl) {
   if (isa<FunctionDecl>(Decl))
     return "function";
@@ -158,6 +166,8 @@ void OrlixHostVocabularyCheck::check(const MatchFinder::MatchResult &Result) {
         (!matchesHostVocabulary(Callee->getName()) &&
          !matchesLinuxConceptRename(Callee->getName())))
       return;
+    if (isVendoredLinuxDecl(*Callee, SM))
+      return;
     SourceLocation Loc = Call->getExprLoc();
     if (shouldSkipLocation(Loc, SM))
       return;
@@ -181,6 +191,8 @@ void OrlixHostVocabularyCheck::check(const MatchFinder::MatchResult &Result) {
     if (!Decl ||
         (!matchesHostVocabulary(Decl->getName()) &&
          !matchesLinuxConceptRename(Decl->getName())))
+      return;
+    if (isVendoredLinuxDecl(*Decl, SM))
       return;
     SourceLocation Loc = Ref->getLocation();
     if (shouldSkipLocation(Loc, SM))
@@ -206,6 +218,8 @@ void OrlixHostVocabularyCheck::check(const MatchFinder::MatchResult &Result) {
         (!matchesHostVocabulary(Decl->getName()) &&
          !matchesLinuxConceptRename(Decl->getName())))
       return;
+    if (isVendoredLinuxDecl(*Decl, SM))
+      return;
     SourceLocation Loc = Member->getMemberLoc();
     if (shouldSkipLocation(Loc, SM))
       return;
@@ -229,6 +243,8 @@ void OrlixHostVocabularyCheck::check(const MatchFinder::MatchResult &Result) {
     if (!Decl ||
         (!matchesHostVocabulary(Decl->getName()) &&
          !matchesLinuxConceptRename(Decl->getName())))
+      return;
+    if (isVendoredLinuxDecl(*Decl, SM))
       return;
     SourceLocation Loc = TypeLocNode->getBeginLoc();
     if (shouldSkipLocation(Loc, SM))

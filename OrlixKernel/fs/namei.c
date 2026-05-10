@@ -5,17 +5,12 @@
  * are delegated through the exported OrlixHostAdapter fs seam.
  */
 
-#include <errno.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-/* Linux UAPI headers for ABI constants and types */
-#include <linux/capability.h>
-#include <linux/fcntl.h>
-#include <linux/stat.h>
-#include <asm-generic/stat.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/stat.h>
+#include <uapi/asm/stat.h>
+#include <linux/errno.h>
+#include <linux/string.h>
 
 #include "internal/fs/namei.h"
 #include "kernel/cgroup.h"
@@ -36,13 +31,11 @@
 
 static int directory_validate_path(const char *path) {
     if (path == NULL) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (path[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     return 0;
@@ -57,25 +50,21 @@ static int rename_translate_path_at(int dirfd, const char *path, char *translate
     int ret;
 
     if (path == NULL) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (path[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     ret = vfs_resolve_virtual_path_at_follow(dirfd, path, resolved_path, sizeof(resolved_path), false);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     ret = vfs_translate_path(resolved_path, translated_path, translated_path_len);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     return 0;
@@ -86,19 +75,16 @@ static int rename_resolve_virtual_path_at(int dirfd, const char *path, char *res
     int ret;
 
     if (path == NULL) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (path[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     ret = vfs_resolve_virtual_path_at_follow(dirfd, path, resolved_path, resolved_path_len, false);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     return 0;
@@ -114,24 +100,20 @@ static int rename_validate_same_route(const char *old_virtual_path, const char *
 
     if (vfs_describe_route_for_path(old_virtual_path, &old_route, &old_class, &old_reversible) != 0 ||
         vfs_describe_route_for_path(new_virtual_path, &new_route, &new_class, &new_reversible) != 0) {
-        errno = EXDEV;
-        return -1;
+        return -EXDEV;
     }
 
     if (old_class == VFS_BACKING_SYNTHETIC || old_class == VFS_BACKING_EXTERNAL ||
         new_class == VFS_BACKING_SYNTHETIC || new_class == VFS_BACKING_EXTERNAL) {
-        errno = EXDEV;
-        return -1;
+        return -EXDEV;
     }
 
     if (!old_reversible || !new_reversible) {
-        errno = EXDEV;
-        return -1;
+        return -EXDEV;
     }
 
     if (old_route != new_route) {
-        errno = EXDEV;
-        return -1;
+        return -EXDEV;
     }
 
     return 0;
@@ -140,12 +122,14 @@ static int rename_validate_same_route(const char *old_virtual_path, const char *
 static int rename_apply_backing_operation(const char *old_virtual_path, const char *new_virtual_path,
                                        const char *old_backing_path, const char *new_backing_path,
                                        unsigned int backing_flags) {
-    if (rename_validate_same_route(old_virtual_path, new_virtual_path) != 0) {
-        return -1;
+    int ret = rename_validate_same_route(old_virtual_path, new_virtual_path);
+    if (ret != 0) {
+        return ret;
     }
 
-    if (backing_rename_with_flags(AT_FDCWD, old_backing_path, AT_FDCWD, new_backing_path, backing_flags) != 0) {
-        return -1;
+    ret = backing_rename_with_flags(AT_FDCWD, old_backing_path, AT_FDCWD, new_backing_path, backing_flags);
+    if (ret != 0) {
+        return ret;
     }
 
     return 0;
@@ -153,12 +137,14 @@ static int rename_apply_backing_operation(const char *old_virtual_path, const ch
 
 static int rename_apply_backing_exchange(const char *old_virtual_path, const char *new_virtual_path,
                                       const char *old_backing_path, const char *new_backing_path) {
-    if (rename_validate_same_route(old_virtual_path, new_virtual_path) != 0) {
-        return -1;
+    int ret = rename_validate_same_route(old_virtual_path, new_virtual_path);
+    if (ret != 0) {
+        return ret;
     }
 
-    if (backing_rename_exchange(old_backing_path, new_backing_path) != 0) {
-        return -1;
+    ret = backing_rename_exchange(old_backing_path, new_backing_path);
+    if (ret != 0) {
+        return ret;
     }
 
     return 0;
@@ -168,11 +154,7 @@ static int rename_lstat_backing_entry(const char *backing_path, struct stat *st)
     int ret;
 
     ret = backing_lstat(backing_path, st);
-    if (ret != 0) {
-        errno = -ret;
-        return -1;
-    }
-    return 0;
+    return ret;
 }
 
 static int rename_lstat_optional_backing_entry(const char *backing_path, struct stat *st, bool *exists) {
@@ -184,8 +166,7 @@ static int rename_lstat_optional_backing_entry(const char *backing_path, struct 
         return 0;
     }
     if (ret != -ENOENT) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     *exists = false;
     return 0;
@@ -201,24 +182,24 @@ static int rename_validate_target_shape(const char *old_virtual_path, const char
     bool new_is_dir;
     int empty;
 
-    if (rename_lstat_backing_entry(old_backing_path, &old_st) != 0) {
-        return -1;
+    empty = rename_lstat_backing_entry(old_backing_path, &old_st);
+    if (empty != 0) {
+        return empty;
     }
-    if (rename_lstat_optional_backing_entry(new_backing_path, &new_st, &new_exists) != 0) {
-        return -1;
+    empty = rename_lstat_optional_backing_entry(new_backing_path, &new_st, &new_exists);
+    if (empty != 0) {
+        return empty;
     }
 
     if ((flags & AT_RENAME_EXCHANGE) != 0) {
         if (!new_exists) {
-            errno = ENOENT;
-            return -1;
+            return -ENOENT;
         }
         return 0;
     }
 
     if ((flags & AT_RENAME_NOREPLACE) != 0 && new_exists) {
-        errno = EEXIST;
-        return -1;
+        return -EEXIST;
     }
     if (!new_exists || strcmp(old_virtual_path, new_virtual_path) == 0) {
         return 0;
@@ -227,22 +208,18 @@ static int rename_validate_target_shape(const char *old_virtual_path, const char
     old_is_dir = S_ISDIR(old_st.st_mode);
     new_is_dir = S_ISDIR(new_st.st_mode);
     if (old_is_dir && !new_is_dir) {
-        errno = ENOTDIR;
-        return -1;
+        return -ENOTDIR;
     }
     if (!old_is_dir && new_is_dir) {
-        errno = EISDIR;
-        return -1;
+        return -EISDIR;
     }
     if (old_is_dir && new_is_dir) {
         empty = backing_directory_is_empty(new_backing_path);
         if (empty < 0) {
-            errno = -empty;
-            return -1;
+            return empty;
         }
         if (empty == 0) {
-            errno = ENOTEMPTY;
-            return -1;
+            return -ENOTEMPTY;
         }
     }
     return 0;
@@ -258,63 +235,61 @@ int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *
     int ret;
 
     if (oldpath == NULL || newpath == NULL) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (flags & ~(AT_RENAME_NOREPLACE | AT_RENAME_EXCHANGE | AT_RENAME_WHITEOUT)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if ((flags & AT_RENAME_WHITEOUT) != 0) {
-        errno = EOPNOTSUPP;
-        return -1;
+        return -EOPNOTSUPP;
     }
 
     if ((flags & AT_RENAME_EXCHANGE) != 0 && (flags & AT_RENAME_NOREPLACE) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    if (rename_resolve_virtual_path_at(olddirfd, oldpath, resolved_old, sizeof(resolved_old)) != 0) {
-        return -1;
+    ret = rename_resolve_virtual_path_at(olddirfd, oldpath, resolved_old, sizeof(resolved_old));
+    if (ret != 0) {
+        return ret;
     }
 
-    if (rename_resolve_virtual_path_at(newdirfd, newpath, resolved_new, sizeof(resolved_new)) != 0) {
-        return -1;
+    ret = rename_resolve_virtual_path_at(newdirfd, newpath, resolved_new, sizeof(resolved_new));
+    if (ret != 0) {
+        return ret;
     }
 
-    if (rename_translate_path_at(olddirfd, oldpath, translated_old, sizeof(translated_old)) != 0) {
-        return -1;
+    ret = rename_translate_path_at(olddirfd, oldpath, translated_old, sizeof(translated_old));
+    if (ret != 0) {
+        return ret;
     }
 
-    if (rename_translate_path_at(newdirfd, newpath, translated_new, sizeof(translated_new)) != 0) {
-        return -1;
+    ret = rename_translate_path_at(newdirfd, newpath, translated_new, sizeof(translated_new));
+    if (ret != 0) {
+        return ret;
     }
 
     if ((flags & AT_RENAME_NOREPLACE) != 0) {
-        backing_flags |= RENAME_EXCL;
+        backing_flags |= AT_RENAME_NOREPLACE;
     }
 
-    if (rename_validate_target_shape(resolved_old, resolved_new, translated_old, translated_new, flags) != 0) {
-        return -1;
+    ret = rename_validate_target_shape(resolved_old, resolved_new, translated_old, translated_new, flags);
+    if (ret != 0) {
+        return ret;
     }
 
     ret = vfs_check_parent_mutation_permission(resolved_old);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     ret = vfs_check_parent_mutation_permission(resolved_new);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     ret = vfs_check_sticky_rename_permission(resolved_old, resolved_new);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     if ((flags & AT_RENAME_EXCHANGE) != 0) {
@@ -345,21 +320,18 @@ static int directory_translate_task_path(const char *path, char *translated_path
 
     task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     ret = vfs_resolve_virtual_path_task_follow(path, resolved_path, sizeof(resolved_path),
                                                task->fs, true);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     ret = vfs_translate_path(resolved_path, translated_path, translated_path_len);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     if (task_out) {
@@ -388,36 +360,38 @@ int chdir_impl(const char *path) {
     struct task_struct *task;
     char translated_path[MAX_PATH];
     char resolved_virtual[MAX_PATH];
+    int ret;
 
-    if (directory_validate_path(path) != 0) {
-        return -1;
+    ret = directory_validate_path(path);
+    if (ret != 0) {
+        return ret;
     }
 
-    if (directory_translate_task_path(path, translated_path, sizeof(translated_path), &task) != 0) {
-        return -1;
+    ret = directory_translate_task_path(path, translated_path, sizeof(translated_path), &task);
+    if (ret != 0) {
+        return ret;
     }
 
     struct stat st;
-    if (backing_stat(translated_path, &st) != 0) {
-        return -1;
+    ret = backing_stat(translated_path, &st);
+    if (ret != 0) {
+        return ret;
     }
 
     if (!S_ISDIR(st.st_mode)) {
-        errno = ENOTDIR;
-        return -1;
+        return -ENOTDIR;
     }
 
-    if (backing_access(translated_path, X_OK) != 0) {
-        errno = EACCES;
-        return -1;
+    ret = backing_access(translated_path, X_OK);
+    if (ret != 0) {
+        return ret;
     }
 
     if (task->fs) {
-        int ret = vfs_resolve_virtual_path_task_follow(path, resolved_virtual,
-                                                       sizeof(resolved_virtual), task->fs, true);
+        ret = vfs_resolve_virtual_path_task_follow(path, resolved_virtual,
+                                                   sizeof(resolved_virtual), task->fs, true);
         if (ret != 0) {
-            errno = -ret;
-            return -1;
+            return ret;
         }
         fs_set_pwd(task->fs, resolved_virtual);
     }
@@ -432,76 +406,66 @@ int fchdir_impl(int fd) {
     int ret;
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT || fd <= STDERR_FILENO) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     task = get_current();
     if (!task || !task->fs) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (!get_fd_is_dir_impl(entry)) {
         put_fd_entry_impl(entry);
-        errno = ENOTDIR;
-        return -1;
+        return -ENOTDIR;
     }
     ret = get_fd_path_impl(entry, fd_path, sizeof(fd_path));
     put_fd_entry_impl(entry);
     if (ret != 0) {
-        return -1;
+        return ret;
     }
 
     ret = fs_set_pwd(task->fs, fd_path);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     return 0;
 }
 
-char *getcwd_impl(char *buf, size_t size) {
+int getcwd_impl(char *buf, size_t size) {
     struct task_struct *task;
     char virtual_path[MAX_PATH];
     int ret;
 
     if (size == 0) {
-        errno = EINVAL;
-        return NULL;
+        return -EINVAL;
     }
 
     if (buf == NULL) {
-        errno = EINVAL;
-        return NULL;
+        return -EINVAL;
     }
 
     task = get_current();
     if (!task) {
-        errno = ESRCH;
-        return NULL;
+        return -ESRCH;
     }
 
     ret = vfs_getcwd_path_task(task->fs, virtual_path, sizeof(virtual_path));
     if (ret != 0) {
-        errno = -ret;
-        return NULL;
+        return ret;
     }
 
     const size_t selected_len = strlen(virtual_path);
     if (selected_len >= size) {
-        errno = ERANGE;
-        return NULL;
+        return -ERANGE;
     }
 
-    memcpy(buf, virtual_path, selected_len + 1);
-    return buf;
+    __builtin_memcpy(buf, virtual_path, selected_len + 1);
+    return 0;
 }
 
 int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
@@ -509,8 +473,9 @@ int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
     char resolved_path[MAX_PATH];
     int ret;
 
-    if (directory_validate_path(pathname) != 0) {
-        return -1;
+    ret = directory_validate_path(pathname);
+    if (ret != 0) {
+        return ret;
     }
 
     ret = vfs_resolve_virtual_path_at(dirfd, pathname, resolved_path, sizeof(resolved_path));
@@ -520,8 +485,7 @@ int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
         if (ret == 0 && strncmp(mounted_path, "/sys/fs/cgroup/", 15) == 0) {
             ret = cgroupfs_mkdir(mounted_path);
             if (ret != 0) {
-                errno = -ret;
-                return -1;
+                return ret;
             }
             return 0;
         }
@@ -529,8 +493,7 @@ int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
 
     ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_path, sizeof(resolved_path), false);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     {
         char mounted_path[MAX_PATH];
@@ -538,8 +501,7 @@ int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
         if (ret == 0 && strncmp(mounted_path, "/sys/fs/cgroup/", 15) == 0) {
             ret = cgroupfs_mkdir(mounted_path);
             if (ret != 0) {
-                errno = -ret;
-                return -1;
+                return ret;
             }
             return 0;
         }
@@ -547,21 +509,18 @@ int mkdirat_impl(int dirfd, const char *pathname, mode_t mode) {
     if (strncmp(resolved_path, "/sys/fs/cgroup/", 15) == 0) {
         ret = cgroupfs_mkdir(resolved_path);
         if (ret != 0) {
-            errno = -ret;
-            return -1;
+            return ret;
         }
         return 0;
     }
     ret = vfs_check_parent_mutation_permission(resolved_path);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     ret = vfs_translate_path(resolved_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     ret = backing_mkdir(translated_path, mode);
@@ -583,20 +542,19 @@ int unlinkat_impl(int dirfd, const char *pathname, int flags) {
     int ret;
 
     if ((flags & ~AT_REMOVEDIR) != 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    if (directory_validate_path(pathname) != 0) {
-        return -1;
+    ret = directory_validate_path(pathname);
+    if (ret != 0) {
+        return ret;
     }
 
     remove_dir = (flags & AT_REMOVEDIR) != 0;
 
     ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_path, sizeof(resolved_path), false);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     if (remove_dir) {
         char mounted_path[MAX_PATH];
@@ -604,40 +562,35 @@ int unlinkat_impl(int dirfd, const char *pathname, int flags) {
         if (ret == 0 && strncmp(mounted_path, "/sys/fs/cgroup/", 15) == 0) {
             ret = cgroupfs_rmdir(mounted_path);
             if (ret != 0) {
-                errno = -ret;
-                return -1;
+                return ret;
             }
             return 0;
         }
     }
     ret = vfs_check_parent_mutation_permission(resolved_path);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     ret = vfs_translate_path(resolved_path, translated_path, sizeof(translated_path));
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
-    if (backing_lstat(translated_path, &st) != 0) {
-        return -1;
+    ret = backing_lstat(translated_path, &st);
+    if (ret != 0) {
+        return ret;
     }
 
     if (remove_dir && !S_ISDIR(st.st_mode)) {
-        errno = ENOTDIR;
-        return -1;
+        return -ENOTDIR;
     }
     if (!remove_dir && S_ISDIR(st.st_mode)) {
-        errno = EISDIR;
-        return -1;
+        return -EISDIR;
     }
     ret = vfs_check_sticky_unlink_permission(resolved_path);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     ret = remove_dir ? backing_rmdir(translated_path) : backing_unlink(translated_path);
@@ -656,7 +609,7 @@ int unlink_impl(const char *pathname) {
     return unlinkat_impl(AT_FDCWD, pathname, 0);
 }
 
-static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags) {
+int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags) {
     char resolved_old[MAX_PATH];
     char resolved_new[MAX_PATH];
     char translated_old[MAX_PATH];
@@ -665,47 +618,39 @@ static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const ch
     int ret;
 
     if (oldpath == NULL || newpath == NULL) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (oldpath[0] == '\0' || newpath[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     if (flags & ~AT_SYMLINK_FOLLOW) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     ret = vfs_resolve_virtual_path_at_follow(olddirfd, oldpath, resolved_old,
                                              sizeof(resolved_old), (flags & AT_SYMLINK_FOLLOW) != 0);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     ret = vfs_resolve_virtual_path_at_follow(newdirfd, newpath, resolved_new, sizeof(resolved_new), false);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     ret = vfs_check_parent_mutation_permission(resolved_new);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     ret = vfs_translate_path(resolved_old, translated_old, sizeof(translated_old));
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     ret = vfs_translate_path(resolved_new, translated_new, sizeof(translated_new));
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     if ((flags & AT_SYMLINK_FOLLOW) != 0) {
@@ -714,20 +659,19 @@ static int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const ch
         ret = backing_lstat(translated_old, &st);
     }
     if (ret != 0) {
-        return -1;
+        return ret;
     }
 
     if (S_ISDIR(st.st_mode)) {
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
-    if (backing_lstat(translated_new, &st) == 0) {
-        errno = EEXIST;
-        return -1;
+    ret = backing_lstat(translated_new, &st);
+    if (ret == 0) {
+        return -EEXIST;
     }
-    if (errno != ENOENT) {
-        return -1;
+    if (ret != -ENOENT) {
+        return ret;
     }
 
     ret = backing_linkat(translated_old, translated_new, (flags & AT_SYMLINK_FOLLOW) != 0);
@@ -741,45 +685,40 @@ int link_impl(const char *oldpath, const char *newpath) {
     return linkat_impl(AT_FDCWD, oldpath, AT_FDCWD, newpath, 0);
 }
 
-static int symlinkat_impl(const char *target, int newdirfd, const char *linkpath) {
+int symlinkat_impl(const char *target, int newdirfd, const char *linkpath) {
     char resolved_link[MAX_PATH];
     char translated_link[MAX_PATH];
     struct stat st;
     int ret;
 
     if (target == NULL || linkpath == NULL) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (linkpath[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     ret = vfs_resolve_virtual_path_at_follow(newdirfd, linkpath, resolved_link,
                                              sizeof(resolved_link), false);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     ret = vfs_check_parent_mutation_permission(resolved_link);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     ret = vfs_translate_path(resolved_link, translated_link, sizeof(translated_link));
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
-    if (backing_lstat(translated_link, &st) == 0) {
-        errno = EEXIST;
-        return -1;
+    ret = backing_lstat(translated_link, &st);
+    if (ret == 0) {
+        return -EEXIST;
     }
-    if (errno != ENOENT) {
-        return -1;
+    if (ret != -ENOENT) {
+        return ret;
     }
 
     ret = backing_symlink(target, translated_link);
@@ -793,31 +732,27 @@ int symlink_impl(const char *target, const char *linkpath) {
     return symlinkat_impl(target, AT_FDCWD, linkpath);
 }
 
-static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsiz) {
+ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsiz) {
     char translated_path[MAX_PATH];
     char resolved_virtual[MAX_PATH];
     int ret;
 
     if (pathname == NULL || buf == NULL) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     if (pathname[0] == '\0') {
-        errno = ENOENT;
-        return -1;
+        return -ENOENT;
     }
 
     if (bufsiz == 0) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_virtual,
                                              sizeof(resolved_virtual), false);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     if (vfs_path_is_linux_route(resolved_virtual)) {
@@ -826,76 +761,72 @@ static ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_
             char link_target[MAX_PATH];
             ret = vfs_proc_self_fd_link_target(resolved_virtual, link_target, sizeof(link_target));
             if (ret != 0) {
-                errno = -ret;
-                return -1;
+                return ret;
             }
             size_t target_len = strlen(link_target);
             if (target_len > bufsiz) {
                 target_len = bufsiz;
             }
-            memcpy(buf, link_target, target_len);
+            __builtin_memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
         } else if (proc_class == PROC_SELF_CWD_LINK) {
             char link_target[MAX_PATH];
             ret = vfs_proc_task_cwd_target(vfs_proc_target_pid_for_path(resolved_virtual),
                                            link_target, sizeof(link_target));
             if (ret != 0) {
-                errno = -ret;
-                return -1;
+                return ret;
             }
             size_t target_len = strlen(link_target);
             if (target_len > bufsiz) {
                 target_len = bufsiz;
             }
-            memcpy(buf, link_target, target_len);
+            __builtin_memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
         } else if (proc_class == PROC_SELF_EXE_LINK) {
             char link_target[MAX_PATH];
             ret = vfs_proc_task_exe_target(vfs_proc_target_pid_for_path(resolved_virtual),
                                            link_target, sizeof(link_target));
             if (ret != 0) {
-                errno = -ret;
-                return -1;
+                return ret;
             }
             size_t target_len = strlen(link_target);
             if (target_len > bufsiz) {
                 target_len = bufsiz;
             }
-            memcpy(buf, link_target, target_len);
+            __builtin_memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
         } else if (proc_class == PROC_SELF_NS_LINK) {
             char link_target[MAX_PATH];
             ret = vfs_proc_self_ns_link_target(resolved_virtual, link_target, sizeof(link_target));
             if (ret != 0) {
-                errno = -ret;
-                return -1;
+                return ret;
             }
             size_t target_len = strlen(link_target);
             if (target_len > bufsiz) {
                 target_len = bufsiz;
             }
-            memcpy(buf, link_target, target_len);
+            __builtin_memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
         }
     }
 
     ret = vfs_translate_path(resolved_virtual, translated_path, sizeof(translated_path));
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     struct stat path_stat;
-    if (backing_lstat(translated_path, &path_stat) != 0) {
-        return -1;
+    ret = backing_lstat(translated_path, &path_stat);
+    if (ret != 0) {
+        return ret;
     }
 
     if (!S_ISLNK(path_stat.st_mode)) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
-    return backing_readlink(translated_path, buf, bufsiz);
+    ret = backing_readlink(translated_path, buf, bufsiz);
+    return ret;
 }
 
 ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
@@ -910,131 +841,56 @@ int chroot_impl(const char *path) {
     struct stat st;
     int ret;
 
-    if (directory_validate_path(path) != 0) {
-        return -1;
+    ret = directory_validate_path(path);
+    if (ret != 0) {
+        return ret;
     }
 
     if (!cred_has_cap(get_current_cred(), CAP_SYS_CHROOT)) {
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
-    if (directory_translate_task_path(path, translated_path, sizeof(translated_path), &task) != 0) {
-        return -1;
+    ret = directory_translate_task_path(path, translated_path, sizeof(translated_path), &task);
+    if (ret != 0) {
+        return ret;
     }
 
     if (!task->fs) {
-        errno = ESRCH;
-        return -1;
+        return -ESRCH;
     }
 
-    if (backing_stat(translated_path, &st) != 0) {
-        return -1;
+    ret = backing_stat(translated_path, &st);
+    if (ret != 0) {
+        return ret;
     }
 
     if (!S_ISDIR(st.st_mode)) {
-        errno = ENOTDIR;
-        return -1;
+        return -ENOTDIR;
     }
 
-    if (backing_access(translated_path, X_OK) != 0) {
-        errno = EACCES;
-        return -1;
+    ret = backing_access(translated_path, X_OK);
+    if (ret != 0) {
+        return ret;
     }
 
     ret = vfs_resolve_virtual_path_task_follow(path, resolved_virtual, sizeof(resolved_virtual),
                                                task->fs, true);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
-    memcpy(current_pwd, task->fs->pwd_path, sizeof(current_pwd));
+    __builtin_memcpy(current_pwd, task->fs->pwd_path, sizeof(current_pwd));
     ret = fs_set_root(task->fs, resolved_virtual);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
 
     if (!directory_virtual_path_contains(resolved_virtual, current_pwd)) {
         ret = fs_set_pwd(task->fs, resolved_virtual);
         if (ret != 0) {
-            errno = -ret;
-            return -1;
+            return ret;
         }
     }
 
     return 0;
-}
-
-__attribute__((visibility("default"))) int chdir(const char *path) {
-  return chdir_impl(path);
-}
-
-__attribute__((visibility("default"))) int fchdir(int fd) {
-  return fchdir_impl(fd);
-}
-
-__attribute__((visibility("default"))) char *getcwd(char *buf, size_t size) {
-  return getcwd_impl(buf, size);
-}
-
-__attribute__((visibility("default"))) int mkdir(const char *pathname, mode_t mode) {
-  return mkdir_impl(pathname, mode);
-}
-
-__attribute__((visibility("default"))) int mkdirat(int dirfd, const char *pathname, mode_t mode) {
-  return mkdirat_impl(dirfd, pathname, mode);
-}
-
-__attribute__((visibility("default"))) int rmdir(const char *pathname) {
-  return rmdir_impl(pathname);
-}
-
-__attribute__((visibility("default"))) int unlink(const char *pathname) {
-  return unlink_impl(pathname);
-}
-
-__attribute__((visibility("default"))) int unlinkat(int dirfd, const char *pathname, int flags) {
-  return unlinkat_impl(dirfd, pathname, flags);
-}
-
-__attribute__((visibility("default"))) int link(const char *oldpath, const char *newpath) {
-  return link_impl(oldpath, newpath);
-}
-
-__attribute__((visibility("default"))) int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags) {
-  return linkat_impl(olddirfd, oldpath, newdirfd, newpath, flags);
-}
-
-__attribute__((visibility("default"))) int symlink(const char *target, const char *linkpath) {
-    return symlink_impl(target, linkpath);
-}
-
-__attribute__((visibility("default"))) int symlinkat(const char *target, int newdirfd, const char *linkpath) {
-    return symlinkat_impl(target, newdirfd, linkpath);
-}
-
-__attribute__((visibility("default"))) ssize_t readlink(const char *pathname, char *buf, size_t bufsiz) {
-    return readlink_impl(pathname, buf, bufsiz);
-}
-
-__attribute__((visibility("default"))) ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz) {
-    return readlinkat_impl(dirfd, pathname, buf, bufsiz);
-}
-
-__attribute__((visibility("default"))) int rename(const char *oldpath, const char *newpath) {
-    return renameat2_impl(AT_FDCWD, oldpath, AT_FDCWD, newpath, 0);
-}
-
-__attribute__((visibility("default"))) int renameat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath) {
-    return renameat2_impl(olddirfd, oldpath, newdirfd, newpath, 0);
-}
-
-__attribute__((visibility("default"))) int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags) {
-    return renameat2_impl(olddirfd, oldpath, newdirfd, newpath, flags);
-}
-
-__attribute__((visibility("default"))) int chroot(const char *path) {
-    return chroot_impl(path);
 }

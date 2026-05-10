@@ -1,10 +1,10 @@
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
 
-#include <errno.h>
+#include <linux/errno.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
+#include <linux/string.h>
 
 #include "internal/fs/lock.h"
 #include "fdtable.h"
@@ -13,14 +13,12 @@ static int fcntl_get_entry_or_badf(int fd, void **entry_out) {
     void *entry;
 
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     entry = get_fd_entry_impl(fd);
     if (!entry) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     *entry_out = entry;
@@ -109,17 +107,15 @@ int flock_impl(int fd, int operation) {
     int ret = 0;
 
     if (fcntl_get_entry_or_badf(fd, &entry_ref) != 0) {
-        return -1;
+        return -EBADF;
     }
     identity = get_fd_file_identity_impl(entry_ref);
     put_fd_entry_impl(entry_ref);
     if (identity == 0) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
     if (op != LOCK_SH && op != LOCK_EX && op != LOCK_UN) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     fs_mutex_lock(&flock_table_lock);
@@ -134,8 +130,7 @@ int flock_impl(int fd, int operation) {
     entry = flock_entry_for_identity_locked(identity, true);
     if (!entry) {
         fs_mutex_unlock(&flock_table_lock);
-        errno = ENOLCK;
-        return -1;
+        return -ENOLCK;
     }
 
     if (op == LOCK_EX) {
@@ -159,8 +154,7 @@ int flock_impl(int fd, int operation) {
     }
     fs_mutex_unlock(&flock_table_lock);
     if (ret != 0) {
-        errno = EAGAIN;
-        return -1;
+        return -EAGAIN;
     }
     return 0;
 }
@@ -171,8 +165,7 @@ int dup_impl(int oldfd) {
 
 int dup2_impl(int oldfd, int newfd) {
     if (oldfd < 0 || oldfd >= NR_OPEN_DEFAULT || newfd < 0 || newfd >= NR_OPEN_DEFAULT) {
-        errno = EBADF;
-        return -1;
+        return -EBADF;
     }
 
     if (oldfd == newfd) {
@@ -189,13 +182,11 @@ int dup2_impl(int oldfd, int newfd) {
 
 int dup3_impl(int oldfd, int newfd, int flags) {
     if (oldfd == newfd) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     if (flags & ~O_CLOEXEC) {
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
 
     return replace_fd_entry_impl(newfd, oldfd, (flags & O_CLOEXEC) != 0);
@@ -268,30 +259,6 @@ int fcntl_impl(int fd, int cmd, ...) {
         put_fd_entry_impl(entry);
         return result;
     default:
-        errno = EINVAL;
-        return -1;
+        return -EINVAL;
     }
-}
-
-__attribute__((visibility("default"))) int dup(int oldfd) {
-    return dup_impl(oldfd);
-}
-
-__attribute__((visibility("default"))) int dup2(int oldfd, int newfd) {
-    return dup2_impl(oldfd, newfd);
-}
-
-__attribute__((visibility("default"))) int dup3(int oldfd, int newfd, int flags) {
-    return dup3_impl(oldfd, newfd, flags);
-}
-
-__attribute__((visibility("default"))) int fcntl(int fd, int cmd, ...) {
-    va_list args;
-    int arg = 0;
-
-    va_start(args, cmd);
-    arg = va_arg(args, int);
-    va_end(args);
-
-    return fcntl_impl(fd, cmd, arg);
 }

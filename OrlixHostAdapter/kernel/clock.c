@@ -16,6 +16,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "../fs/errno_translation.h"
+
 static const clockid_t host_clock_realtime = _CLOCK_REALTIME;
 static const clockid_t host_clock_monotonic = _CLOCK_MONOTONIC;
 
@@ -44,8 +46,7 @@ int gettimeofday_impl(struct __kernel_old_timeval *tv, void *tz) {
     uint64_t ns;
 
     if (!tv) {
-        errno = EFAULT;
-        return -1;
+        return -linux_errno_from_darwin_errno(EFAULT);
     }
     ns = clock_gettime_nsec_np(host_clock_realtime);
     tv->tv_sec = (__kernel_old_time_t)(ns / 1000000000ULL);
@@ -61,8 +62,7 @@ int gettimeofday_impl(struct __kernel_old_timeval *tv, void *tz) {
 int settimeofday_impl(const struct __kernel_old_timeval *tv, const void *tz) {
     (void)tv;
     (void)tz;
-    errno = EPERM;
-    return -1;
+    return -linux_errno_from_darwin_errno(EPERM);
 }
 
 /* ============================================================================
@@ -73,8 +73,7 @@ int clock_gettime_impl(__kernel_clockid_t clk_id, struct __kernel_timespec *tp) 
     uint64_t ns;
 
     if (!tp) {
-        errno = EFAULT;
-        return -1;
+        return -linux_errno_from_darwin_errno(EFAULT);
     }
 
     switch (clk_id) {
@@ -89,23 +88,20 @@ int clock_gettime_impl(__kernel_clockid_t clk_id, struct __kernel_timespec *tp) 
         tp->tv_nsec = (long)(ns % 1000000000ULL);
         return 0;
     default:
-        errno = EINVAL;
-        return -1;
+        return -linux_errno_from_darwin_errno(EINVAL);
     }
 }
 
 int clock_getres_impl(__kernel_clockid_t clk_id, struct __kernel_timespec *res) {
     (void)clk_id;
     (void)res;
-    errno = ENOSYS;
-    return -1;
+    return -linux_errno_from_darwin_errno(ENOSYS);
 }
 
 int clock_settime_impl(__kernel_clockid_t clk_id, const struct __kernel_timespec *tp) {
     (void)clk_id;
     (void)tp;
-    errno = EPERM;
-    return -1;
+    return -linux_errno_from_darwin_errno(EPERM);
 }
 
 /* ============================================================================
@@ -116,8 +112,8 @@ unsigned int sleep_impl(unsigned int seconds) {
     return sleep(seconds);
 }
 
-int usleep_impl(useconds_t usec) {
-    return usleep(usec);
+int usleep_impl(__u32 usec) {
+    return usleep(usec) == 0 ? 0 : -errno;
 }
 
 /* ============================================================================
@@ -128,15 +124,13 @@ int setitimer_impl(int which, const struct __kernel_old_itimerval *new_value, st
     (void)which;
     (void)new_value;
     (void)old_value;
-    errno = ENOSYS;
-    return -1;
+    return -linux_errno_from_darwin_errno(ENOSYS);
 }
 
 int getitimer_impl(int which, struct __kernel_old_itimerval *curr_value) {
     (void)which;
     (void)curr_value;
-    errno = ENOSYS;
-    return -1;
+    return -linux_errno_from_darwin_errno(ENOSYS);
 }
 
 unsigned int alarm_impl(unsigned int seconds) {

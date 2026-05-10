@@ -4,9 +4,8 @@
 
 #include "exec_context.h"
 
-#include <errno.h>
-
 #include "../../kernel/task.h"
+#include <linux/errno.h>
 
 #define AARCH64_INSN_NOP 0xd503201fU
 #define AARCH64_INSN_BRK_BASE 0xd4200000U
@@ -16,8 +15,7 @@ int aarch64_exec_context_from_task(struct task_struct *task, struct aarch64_exec
     const struct task_exec_handoff *handoff;
 
     if (!task || !context) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
 
     handoff = task_get_exec_handoff_impl(task);
@@ -26,8 +24,7 @@ int aarch64_exec_context_from_task(struct task_struct *task, struct aarch64_exec
         handoff->aarch64_sp == 0 ||
         !handoff->read_memory ||
         !handoff->write_memory) {
-        errno = ENOEXEC;
-        return -1;
+        return -ENOEXEC;
     }
 
     context->pc = handoff->aarch64_pc;
@@ -44,8 +41,7 @@ int aarch64_exec_context_step(struct aarch64_exec_context *context) {
     uint32_t insn = 0;
 
     if (!context || !context->task || !context->read_memory) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     if (context->stopped) {
         return 0;
@@ -65,16 +61,14 @@ int aarch64_exec_context_step(struct aarch64_exec_context *context) {
         return 0;
     }
 
-    errno = ENOSYS;
-    return -1;
+    return -ENOSYS;
 }
 
 int aarch64_exec_context_run(struct aarch64_exec_context *context, uint64_t max_steps, uint64_t *out_steps) {
     uint64_t ran = 0;
 
     if (!context) {
-        errno = EFAULT;
-        return -1;
+        return -EFAULT;
     }
     while (ran < max_steps && !context->stopped) {
         int ret = aarch64_exec_context_step(context);

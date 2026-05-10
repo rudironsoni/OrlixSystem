@@ -1,18 +1,16 @@
 #include "vfs.h"
 
-#include <errno.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 /* Linux UAPI headers for ABI constants */
-#include <linux/capability.h>
-#include <linux/elf.h>
-#include <linux/fcntl.h>
-#include <linux/mount.h>
-#include <linux/stat.h>
-#include <linux/xattr.h>
+#include <uapi/linux/capability.h>
+#include <linux/errno.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/mount.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/stat.h>
+#include <linux/stdarg.h>
+#include <linux/string.h>
+#include <uapi/linux/xattr.h>
 #ifdef SIGHUP
 #undef SIGHUP
 #endif
@@ -118,6 +116,8 @@
 #ifdef SIGRTMIN
 #undef SIGRTMIN
 #endif
+
+#include "internal/slab.h"
 #ifdef SIGRTMAX
 #undef SIGRTMAX
 #endif
@@ -137,7 +137,6 @@
 #include "internal/fs/rootfs.h"
 
 #include "fdtable.h"
-#include "eventpoll.h"
 #include "pty.h"
 #include "../kernel/cgroup.h"
 #include "../kernel/task.h"
@@ -157,6 +156,10 @@ static const char *vfs_virtual_root_path = "/";
 static int vfs_ensure_backing_initialized(void);
 static int vfs_join_virtual_path(const char *base_path, const char *suffix, char *joined_path,
                                  size_t joined_path_len);
+extern int epoll_fdinfo_content_impl(struct epoll_instance *instance, char *buf, size_t buf_len,
+                                     size_t *pos);
+static int vfs_parse_decimal_i32(const char *s, int allow_zero, int32_t *value_out,
+                                 const char **end_out);
 static int vfs_stat_virtual_backed_path(const char *resolved_vpath, const char *translated_path,
                                         struct stat *st);
 static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath);
@@ -166,6 +169,33 @@ static bool vfs_path_matches_prefix(const char *vpath, const char *prefix);
 static bool vfs_mount_target_matches_tree(const char *target, const char *root);
 static uint64_t vfs_vma_resident_page_count(const struct task_vma *vma);
 static void vfs_detached_mount_drop_namespace_refs(uint64_t mount_ns_id);
+
+static int vfs_parse_decimal_i32(const char *s, int allow_zero, int32_t *value_out,
+                                 const char **end_out) {
+    uint64_t value = 0;
+    const char *cursor;
+
+    if (!s || *s < '0' || *s > '9' || !value_out || !end_out) {
+        return -EINVAL;
+    }
+
+    cursor = s;
+    while (*cursor >= '0' && *cursor <= '9') {
+        value = (value * 10U) + (uint64_t)(*cursor - '0');
+        if (value > 2147483647ULL) {
+            return -ERANGE;
+        }
+        cursor++;
+    }
+
+    if (!allow_zero && value == 0) {
+        return -EINVAL;
+    }
+
+    *value_out = (int32_t)value;
+    *end_out = cursor;
+    return 0;
+}
 
 /* Backing storage class roots - discovered at runtime from host container */
 static char vfs_persistent_root[MAX_PATH] = {0};
@@ -248,7 +278,8 @@ static fs_mutex_t vfs_detached_mount_lock = FS_MUTEX_INITIALIZER;
 static uint64_t vfs_mount_next_peer_group_id(void);
 
 static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
-    struct vfs_mount_namespace *mnt_ns = calloc(1, sizeof(struct vfs_mount_namespace));
+    struct vfs_mount_namespace *mnt_ns =
+        __kmalloc_noprof(sizeof(struct vfs_mount_namespace), GFP_KERNEL | __GFP_ZERO);
     if (!mnt_ns) {
         return NULL;
     }
@@ -284,7 +315,7 @@ static void vfs_put_mount_namespace(struct vfs_mount_namespace *mnt_ns) {
     memset(mnt_ns->entries, 0, sizeof(mnt_ns->entries));
     fs_mutex_unlock(&mnt_ns->lock);
     fs_mutex_destroy(&mnt_ns->lock);
-    free(mnt_ns);
+    kfree(mnt_ns);
 }
 
 static struct vfs_mount_namespace *vfs_dup_mount_namespace(struct vfs_mount_namespace *old) {
@@ -1438,9 +1469,10 @@ static int vfs_resolve_existing_metadata_path_follow(const char *path, char *res
     if (ret != 0) {
         return ret;
     }
-    if (vfs_fstatat(AT_FDCWD, resolved, &st,
-                    follow_final_symlink ? 0 : AT_SYMLINK_NOFOLLOW) != 0) {
-        return -errno;
+    ret = vfs_fstatat(AT_FDCWD, resolved, &st,
+                      follow_final_symlink ? 0 : AT_SYMLINK_NOFOLLOW);
+    if (ret != 0) {
+        return ret;
     }
     return 0;
 }
@@ -1574,7 +1606,7 @@ int vfs_set_user_xattr_follow(const char *path, const char *name, const void *va
         return -EFAULT;
     }
     if (strncmp(name, "user.", 5) != 0) {
-        return -ENOTSUP;
+        return -EOPNOTSUPP;
     }
     if (name[5] == '\0' || strlen(name) > VFS_USER_XATTR_NAME_MAX ||
         size > VFS_USER_XATTR_VALUE_MAX) {
@@ -1786,12 +1818,10 @@ int vfs_set_file_capabilities_follow(const char *path, uint64_t permitted, uint6
     ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
                                                     follow_final_symlink);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     if (!cred_has_cap(get_current_cred(), CAP_SETFCAP)) {
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     fs_mutex_lock(&vfs_metadata_lock);
@@ -1807,8 +1837,7 @@ int vfs_set_file_capabilities_follow(const char *path, uint64_t permitted, uint6
     }
     if (idx < 0) {
         fs_mutex_unlock(&vfs_metadata_lock);
-        errno = ENOSPC;
-        return -1;
+        return -ENOSPC;
     }
     vfs_metadata_table[idx].active = true;
     vfs_copy_string(resolved, vfs_metadata_table[idx].path, sizeof(vfs_metadata_table[idx].path));
@@ -1874,20 +1903,17 @@ int vfs_remove_file_capabilities_follow(const char *path, int follow_final_symli
     ret = vfs_resolve_existing_metadata_path_follow(path, resolved, sizeof(resolved),
                                                     follow_final_symlink);
     if (ret != 0) {
-        errno = -ret;
-        return -1;
+        return ret;
     }
     if (!cred_has_cap(get_current_cred(), CAP_SETFCAP)) {
-        errno = EPERM;
-        return -1;
+        return -EPERM;
     }
 
     fs_mutex_lock(&vfs_metadata_lock);
     idx = vfs_metadata_find_locked(resolved);
     if (idx < 0 || !vfs_metadata_table[idx].has_file_caps) {
         fs_mutex_unlock(&vfs_metadata_lock);
-        errno = ENODATA;
-        return -1;
+        return -ENODATA;
     }
     vfs_metadata_table[idx].has_file_caps = false;
     vfs_metadata_table[idx].cap_permitted = 0;
@@ -2216,8 +2242,12 @@ static int vfs_stat_virtual_backed_path(const char *resolved_vpath, const char *
         return -EINVAL;
     }
 
-    if (backing_stat(translated_path, st) != 0) {
-        return -errno;
+    {
+        int ret = backing_stat(translated_path, st);
+
+        if (ret != 0) {
+            return ret;
+        }
     }
     vfs_apply_stat_metadata(resolved_vpath, st);
     return 0;
@@ -2914,11 +2944,11 @@ int vfs_open_tree(int dirfd, const char *pathname, unsigned int flags) {
 
     fd = alloc_fd_impl();
     if (fd < 0) {
-        return -errno;
+        return fd;
     }
     if (init_mount_fd_entry_impl(fd, O_RDONLY | ((flags & OPEN_TREE_CLOEXEC) ? O_CLOEXEC : 0),
                                  &mount_fd) != 0) {
-        ret = -errno;
+        ret = -ENOMEM;
         free_fd_impl(fd);
         return ret;
     }
@@ -2959,8 +2989,9 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
     if (ret != 0) {
         return ret;
     }
-    if (backing_stat(backing_target, &target_stat) != 0) {
-        return -errno;
+    ret = backing_stat(backing_target, &target_stat);
+    if (ret != 0) {
+        return ret;
     }
     if (!S_ISDIR(target_stat.st_mode)) {
         return -ENOTDIR;
@@ -3099,14 +3130,16 @@ int vfs_pivot_root(const char *new_root, const char *put_old) {
     if (ret != 0) {
         return ret;
     }
-    if (backing_stat(backing_new_root, &st) != 0) {
-        return -errno;
+    ret = backing_stat(backing_new_root, &st);
+    if (ret != 0) {
+        return ret;
     }
     if (!S_ISDIR(st.st_mode)) {
         return -ENOTDIR;
     }
-    if (backing_stat(backing_put_old, &st) != 0) {
-        return -errno;
+    ret = backing_stat(backing_put_old, &st);
+    if (ret != 0) {
+        return ret;
     }
     if (!S_ISDIR(st.st_mode)) {
         return -ENOTDIR;
@@ -3396,7 +3429,7 @@ static int vfs_join_backing_root_for_route(const struct vfs_route_entry *route,
     backing_root = vfs_backing_root_for_class(route->backing_class);
     if (!backing_root) {
         /* Synthetic/external: no backing, return virtual path as-is or error */
-        return -ENOTSUP;
+        return -EOPNOTSUPP;
     }
 
     relative_suffix = vfs_relative_suffixfor_route(route, normalized_virtual_path);
@@ -3426,7 +3459,7 @@ static int vfs_join_backing_root(const char *normalized_virtual_path, char *back
     const struct vfs_route_entry *route;
 
     if (vfs_ensure_backing_initialized() < 0) {
-        return -ENOTSUP;
+        return -EOPNOTSUPP;
     }
 
     route = vfs_route_for_path(normalized_virtual_path);
@@ -3449,7 +3482,7 @@ const char *vfs_virtual_root(void) {
 }
 
 struct fs_struct *alloc_fs_struct(void) {
-    struct fs_struct *fs = calloc(1, sizeof(struct fs_struct));
+    struct fs_struct *fs = __kmalloc_noprof(sizeof(struct fs_struct), GFP_KERNEL | __GFP_ZERO);
     if (!fs)
         return NULL;
 
@@ -3459,7 +3492,7 @@ struct fs_struct *alloc_fs_struct(void) {
     fs->mnt_ns = vfs_alloc_mount_namespace();
     if (!fs->mnt_ns) {
         fs_mutex_destroy(&fs->lock);
-        free(fs);
+        kfree(fs);
         return NULL;
     }
 
@@ -3482,7 +3515,7 @@ void free_fs_struct(struct fs_struct *fs) {
 
     vfs_put_mount_namespace(fs->mnt_ns);
     fs_mutex_destroy(&fs->lock);
-    free(fs);
+    kfree(fs);
 }
 
 struct fs_struct *dup_fs_struct(struct fs_struct *old) {
@@ -3842,8 +3875,9 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         if (ret != 0) {
             return ret;
         }
-        if (backing_stat(backing_target, &target_stat) != 0) {
-            return -errno;
+        ret = backing_stat(backing_target, &target_stat);
+        if (ret != 0) {
+            return ret;
         }
         fs_mutex_lock(&mnt_ns->lock);
         ret = vfs_mount_move_tree_with_propagation_locked(mnt_ns, resolved_source, resolved_target);
@@ -3856,16 +3890,18 @@ int vfs_mount(const char *source, const char *target, const char *fstype, unsign
         return ret;
     }
 
-    if (backing_stat(backing_target, &target_stat) != 0) {
-        return -errno;
+    ret = backing_stat(backing_target, &target_stat);
+    if (ret != 0) {
+        return ret;
     }
     if (!cgroup2_mount) {
         ret = vfs_translate_path(resolved_source, backing_source, sizeof(backing_source));
         if (ret != 0) {
             return ret;
         }
-        if (backing_stat(backing_source, &source_stat) != 0) {
-            return -errno;
+        ret = backing_stat(backing_source, &source_stat);
+        if (ret != 0) {
+            return ret;
         }
         if ((S_ISDIR(source_stat.st_mode) && !S_ISDIR(target_stat.st_mode)) ||
             (!S_ISDIR(source_stat.st_mode) && S_ISDIR(target_stat.st_mode))) {
@@ -4024,7 +4060,7 @@ int vfs_open(const char *path, int flags, uint32_t mode, int *target_fd) {
     }
 
     if (vfs_path_is_synthetic(path)) {
-        return -ENOTSUP;
+        return -EOPNOTSUPP;
     }
 
     /* Current in-repo callers pass the host platform's open flags.
@@ -4038,7 +4074,7 @@ int vfs_open(const char *path, int flags, uint32_t mode, int *target_fd) {
 
     real_fd = backing_open(path, flags, mode);
     if (real_fd < 0) {
-        return -errno;
+        return real_fd;
     }
 
     *target_fd = real_fd;
@@ -4133,7 +4169,7 @@ static int vfs_readlink_resolved_virtual_path(const char *resolved_vpath, char *
 
     len = backing_readlink(translated_path, target, target_len - 1);
     if (len < 0) {
-        return -errno;
+        return (int)len;
     }
     target[len] = '\0';
     return 0;
@@ -4400,7 +4436,7 @@ int vfs_resolve_virtual_path_at(int dirfd, const char *vpath, char *resolved_vpa
     ret = get_fd_path_impl(entry, dir_virtual_path, sizeof(dir_virtual_path));
     put_fd_entry_impl(entry);
     if (ret != 0) {
-        return -errno;
+        return ret;
     }
 
     ret = vfs_join_virtual_path(dir_virtual_path, vpath, joined_virtual_path, sizeof(joined_virtual_path));
@@ -4499,7 +4535,7 @@ static int vfs_ensure_backing_initialized(void) {
     /* Discover persistent (Application Support) root */
     ret = backing_root_discover_persistent(vfs_persistent_root, sizeof(vfs_persistent_root));
     if (ret < 0) {
-        return -ENOTSUP;
+        return -EOPNOTSUPP;
     }
 
     /* Discover cache root */
@@ -4654,10 +4690,11 @@ static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_pa
     }
 
     if (strncmp(vpath, "/proc/", 6) == 0 && vpath[6] >= '0' && vpath[6] <= '9') {
-        char *endptr;
-        long pid = strtol(vpath + 6, &endptr, 10);
-        if (pid > 0 && (*endptr == '\0' || *endptr == '/')) {
-            struct task_struct *target = task_lookup((int32_t)pid);
+        int32_t pid;
+        const char *endptr;
+        if (vfs_parse_decimal_i32(vpath + 6, 0, &pid, &endptr) == 0 &&
+            (*endptr == '\0' || *endptr == '/')) {
+            struct task_struct *target = task_lookup(pid);
             if (target) {
                 free_task(target);
                 return endptr;
@@ -4693,8 +4730,8 @@ static int vfs_proc_task_tid_for_path(const char *vpath, int32_t *tid_out,
     struct task_struct *thread = NULL;
     const char *cursor;
     int32_t group_pid = -1;
-    long tid;
-    char *endptr;
+    int32_t tid;
+    const char *endptr;
 
     if (!vpath || !tid_out || !suffix_out) {
         return -EINVAL;
@@ -4711,11 +4748,10 @@ static int vfs_proc_task_tid_for_path(const char *vpath, int32_t *tid_out,
         group_pid = current->pid;
         cursor = vpath + 10;
     } else if (strncmp(vpath, "/proc/", 6) == 0 && vpath[6] >= '0' && vpath[6] <= '9') {
-        long pid = strtol(vpath + 6, &endptr, 10);
-        if (pid <= 0 || (*endptr != '\0' && *endptr != '/')) {
+        if (vfs_parse_decimal_i32(vpath + 6, 0, &group_pid, (const char **)&endptr) != 0 ||
+            (*endptr != '\0' && *endptr != '/')) {
             return -ENOENT;
         }
-        group_pid = (int32_t)pid;
         cursor = endptr;
     } else {
         return -ENOENT;
@@ -4724,8 +4760,8 @@ static int vfs_proc_task_tid_for_path(const char *vpath, int32_t *tid_out,
     if (strncmp(cursor, "/task/", 6) != 0 || cursor[6] == '\0') {
         return -ENOENT;
     }
-    tid = strtol(cursor + 6, &endptr, 10);
-    if (tid <= 0 || (*endptr != '\0' && *endptr != '/')) {
+    if (vfs_parse_decimal_i32(cursor + 6, 0, &tid, (const char **)&endptr) != 0 ||
+        (*endptr != '\0' && *endptr != '/')) {
         return -ENOENT;
     }
 
@@ -4765,10 +4801,11 @@ int vfs_proc_target_pid_for_path(const char *vpath) {
         return task ? task->pid : -1;
     }
     if (strncmp(vpath, "/proc/", 6) == 0 && vpath[6] >= '0' && vpath[6] <= '9') {
-        char *endptr;
-        long pid = strtol(vpath + 6, &endptr, 10);
-        if (pid > 0 && (*endptr == '\0' || *endptr == '/')) {
-            struct task_struct *target = task_lookup((int32_t)pid);
+        int32_t pid;
+        const char *endptr;
+        if (vfs_parse_decimal_i32(vpath + 6, 0, &pid, &endptr) == 0 &&
+            (*endptr == '\0' || *endptr == '/')) {
+            struct task_struct *target = task_lookup(pid);
             if (target) {
                 int target_pid = target->pid;
                 free_task(target);
@@ -4782,8 +4819,8 @@ int vfs_proc_target_pid_for_path(const char *vpath) {
 int vfs_proc_fd_num_for_path(const char *vpath, const char *leaf) {
     char mapped[MAX_PATH];
     const char *suffix;
-    char *endptr;
-    long fd_num;
+    const char *endptr;
+    int32_t fd_num;
     size_t leaf_len;
     int32_t tid;
 
@@ -4805,11 +4842,11 @@ int vfs_proc_fd_num_for_path(const char *vpath, const char *leaf) {
         return -ENOENT;
     }
 
-    fd_num = strtol(suffix + leaf_len, &endptr, 10);
-    if (*endptr != '\0' || fd_num < 0 || fd_num >= NR_OPEN_DEFAULT) {
+    if (vfs_parse_decimal_i32(suffix + leaf_len, 1, &fd_num, &endptr) != 0 ||
+        *endptr != '\0' || fd_num >= NR_OPEN_DEFAULT) {
         return -ENOENT;
     }
-    return (int)fd_num;
+    return fd_num;
 }
 
 proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
@@ -4849,9 +4886,10 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
         return PROC_SELF_TASK_DIR;
     }
     if (strncmp(suffix, "/task/", 6) == 0 && suffix[6] != '\0') {
-        char *endptr;
-        long tid_value = strtol(suffix + 6, &endptr, 10);
-        if (tid_value > 0 && *endptr == '\0') {
+        int32_t tid_value;
+        const char *endptr;
+        if (vfs_parse_decimal_i32(suffix + 6, 0, &tid_value, &endptr) == 0 &&
+            *endptr == '\0') {
             return PROC_SELF_THREAD_DIR;
         }
     }
@@ -6557,6 +6595,20 @@ int vfs_access(const char *pathname, int mode) {
     return vfs_faccessat(AT_FDCWD, pathname, mode, 0);
 }
 
+int vfs_path_exists(const char *pathname) {
+    struct stat st;
+    int ret;
+
+    ret = vfs_fstatat(AT_FDCWD, pathname, &st, 0);
+    if (ret == 0) {
+        return 1;
+    }
+    if (ret == -ENOENT) {
+        return 0;
+    }
+    return ret;
+}
+
 int vfs_fstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags) {
     char translated_path[MAX_PATH];
     char resolved_virtual[MAX_PATH];
@@ -6839,7 +6891,7 @@ int vfs_faccessat(int dirfd, const char *pathname, int mode, int flags) {
     }
 
     if (flags & AT_SYMLINK_NOFOLLOW) {
-        return -ENOTSUP;
+        return -EOPNOTSUPP;
     }
 
     ret = vfs_resolve_virtual_path_at_follow(dirfd, pathname, resolved_virtual,

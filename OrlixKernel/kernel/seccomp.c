@@ -5,11 +5,13 @@
 #include "task.h"
 #include "seccomp.h"
 
-#include <errno.h>
 #include <stdatomic.h>
 #include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
+#include <linux/errno.h>
+#include <linux/gfp_types.h>
+
+extern void *__kmalloc_noprof(size_t size, gfp_t flags);
+extern void kfree(const void *objp);
 
 #define SECCOMP_RULE_MAX 32
 
@@ -26,10 +28,9 @@ struct seccomp {
 };
 
 struct seccomp *seccomp_alloc(void) {
-    struct seccomp *policy = calloc(1, sizeof(*policy));
+    struct seccomp *policy = __kmalloc_noprof(sizeof(*policy), GFP_KERNEL | __GFP_ZERO);
 
     if (!policy) {
-        errno = ENOMEM;
         return NULL;
     }
     atomic_init(&policy->refs, 1);
@@ -50,7 +51,7 @@ void seccomp_put(struct seccomp *policy) {
     }
     if (atomic_fetch_sub(&policy->refs, 1) == 1) {
         kernel_mutex_destroy(&policy->lock);
-        free(policy);
+        kfree(policy);
     }
 }
 
