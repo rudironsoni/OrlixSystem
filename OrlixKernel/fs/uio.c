@@ -1,4 +1,4 @@
-#include <uapi/linux/uio.h>
+#include <linux/uio.h>
 
 #include <linux/errno.h>
 #include <stddef.h>

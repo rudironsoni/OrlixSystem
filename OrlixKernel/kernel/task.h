@@ -16,8 +16,8 @@
 #ifndef KERNEL_TASK_H
 #define KERNEL_TASK_H
 
-#include <linux/atomic.h>
 #include <linux/types.h>
+#include <linux/atomic.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"

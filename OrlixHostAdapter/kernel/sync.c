@@ -11,25 +11,19 @@
  */
 
 #include <errno.h>
-#include <linux/time_types.h>
 #include <stddef.h>
 #include <pthread.h>
-#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "exit.h"
 #include "kthread.h"
-#include "kernel/signal.h"
 #include "mutex.h"
-#include "timekeeping.h"
 #include "current.h"
 
 static const clockid_t host_nsecs_clock_realtime = _CLOCK_REALTIME;
-static const clockid_t host_nsecs_clock_monotonic = _CLOCK_MONOTONIC;
 
 static pthread_mutex_t *kernel_mutex_impl(const kernel_mutex_t *mutex) {
     return mutex ? (pthread_mutex_t *)mutex->impl : NULL;
@@ -396,52 +390,6 @@ int kernel_once(kernel_once_t *once_control, void (*init_routine)(void)) {
     return 0;
 }
 
-/* ============================================================================
- * SIGNAL MASK - Darwin implementation (stub)
- * ============================================================================ */
-
-int kernel_thread_sigmask(int how, const struct signal_mask_bits *set,
-                          struct signal_mask_bits *oldset) {
-    (void)how;
-    (void)set;
-    (void)oldset;
-    /* Signal masking not implemented on iOS substrate */
-    return 0;
-}
-
-int kernel_sigemptyset(struct signal_mask_bits *set) {
-    if (!set) {
-        return -EINVAL;
-    }
-    memset(set->sig, 0, sizeof(set->sig));
-    return 0;
-}
-
-int kernel_sigaddset(struct signal_mask_bits *set, int signo) {
-    unsigned int signal_bit;
-    unsigned int signal_word;
-
-    if (!set || signo <= 0 || signo > KERNEL_SIG_NUM) {
-        return -EINVAL;
-    }
-    signal_bit = (unsigned int)(signo - 1);
-    signal_word = signal_bit / 64U;
-    set->sig[signal_word] |= 1ULL << (signal_bit % 64U);
-    return 0;
-}
-
-int kernel_sigismember(const struct signal_mask_bits *set, int signo) {
-    unsigned int signal_bit;
-    unsigned int signal_word;
-
-    if (!set || signo <= 0 || signo > KERNEL_SIG_NUM) {
-        return -EINVAL;
-    }
-    signal_bit = (unsigned int)(signo - 1);
-    signal_word = signal_bit / 64U;
-    return (set->sig[signal_word] & (1ULL << (signal_bit % 64U))) != 0;
-}
-
 int kernel_sleep_ms(int timeout_ms) {
     if (timeout_ms < 0) {
         return -EINVAL;
@@ -449,34 +397,9 @@ int kernel_sleep_ms(int timeout_ms) {
     if (timeout_ms == 0) {
         return 0;
     }
-    return usleep((useconds_t)timeout_ms * 1000U);
-}
-
-/* ============================================================================
- * CLOCK - Darwin implementation
- * ============================================================================ */
-
-int kernel_clock_gettime(int clock_id, struct __kernel_timespec *tp) {
-    uint64_t ns;
-
-    if (!tp) {
-        return -EINVAL;
+    if (usleep((useconds_t)timeout_ms * 1000U) != 0) {
+        return -errno;
     }
-
-    switch (clock_id) {
-    case 0: /* CLOCK_REALTIME */
-        ns = clock_gettime_nsec_np(host_nsecs_clock_realtime);
-        break;
-    case 1: /* CLOCK_MONOTONIC */
-        ns = clock_gettime_nsec_np(host_nsecs_clock_monotonic);
-        break;
-    default:
-        errno = EINVAL;
-        return -1;
-    }
-
-    tp->tv_sec = (__kernel_old_time_t)(ns / 1000000000ULL);
-    tp->tv_nsec = (long)(ns % 1000000000ULL);
     return 0;
 }
 

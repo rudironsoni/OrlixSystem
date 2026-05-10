@@ -8,7 +8,7 @@
  */
 
 #include <linux/errno.h>
-#include <uapi/linux/random.h>
+#include <linux/random.h>
 
 #include <stddef.h>
 #include <stdint.h>

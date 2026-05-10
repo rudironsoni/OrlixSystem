@@ -2,20 +2,21 @@
 
 #include <uapi/linux/close_range.h>
 #include <linux/errno.h>
-#include <uapi/linux/fcntl.h>
+#include <linux/fcntl.h>
 #ifndef _LINUX_FCNTL_H
 #define _LINUX_FCNTL_H
 #endif
-#include <uapi/linux/eventfd.h>
-#include <uapi/linux/memfd.h>
+#include <linux/eventfd.h>
+#include <linux/memfd.h>
 #include <uapi/linux/pidfd.h>
 #include <linux/string.h>
-#include <uapi/linux/stat.h>
-#include <uapi/linux/time_types.h>
-#include <uapi/linux/timerfd.h>
-#include <uapi/asm/stat.h>
+#include <linux/stat.h>
+#include <linux/time.h>
+#include <linux/timerfd.h>
+#include <asm/stat.h>
 
 #include "internal/slab.h"
+#include "internal/timekeeping.h"
 #include "internal/fs/lock.h"
 
 /* Standard file descriptors - local definitions to avoid Darwin <unistd.h> */
@@ -36,7 +37,6 @@ static void retain_fd_description(struct fd_description *desc);
 static void release_fd_description(struct fd_description *desc);
 static struct file *copy_file_descriptor(struct file *file);
 extern void poll_notify_readiness_impl(void);
-extern int kernel_clock_gettime(int clock_id, struct __kernel_timespec *tp);
 extern int scnprintf(char *buf, size_t size, const char *fmt, ...);
 
 struct files_struct *alloc_files(size_t max_fds) {
@@ -380,7 +380,7 @@ typedef struct fd_description {
     uint64_t timerfd_expirations;
     bool timerfd_armed;
     int memfd_seals;
-    struct task_struct *pidfd_task;
+    struct task *pidfd_task;
     atomic_int refs;
     fs_mutex_t lock;
 } fd_description_t;
@@ -393,7 +393,7 @@ static atomic_int fd_table_initialized = 0;
 static atomic_ullong fdtable_next_virtual_identity = 1;
 static __thread fd_entry_t fd_task_local_entry;
 
-static bool fdtable_task_has_file(struct task_struct *task, int fd) {
+static bool fdtable_task_has_file(struct task *task, int fd) {
     bool used;
 
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
@@ -407,7 +407,7 @@ static bool fdtable_task_has_file(struct task_struct *task, int fd) {
 }
 
 static uint64_t fdtable_current_mount_namespace_id(void) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
 
     if (!task || !task->fs) {
         return 0;
@@ -424,7 +424,7 @@ static bool fdtable_any_task_uses_fd(int fd) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS && !used; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (fdtable_task_has_file(task, fd)) {
                 used = true;
@@ -444,7 +444,7 @@ static void fdtable_update_file_offsets_for_desc(fd_description_t *desc, int64_t
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->files) {
                 fs_mutex_lock(&task->files->lock);
@@ -508,7 +508,7 @@ static void fdtable_exchange_desc_path_if_matches(fd_description_t *desc,
 }
 
 static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     struct file *file;
     fd_description_t *new_desc = entry ? entry->desc : NULL;
 
@@ -546,7 +546,7 @@ static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
 }
 
 static void fdtable_remove_task_file(int fd) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     struct file *file;
 
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
@@ -878,19 +878,10 @@ static int timerfd_clock_allowed(int clockid) {
 }
 
 static int timerfd_now_ns(int clockid, uint64_t *now_out) {
-    struct __kernel_timespec ts;
-
     if (!now_out || !timerfd_clock_allowed(clockid)) {
         return -EINVAL;
     }
-    if (kernel_clock_gettime(clockid, &ts) != 0) {
-        return -1;
-    }
-    if (ts.tv_sec < 0 || ts.tv_nsec < 0) {
-        return -EINVAL;
-    }
-    *now_out = (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
-    return 0;
+    return kernel_clock_now_ns(clockid, now_out);
 }
 
 static int timerfd_timespec_valid(const struct __kernel_timespec *ts) {
@@ -1006,7 +997,7 @@ static fd_description_t *alloc_memfd_description(int real_fd, const char *name, 
     return desc;
 }
 
-static fd_description_t *alloc_pidfd_description(struct task_struct *task, int flags) {
+static fd_description_t *alloc_pidfd_description(struct task *task, int flags) {
     fd_description_t *desc;
 
     if (!task) {
@@ -1211,7 +1202,7 @@ void free_fd_impl(int fd) {
 }
 
 fd_entry_t *get_fd_entry_impl(int fd) {
-    struct task_struct *task;
+    struct task *task;
     struct file *file;
     fd_description_t *task_desc;
 
@@ -1220,7 +1211,7 @@ fd_entry_t *get_fd_entry_impl(int fd) {
     }
 
     file_init_impl();
-    task = get_current();
+    task = current_task();
     if (task && task->files) {
         fs_mutex_lock(&task->files->lock);
         if ((size_t)fd >= task->files->max_fds || !task->files->fd[fd]) {
@@ -1344,7 +1335,7 @@ void set_fd_descriptor_flags_impl(fd_entry_t *entry, int flags) {
     if (entry) {
         entry->fd_flags = flags;
         if (entry->task_local) {
-            struct task_struct *task = get_current();
+            struct task *task = current_task();
             if (task && task->files && entry->task_fd >= 0 &&
                 (size_t)entry->task_fd < task->files->max_fds) {
                 fs_mutex_lock(&task->files->lock);
@@ -1359,7 +1350,7 @@ void set_fd_descriptor_flags_impl(fd_entry_t *entry, int flags) {
 
 int64_t get_fd_offset_impl(fd_entry_t *entry) {
     if (entry && entry->task_local) {
-        struct task_struct *task = get_current();
+        struct task *task = current_task();
         int64_t pos = -1;
         if (task && task->files && entry->task_fd >= 0 &&
             (size_t)entry->task_fd < task->files->max_fds) {
@@ -1426,7 +1417,7 @@ void init_backing_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const cha
 
 int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     int newfd;
-    struct task_struct *task;
+    struct task *task;
     file_init_impl();
     fd_entry_t *old_entry;
     fd_description_t *desc;
@@ -1435,7 +1426,7 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
         return -EINVAL;
     }
 
-    task = get_current();
+    task = current_task();
     if (task && task->files) {
         struct file *old_file;
         struct file *new_file;
@@ -1511,8 +1502,8 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     return newfd;
 }
 
-int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flags) {
-    struct task_struct *current;
+int pidfd_getfd_impl(struct task *target, int targetfd, unsigned int flags) {
+    struct task *current;
     struct files_struct *source_files;
     struct files_struct *dest_files;
     struct file *source_file;
@@ -1531,7 +1522,7 @@ int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flag
         return -ESRCH;
     }
 
-    current = get_current();
+    current = current_task();
     if (!current || !current->files || !target->files) {
         return -ESRCH;
     }
@@ -1597,7 +1588,7 @@ out_unlock:
 
 int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
     fd_description_t *old_desc;
-    struct task_struct *task;
+    struct task *task;
     file_init_impl();
     fd_description_t *new_desc;
 
@@ -1605,7 +1596,7 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
         return -EBADF;
     }
 
-    task = get_current();
+    task = current_task();
     if (task && task->files) {
         struct file *old_file;
         struct file *new_file;
@@ -1662,13 +1653,13 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
 }
 
 int close_impl(int fd) {
-    struct task_struct *task;
+    struct task *task;
 
     file_init_impl();
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
         return -EBADF;
     }
-    task = get_current();
+    task = current_task();
     if (task && task->files) {
         if (free_fd(task->files, fd) != 0) {
             return -1;
@@ -1686,7 +1677,7 @@ int close_impl(int fd) {
 }
 
 int close_range_impl(unsigned int first, unsigned int last, unsigned int flags) {
-    struct task_struct *task;
+    struct task *task;
     unsigned int allowed_flags = CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC;
     unsigned int upper;
 
@@ -1699,7 +1690,7 @@ int close_range_impl(unsigned int first, unsigned int last, unsigned int flags) 
     }
     upper = last >= NR_OPEN_DEFAULT ? (unsigned int)NR_OPEN_DEFAULT - 1 : last;
 
-    task = get_current();
+    task = current_task();
     if ((flags & CLOSE_RANGE_CLOEXEC) != 0) {
         if (task && task->files) {
             fs_mutex_lock(&task->files->lock);
@@ -1735,10 +1726,10 @@ int close_on_exec_impl(void) {
     int fds_to_remove[NR_OPEN_DEFAULT];
     int release_count = 0;
     int closed = 0;
-    struct task_struct *task;
+    struct task *task;
 
     file_init_impl();
-    task = get_current();
+    task = current_task();
     if (task && task->files) {
         int closed_fds[NR_OPEN_DEFAULT];
 
@@ -1940,7 +1931,7 @@ static int init_memfd_entry_impl(int fd, const char *name, unsigned int flags, i
     return 0;
 }
 
-static int init_pidfd_entry_impl(int fd, struct task_struct *task, int flags) {
+static int init_pidfd_entry_impl(int fd, struct task *task, int flags) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -2002,7 +1993,7 @@ int memfd_create_impl(const char *name, unsigned int flags) {
     return fd;
 }
 
-int pidfd_create_for_task_impl(struct task_struct *task, int flags) {
+int pidfd_create_for_task_impl(struct task *task, int flags) {
     const int allowed_flags = O_CLOEXEC | O_NONBLOCK;
     int fd;
 
@@ -2025,7 +2016,7 @@ int pidfd_create_for_task_impl(struct task_struct *task, int flags) {
 }
 
 int pidfd_open_impl(int32_t pid, unsigned int flags) {
-    struct task_struct *task;
+    struct task *task;
     int fd;
     unsigned int allowed_flags = PIDFD_NONBLOCK;
 
@@ -2391,9 +2382,9 @@ bool get_fd_is_pidfd_impl(void *entry) {
     return fd_entry->desc && fd_entry->desc->type == FD_TYPE_PIDFD;
 }
 
-struct task_struct *pidfd_get_task_entry_impl(void *entry) {
+struct task *pidfd_get_task_entry_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
-    struct task_struct *task;
+    struct task *task;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_PIDFD ||
         !fd_entry->desc->pidfd_task) {
@@ -2697,7 +2688,7 @@ void fdtable_mark_path_deleted_impl(const char *path) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->files) {
                 fs_mutex_lock(&task->files->lock);
@@ -2730,7 +2721,7 @@ void fdtable_rename_path_impl(const char *old_path, const char *new_path) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->files) {
                 fs_mutex_lock(&task->files->lock);
@@ -2768,7 +2759,7 @@ void fdtable_exchange_paths_impl(const char *left_path, const char *right_path) 
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->files) {
                 fs_mutex_lock(&task->files->lock);
@@ -2794,7 +2785,7 @@ void fdtable_exchange_paths_impl(const char *left_path, const char *right_path) 
     kernel_mutex_unlock(&task_table_lock);
 }
 
-bool fdtable_task_is_used_impl(struct task_struct *task, int fd) {
+bool fdtable_task_is_used_impl(struct task *task, int fd) {
     bool used;
 
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
@@ -2807,7 +2798,7 @@ bool fdtable_task_is_used_impl(struct task_struct *task, int fd) {
     return used;
 }
 
-int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size_t path_len) {
+int fdtable_task_fd_path_impl(struct task *task, int fd, char *path, size_t path_len) {
     struct file *file;
     fd_description_t *desc;
     size_t len;
@@ -2845,7 +2836,7 @@ int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size
     return 0;
 }
 
-int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned long long mnt_id,
+int fdtable_task_fdinfo_content_impl(struct task *task, int fd, unsigned long long mnt_id,
                                      char *buf, size_t buf_len) {
     struct file *file;
     int64_t pos;
@@ -2888,7 +2879,7 @@ int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned 
 }
 
 void fdtable_sync_current_task_fd_impl(int fd) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     struct file *file;
     fd_description_t *desc;
 
@@ -2920,7 +2911,7 @@ void fdtable_sync_current_task_fd_impl(int fd) {
 }
 
 void fdtable_sync_current_task_from_static_impl(void) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
 
     if (!task || !task->files) {
         return;

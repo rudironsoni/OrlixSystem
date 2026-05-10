@@ -1,7 +1,7 @@
 #include "eventpoll.h"
 
-#include <uapi/linux/errno.h>
-#include <uapi/linux/fcntl.h>
+#include <linux/errno.h>
+#include <linux/fcntl.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -318,7 +318,7 @@ int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int ti
         ret = poll_wait_for_readiness_impl(wait_ms);
         if (ret < 0) {
             if (ret == -EINTR) {
-                task_restart_record_impl(get_current(), TASK_RESTART_EPOLL_WAIT,
+                task_restart_record_impl(current_task(), TASK_RESTART_EPOLL_WAIT,
                                          (uint64_t)(int64_t)epfd,
                                          (uint64_t)(uintptr_t)events,
                                          (uint64_t)(int64_t)maxevents,

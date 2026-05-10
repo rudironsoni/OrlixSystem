@@ -84,7 +84,7 @@ static int seccomp_set_errno_rule(struct seccomp *policy, int64_t syscall_nr, in
     return 0;
 }
 
-static int seccomp_attach_policy(struct task_struct *task, struct seccomp *policy) {
+static int seccomp_attach_policy(struct task *task, struct seccomp *policy) {
     struct seccomp *old;
 
     if (!task || !policy) {
@@ -96,7 +96,7 @@ static int seccomp_attach_policy(struct task_struct *task, struct seccomp *polic
     return 0;
 }
 
-int seccomp_set_task_errno_policy(struct task_struct *task, int64_t syscall_nr, int err) {
+int seccomp_set_task_errno_policy(struct task *task, int64_t syscall_nr, int err) {
     struct seccomp *policy;
     int ret;
 
@@ -115,7 +115,7 @@ int seccomp_set_task_errno_policy(struct task_struct *task, int64_t syscall_nr, 
     return ret;
 }
 
-int seccomp_set_thread_group_errno_policy(struct task_struct *task, int64_t syscall_nr, int err) {
+int seccomp_set_thread_group_errno_policy(struct task *task, int64_t syscall_nr, int err) {
     struct seccomp *policy;
     int ret;
 
@@ -136,7 +136,7 @@ int seccomp_set_thread_group_errno_policy(struct task_struct *task, int64_t sysc
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        for (struct task_struct *candidate = task_table[i]; candidate; candidate = candidate->hash_next) {
+        for (struct task *candidate = task_table[i]; candidate; candidate = candidate->hash_next) {
             if (candidate->tgid == task->tgid) {
                 seccomp_attach_policy(candidate, policy);
             }
@@ -146,7 +146,7 @@ int seccomp_set_thread_group_errno_policy(struct task_struct *task, int64_t sysc
     return 0;
 }
 
-void seccomp_clear_task_policy(struct task_struct *task) {
+void seccomp_clear_task_policy(struct task *task) {
     struct seccomp *old;
 
     if (!task) {
@@ -158,7 +158,7 @@ void seccomp_clear_task_policy(struct task_struct *task) {
 }
 
 long seccomp_check_current_syscall(int64_t syscall_nr) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     struct seccomp *policy;
     long ret = 0;
 

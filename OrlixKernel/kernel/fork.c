@@ -2,10 +2,10 @@
 
 #include <linux/errno.h>
 #include <linux/string.h>
-#include <uapi/linux/capability.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/resource.h>
-#include <uapi/linux/sched.h>
+#include <linux/capability.h>
+#include <linux/fcntl.h>
+#include <linux/resource.h>
+#include <linux/sched.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"

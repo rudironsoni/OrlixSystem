@@ -11,7 +11,7 @@
 #define AARCH64_INSN_BRK_BASE 0xd4200000U
 #define AARCH64_INSN_BRK_MASK 0xffe0001fU
 
-int aarch64_exec_context_from_task(struct task_struct *task, struct aarch64_exec_context *context) {
+int aarch64_exec_context_from_task(struct task *task, struct aarch64_exec_context *context) {
     const struct task_exec_handoff *handoff;
 
     if (!task || !context) {
@@ -64,8 +64,8 @@ int aarch64_exec_context_step(struct aarch64_exec_context *context) {
     return -ENOSYS;
 }
 
-int aarch64_exec_context_run(struct aarch64_exec_context *context, uint64_t max_steps, uint64_t *out_steps) {
-    uint64_t ran = 0;
+int aarch64_exec_context_run(struct aarch64_exec_context *context, u64 max_steps, u64 *out_steps) {
+    u64 ran = 0;
 
     if (!context) {
         return -EFAULT;

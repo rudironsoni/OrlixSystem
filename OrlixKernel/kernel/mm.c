@@ -9,15 +9,15 @@
 
 #include <stdint.h>
 
-#include <uapi/linux/errno.h>
+#include <linux/errno.h>
 #include <linux/gfp_types.h>
 #include <linux/string.h>
 
-#include <uapi/linux/elf.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/fs.h>
+#include <linux/elf.h>
+#include <linux/fcntl.h>
+#include <linux/fs.h>
 #define BUILD_VDSO 1
-#include <uapi/linux/mman.h>
+#include <linux/mman.h>
 #undef BUILD_VDSO
 
 #ifndef MAP_ANONYMOUS
@@ -1673,7 +1673,7 @@ static int mm_unmap_vma_range(struct mm_struct *mm, uint32_t index,
 }
 
 void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t offset) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint64_t map_len;
     uint64_t map_addr;
     enum task_vma_kind kind;
@@ -1792,7 +1792,7 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
 }
 
 int mprotect_impl(void *addr, size_t len, int prot) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint64_t start = (uint64_t)(uintptr_t)addr;
     uint64_t size;
 
@@ -1810,7 +1810,7 @@ int mprotect_impl(void *addr, size_t len, int prot) {
 }
 
 int munmap_impl(void *addr, size_t len) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint64_t start = (uint64_t)(uintptr_t)addr;
     uint64_t size;
     uint64_t end;
@@ -1977,7 +1977,7 @@ static int mm_zero_vma_range(struct task_vma *vma, uint64_t start, uint64_t end)
 }
 
 int madvise_impl(void *addr, size_t length, int advice) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint64_t start = (uint64_t)(uintptr_t)addr;
     uint64_t size;
     uint64_t end;
@@ -2017,7 +2017,7 @@ int madvise_impl(void *addr, size_t length, int advice) {
 }
 
 int mincore_impl(void *addr, size_t length, unsigned char *vec) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint64_t start = (uint64_t)(uintptr_t)addr;
     uint64_t size;
     uint64_t page_count;
@@ -2072,7 +2072,7 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
 }
 
 void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags, void *new_address) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint64_t old_start = (uint64_t)(uintptr_t)old_address;
     uint64_t new_start = (uint64_t)(uintptr_t)new_address;
     uint64_t old_len;
@@ -2340,7 +2340,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
 }
 
 int msync_impl(void *addr, size_t len, int flags) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint64_t start = (uint64_t)(uintptr_t)addr;
     uint64_t size;
     uint64_t end;
@@ -2438,7 +2438,7 @@ int msync_impl(void *addr, size_t len, int flags) {
 }
 
 void *brk_impl(void *addr) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint64_t requested = (uint64_t)(uintptr_t)addr;
     uint64_t aligned;
     uint32_t brk_index = 0;

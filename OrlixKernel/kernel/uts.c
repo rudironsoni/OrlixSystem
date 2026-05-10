@@ -4,19 +4,18 @@
 #include "task.h"
 
 #include <linux/errno.h>
+#include <linux/atomic.h>
 #include <linux/gfp_types.h>
 #include <linux/string.h>
-#include <stdatomic.h>
-#include <stdbool.h>
 
-#include <uapi/linux/capability.h>
-#include <uapi/linux/utsname.h>
+#include <linux/capability.h>
+#include <linux/utsname.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
 
 struct uts_namespace {
-    atomic_int refs;
+    atomic_t refs;
     uint64_t ns_id;
     uint64_t owner_user_ns_id;
     bool static_storage;
@@ -30,9 +29,9 @@ struct uts_namespace {
 };
 
 static struct uts_namespace initial_uts_ns;
-static atomic_bool initial_uts_ns_ready = false;
+static atomic_t initial_uts_ns_ready = ATOMIC_INIT(0);
 static kernel_mutex_t initial_uts_ns_lock = KERNEL_MUTEX_INITIALIZER;
-static atomic_int next_uts_ns_id = 1;
+static atomic_t next_uts_ns_id = ATOMIC_INIT(1);
 
 static void uts_copy_literal(char dst[__NEW_UTS_LEN + 1], const char *src) {
     size_t len = strlen(src);
@@ -54,16 +53,16 @@ static void uts_set_defaults_locked(struct uts_namespace *ns) {
 
 static void uts_init_initial_namespace(void) {
     kernel_mutex_lock(&initial_uts_ns_lock);
-    if (!atomic_load(&initial_uts_ns_ready)) {
-        atomic_init(&initial_uts_ns.refs, 1);
-        initial_uts_ns.ns_id = (uint64_t)atomic_fetch_add(&next_uts_ns_id, 1);
+    if (atomic_read(&initial_uts_ns_ready) == 0) {
+        atomic_set(&initial_uts_ns.refs, 1);
+        initial_uts_ns.ns_id = (uint64_t)(atomic_inc_return(&next_uts_ns_id) - 1);
         initial_uts_ns.owner_user_ns_id = 1;
         initial_uts_ns.static_storage = true;
         kernel_mutex_init(&initial_uts_ns.lock);
         kernel_mutex_lock(&initial_uts_ns.lock);
         uts_set_defaults_locked(&initial_uts_ns);
         kernel_mutex_unlock(&initial_uts_ns.lock);
-        atomic_store(&initial_uts_ns_ready, true);
+        atomic_set(&initial_uts_ns_ready, 1);
     }
     kernel_mutex_unlock(&initial_uts_ns_lock);
 }
@@ -77,7 +76,7 @@ struct uts_namespace *uts_get(struct uts_namespace *ns) {
     if (!ns) {
         return NULL;
     }
-    atomic_fetch_add(&ns->refs, 1);
+    atomic_inc(&ns->refs);
     return ns;
 }
 
@@ -85,11 +84,11 @@ void uts_put(struct uts_namespace *ns) {
     if (!ns) {
         return;
     }
-    if (atomic_fetch_sub(&ns->refs, 1) > 1) {
+    if (atomic_dec_return(&ns->refs) >= 1) {
         return;
     }
     if (ns->static_storage) {
-        atomic_store(&ns->refs, 1);
+        atomic_set(&ns->refs, 1);
         return;
     }
     kernel_mutex_destroy(&ns->lock);
@@ -112,8 +111,8 @@ struct uts_namespace *uts_dup(struct uts_namespace *ns) {
         return NULL;
     }
 
-    atomic_init(&copy->refs, 1);
-    copy->ns_id = (uint64_t)atomic_fetch_add(&next_uts_ns_id, 1);
+    atomic_set(&copy->refs, 1);
+    copy->ns_id = (uint64_t)(atomic_inc_return(&next_uts_ns_id) - 1);
     copy->owner_user_ns_id = cred_user_namespace_id(get_current_cred());
     if (copy->owner_user_ns_id == 0) {
         copy->owner_user_ns_id = ns->owner_user_ns_id ? ns->owner_user_ns_id : 1;

@@ -1,9 +1,9 @@
 /* OrlixKernel/fs/stat.c
  * Virtual stat/fstat implementation
  */
-#include <uapi/linux/fcntl.h>
-#include <uapi/asm/stat.h>
-#include <uapi/linux/stat.h>
+#include <linux/fcntl.h>
+#include <asm/stat.h>
+#include <linux/stat.h>
 
 #include <linux/errno.h>
 #include <linux/string.h>

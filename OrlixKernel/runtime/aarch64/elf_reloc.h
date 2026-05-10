@@ -5,14 +5,14 @@
 #ifndef RUNTIME_AARCH64_ELF_RELOC_H
 #define RUNTIME_AARCH64_ELF_RELOC_H
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct task_dynamic_info;
-struct task_struct;
+struct task;
 
 enum aarch64_elf_relocation_type {
     R_AARCH64_NONE = 0,
@@ -22,10 +22,10 @@ enum aarch64_elf_relocation_type {
     R_AARCH64_RELATIVE = 1027,
 };
 
-int aarch64_apply_dynamic_relocations(struct task_struct *task,
+int aarch64_apply_dynamic_relocations(struct task *task,
                                       const struct task_dynamic_info *dynamic,
-                                      uint64_t load_base,
-                                      uint32_t *out_applied);
+                                      u64 load_base,
+                                      u32 *out_applied);
 
 #ifdef __cplusplus
 }

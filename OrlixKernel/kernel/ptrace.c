@@ -35,7 +35,7 @@ static bool ptrace_same_credential_domain(const struct cred *tracer, const struc
            tracer->fsgid == target->fsgid;
 }
 
-static bool ptrace_may_attach(const struct task_struct *tracer, const struct task_struct *target) {
+static bool ptrace_may_attach(const struct task *tracer, const struct task *target) {
     const struct cred *tracer_cred;
     const struct cred *target_cred;
 
@@ -50,7 +50,7 @@ static bool ptrace_may_attach(const struct task_struct *tracer, const struct tas
     return target->exec_dumpable && ptrace_same_credential_domain(tracer_cred, target_cred);
 }
 
-int ptrace_may_access_task_impl(const struct task_struct *tracer, const struct task_struct *target) {
+int ptrace_may_access_task_impl(const struct task *tracer, const struct task *target) {
     if (!tracer || !target || !tracer->cred || !target->cred) {
         return -ESRCH;
     }
@@ -60,13 +60,13 @@ int ptrace_may_access_task_impl(const struct task_struct *tracer, const struct t
     return 0;
 }
 
-static bool ptrace_is_tracer(const struct task_struct *tracer, const struct task_struct *target) {
+static bool ptrace_is_tracer(const struct task *tracer, const struct task *target) {
     return tracer && target && target->ptrace_attached && target->ptracer_pid == tracer->pid;
 }
 
-static int ptrace_get_target(__kernel_pid_t pid, struct task_struct **target_out) {
-    struct task_struct *tracer = get_current();
-    struct task_struct *target;
+static int ptrace_get_target(__kernel_pid_t pid, struct task **target_out) {
+    struct task *tracer = current_task();
+    struct task *target;
 
     if (!target_out) {
         return -EINVAL;
@@ -83,7 +83,7 @@ static int ptrace_get_target(__kernel_pid_t pid, struct task_struct **target_out
     return 0;
 }
 
-static int ptrace_copy_regs_to_user(struct task_struct *target, struct iovec *iov) {
+static int ptrace_copy_regs_to_user(struct task *target, struct iovec *iov) {
     struct user_pt_regs regs;
     size_t ncopy;
 
@@ -101,7 +101,7 @@ static int ptrace_copy_regs_to_user(struct task_struct *target, struct iovec *io
     return 0;
 }
 
-static int ptrace_copy_regs_from_user(struct task_struct *target, const struct iovec *iov) {
+static int ptrace_copy_regs_from_user(struct task *target, const struct iovec *iov) {
     struct user_pt_regs regs;
     size_t ncopy;
 
@@ -118,7 +118,7 @@ static int ptrace_copy_regs_from_user(struct task_struct *target, const struct i
     return 0;
 }
 
-static long ptrace_copy_syscall_info(struct task_struct *target, void *addr, void *data) {
+static long ptrace_copy_syscall_info(struct task *target, void *addr, void *data) {
     struct ptrace_syscall_info snapshot;
     struct ptrace_syscall_info *info = (struct ptrace_syscall_info *)data;
     unsigned long size = (unsigned long)(uintptr_t)addr;
@@ -144,12 +144,12 @@ static long ptrace_copy_syscall_info(struct task_struct *target, void *addr, voi
     return (long)ncopy;
 }
 
-static void ptrace_report_stop(struct task_struct *target, int32_t sig) {
+static void ptrace_report_stop(struct task *target, int32_t sig) {
     task_mark_stopped_by_signal(target, sig);
     task_notify_parent_state_change(target);
 }
 
-static void ptrace_record_event_stop(struct task_struct *target, uint64_t event, uint64_t message) {
+static void ptrace_record_event_stop(struct task *target, uint64_t event, uint64_t message) {
     if (!target || !target->ptrace_attached) {
         return;
     }
@@ -161,8 +161,8 @@ static void ptrace_record_event_stop(struct task_struct *target, uint64_t event,
 }
 
 long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
-    struct task_struct *tracer = get_current();
-    struct task_struct *target;
+    struct task *tracer = current_task();
+    struct task *target;
     int ret;
 
     if (!tracer) {
@@ -362,7 +362,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
 
 int ptrace_note_syscall_entry(long number, long arg0, long arg1, long arg2,
                               long arg3, long arg4, long arg5) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
 
     if (!task || !task->ptrace_attached || !task->ptrace_syscall_trace) {
         return 0;
@@ -387,7 +387,7 @@ int ptrace_note_syscall_entry(long number, long arg0, long arg1, long arg2,
 }
 
 void ptrace_note_syscall_exit(long retval) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
 
     if (!task || !task->ptrace_attached || !task->ptrace_syscall_trace) {
         return;
@@ -401,7 +401,7 @@ void ptrace_note_syscall_exit(long retval) {
     ptrace_report_stop(task, SIGTRAP);
 }
 
-void ptrace_note_fork_event(struct task_struct *task, __kernel_pid_t child_pid, int clone_event) {
+void ptrace_note_fork_event(struct task *task, __kernel_pid_t child_pid, int clone_event) {
     uint64_t option;
     uint64_t event;
 
@@ -416,7 +416,7 @@ void ptrace_note_fork_event(struct task_struct *task, __kernel_pid_t child_pid, 
     ptrace_record_event_stop(task, event, (uint64_t)child_pid);
 }
 
-void ptrace_rewrite_fork_event_message(struct task_struct *task, __kernel_pid_t old_child_pid,
+void ptrace_rewrite_fork_event_message(struct task *task, __kernel_pid_t old_child_pid,
                                        __kernel_pid_t new_child_pid, int clone_event) {
     uint64_t expected_event;
 
@@ -432,7 +432,7 @@ void ptrace_rewrite_fork_event_message(struct task_struct *task, __kernel_pid_t 
     kernel_mutex_unlock(&task->lock);
 }
 
-void ptrace_note_exec_event(struct task_struct *task) {
+void ptrace_note_exec_event(struct task *task) {
     if (!task || !task->ptrace_attached ||
         (task->ptrace_options & PTRACE_O_TRACEEXEC) == 0) {
         return;
@@ -440,7 +440,7 @@ void ptrace_note_exec_event(struct task_struct *task) {
     ptrace_record_event_stop(task, PTRACE_EVENT_EXEC, (uint64_t)task->pid);
 }
 
-void ptrace_note_exit_event(struct task_struct *task, int status) {
+void ptrace_note_exit_event(struct task *task, int status) {
     if (!task || !task->ptrace_attached ||
         (task->ptrace_options & PTRACE_O_TRACEEXIT) == 0) {
         return;
@@ -448,7 +448,7 @@ void ptrace_note_exit_event(struct task_struct *task, int status) {
     ptrace_record_event_stop(task, PTRACE_EVENT_EXIT, (uint64_t)(status & 0xff));
 }
 
-int ptrace_note_signal_delivery(struct task_struct *task, int32_t sig) {
+int ptrace_note_signal_delivery(struct task *task, int32_t sig) {
     if (!task || !task->ptrace_attached || task->ptrace_signal_bypass || sig == SIGKILL) {
         return 0;
     }

@@ -10,13 +10,20 @@ settings:
     # Current OrlixHostAdapter include usage is transitional until the seam refactor lands.
     LINUX_VERSION: '6.12'
     LINUX_ARCH: arm64
-    LINUX_VENDOR_ROOT: $(SRCROOT)/third_party/linux
-    LINUX_ROOT: $(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)
-    LINUX_UAPI_ROOT: $(LINUX_ROOT)/uapi
-    LINUX_UAPI_INCLUDE_ROOT: $(LINUX_UAPI_ROOT)/include
-    LINUX_KHEADERS_ROOT: $(LINUX_ROOT)/kheaders
-    LINUX_KHEADERS_SOURCE_ROOT: $(LINUX_KHEADERS_ROOT)/source
-    LINUX_KHEADERS_GENERATED_ROOT: $(LINUX_KHEADERS_ROOT)/generated
+    LINUX_KERNEL_VENDOR_ROOT: $(SRCROOT)/OrlixKernel/vendor/linux
+    LINUX_MLIBC_VENDOR_ROOT: $(SRCROOT)/OrlixMLibC/vendor/linux
+    LINUX_KERNEL_KHEADERS_INCLUDE_ROOT: $(LINUX_KERNEL_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/kheaders/include
+    LINUX_KERNEL_UAPI_INCLUDE_ROOT: $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi
+    LINUX_MLIBC_ROOT: $(LINUX_MLIBC_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)
+    LINUX_MLIBC_INCLUDE_ROOT: $(LINUX_MLIBC_ROOT)/include
+    LINUX_ROOT: $(LINUX_KERNEL_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/kheaders
+    LINUX_UAPI_ROOT: $(LINUX_MLIBC_INCLUDE_ROOT)
+    LINUX_UAPI_INCLUDE_ROOT: $(LINUX_MLIBC_INCLUDE_ROOT)
+    LINUX_MLIBC_UAPI_ROOT: $(LINUX_MLIBC_INCLUDE_ROOT)
+    LINUX_MLIBC_UAPI_INCLUDE_ROOT: $(LINUX_MLIBC_INCLUDE_ROOT)
+    LINUX_KHEADERS_ROOT: $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+    CLANG_BUILTIN_INCLUDE_ROOT: $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include
+    LINUX_HOST_COMPAT_INCLUDE_ROOT: $(SRCROOT)/tools/linux_host_compat/include
 targets:
   OrlixKernel:
     type: library.static
@@ -29,47 +36,29 @@ targets:
         - $(SRCROOT)/OrlixKernel
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
-        - $(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
-        - $(LINUX_KHEADERS_GENERATED_ROOT)/include
-        - $(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
-        - $(LINUX_KHEADERS_SOURCE_ROOT)/include
-        - $(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-        - $(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-        - $(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-        - $(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+        - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+        - $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
       SYSTEM_HEADER_SEARCH_PATHS:
-        - $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include
-        - $(SDKROOT)/usr/include
+        - $(CLANG_BUILTIN_INCLUDE_ROOT)
       GCC_PREPROCESSOR_DEFINITIONS:
       - __KERNEL__
-      - _XOPEN_SOURCE
-      - _DARWIN_C_SOURCE
-      - _POSIX_C_SOURCE=200112L
       USE_HEADERMAP: false
       CLANG_ENABLE_MODULES: false
       CLANG_ENABLE_OBJC_ARC: true
-      CLANG_WARN_DOCUMENTATION_COMMENTS: true
+      CLANG_WARN_DOCUMENTATION_COMMENTS: false
       OTHER_CFLAGS:
+      - -ffreestanding
+      - -fno-builtin
+      - -Wno-macro-redefined
+      - -Wno-shorten-64-to-32
       - -nostdinc
       - -include
-      - $(LINUX_KHEADERS_SOURCE_ROOT)/include/linux/kconfig.h
+      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
+      - -include
+      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
       - -fvisibility=hidden
     headers:
-    - path: third_party/linux/6.12/arm64/kheaders/generated/arch/arm64/include/generated
-      type: folder
-    - path: third_party/linux/6.12/arm64/kheaders/generated/include
-      type: folder
-    - path: third_party/linux/6.12/arm64/kheaders/source/arch/arm64/include
-      type: folder
-    - path: third_party/linux/6.12/arm64/kheaders/source/include
-      type: folder
-    - path: third_party/linux/6.12/arm64/kheaders/generated/arch/arm64/include/generated/uapi
-      type: folder
-    - path: third_party/linux/6.12/arm64/kheaders/source/arch/arm64/include/uapi
-      type: folder
-    - path: third_party/linux/6.12/arm64/kheaders/generated/include/generated/uapi
-      type: folder
-    - path: third_party/linux/6.12/arm64/kheaders/source/include/uapi
+    - path: OrlixKernel/vendor/linux/6.12/arm64/kheaders/include
       type: folder
     sources:
     - path: OrlixKernel/fs/eventpoll.c
@@ -191,7 +180,8 @@ targets:
         - $(SRCROOT)/OrlixKernel
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
-        - $(LINUX_UAPI_INCLUDE_ROOT)
+        - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+        - $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
       GCC_PREPROCESSOR_DEFINITIONS:
       - _XOPEN_SOURCE
       CLANG_ENABLE_OBJC_ARC: true
@@ -230,23 +220,25 @@ targets:
       compilerFlags:
       - -D__KERNEL__
       - -include
-      - $(LINUX_KHEADERS_SOURCE_ROOT)/include/linux/kconfig.h
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
+      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
+      - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+      - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
     - path: OrlixHostAdapter/kernel/sync.c
       group: OrlixHostAdapter/kernel
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -D__KERNEL__
+      - -include
+      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
+      - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+      - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
     - path: OrlixHostAdapter/kernel/clock.c
       group: OrlixHostAdapter/kernel
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -D__KERNEL__
+      - -include
+      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
+      - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+      - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
     - path: OrlixHostAdapter/fs/sync.c
       group: OrlixHostAdapter/fs
   OrlixMLibC:
@@ -260,7 +252,7 @@ targets:
         - $(SRCROOT)/OrlixKernel
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
-        - $(LINUX_UAPI_INCLUDE_ROOT)
+        - $(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
       GCC_PREPROCESSOR_DEFINITIONS:
       - _XOPEN_SOURCE
       CLANG_ENABLE_OBJC_ARC: true
@@ -271,55 +263,55 @@ targets:
     - path: OrlixMLibC/sysdeps/orlix/fs/open.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/fcntl.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/inode.c
       group: OrlixMLibC/sysdeps/orlix/fs
     - path: OrlixMLibC/sysdeps/orlix/fs/stat.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/super.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/namei.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/mount.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/xattr.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/pipe.c
       group: OrlixMLibC/sysdeps/orlix/fs
     - path: OrlixMLibC/sysdeps/orlix/fs/poll.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
+      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/read_write.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/readdir.c
       group: OrlixMLibC/sysdeps/orlix/fs
     - path: OrlixMLibC/sysdeps/orlix/fs/uio.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/exec.c
       group: OrlixMLibC/sysdeps/orlix/fs
     - path: OrlixMLibC/sysdeps/orlix/fs/epoll.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/fs/epoll_mask.c
       group: OrlixMLibC/sysdeps/orlix/fs
     - path: OrlixMLibC/sysdeps/orlix/fs/epoll_mask.h
@@ -327,51 +319,35 @@ targets:
     - path: OrlixMLibC/sysdeps/orlix/fs/ioctl.c
       group: OrlixMLibC/sysdeps/orlix/fs
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/kernel/cred.c
       group: OrlixMLibC/sysdeps/orlix/kernel
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/kernel/futex.c
       group: OrlixMLibC/sysdeps/orlix/kernel
     - path: OrlixMLibC/sysdeps/orlix/kernel/wait.c
       group: OrlixMLibC/sysdeps/orlix/kernel
       compilerFlags:
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/kernel/resource.c
       group: OrlixMLibC/sysdeps/orlix/kernel
       compilerFlags:
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/kernel/uts.c
       group: OrlixMLibC/sysdeps/orlix/kernel
       compilerFlags:
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/kernel/random.c
       group: OrlixMLibC/sysdeps/orlix/kernel
     - path: OrlixMLibC/sysdeps/orlix/kernel/signal.c
       group: OrlixMLibC/sysdeps/orlix/kernel
       compilerFlags:
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
+      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixMLibC/sysdeps/orlix/kernel/time.c
       group: OrlixMLibC/sysdeps/orlix/kernel
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_UAPI_INCLUDE_ROOT)
     dependencies:
     - target: OrlixKernel
   OrlixKernelTests:
@@ -429,14 +405,8 @@ targets:
     - path: OrlixKernelTests/LinuxKHeadersCompileSmoke.c
       compilerFlags:
       - -D__KERNEL__
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/arch/$(LINUX_ARCH)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/arch/$(LINUX_ARCH)/include/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include/generated/uapi
-      - -I$(LINUX_KHEADERS_GENERATED_ROOT)/include
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include/uapi
-      - -I$(LINUX_KHEADERS_SOURCE_ROOT)/include
+      - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+      - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
     - path: OrlixKernelTests/KernelBoot.c
       compilerFlags:
       - -I$(LINUX_UAPI_INCLUDE_ROOT)

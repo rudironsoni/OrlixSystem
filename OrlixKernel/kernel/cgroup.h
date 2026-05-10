@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 struct cgroup;
-struct task_struct;
+struct task;
 
 enum cgroupfs_node_type {
     CGROUPFS_NODE_NONE = 0,
@@ -32,16 +32,16 @@ void cgroup_deinit(void);
 struct cgroup *cgroup_get(struct cgroup *cgrp);
 void cgroup_put(struct cgroup *cgrp);
 struct cgroup *cgroup_root(void);
-int task_attach_cgroup(struct task_struct *task, struct cgroup *cgrp);
-int cgroup_attach_task_path(struct task_struct *task, const char *path);
-void task_detach_cgroup(struct task_struct *task);
-int task_unshare_cgroup_namespace(struct task_struct *task);
-int task_reset_cgroup_namespace(struct task_struct *task);
-uint64_t task_cgroup_namespace_id(const struct task_struct *task);
-uint64_t task_cgroup_namespace_owner_user_ns_id(const struct task_struct *task);
-const char *task_cgroup_path(const struct task_struct *task);
-unsigned int task_cgroup_member_count(const struct task_struct *task);
-int task_cgroup_proc_content(const struct task_struct *task, char *buf, size_t buflen);
+int task_attach_cgroup(struct task *task, struct cgroup *cgrp);
+int cgroup_attach_task_path(struct task *task, const char *path);
+void task_detach_cgroup(struct task *task);
+int task_unshare_cgroup_namespace(struct task *task);
+int task_reset_cgroup_namespace(struct task *task);
+uint64_t task_cgroup_namespace_id(const struct task *task);
+uint64_t task_cgroup_namespace_owner_user_ns_id(const struct task *task);
+const char *task_cgroup_path(const struct task *task);
+unsigned int task_cgroup_member_count(const struct task *task);
+int task_cgroup_proc_content(const struct task *task, char *buf, size_t buflen);
 int cgroup_proc_task_content(int32_t pid, char *buf, size_t buflen);
 enum cgroupfs_node_type cgroupfs_classify_path(const char *path);
 int cgroupfs_resolve_path(const char *path, char *cgroup_path, size_t cgroup_path_len,

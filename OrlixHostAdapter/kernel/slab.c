@@ -7,9 +7,6 @@
 
 #include <linux/compiler_types.h>
 #include <linux/types.h>
-#ifndef BIT
-#define BIT(nr) (1UL << (nr))
-#endif
 #include <linux/gfp_types.h>
 
 extern void *malloc(size_t size);

@@ -1,4 +1,4 @@
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
 
 int translate_open_flags(int flags,
                          int darwin_rdonly,

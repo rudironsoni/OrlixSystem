@@ -1,7 +1,7 @@
 #ifndef KERNEL_RESOURCE_H
 #define KERNEL_RESOURCE_H
 
-#include <uapi/linux/resource.h>
+#include <linux/resource.h>
 #include <uapi/linux/times.h>
 
 int getrlimit_impl(int resource, struct rlimit *rlim);

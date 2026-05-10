@@ -1,13 +1,12 @@
 /* OrlixKernel/kernel/wait.c
  * Virtual wait/waitpid implementation
  */
-#include <uapi/linux/types.h>
+#include <linux/types.h>
 #include <linux/errno.h>
-#include <uapi/asm/posix_types.h>
-#include <uapi/linux/sched.h>
-#include <uapi/asm-generic/signal.h>
-#include <uapi/linux/wait.h>
-#include <uapi/asm-generic/siginfo.h>
+#include <linux/sched.h>
+#include <asm-generic/signal.h>
+#include <linux/signal.h>
+#include <linux/wait.h>
 
 #include "signal.h"
 #include "../fs/fdtable.h"

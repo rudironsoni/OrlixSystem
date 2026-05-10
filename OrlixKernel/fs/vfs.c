@@ -1,16 +1,16 @@
 #include "vfs.h"
 
 /* Linux UAPI headers for ABI constants */
-#include <uapi/linux/capability.h>
+#include <linux/capability.h>
 #include <linux/errno.h>
-#include <uapi/linux/elf.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/mount.h>
-#include <uapi/asm/stat.h>
-#include <uapi/linux/stat.h>
+#include <linux/elf.h>
+#include <linux/fcntl.h>
+#include <linux/mount.h>
+#include <asm/stat.h>
+#include <linux/stat.h>
 #include <linux/stdarg.h>
 #include <linux/string.h>
-#include <uapi/linux/xattr.h>
+#include <linux/xattr.h>
 #ifdef SIGHUP
 #undef SIGHUP
 #endif

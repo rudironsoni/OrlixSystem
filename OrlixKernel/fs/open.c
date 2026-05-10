@@ -1,5 +1,5 @@
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/mount.h>
+#include <linux/fcntl.h>
+#include <linux/mount.h>
 
 #include <linux/errno.h>
 #include <linux/string.h>
@@ -445,14 +445,14 @@ static int open_resolved_path(const char *resolved_path, int flags, mode_t mode)
 
 int open_impl(const char *pathname, int flags, mode_t mode) {
     char resolved_path[MAX_PATH];
-    struct task_struct *task;
+    struct task *task;
     int ret;
 
     if (!pathname) {
         return -EFAULT;
     }
 
-    task = get_current();
+    task = current_task();
     ret = vfs_resolve_virtual_path_task_follow(pathname, resolved_path, sizeof(resolved_path),
                                                task ? task->fs : NULL, (flags & O_NOFOLLOW) == 0);
     if (ret != 0) {

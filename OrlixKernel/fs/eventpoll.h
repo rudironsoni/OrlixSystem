@@ -3,11 +3,11 @@
 
 #include <stddef.h>
 
-#include <uapi/linux/fcntl.h>
+#include <linux/fcntl.h>
 #ifndef _LINUX_FCNTL_H
 #define _LINUX_FCNTL_H
 #endif
-#include "../../third_party/linux/6.12/arm64/uapi/include/linux/eventpoll.h"
+#include <linux/eventpoll.h>
 
 #ifdef __cplusplus
 extern "C" {

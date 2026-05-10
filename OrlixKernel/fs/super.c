@@ -8,8 +8,8 @@
 #include <linux/errno.h>
 #include <linux/magic.h>
 #include <linux/string.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/mount.h>
+#include <linux/fcntl.h>
+#include <linux/mount.h>
 #include <linux/types.h>
 #include "fdtable.h"
 #include "vfs.h"

@@ -12,15 +12,15 @@ extern "C" {
 #endif
 
 struct seccomp;
-struct task_struct;
+struct task;
 
 struct seccomp *seccomp_alloc(void);
 struct seccomp *seccomp_get(struct seccomp *policy);
 void seccomp_put(struct seccomp *policy);
 
-int seccomp_set_task_errno_policy(struct task_struct *task, int64_t syscall_nr, int err);
-int seccomp_set_thread_group_errno_policy(struct task_struct *task, int64_t syscall_nr, int err);
-void seccomp_clear_task_policy(struct task_struct *task);
+int seccomp_set_task_errno_policy(struct task *task, int64_t syscall_nr, int err);
+int seccomp_set_thread_group_errno_policy(struct task *task, int64_t syscall_nr, int err);
+void seccomp_clear_task_policy(struct task *task);
 long seccomp_check_current_syscall(int64_t syscall_nr);
 
 #ifdef __cplusplus

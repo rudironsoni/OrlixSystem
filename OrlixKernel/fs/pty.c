@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #include <linux/errno.h>
-#include <uapi/linux/poll.h>
+#include <linux/poll.h>
 #include <linux/string.h>
 #ifdef SIGINT
 #undef SIGINT
@@ -289,20 +289,20 @@ static bool pty_valid_index(unsigned int pty_index) {
     return pty_index < PTY_MAX;
 }
 
-static bool pty_signal_is_ignored(const struct task_struct *task, int signal_number) {
+static bool pty_signal_is_ignored(const struct task *task, int signal_number) {
     if (!task || !task->signal || signal_number <= 0 || signal_number > KERNEL_SIG_NUM) {
         return false;
     }
     return task->signal->actions[signal_number - 1].handler == SIG_IGN;
 }
 
-static struct task_struct *pty_lookup_task_locked(int32_t pid) {
+static struct task *pty_lookup_task_locked(int32_t pid) {
     if (pid <= 0) {
         return NULL;
     }
 
     int idx = task_hash(pid);
-    struct task_struct *task = task_table[idx];
+    struct task *task = task_table[idx];
     while (task && task->pid != pid) {
         task = task->hash_next;
     }
@@ -315,10 +315,10 @@ static bool pty_is_orphaned_pgrp(int32_t sid, int32_t pgid) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *candidate = task_table[i];
+        struct task *candidate = task_table[i];
         while (candidate) {
             if (candidate->sid == sid && candidate->pgid == pgid) {
-                struct task_struct *parent = candidate->parent;
+                struct task *parent = candidate->parent;
                 if (!parent && candidate->ppid > 0) {
                     parent = pty_lookup_task_locked(candidate->ppid);
                 }
@@ -342,7 +342,7 @@ static bool pty_is_orphaned_pgrp(int32_t sid, int32_t pgid) {
 static void pty_clear_task_tty_refs_impl(unsigned int pty_index) {
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             kernel_mutex_lock(&task->lock);
             if (task->tty && task->tty->index == (int)pty_index) {
@@ -363,7 +363,7 @@ static void pty_clear_session_tty_refs_impl(unsigned int pty_index, int32_t sid)
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             kernel_mutex_lock(&task->lock);
             if (task->sid == sid && task->tty && task->tty->index == (int)pty_index) {
@@ -378,7 +378,7 @@ static void pty_clear_session_tty_refs_impl(unsigned int pty_index, int32_t sid)
 }
 
 static int pty_check_background_read_access(pty_pair_t *pair) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     if (!task || !task->signal || !pair->has_controlling_session || pair->controlling_sid != task->sid) {
         return 0;
     }
@@ -401,7 +401,7 @@ static int pty_check_background_read_access(pty_pair_t *pair) {
 }
 
 static int pty_check_background_write_access(pty_pair_t *pair, bool enforce_background_stop, bool blocked_or_ignored_is_error) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     if (!task || !task->signal || !pair->has_controlling_session || pair->controlling_sid != task->sid) {
         return 0;
     }
@@ -583,7 +583,7 @@ int pty_open_controlling_slave_impl(unsigned int *pty_index) {
         return -EINVAL;
     }
 
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     if (!task) {
         return -ESRCH;
     }
@@ -1084,7 +1084,7 @@ int pty_set_controlling_tty_impl(unsigned int pty_index, int arg) {
         return -EINVAL;
     }
 
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     if (!task) {
         return -ESRCH;
     }
@@ -1152,7 +1152,7 @@ int pty_get_foreground_pgrp_impl(unsigned int pty_index, int32_t *pgrp) {
         return -EINVAL;
     }
 
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     if (!task) {
         return -ESRCH;
     }
@@ -1179,7 +1179,7 @@ int pty_get_controlling_sid_impl(unsigned int pty_index, int32_t *sid) {
         return -EINVAL;
     }
 
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     if (!task) {
         return -ESRCH;
     }
@@ -1206,7 +1206,7 @@ int pty_set_foreground_pgrp_impl(unsigned int pty_index, int32_t pgrp) {
         return -EINVAL;
     }
 
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     if (!task) {
         return -ESRCH;
     }
@@ -1242,7 +1242,7 @@ int pty_set_foreground_pgrp_impl(unsigned int pty_index, int32_t pgrp) {
 }
 
 int pty_detach_controlling_tty_impl(void) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     int32_t foreground_pgrp = 0;
     bool session_leader = false;
     if (!task) {
@@ -1286,7 +1286,7 @@ int pty_detach_controlling_tty_impl(void) {
     return 0;
 }
 
-void pty_session_leader_exit_impl(struct task_struct *task) {
+void pty_session_leader_exit_impl(struct task *task) {
     unsigned int pty_index;
     int32_t sid;
     int32_t foreground_pgrp = 0;

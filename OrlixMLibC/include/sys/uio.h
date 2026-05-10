@@ -3,6 +3,6 @@
 
 #include <stddef.h>
 
-#include "../../../third_party/linux/6.12/arm64/uapi/include/linux/uio.h"
+#include <linux/uio.h>
 
 #endif

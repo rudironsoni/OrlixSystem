@@ -2,7 +2,7 @@
 #include <sys/select.h>
 #include <sys/time.h>
 
-#include <uapi/linux/time_types.h>
+#include <linux/time_types.h>
 
 extern int poll_impl(struct pollfd *fds, unsigned long nfds, int timeout);
 extern int select_impl(int nfds,

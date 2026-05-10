@@ -4,7 +4,8 @@ LINUX_VERSION ?= 6.12
 LINUX_ARCH ?= arm64
 LINUX_KERNEL_SERIES ?=
 LINUX_TARBALL_URL ?=
-LINUX_VENDOR_ROOT ?= OrlixKernel/vendor/linux
+LINUX_KERNEL_VENDOR_ROOT ?= OrlixKernel/vendor/linux
+LINUX_MLIBC_VENDOR_ROOT ?= OrlixMLibC/vendor/linux
 KEEP_LINUX_TMP ?= 0
 LINUX_MAKE ?=
 LINUX_LLVM_BIN ?=
@@ -18,44 +19,48 @@ CLANG_TIDY_PLUGIN_DYLIB := $(CLANG_TIDY_BUILD_DIR)/OrlixTidyModule.dylib
 IPHONESIM_SDK := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk
 IPHONESIM_FRAMEWORK_DIR := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks
 IPHONESIM_SDK_FRAMEWORK_DIR := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks
-ORLIX_LINT_COMMON_FLAGS := \
+LINUX_KERNEL_TUPLE_ROOT := $(CURDIR)/$(LINUX_KERNEL_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/kheaders
+LINUX_KERNEL_KHEADERS_INCLUDE_ROOT := $(LINUX_KERNEL_TUPLE_ROOT)/include
+LINUX_KERNEL_UAPI_INCLUDE_ROOT := $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi
+LINUX_MLIBC_TUPLE_ROOT := $(CURDIR)/$(LINUX_MLIBC_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)
+LINUX_MLIBC_INCLUDE_ROOT := $(LINUX_MLIBC_TUPLE_ROOT)/include
+ORLIX_LINT_HOST_COMMON_FLAGS := \
 	-target arm64-apple-ios26.4-simulator \
 	-isysroot $(IPHONESIM_SDK) \
 	-mios-simulator-version-min=26.4 \
 	-fno-modules
-ORLIX_LINT_KHEADERS_UAPI_FLAGS := \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/arch/$(LINUX_ARCH)/include/generated/uapi \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/arch/$(LINUX_ARCH)/include/uapi \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/include/generated/uapi \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include/uapi
+ORLIX_LINT_LINUX_COMMON_FLAGS := \
+	-target aarch64-unknown-linux-gnu \
+	-ffreestanding \
+	-fno-modules
+ORLIX_LINT_KERNEL_VENDOR_FLAGS := \
+	-I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) \
+	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
+ORLIX_LINT_MLIBC_UAPI_FLAGS := \
+	-I$(LINUX_MLIBC_INCLUDE_ROOT)
 ORLIX_LINT_C_FLAGS := \
-	$(ORLIX_LINT_COMMON_FLAGS) \
+	$(ORLIX_LINT_LINUX_COMMON_FLAGS) \
 	-nostdinc \
-	-include $(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include/linux/kconfig.h \
-	-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include \
+	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h \
+	-isystem $(LLVM_PREFIX)/lib/clang/22/include \
 	-I$(CURDIR)/OrlixKernel \
 	-I$(CURDIR)/OrlixKernel/include \
 	-I$(CURDIR)/OrlixKernel/internal \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/arch/$(LINUX_ARCH)/include/generated \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/include \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/arch/$(LINUX_ARCH)/include \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include \
-	$(ORLIX_LINT_KHEADERS_UAPI_FLAGS) \
+	$(ORLIX_LINT_KERNEL_VENDOR_FLAGS) \
 	-D__KERNEL__ \
 	-D_XOPEN_SOURCE \
 	-fvisibility=hidden
 ORLIX_LINT_HOST_C_FLAGS := \
-	$(ORLIX_LINT_COMMON_FLAGS) \
+	$(ORLIX_LINT_HOST_COMMON_FLAGS) \
 	-I$(CURDIR)/OrlixKernel \
 	-I$(CURDIR)/OrlixKernel/include \
 	-I$(CURDIR)/OrlixKernel/internal \
-	$(ORLIX_LINT_KHEADERS_UAPI_FLAGS) \
 	-D_XOPEN_SOURCE \
 	-D_DARWIN_C_SOURCE \
 	-D_POSIX_C_SOURCE=200112L \
 	-fvisibility=hidden
-ORLIX_LINT_HOST_KHEADERS_C_FLAGS := \
-	$(ORLIX_LINT_COMMON_FLAGS) \
+ORLIX_LINT_HOST_KERNEL_C_FLAGS := \
+	$(ORLIX_LINT_HOST_COMMON_FLAGS) \
 	-I$(CURDIR)/OrlixKernel \
 	-I$(CURDIR)/OrlixKernel/include \
 	-I$(CURDIR)/OrlixKernel/internal \
@@ -64,19 +69,17 @@ ORLIX_LINT_HOST_KHEADERS_C_FLAGS := \
 	-D_POSIX_C_SOURCE=200112L \
 	-fvisibility=hidden \
 	-D__KERNEL__ \
-	-include $(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include/linux/kconfig.h \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/arch/$(LINUX_ARCH)/include/generated \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/include \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/arch/$(LINUX_ARCH)/include \
-	-I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include \
-	$(ORLIX_LINT_KHEADERS_UAPI_FLAGS)
+	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h \
+	$(ORLIX_LINT_KERNEL_VENDOR_FLAGS)
 ORLIX_LINT_MLIBC_C_FLAGS := \
-	$(ORLIX_LINT_HOST_C_FLAGS)
+	$(ORLIX_LINT_HOST_C_FLAGS) \
+	$(ORLIX_LINT_MLIBC_UAPI_FLAGS)
 ORLIX_LINT_MLIBC_HEADER_FLAGS := \
 	$(ORLIX_LINT_HOST_C_FLAGS) \
+	$(ORLIX_LINT_MLIBC_UAPI_FLAGS) \
 	-I$(CURDIR)/OrlixMLibC/include
 ORLIX_LINT_OBJC_FLAGS := \
-	$(ORLIX_LINT_COMMON_FLAGS) \
+	$(ORLIX_LINT_HOST_COMMON_FLAGS) \
 	-fobjc-arc \
 	-I$(CURDIR)/OrlixKernel \
 	-I$(CURDIR)/OrlixKernel/include \
@@ -120,19 +123,15 @@ lint: build-orlix-clang-tidy-module
 			flags="$(ORLIX_LINT_C_FLAGS)"; \
 			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* || "$$file" == OrlixMLibC/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
+				if [[ "$$file" == OrlixHostAdapter/fs/open_flags.c || "$$file" == OrlixHostAdapter/fs/backing_stat_translate.c ]]; then \
+					flags="$$flags $(ORLIX_LINT_MLIBC_UAPI_FLAGS)"; \
+				fi; \
+				if [[ "$$file" == OrlixHostAdapter/kernel/* ]]; then \
+					flags="$(ORLIX_LINT_HOST_KERNEL_C_FLAGS)"; \
+				fi; \
 				if [[ "$$file" == OrlixMLibC/* ]]; then \
 					flags="$(ORLIX_LINT_MLIBC_C_FLAGS)"; \
 				fi; \
-				if [[ "$$file" == */fs/poll.c ]]; then \
-					flags="$$flags -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include"; \
-				fi; \
-				if [[ "$$file" == OrlixHostAdapter/kernel/slab.c ]]; then \
-					flags="$(ORLIX_LINT_HOST_KHEADERS_C_FLAGS)"; \
-				fi; \
-				if [[ "$$file" == */kernel/signal.c ]]; then \
-					flags="$$flags -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/arch/$(LINUX_ARCH)/include/generated -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/include -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/arch/$(LINUX_ARCH)/include -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include $(ORLIX_LINT_KHEADERS_UAPI_FLAGS)"; \
-				fi; \
-			else \
 			fi; \
 			"$(CLANG_TIDY)" --load="$$plugin_path" --config-file=.clang-tidy "$$file" -- $$flags; \
 		done <<< "$$c_files"; \
@@ -142,14 +141,14 @@ lint: build-orlix-clang-tidy-module
 			flags="$(ORLIX_LINT_C_FLAGS)"; \
 			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* || "$$file" == OrlixMLibC/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
+				if [[ "$$file" == OrlixHostAdapter/fs/open_flags.c || "$$file" == OrlixHostAdapter/fs/backing_stat_translate.c ]]; then \
+					flags="$$flags $(ORLIX_LINT_MLIBC_UAPI_FLAGS)"; \
+				fi; \
 				if [[ "$$file" == OrlixMLibC/* ]]; then \
 					flags="$(ORLIX_LINT_MLIBC_HEADER_FLAGS)"; \
 				fi; \
-				if [[ "$$file" == */kernel/cred.c ]]; then \
-					flags="$$flags -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/arch/$(LINUX_ARCH)/include/generated -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/include -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/arch/$(LINUX_ARCH)/include -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include $(ORLIX_LINT_KHEADERS_UAPI_FLAGS)"; \
-				fi; \
-				if [[ "$$file" == OrlixHostAdapter/kernel/slab.c ]]; then \
-					flags="$$flags -D__KERNEL__ -include $(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include/linux/kconfig.h -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/arch/$(LINUX_ARCH)/include/generated -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/generated/include -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/arch/$(LINUX_ARCH)/include -I$(CURDIR)/$(LINUX_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/source/include $(ORLIX_LINT_KHEADERS_UAPI_FLAGS)"; \
+				if [[ "$$file" == OrlixHostAdapter/kernel/* ]]; then \
+					flags="$(ORLIX_LINT_HOST_KERNEL_C_FLAGS)"; \
 				fi; \
 			fi; \
 			"$(CLANG_TIDY)" --load="$$plugin_path" --config-file=.clang-tidy "$$file" -- $$flags -x c-header; \
@@ -159,7 +158,7 @@ lint: build-orlix-clang-tidy-module
 		while IFS= read -r file; do \
 			flags="$(ORLIX_LINT_OBJC_FLAGS)"; \
 			if [[ "$$file" == OrlixHostAdapterTests/* ]]; then \
-				flags="$$flags $(ORLIX_LINT_KHEADERS_UAPI_FLAGS)"; \
+				flags="$$flags $(ORLIX_LINT_KERNEL_VENDOR_FLAGS)"; \
 			fi; \
 			"$(CLANG_TIDY)" --load="$$plugin_path" --config-file=.clang-tidy "$$file" -- $$flags; \
 		done <<< "$$objc_files"; \
@@ -167,18 +166,30 @@ lint: build-orlix-clang-tidy-module
 
 lint-linux-surface: lint
 
-.PHONY: vendor-linux-headers
-vendor-linux-headers:
+.PHONY: vendor-orlixkernel-linux-headers vendor-orlixmlibc-linux-headers _vendor-linux-tree
+
+vendor-orlixkernel-linux-headers:
+	@$(MAKE) _vendor-linux-tree LINUX_VENDOR_MODE=kernel
+
+vendor-orlixmlibc-linux-headers:
+	@$(MAKE) _vendor-linux-tree LINUX_VENDOR_MODE=mlibc
+
+_vendor-linux-tree:
 	@set -euo pipefail; \
 	repo_root="$$(pwd)"; \
 	linux_version="$(LINUX_VERSION)"; \
 	linux_arch="$(LINUX_ARCH)"; \
 	kernel_series="$(LINUX_KERNEL_SERIES)"; \
-	vendor_root="$(LINUX_VENDOR_ROOT)"; \
+	linux_vendor_mode="$(LINUX_VENDOR_MODE)"; \
 	keep_tmp="$(KEEP_LINUX_TMP)"; \
 	linux_make="$(LINUX_MAKE)"; \
 	llvm_bin="$(LINUX_LLVM_BIN)"; \
 	linux_sed="$(LINUX_SED)"; \
+	case "$$linux_vendor_mode" in \
+		kernel) vendor_root="$(LINUX_KERNEL_VENDOR_ROOT)" ;; \
+		mlibc) vendor_root="$(LINUX_MLIBC_VENDOR_ROOT)" ;; \
+		*) echo "unsupported Linux vendor mode: $$linux_vendor_mode" >&2; exit 1 ;; \
+	esac; \
 	case "$$linux_arch" in \
 		arm64) ;; \
 		*) echo "unsupported Linux arch: $$linux_arch" >&2; exit 1 ;; \
@@ -226,6 +237,12 @@ vendor-linux-headers:
 	else \
 		final_vendor_root="$$repo_root/$$vendor_root"; \
 	fi; \
+	final_tuple_root="$$final_vendor_root/$$linux_version/$$linux_arch"; \
+	if [ "$$linux_vendor_mode" = "kernel" ]; then \
+		final_tuple_root="$$final_tuple_root/kheaders"; \
+	fi; \
+	rm -rf "$$final_tuple_root"; \
+	mkdir -p "$$(dirname "$$final_tuple_root")"; \
 	tmp="$$(mktemp -d "$${TMPDIR:-/tmp}/vendor-linux-headers.XXXXXX")"; \
 	cleanup() { \
 		if [ "$$keep_tmp" = "1" ]; then \
@@ -248,6 +265,18 @@ vendor-linux-headers:
 			echo "missing required directory: $$path" >&2; \
 			exit 1; \
 		fi; \
+	}; \
+	copy_file() { \
+		local src="$$1"; \
+		local dest="$$2"; \
+		require_file "$$src"; \
+		mkdir -p "$$(dirname "$$dest")"; \
+		cp "$$src" "$$dest"; \
+	}; \
+	rewrite_flat_kernel_generated_includes() { \
+		local include_root="$$1"; \
+		find "$$include_root" -type f \( -name '*.h' -o -name '*.lds' -o -name '*.cmd' \) -print0 \
+			| xargs -0 perl -0pi -e 's{([<"])generated/([^">]+)([>"])}{$$1$$2$$3}g'; \
 	}; \
 		copy_tree() { \
 			local src="$$1"; \
@@ -276,25 +305,26 @@ vendor-linux-headers:
 				"}" \
 				> "$$tuple_root/source.json"; \
 		}; \
-	write_readme() { \
-		local out_file="$$1"; \
-		printf '%s\n' \
-			"# Vendored Linux Headers" \
+		write_readme() { \
+			local out_file="$$1"; \
+			local surface_label="$$2"; \
+			local surface_desc="$$3"; \
+			printf '%s\n' \
+				"# Vendored Linux Headers" \
 			"" \
 			"This tuple was generated from upstream Linux sources." \
 			"Do not edit vendored files manually." \
 			"" \
 			"Regenerate with:" \
 			"" \
-			"\`\`\`sh" \
-			"make vendor-linux-headers LINUX_VERSION=<version> LINUX_ARCH=<arch>" \
-			"\`\`\`" \
-			"" \
-			"Surfaces:" \
-			"" \
-			"- \`source\`: copied non-generated Linux kernel source headers." \
-			"- \`generated\`: copied generated Linux kernel build headers from O=." \
-			> "$$out_file"; \
+				"\`\`\`sh" \
+				"make vendor-orlixkernel-linux-headers LINUX_VERSION=<version> LINUX_ARCH=<arch>" \
+				"\`\`\`" \
+				"" \
+				"Surface: $$surface_label" \
+				"" \
+				"- $$surface_desc" \
+				> "$$out_file"; \
 		}; \
 		write_manifest() { \
 			local tuple_root="$$1"; \
@@ -310,26 +340,43 @@ vendor-linux-headers:
 					done \
 			) > "$$manifest_file"; \
 		}; \
-		validate_vendor_tree() { \
+		validate_kernel_vendor_tree() { \
 			local tuple_root="$$1"; \
-			local kheaders_source_root="$$tuple_root/source"; \
-			local kheaders_generated_root="$$tuple_root/generated"; \
+			local include_root="$$tuple_root/include"; \
 			if [ -z "$$(find "$$tuple_root" -type f -print -quit)" ]; then \
 				echo "empty tuple root: $$tuple_root" >&2; \
 				exit 1; \
 			fi; \
-			require_file "$$kheaders_source_root/include/linux/fs.h"; \
-			require_file "$$kheaders_source_root/include/linux/sched.h"; \
-			require_file "$$kheaders_source_root/include/uapi/linux/wait.h"; \
-			require_file "$$kheaders_source_root/arch/$$linux_arch/include/uapi/asm/signal.h"; \
-			require_file "$$kheaders_source_root/include/uapi/asm-generic/errno-base.h"; \
-			require_file "$$kheaders_source_root/include/uapi/linux/futex.h"; \
-			require_file "$$kheaders_source_root/include/uapi/linux/seccomp.h"; \
-			require_dir "$$kheaders_source_root/arch/$$linux_arch/include"; \
-			require_file "$$kheaders_generated_root/include/generated/autoconf.h"; \
-			require_file "$$kheaders_generated_root/include/generated/utsrelease.h"; \
-			require_dir "$$kheaders_generated_root/include/config"; \
-			require_dir "$$kheaders_generated_root/arch/$$linux_arch/include/generated"; \
+			require_file "$$include_root/linux/fs.h"; \
+			require_file "$$include_root/linux/sched.h"; \
+			require_dir "$$include_root/asm"; \
+			require_file "$$include_root/uapi/linux/types.h"; \
+			require_file "$$include_root/uapi/linux/time_types.h"; \
+			if grep -q 'WITH Linux-syscall-note' "$$include_root/linux/types.h"; then \
+				echo "unexpected UAPI linux/types.h in OrlixKernel vendor root" >&2; \
+				exit 1; \
+			fi; \
+			require_file "$$include_root/autoconf.h"; \
+			require_file "$$include_root/utsrelease.h"; \
+			require_dir "$$include_root/config"; \
+			if [ -e "$$include_root/generated" ]; then \
+				echo "unexpected generated surface in OrlixKernel vendor root: $$include_root/generated" >&2; \
+				exit 1; \
+			fi; \
+		}; \
+		validate_mlibc_vendor_tree() { \
+			local tuple_root="$$1"; \
+			local include_root="$$tuple_root/include"; \
+			if [ -z "$$(find "$$tuple_root" -type f -print -quit)" ]; then \
+				echo "empty tuple root: $$tuple_root" >&2; \
+				exit 1; \
+			fi; \
+			require_file "$$include_root/linux/wait.h"; \
+			require_file "$$include_root/linux/futex.h"; \
+			require_file "$$include_root/linux/seccomp.h"; \
+			require_file "$$include_root/asm/signal.h"; \
+			require_file "$$include_root/asm/unistd.h"; \
+			require_file "$$include_root/asm-generic/errno-base.h"; \
 		}; \
 	tarball="$$tmp/linux-$$linux_version.tar.xz"; \
 	src="$$tmp/linux-$$linux_version"; \
@@ -366,23 +413,37 @@ vendor-linux-headers:
 		require_dir "$$obj/include/config"; \
 		require_dir "$$obj/arch/$$linux_arch/include/generated"; \
 		tuple_stage="$$stage_vendor_root/$$linux_version/$$linux_arch"; \
-		kheaders_source_root="$$tuple_stage/source"; \
-		kheaders_generated_root="$$tuple_stage/generated"; \
-		copy_tree "$$src/include" "$$kheaders_source_root/include"; \
-		copy_tree "$$src/arch/$$linux_arch/include" "$$kheaders_source_root/arch/$$linux_arch/include"; \
-		copy_tree "$$obj/include/generated" "$$kheaders_generated_root/include/generated"; \
-		copy_tree "$$obj/include/config" "$$kheaders_generated_root/include/config"; \
-		copy_tree "$$obj/arch/$$linux_arch/include/generated" "$$kheaders_generated_root/arch/$$linux_arch/include/generated"; \
-		write_readme "$$tuple_stage/README.md"; \
+		if [ "$$linux_vendor_mode" = "kernel" ]; then \
+			tuple_stage="$$tuple_stage/kheaders"; \
+		fi; \
+		include_root="$$tuple_stage/include"; \
+		if [ "$$linux_vendor_mode" = "kernel" ]; then \
+			copy_tree "$$src/include" "$$include_root"; \
+			copy_tree "$$src/arch/$$linux_arch/include" "$$include_root"; \
+			copy_tree "$$obj/include/generated" "$$include_root"; \
+			copy_tree "$$obj/include/config" "$$include_root/config"; \
+			copy_tree "$$obj/arch/$$linux_arch/include/generated" "$$include_root"; \
+			copy_tree "$$src/include/uapi" "$$include_root/uapi"; \
+			copy_tree "$$src/arch/$$linux_arch/include/uapi" "$$include_root/uapi"; \
+			copy_tree "$$obj/include/generated/uapi" "$$include_root/uapi"; \
+			copy_tree "$$obj/arch/$$linux_arch/include/generated/uapi" "$$include_root/uapi"; \
+			rm -rf "$$include_root/generated"; \
+			rewrite_flat_kernel_generated_includes "$$include_root"; \
+			write_readme "$$tuple_stage/README.md" "include" "\`include\`: flattened Linux kernel header root for OrlixKernel, including the upstream \`uapi/\` subtree required by the full Linux header graph; generated staging namespaces are excluded."; \
+			validate_kernel_vendor_tree "$$tuple_stage"; \
+		else \
+			copy_tree "$$src/include/uapi" "$$include_root"; \
+			copy_tree "$$src/arch/$$linux_arch/include/uapi" "$$include_root"; \
+			copy_tree "$$obj/include/generated/uapi" "$$include_root"; \
+			copy_tree "$$obj/arch/$$linux_arch/include/generated/uapi" "$$include_root"; \
+			copy_file "$$src/include/linux/compiler_types.h" "$$include_root/linux/compiler_types.h"; \
+			write_readme "$$tuple_stage/README.md" "include" "\`include\`: flattened Linux UAPI header root for OrlixMLibC, merged from source and generated UAPI headers."; \
+			validate_mlibc_vendor_tree "$$tuple_stage"; \
+		fi; \
 		write_source_json "$$tuple_stage" "$$tarball_sha"; \
 		write_manifest "$$tuple_stage" "$$tuple_stage/manifest.sha256"; \
-		validate_vendor_tree "$$tuple_stage"; \
-		final_tuple_root="$$final_vendor_root/$$linux_version/$$linux_arch"; \
-		rm -rf "$$final_tuple_root"; \
-		mkdir -p "$$(dirname "$$final_tuple_root")"; \
 		rsync -a --delete "$$tuple_stage/" "$$final_tuple_root/"; \
 		echo "vendored Linux tuple:"; \
-		echo "  $$vendor_root/$$linux_version/$$linux_arch"; \
-		echo "surfaces:"; \
-		echo "  source"; \
-		echo "  generated"
+		echo "  $$vendor_root/$$linux_version/$$linux_arch$$( [ "$$linux_vendor_mode" = "kernel" ] && printf '/kheaders' )"; \
+		echo "surface:"; \
+		echo "  include"

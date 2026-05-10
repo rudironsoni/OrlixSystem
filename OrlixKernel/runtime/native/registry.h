@@ -1,7 +1,7 @@
 #ifndef REGISTRY_H
 #define REGISTRY_H
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,13 +31,13 @@ typedef struct registry_entry {
     const char *name;
     registry_init_fn init;
     registry_deinit_fn deinit;
-    uint32_t priority;
+    u32 priority;
 } registry_entry_t;
 
 int registry_init(void);
 void registry_deinit(void);
 
-int registry_register(const char *name, registry_init_fn init, registry_deinit_fn deinit, uint32_t priority);
+int registry_register(const char *name, registry_init_fn init, registry_deinit_fn deinit, u32 priority);
 
 /* Native command registry */
 void native_registry_init(void);

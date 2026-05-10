@@ -67,10 +67,12 @@ public:
                           StringRef, StringRef, const Module *, bool,
                           SrcMgr::CharacteristicKind) override {
     if (KernelTests) {
-      if (FileName.starts_with("linux/") || FileName.starts_with("asm/")) {
+      if (FileName.starts_with("linux/") || FileName.starts_with("asm/") ||
+          FileName.starts_with("asm-generic/") ||
+          FileName.starts_with("uapi/")) {
         if (isObjectiveCKernelTest(Path)) {
           Check.diag(HashLoc,
-                     "Objective-C LinuxKernel tests must not include Linux UAPI headers");
+                     "Objective-C LinuxKernel tests must stay harness-only and must not include vendored Linux headers");
         }
       }
 
@@ -121,51 +123,52 @@ bool shouldSkipLocation(SourceLocation Loc, const SourceManager &SM) {
 
 bool isForbiddenHostAdapterWrapperName(llvm::StringRef Name) {
   return llvm::StringSwitch<bool>(Name)
-      .Cases("getuid", "geteuid", "getgid", "getegid", true)
-      .Cases("setuid", "setgid", "seteuid", "setegid", true)
-      .Cases("setresuid", "setresgid", "setreuid", "setregid", true)
-      .Cases("getresuid", "getresgid", "setfsuid", "setfsgid", true)
-      .Cases("getgroups", "setgroups", "prctl", "capget", true)
-      .Cases("capset", "getrandom", "getentropy", "futex", true)
-      .Cases("set_robust_list", "get_robust_list", "time", "gettimeofday",
+      .Cases({"getuid", "geteuid", "getgid", "getegid"}, true)
+      .Cases({"setuid", "setgid", "seteuid", "setegid"}, true)
+      .Cases({"setresuid", "setresgid", "setreuid", "setregid"}, true)
+      .Cases({"getresuid", "getresgid", "setfsuid", "setfsgid"}, true)
+      .Cases({"getgroups", "setgroups", "prctl", "capget"}, true)
+      .Cases({"capset", "getrandom", "getentropy", "futex"}, true)
+      .Cases({"set_robust_list", "get_robust_list", "time", "gettimeofday"},
              true)
-      .Cases("settimeofday", "clock_gettime", "clock_getres",
-             "clock_settime", true)
-      .Cases("sleep", "usleep", "nanosleep", "setitimer", true)
-      .Cases("getitimer", "alarm", "uname", "gethostname", true)
-      .Cases("sethostname", "getdomainname", "setdomainname", "sigaction",
+      .Cases({"settimeofday", "clock_gettime", "clock_getres",
+              "clock_settime"},
              true)
-      .Cases("signal", "kill", "sigprocmask", "sigpending", true)
-      .Cases("sigsuspend", "raise", "pause", "killpg", true)
-      .Cases("getrlimit", "setrlimit", "getrlimit64", "setrlimit64", true)
-      .Cases("times", "getrusage", "prlimit", "waitpid", true)
-      .Cases("wait4", "wait", "wait3", "waitid", true)
-      .Cases("open", "openat", "creat", "close", true)
-      .Cases("pipe", "pipe2", "stat", "fstat", true)
-      .Cases("lstat", "access", "faccessat", "fstatat", true)
-      .Cases("newfstatat", "statx", "poll", "select", true)
-      .Cases("execve", "execv", "execvp", "fexecve", true)
-      .Cases("ioctl", "tcgetpgrp", "tcsetpgrp", "tcgetsid", true)
-      .Cases("isatty", "dup", "dup2", "dup3", true)
-      .Cases("flock", "fcntl", "getdents", "getdents64", true)
-      .Cases("setxattr", "lsetxattr", "fsetxattr", "getxattr", true)
-      .Cases("lgetxattr", "fgetxattr", "removexattr", "lremovexattr", true)
-      .Cases("fremovexattr", "listxattr", "llistxattr", "flistxattr", true)
-      .Cases("chmod", "fchmod", "fchmodat", "chown", true)
-      .Cases("fchown", "lchown", "fchownat", "umask", true)
-      .Cases("truncate", "ftruncate", "epoll_create", "epoll_create1", true)
-      .Cases("epoll_ctl", "epoll_wait", "epoll_pwait", "mount", true)
-      .Cases("umount", "umount2", "mount_setattr", "open_tree", true)
-      .Cases("move_mount", "pivot_root", "sync", "fsync", true)
-      .Cases("fdatasync", "syncfs", "statfs", "fstatfs", true)
-      .Cases("posix_fadvise", "posix_fallocate", "read", "write", true)
-      .Cases("lseek", "pread", "pwrite", "chdir", true)
-      .Cases("fchdir", "getcwd", "mkdir", "mkdirat", true)
-      .Cases("rmdir", "unlink", "unlinkat", "link", true)
-      .Cases("linkat", "symlink", "symlinkat", "readlink", true)
-      .Cases("readlinkat", "rename", "renameat", "renameat2", true)
-      .Cases("chroot", "readv", "writev", "preadv", true)
-      .Cases("pwritev", "preadv2", "pwritev2", true)
+      .Cases({"sleep", "usleep", "nanosleep", "setitimer"}, true)
+      .Cases({"getitimer", "alarm", "uname", "gethostname"}, true)
+      .Cases({"sethostname", "getdomainname", "setdomainname", "sigaction"},
+             true)
+      .Cases({"signal", "kill", "sigprocmask", "sigpending"}, true)
+      .Cases({"sigsuspend", "raise", "pause", "killpg"}, true)
+      .Cases({"getrlimit", "setrlimit", "getrlimit64", "setrlimit64"}, true)
+      .Cases({"times", "getrusage", "prlimit", "waitpid"}, true)
+      .Cases({"wait4", "wait", "wait3", "waitid"}, true)
+      .Cases({"open", "openat", "creat", "close"}, true)
+      .Cases({"pipe", "pipe2", "stat", "fstat"}, true)
+      .Cases({"lstat", "access", "faccessat", "fstatat"}, true)
+      .Cases({"newfstatat", "statx", "poll", "select"}, true)
+      .Cases({"execve", "execv", "execvp", "fexecve"}, true)
+      .Cases({"ioctl", "tcgetpgrp", "tcsetpgrp", "tcgetsid"}, true)
+      .Cases({"isatty", "dup", "dup2", "dup3"}, true)
+      .Cases({"flock", "fcntl", "getdents", "getdents64"}, true)
+      .Cases({"setxattr", "lsetxattr", "fsetxattr", "getxattr"}, true)
+      .Cases({"lgetxattr", "fgetxattr", "removexattr", "lremovexattr"}, true)
+      .Cases({"fremovexattr", "listxattr", "llistxattr", "flistxattr"}, true)
+      .Cases({"chmod", "fchmod", "fchmodat", "chown"}, true)
+      .Cases({"fchown", "lchown", "fchownat", "umask"}, true)
+      .Cases({"truncate", "ftruncate", "epoll_create", "epoll_create1"}, true)
+      .Cases({"epoll_ctl", "epoll_wait", "epoll_pwait", "mount"}, true)
+      .Cases({"umount", "umount2", "mount_setattr", "open_tree"}, true)
+      .Cases({"move_mount", "pivot_root", "sync", "fsync"}, true)
+      .Cases({"fdatasync", "syncfs", "statfs", "fstatfs"}, true)
+      .Cases({"posix_fadvise", "posix_fallocate", "read", "write"}, true)
+      .Cases({"lseek", "pread", "pwrite", "chdir"}, true)
+      .Cases({"fchdir", "getcwd", "mkdir", "mkdirat"}, true)
+      .Cases({"rmdir", "unlink", "unlinkat", "link"}, true)
+      .Cases({"linkat", "symlink", "symlinkat", "readlink"}, true)
+      .Cases({"readlinkat", "rename", "renameat", "renameat2"}, true)
+      .Cases({"chroot", "readv", "writev", "preadv"}, true)
+      .Cases({"pwritev", "preadv2", "pwritev2"}, true)
       .Default(false);
 }
 

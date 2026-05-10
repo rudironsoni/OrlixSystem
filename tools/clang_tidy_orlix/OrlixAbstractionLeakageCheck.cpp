@@ -25,6 +25,12 @@ bool pathMatchesCompatNaming(llvm::StringRef Path) {
   return std::regex_search(Path.str(), Pattern);
 }
 
+bool pathMatchesPrivateSplitHeader(llvm::StringRef Path) {
+  static const std::regex Pattern(
+      R"((^|/)[A-Za-z0-9]+_(?:handoff|contract|seam|facade|subset|slice|split)(?:_[A-Za-z0-9]+)?\.h$)");
+  return std::regex_search(Path.str(), Pattern);
+}
+
 SourceLocation translateLocation(const SourceManager &SM, FileID FID,
                                  unsigned Line, unsigned Column) {
   return SM.translateLineCol(FID, Line, Column);
@@ -65,6 +71,8 @@ const std::vector<RegexRule> AbstractionLeakageRules = {
      "repo-local compat naming for Linux-shaped concepts is forbidden in Linux-owner code; use Linux names instead"},
     {R"(^\s*#\s*include\s*\"[^\"]*_(compat|bridge|adapter|shim|private|internal|owner)\.h\")",
      "repo-local renamed Linux-concept headers are forbidden in Linux-owner code; use Linux names instead"},
+    {R"(^\s*#\s*include\s*\"[^\"]*_(handoff|contract|seam|facade|subset|slice|split)(?:_[A-Za-z0-9]+)?\.h\")",
+     "repo-local private split headers are forbidden in Linux-owner code; keep the direct vendored Linux include path and fix the build or lint environment instead"},
 };
 
 } // namespace
@@ -109,6 +117,10 @@ void OrlixAbstractionLeakageCheck::scanMainFile() {
   if (pathMatchesCompatNaming(Path)) {
     diag(SM.getLocForStartOfFile(FID),
          "Linux-owner header naming is forbidden when it dresses Linux concepts with repo-local compat or helper suffixes; use Linux names instead");
+  }
+  if (pathMatchesPrivateSplitHeader(Path)) {
+    diag(SM.getLocForStartOfFile(FID),
+         "repo-local private split headers are forbidden in Linux-owner code; keep the direct vendored Linux include path and fix the build or lint environment instead");
   }
 
   StringRef Buffer = SM.getBufferData(FID);

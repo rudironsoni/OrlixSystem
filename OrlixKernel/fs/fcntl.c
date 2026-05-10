@@ -1,4 +1,4 @@
-#include <uapi/linux/fcntl.h>
+#include <linux/fcntl.h>
 
 #include <linux/errno.h>
 #include <stdarg.h>

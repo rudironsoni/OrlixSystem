@@ -53,7 +53,9 @@ Wrong-direction changes are forbidden:
 - Fix such leakage by restoring the architecture boundary: Linux header truth (UAPI + kernel-internal generated headers) in Linux-owner code, private host mediation only under `OrlixHostAdapter/**`.
 - Never describe Linux-owner files as “not needing Darwin” as if Darwin was a valid option there. Darwin is not a Linux-owner dependency.
 - Do not include host toolchain `std*.h` headers in Linux-owner code. That includes, at minimum, `stddef.h`, `stdint.h`, `stdbool.h`, `stdatomic.h`, `stdarg.h`, `stdlib.h`, `stdio.h`, and any similar standard-library convenience headers.
-- If a Linux-owner file appears to need a `std*.h` header, that is a boundary bug to fix, not a convenience exception to take. Use the vendored truth from `third_party/linux/6.12/arm64/uapi/include` and `third_party/linux/6.12/arm64/kheaders/**`, or redesign the kernel-private type ownership.
+- If a Linux-owner file appears to need a `std*.h` header, that is a boundary bug to fix, not a convenience exception to take. Use the vendored truth from `OrlixKernel/vendor/linux/<version>/<arch>/include`, or redesign the kernel-private type ownership.
+- Do not introduce repo-local private shim headers, split-contract headers, or reduced include façades whose purpose is to avoid including the real vendored Linux kernel header graph.
+- If the full vendored Linux header graph trips lint or the Apple toolchain, the fix belongs in the build/lint environment and vendor integration layer, not in a new repo-local private header that cuts around Linux truth.
 
 ## 3) Narrow Subsystem Seams Only
 
@@ -64,6 +66,7 @@ Allowed seam shape:
 - minimal exported surface
 - no ambient host vocabulary leakage
 - kernel-owned declarations, host-owned implementations only
+- Darwin-importing `OrlixHostAdapter` implementation files must not directly include deep Linux kheaders or broad kernel owner headers when a narrower kernel-owned seam can carry the data
 
 Forbidden seam shape:
 - generic helper bags
@@ -73,6 +76,8 @@ Forbidden seam shape:
 - filenames or contract names that encode host role redundantly with `_host`, `_bridge`, `internal/ios`, or similar labels
 - repo-local compatibility layers that rename Linux-shaped concepts instead of using Linux names
 - adapter-owned public wrappers for libc or userspace ABI entry points
+- repo-local private split headers whose only purpose is to narrow or bypass the real vendored Linux include graph
+- mixed Darwin-SDK plus deep-Linux aggregate translation units in `OrlixHostAdapter/**`
 
 Linux naming rule:
 - If the concept already has a Linux name, use the Linux name.
@@ -103,6 +108,11 @@ In `OrlixKernel/fs/`, `OrlixKernel/kernel/`, `OrlixKernel/runtime/`, `OrlixKerne
 - ambient host vocabulary such as `host_*`, `*_host`, or `*_bridge`
 
 Category rule: banning one prefix and reintroducing the same leakage with a new prefix is still a violation.
+
+Darwin-backed `OrlixHostAdapter/**` implementation rule:
+- if a host implementation file needs Linux-owned structs, Linux-owned conversions, or broad kernel subsystem state, that logic belongs back in `OrlixKernel`
+- host seams should prefer primitive/scalar exchange or opaque kernel-owned handles, not mixed Darwin/Linux aggregate contracts in one translation unit
+- build or lint friction caused by vendored Linux headers inside Darwin-importing host files must be resolved by seam narrowing and ownership correction, not by weakening Linux truth or inventing repo-local compatibility façades
 
 ## 5) Public ABI Discipline
 
@@ -319,6 +329,7 @@ Forbidden implementation behavior:
 - replacing Linux UAPI/libc-owned concepts with repo-local convenience types
 - renaming Linux concepts into repo-local “private” or “compat” spellings instead of using Linux names
 - using Darwin/POSIX host types because they are easier to compile
+- introducing repo-local private shim headers to avoid consuming the full vendored Linux header graph directly
 - moving semantic problems into tests instead of fixing subsystem ownership
 - stopping at the smallest green test when the architecture is still wrong
 - narrowing behavior to one current test case instead of modeling the Linux-facing rule
@@ -341,9 +352,13 @@ Additional hard rule:
   “does not need Darwin.” Linux-owner files are forbidden from depending on
   Darwin/iOS in the first place. If such a dependency appears, fix the boundary
   instead of explaining it away.
+- Do not respond to Linux header integration friction by inventing repo-local
+  private header splits such as narrow handoff headers, partial contract clones,
+  or reduced include façades. Keep the direct Linux-owner include path and fix
+  the toolchain or lint environment so the real vendored Linux headers work.
 - Do not downgrade Linux ABI types to local fixed-width convenience types when
   vendored generated Linux headers provide the contract type.
-- Do not create repo-local header files whose purpose is to restate Linux UAPI or kheaders concepts that already exist under `third_party/linux/<version>/<arch>/**`.
+- Do not create repo-local header files whose purpose is to restate Linux UAPI or kheaders concepts that already exist under `OrlixKernel/vendor/linux/<version>/<arch>/include`.
 - Do not create repo-local wrapper macros or helper functions whose sole job is to rename Linux constants, Linux structs, or Linux fd-set/socket/time/termios behavior into project-specific spellings.
 - Laziness is not an implementation strategy: do not choose shallow stubs,
   renamed adapters, local typedefs, or narrow test-shaped behavior when the

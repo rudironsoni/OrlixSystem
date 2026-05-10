@@ -8,7 +8,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
-#include <uapi/linux/futex.h>
+#include <linux/futex.h>
 
 #define KERNEL_WAIT_WORD_BUCKETS 64
 
@@ -171,7 +171,7 @@ static int futex_wait_common_impl(int *uaddr, int expected, int timeout_ms, uint
             futex_waiter_remove_locked(bucket, &waiter);
             wait_queue_unlock(&bucket->wait);
             if (ret == -EINTR) {
-                task_restart_record_impl(get_current(), TASK_RESTART_FUTEX_WAIT,
+                task_restart_record_impl(current_task(), TASK_RESTART_FUTEX_WAIT,
                                          (uint64_t)(uintptr_t)uaddr,
                                          (uint64_t)(int64_t)expected,
                                          (uint64_t)(int64_t)timeout_ms,
@@ -401,10 +401,10 @@ int futex_op_impl(int *uaddr, int futex_op, int val, int timeout_ms, int *uaddr2
 }
 
 int set_robust_list_impl(void *head, unsigned long len) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
 
     if (!task && task_init() == 0) {
-        task = get_current();
+        task = current_task();
     }
     if (!task) {
         return -ESRCH;
@@ -418,16 +418,16 @@ int set_robust_list_impl(void *head, unsigned long len) {
 }
 
 int get_robust_list_impl(int pid, void **head, unsigned long *len) {
-    struct task_struct *task;
+    struct task *task;
 
     if (!head || !len) {
         return -EFAULT;
     }
     if (pid == 0) {
-        task = get_current();
+        task = current_task();
         if (!task) {
             task_init();
-            task = get_current();
+            task = current_task();
         }
     } else {
         task = task_lookup(pid);
@@ -457,7 +457,7 @@ static void futex_mark_owner_died(int *uaddr, int32_t pid) {
     futex_wake_impl(uaddr, 1);
 }
 
-static void futex_walk_robust_list(struct task_struct *task) {
+static void futex_walk_robust_list(struct task *task) {
     struct robust_list_head *head;
     struct robust_list *entry;
 
@@ -478,7 +478,7 @@ static void futex_walk_robust_list(struct task_struct *task) {
     }
 }
 
-void futex_task_exit_impl(struct task_struct *task) {
+void futex_task_exit_impl(struct task *task) {
     int *clear_child_tid;
 
     if (!task) {

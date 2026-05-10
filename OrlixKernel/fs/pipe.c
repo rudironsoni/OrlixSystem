@@ -1,5 +1,5 @@
-#include <uapi/linux/errno.h>
-#include <uapi/linux/fcntl.h>
+#include <linux/errno.h>
+#include <linux/fcntl.h>
 #ifdef SIGPIPE
 #undef SIGPIPE
 #endif
@@ -7,7 +7,7 @@
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 
-#include <uapi/linux/poll.h>
+#include <linux/poll.h>
 
 #include "pipe.h"
 
@@ -200,7 +200,7 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     wait_queue_lock(&pipe->wait);
     if (pipe->readers == 0) {
         wait_queue_unlock(&pipe->wait);
-        signal_generate_task(get_current(), SIGPIPE);
+        signal_generate_task(current_task(), SIGPIPE);
         return -EPIPE;
     }
 
@@ -208,7 +208,7 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     while (space == 0) {
         if (pipe->readers == 0) {
             wait_queue_unlock(&pipe->wait);
-            signal_generate_task(get_current(), SIGPIPE);
+            signal_generate_task(current_task(), SIGPIPE);
             return -EPIPE;
         }
         if (nonblock) {

@@ -21,18 +21,17 @@
 #include <linux/errno.h>
 #include <linux/gfp_types.h>
 #include <linux/string.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/capability.h>
-#include <uapi/linux/elf.h>
-#include <uapi/linux/mount.h>
-#include <uapi/linux/sched.h>
-#include <uapi/linux/stat.h>
-#include <uapi/asm/stat.h>
-#include <uapi/linux/time_types.h>
+#include <linux/fcntl.h>
+#include <linux/capability.h>
+#include <linux/elf.h>
+#include <linux/mount.h>
+#include <linux/sched.h>
+#include <linux/stat.h>
+#include <asm/stat.h>
 #ifdef RLIM_NLIMITS
 #undef RLIM_NLIMITS
 #endif
-#include <uapi/asm-generic/resource.h>
+#include <asm-generic/resource.h>
 
 extern void poll_notify_readiness_impl(void);
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
@@ -114,15 +113,12 @@ kernel_mutex_t task_table_lock = KERNEL_MUTEX_INITIALIZER;
 struct task_struct *task_table[TASK_MAX_TASKS] = {NULL};
 
 static uint64_t task_monotonic_time_ns(void) {
-    struct __kernel_timespec ts;
+    u64 now_ns;
 
-    if (kernel_clock_gettime(1, &ts) != 0) {
+    if (kernel_clock_now_ns(1, &now_ns) != 0) {
         return 0;
     }
-    if (ts.tv_sec < 0 || ts.tv_nsec < 0) {
-        return 0;
-    }
-    return ((uint64_t)ts.tv_sec * 1000000000ULL) + (uint64_t)ts.tv_nsec;
+    return (uint64_t)now_ns;
 }
 
 static uint64_t task_start_time_since_boot_ns(void) {
@@ -1564,8 +1560,8 @@ void task_deinit(void) {
      * actually free tasks like init_task. current_task is TLS but shutdown runs
      * on a specific host thread; we must release that thread's reference. */
     if (current_task) {
-        struct task_struct *task = current_task;
-        current_task = NULL;
+        struct task_struct *task = get_current;
+        get_current = NULL;
         set_current_cred(NULL);
         free_task(task);
     }

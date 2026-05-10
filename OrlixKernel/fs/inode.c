@@ -6,10 +6,10 @@
  */
 
 #include <linux/errno.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/stat.h>
-#include <uapi/linux/time_types.h>
-#include <uapi/asm/stat.h>
+#include <linux/fcntl.h>
+#include <linux/stat.h>
+#include <linux/time.h>
+#include <asm/stat.h>
 
 #include "fdtable.h"
 #include "vfs.h"
@@ -240,7 +240,7 @@ int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timesp
 }
 
 uint32_t umask_impl(uint32_t mask) {
-    struct task_struct *task = get_current();
+    struct task *task = current_task();
     uint32_t old;
 
     if (!task || !task->fs) {

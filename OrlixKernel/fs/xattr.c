@@ -6,8 +6,8 @@
 
 #include <linux/errno.h>
 #include <linux/string.h>
-#include <uapi/linux/capability.h>
-#include <uapi/linux/xattr.h>
+#include <linux/capability.h>
+#include <linux/xattr.h>
 
 static bool xattr_is_security_capability(const char *name) {
     return name && strcmp(name, "security.capability") == 0;

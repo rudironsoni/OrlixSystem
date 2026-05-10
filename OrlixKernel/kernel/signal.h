@@ -17,10 +17,8 @@
 #ifndef KERNEL_SIGNAL_H
 #define KERNEL_SIGNAL_H
 
+#include <linux/atomic.h>
 #include <linux/types.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdatomic.h>
 
 #include "internal/mutex.h"
 
@@ -39,7 +37,7 @@ struct task_struct;
 typedef void (*sighandler_t)(int);
 
 struct signal_mask_bits {
-    uint64_t sig[KERNEL_SIG_NUM_WORDS];
+    u64 sig[KERNEL_SIG_NUM_WORDS];
 };
 
 int kernel_thread_sigmask(int how, const struct signal_mask_bits *set,
@@ -54,7 +52,7 @@ struct signal_queue_entry {
     int32_t si_signo;
     int32_t si_errno;
     int32_t si_code;
-    uint64_t fault_addr;
+    u64 fault_addr;
     struct signal_queue_entry *next;
 };
 
@@ -72,7 +70,7 @@ struct signal_action_slot {
     sighandler_t handler;
     struct signal_mask_bits mask;
     int32_t flags;
-    uint64_t restorer;
+    u64 restorer;
 };
 
 /* Signal stack state - private internal */
@@ -85,7 +83,7 @@ struct signal_altstack {
 /* Signal handler table - per-task signal configuration
  * This is the private internal state, NOT the public ABI struct sigaction */
 struct signal_struct {
-    atomic_int refs;
+    atomic_t refs;
     struct signal_action_slot actions[KERNEL_SIG_NUM];
     struct signal_mask_bits blocked;
     struct signal_mask_bits pending;
@@ -121,20 +119,20 @@ int signal_dequeue(struct task_struct *task, struct signal_mask_bits *mask, int3
 void signal_recompute_pending(struct task_struct *task);
 
 /* Signal wakeup - wake the right task after signal generation */
-void signal_wake_task(struct task_struct *task, _Bool group_wide);
+void signal_wake_task(struct task_struct *task, bool group_wide);
 
 /* Internal signal generation */
 int signal_generate_task(struct task_struct *target, int32_t sig);
-int signal_generate_task_info(struct task_struct *target, int32_t sig, int32_t code, uint64_t addr);
+int signal_generate_task_info(struct task_struct *target, int32_t sig, int32_t code, u64 addr);
 int signal_generate_process(struct task_struct *target, int32_t sig);
 int signal_send_process(struct task_struct *target, int32_t sig);
 int signal_generate_pgrp(int32_t pgid, int32_t sig);
 int signal_generate_orphaned_pgrp(int32_t pgid);
 
 /* Check if signal is blocked */
-_Bool signal_is_blocked(const struct task_struct *task, int32_t sig);
-_Bool signal_is_pending(const struct task_struct *task, int32_t sig);
-_Bool signal_has_unblocked_pending(const struct task_struct *task);
+bool signal_is_blocked(const struct task_struct *task, int32_t sig);
+bool signal_is_pending(const struct task_struct *task, int32_t sig);
+bool signal_has_unblocked_pending(const struct task_struct *task);
 
 /* ============================================================================
  * INTERNAL SYSCALL IMPLEMENTATIONS (for host-bridge use)
@@ -154,8 +152,8 @@ int do_sigsuspend(const struct signal_mask_bits *mask);
 int do_kill(int32_t pid, int32_t sig);
 int do_killpg(int32_t pgrp, int32_t sig);
 int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altstack *old_stack);
-int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t return_pc,
-                              uint64_t current_sp, uint64_t *frame_sp_out);
+int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, u64 return_pc,
+                              u64 current_sp, u64 *frame_sp_out);
 
 #ifdef __cplusplus
 }

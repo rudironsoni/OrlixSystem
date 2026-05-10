@@ -11,8 +11,8 @@ int futex_op_impl(int *uaddr, int futex_op, int val, int timeout_ms, int *uaddr2
 void futex_reset_impl(void);
 int set_robust_list_impl(void *head, unsigned long len);
 int get_robust_list_impl(int pid, void **head, unsigned long *len);
-struct task_struct;
-void futex_task_exit_impl(struct task_struct *task);
+struct task;
+void futex_task_exit_impl(struct task *task);
 
 #ifdef __cplusplus
 }
