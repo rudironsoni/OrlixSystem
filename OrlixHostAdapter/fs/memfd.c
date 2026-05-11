@@ -8,8 +8,6 @@
 #include <unistd.h>
 
 #include "backing_io_internal.h"
-#include "internal/fs/namei.h"
-#include "internal/fs/rootfs.h"
 
 static int try_memfd_root(int (*discover_root)(char *path, size_t path_len),
                           pid_t pid) {

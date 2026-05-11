@@ -1,19 +1,14 @@
 #include <asm/ioctls.h>
 #include <asm/unistd.h>
-#include <linux/sched.h>
-#include <linux/fcntl.h>
-#include <linux/wait.h>
+#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/wait.h>
+#include <linux/string.h>
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 #include <asm-generic/siginfo.h>
-
-#include <errno.h>
-#include <pthread.h>
-#include <stdatomic.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -37,6 +32,7 @@ extern __kernel_pid_t kernel_wait4(__kernel_pid_t pid, int *wstatus, int options
     __asm("_wait4");
 extern int kernel_waitid(int idtype, __kernel_pid_t id, siginfo_t *infop, int options)
     __asm("_waitid");
+extern int errno;
 
 #ifndef WIFEXITED
 #define WIFEXITED(status) (((status) & 0x7f) == 0)
@@ -90,14 +86,14 @@ static void reset_wait_job_control_test_kernel_state(void) {
     init_task->sid = init_task->pid;
     init_task->exit_status = 0;
     init_task->thread_pending_signals = 0;
-    atomic_store(&init_task->exited, false);
-    atomic_store(&init_task->signaled, false);
-    atomic_store(&init_task->termsig, 0);
-    atomic_store(&init_task->stopped, false);
-    atomic_store(&init_task->state, TASK_RUNNING);
-    atomic_store(&init_task->continued, false);
-    atomic_store(&init_task->stop_report_pending, false);
-    atomic_store(&init_task->continue_report_pending, false);
+    atomic_set(&init_task->exited, 0);
+    atomic_set(&init_task->signaled, 0);
+    atomic_set(&init_task->termsig, 0);
+    atomic_set(&init_task->stopped, 0);
+    atomic_set(&init_task->state, TASK_RUNNING);
+    atomic_set(&init_task->continued, 0);
+    atomic_set(&init_task->stop_report_pending, 0);
+    atomic_set(&init_task->continue_report_pending, 0);
     if (init_task->signal) {
         memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
         memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));
@@ -117,16 +113,61 @@ struct waitpid_restart_thread {
     int status;
     int32_t result;
     int saved_errno;
-    atomic_int ready;
+    kernel_mutex_t lock;
+    kernel_cond_t cond;
+    int started;
+    int done;
 };
+
+static void waitpid_restart_thread_init(struct waitpid_restart_thread *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    kernel_mutex_init(&ctx->lock);
+    kernel_cond_init(&ctx->cond);
+}
+
+static void waitpid_restart_thread_destroy(struct waitpid_restart_thread *ctx) {
+    kernel_cond_destroy(&ctx->cond);
+    kernel_mutex_destroy(&ctx->lock);
+}
+
+static void waitpid_restart_thread_mark_started(struct waitpid_restart_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->started = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void waitpid_restart_thread_mark_done(struct waitpid_restart_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->done = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void waitpid_restart_thread_wait_started(struct waitpid_restart_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->started) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void waitpid_restart_thread_wait_done(struct waitpid_restart_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->done) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
 
 static void *waitpid_restart_thread_main(void *arg) {
     struct waitpid_restart_thread *ctx = arg;
 
     set_current(ctx->task);
-    atomic_store(&ctx->ready, 1);
+    waitpid_restart_thread_mark_started(ctx);
     ctx->result = waitpid_impl(ctx->child_pid, &ctx->status, 0);
     ctx->saved_errno = errno;
+    waitpid_restart_thread_mark_done(ctx);
     return NULL;
 }
 
@@ -257,7 +298,7 @@ static int stop_and_wait_status(struct task_struct *parent, struct task_struct *
         errno = ESRCH;
         return -1;
     }
-    if (!atomic_load(&child->stop_report_pending) || !atomic_load(&child->stopped)) {
+    if (!atomic_read(&child->stop_report_pending) || !atomic_read(&child->stopped)) {
         errno = ENODATA;
         return -1;
     }
@@ -295,7 +336,7 @@ static int exit_child_with_status(struct task_struct *parent, struct task_struct
     set_current(child);
     exit_impl(exit_status);
     set_current(saved_current);
-    if (!atomic_load(&child->exited)) {
+    if (!atomic_read(&child->exited)) {
         errno = ENODATA;
         return -1;
     }
@@ -1123,7 +1164,7 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
     struct task_struct *child = NULL;
     struct task_struct *restore;
     struct waitpid_restart_thread ctx;
-    pthread_t thread;
+    kernel_thread_t thread;
     long ret;
     int status = 0;
     int32_t expected_pid;
@@ -1144,31 +1185,33 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
     }
     expected_pid = child->pid;
 
+    waitpid_restart_thread_init(&ctx);
     ctx.task = waiter;
     ctx.child_pid = child->pid;
     ctx.status = 0;
     ctx.result = 0;
     ctx.saved_errno = 0;
-    atomic_init(&ctx.ready, 0);
 
-    if (pthread_create(&thread, NULL, waitpid_restart_thread_main, &ctx) != 0) {
+    if (kernel_thread_create(&thread, NULL, waitpid_restart_thread_main, &ctx) != 0) {
+        waitpid_restart_thread_destroy(&ctx);
         destroy_child_task(waiter, child);
         task_unlink_child_impl(parent, waiter);
         free_task(waiter);
         errno = ECHILD;
         return -1;
     }
-    while (atomic_load(&ctx.ready) == 0) {
-        /* spin until the waiter has entered waitpid_impl */
-    }
+    kernel_thread_detach(thread);
+    waitpid_restart_thread_wait_started(&ctx);
     if (signal_generate_task(waiter, SIGUSR1) != 0) {
-        pthread_join(thread, NULL);
+        waitpid_restart_thread_wait_done(&ctx);
+        waitpid_restart_thread_destroy(&ctx);
         destroy_child_task(waiter, child);
         task_unlink_child_impl(parent, waiter);
         free_task(waiter);
         return -1;
     }
-    pthread_join(thread, NULL);
+    waitpid_restart_thread_wait_done(&ctx);
+    waitpid_restart_thread_destroy(&ctx);
 
     if (ctx.result != -1 || ctx.saved_errno != EINTR ||
         !waiter->mm ||

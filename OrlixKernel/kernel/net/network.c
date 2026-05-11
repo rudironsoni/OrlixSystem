@@ -7,12 +7,17 @@
 
 #include <linux/errno.h>
 #include <linux/fcntl.h>
+#include <linux/page_ref.h>
+#define _LINUX_FS_H
+#define _LINUX_MM_H
+#include <linux/net.h>
+#undef _LINUX_MM_H
+#undef _LINUX_FS_H
 #include <linux/socket.h>
+#include <linux/stddef.h>
 #include <linux/time_types.h>
 #include <linux/uio.h>
-#include <linux/un.h>
-#include <stdbool.h>
-#include <stddef.h>
+#include <uapi/linux/un.h>
 
 #include "socket.h"
 #include "fs/fdtable.h"
@@ -24,29 +29,6 @@ extern void *memcpy(void *, const void *, size_t);
 extern void *memset(void *, int, size_t);
 
 #define errno (*__error())
-#define AF_UNIX 1
-#define SOCK_STREAM 1
-#define SOCK_DGRAM 2
-#define SOCK_TYPE_MASK 0xf
-#define MSG_DONTWAIT 0x40
-#define SHUT_RD 0
-#define SHUT_WR 1
-#define SHUT_RDWR 2
-
-struct user_msghdr {
-    void *msg_name;
-    int msg_namelen;
-    struct iovec *msg_iov;
-    __kernel_size_t msg_iovlen;
-    void *msg_control;
-    __kernel_size_t msg_controllen;
-    unsigned int msg_flags;
-};
-
-struct mmsghdr {
-    struct user_msghdr msg_hdr;
-    unsigned int msg_len;
-};
 
 #ifndef SOCK_CLOEXEC
 #define SOCK_CLOEXEC O_CLOEXEC

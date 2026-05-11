@@ -1,8 +1,7 @@
 #include <linux/uio.h>
 
 #include <linux/errno.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <linux/types.h>
 
 #include "fs/vfs.h"
 

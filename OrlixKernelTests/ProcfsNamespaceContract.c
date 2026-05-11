@@ -1,10 +1,11 @@
-#include <linux/fcntl.h>
-#include <linux/fs.h>
-#include <linux/mman.h>
-#include <linux/mount.h>
-#include <linux/sched.h>
-#include <linux/stat.h>
-#include <linux/wait.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/linux/mman.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/wait.h>
+#include <linux/dirent.h>
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
@@ -40,14 +41,6 @@ extern ssize_t getdents64(int fd, void *dirp, size_t count);
 extern int signal_generate_process(struct task_struct *target, int32_t sig);
 extern void cred_reset_to_defaults(void);
 extern void set_current_cred(struct cred *cred);
-
-struct linux_dirent64 {
-    uint64_t d_ino;
-    int64_t d_off;
-    unsigned short d_reclen;
-    unsigned char d_type;
-    char d_name[];
-};
 
 static void reset_procfs_namespace_state(void) {
     cred_reset_to_defaults();

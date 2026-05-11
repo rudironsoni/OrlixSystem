@@ -2,18 +2,24 @@
 
 #include <uapi/linux/close_range.h>
 #include <linux/errno.h>
-#include <linux/fcntl.h>
-#ifndef _LINUX_FCNTL_H
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/ioctl.h>
+/*
+ * These UAPI headers recurse through <linux/fcntl.h>. Keep them on the UAPI
+ * contract path in this translation unit instead of pulling the full kernel
+ * owner graph.
+ */
 #define _LINUX_FCNTL_H
-#endif
-#include <linux/eventfd.h>
-#include <linux/memfd.h>
+#include <uapi/linux/eventfd.h>
+#include <uapi/linux/memfd.h>
 #include <uapi/linux/pidfd.h>
+#include <uapi/linux/timerfd.h>
+#undef _LINUX_FCNTL_H
+#include <linux/limits.h>
 #include <linux/string.h>
-#include <linux/stat.h>
-#include <linux/time.h>
-#include <linux/timerfd.h>
-#include <asm/stat.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/time.h>
+#include <uapi/asm/stat.h>
 
 #include "internal/slab.h"
 #include "internal/timekeeping.h"
@@ -56,7 +62,7 @@ struct files_struct *alloc_files(size_t max_fds) {
     }
 
     files->max_fds = max_fds;
-    atomic_init(&files->refs, 1);
+    atomic_set(&files->refs, 1);
     fs_mutex_init(&files->lock);
 
     return files;
@@ -65,7 +71,7 @@ struct files_struct *alloc_files(size_t max_fds) {
 void free_files(struct files_struct *files) {
     if (!files)
         return;
-    if (atomic_fetch_sub(&files->refs, 1) != 1) {
+    if (atomic_dec_return(&files->refs) != 0) {
         return;
     }
 
@@ -84,7 +90,7 @@ void free_files(struct files_struct *files) {
 
 struct files_struct *get_files(struct files_struct *files) {
     if (files) {
-        atomic_fetch_add(&files->refs, 1);
+        atomic_inc(&files->refs);
     }
     return files;
 }
@@ -117,7 +123,7 @@ struct files_struct *dup_files(struct files_struct *parent) {
 struct file *alloc_file(void) {
     struct file *file = __kmalloc_noprof(sizeof(struct file), GFP_KERNEL | __GFP_ZERO);
     if (file) {
-        atomic_init(&file->refs, 1);
+        atomic_set(&file->refs, 1);
     }
     return file;
 }
@@ -125,7 +131,7 @@ struct file *alloc_file(void) {
 void free_file(struct file *file) {
     if (!file)
         return;
-    if (atomic_fetch_sub(&file->refs, 1) == 1) {
+    if (atomic_dec_return(&file->refs) == 0) {
         release_fd_description((fd_description_t *)file->private_data);
         kfree(file);
     }
@@ -134,7 +140,7 @@ void free_file(struct file *file) {
 struct file *dup_file(struct file *file) {
     if (!file)
         return NULL;
-    atomic_fetch_add(&file->refs, 1);
+    atomic_inc(&file->refs);
     return file;
 }
 
@@ -225,7 +231,7 @@ int dup_fd(struct files_struct *files, int oldfd) {
     for (size_t i = 0; i < files->max_fds; i++) {
         if (!files->fd[i]) {
             files->fd[i] = file;
-            atomic_fetch_add(&file->refs, 1);
+            atomic_inc(&file->refs);
             fs_mutex_unlock(&files->lock);
             return (int)i;
         }
@@ -258,7 +264,7 @@ int do_dup2(struct files_struct *files, int oldfd, int newfd) {
     }
 
     files->fd[newfd] = file;
-    atomic_fetch_add(&file->refs, 1);
+    atomic_inc(&file->refs);
     fs_mutex_unlock(&files->lock);
 
     return 0;
@@ -380,8 +386,8 @@ typedef struct fd_description {
     uint64_t timerfd_expirations;
     bool timerfd_armed;
     int memfd_seals;
-    struct task *pidfd_task;
-    atomic_int refs;
+    struct task_struct *pidfd_task;
+    atomic_t refs;
     fs_mutex_t lock;
 } fd_description_t;
 
@@ -389,11 +395,11 @@ typedef struct fd_description {
 
 static fd_entry_t fd_table[NR_OPEN_DEFAULT];
 static fs_mutex_t fd_table_lock = FS_MUTEX_INITIALIZER;
-static atomic_int fd_table_initialized = 0;
-static atomic_ullong fdtable_next_virtual_identity = 1;
+static atomic_t fd_table_initialized = ATOMIC_INIT(0);
+static atomic64_t fdtable_next_virtual_identity = ATOMIC64_INIT(1);
 static __thread fd_entry_t fd_task_local_entry;
 
-static bool fdtable_task_has_file(struct task *task, int fd) {
+static bool fdtable_task_has_file(struct task_struct *task, int fd) {
     bool used;
 
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
@@ -407,7 +413,7 @@ static bool fdtable_task_has_file(struct task *task, int fd) {
 }
 
 static uint64_t fdtable_current_mount_namespace_id(void) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
 
     if (!task || !task->fs) {
         return 0;
@@ -424,7 +430,7 @@ static bool fdtable_any_task_uses_fd(int fd) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS && !used; i++) {
-        struct task *task = task_table[i];
+        struct task_struct *task = task_table[i];
         while (task) {
             if (fdtable_task_has_file(task, fd)) {
                 used = true;
@@ -444,7 +450,7 @@ static void fdtable_update_file_offsets_for_desc(fd_description_t *desc, int64_t
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task *task = task_table[i];
+        struct task_struct *task = task_table[i];
         while (task) {
             if (task->files) {
                 fs_mutex_lock(&task->files->lock);
@@ -508,7 +514,7 @@ static void fdtable_exchange_desc_path_if_matches(fd_description_t *desc,
 }
 
 static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     struct file *file;
     fd_description_t *new_desc = entry ? entry->desc : NULL;
 
@@ -546,7 +552,7 @@ static void fdtable_sync_task_file_locked(int fd, fd_entry_t *entry) {
 }
 
 static void fdtable_remove_task_file(int fd) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     struct file *file;
 
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
@@ -592,7 +598,7 @@ static fd_description_t *alloc_fd_description(int real_fd, int flags, uint32_t m
         return NULL;
     }
     ((synthetic_dir_state_t *)desc->synthetic_state)->dir_class = SYNTHETIC_DIR_GENERIC;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     if (path) {
         strncpy(desc->path, path, MAX_PATH - 1);
@@ -636,7 +642,7 @@ static fd_description_t *alloc_synthetic_subdir_fd_description(int flags, uint32
         return NULL;
     }
     ((synthetic_dir_state_t *)desc->synthetic_state)->dir_class = dir_class;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     if (path) {
         strncpy(desc->path, path, MAX_PATH - 1);
@@ -665,7 +671,7 @@ static fd_description_t *alloc_synthetic_dev_fd_description(int flags, uint32_t 
     desc->pipe_endpoint = NULL;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     if (path) {
         strncpy(desc->path, path, MAX_PATH - 1);
@@ -695,7 +701,7 @@ static fd_description_t *alloc_synthetic_proc_file_fd_description(int flags, uin
     desc->pipe_endpoint = NULL;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     if (path) {
         strncpy(desc->path, path, MAX_PATH - 1);
@@ -725,7 +731,7 @@ static fd_description_t *alloc_synthetic_pty_fd_description(int flags, uint32_t 
     desc->pipe_endpoint = NULL;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     if (path) {
         strncpy(desc->path, path, MAX_PATH - 1);
@@ -766,7 +772,7 @@ static fd_description_t *alloc_pipe_fd_description(int flags, struct pipe_endpoi
     desc->pipe_endpoint = endpoint;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     memcpy(desc->path, path, strlen(path) + 1);
     return desc;
@@ -802,7 +808,7 @@ static fd_description_t *alloc_socket_fd_description(int flags, struct socket_st
     desc->epoll_instance = NULL;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     socket_id = socket_identity_impl(socket);
     scnprintf(desc->path, sizeof(desc->path), "socket:[%llu]", socket_id);
@@ -837,7 +843,7 @@ static fd_description_t *alloc_epoll_fd_description(int flags, struct epoll_inst
     desc->epoll_instance = instance;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     memcpy(desc->path, "anon_inode:[eventpoll]", sizeof("anon_inode:[eventpoll]"));
     return desc;
@@ -867,7 +873,7 @@ static fd_description_t *alloc_eventfd_description(unsigned int initval, int fla
     desc->eventfd_counter = initval;
     desc->eventfd_semaphore = (flags & EFD_SEMAPHORE) != 0;
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     memcpy(desc->path, "anon_inode:[eventfd]", sizeof("anon_inode:[eventfd]"));
     return desc;
@@ -951,7 +957,7 @@ static fd_description_t *alloc_timerfd_description(int clockid, int flags) {
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->timerfd_clockid = clockid;
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     memcpy(desc->path, "anon_inode:[timerfd]", sizeof("anon_inode:[timerfd]"));
     return desc;
@@ -971,7 +977,7 @@ static fd_description_t *alloc_memfd_description(int real_fd, const char *name, 
     desc->flags = O_RDWR;
     desc->mode = 0600;
     desc->offset = 0;
-    desc->file_identity = (uint64_t)atomic_fetch_add(&fdtable_next_virtual_identity, 1);
+    desc->file_identity = (uint64_t)atomic64_inc_return(&fdtable_next_virtual_identity) - 1ULL;
     desc->mount_ns_id = fdtable_current_mount_namespace_id();
     desc->is_dir = false;
     desc->dev_node = SYNTHETIC_DEV_NONE;
@@ -985,7 +991,7 @@ static fd_description_t *alloc_memfd_description(int real_fd, const char *name, 
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->synthetic_state = NULL;
     desc->memfd_seals = (flags & MFD_ALLOW_SEALING) ? 0 : F_SEAL_SEAL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     ret = scnprintf(desc->path, sizeof(desc->path), "/memfd:%s", name ? name : "");
     if (ret < 0 || (size_t)ret >= sizeof(desc->path)) {
@@ -997,7 +1003,7 @@ static fd_description_t *alloc_memfd_description(int real_fd, const char *name, 
     return desc;
 }
 
-static fd_description_t *alloc_pidfd_description(struct task *task, int flags) {
+static fd_description_t *alloc_pidfd_description(struct task_struct *task, int flags) {
     fd_description_t *desc;
 
     if (!task) {
@@ -1025,9 +1031,9 @@ static fd_description_t *alloc_pidfd_description(struct task *task, int flags) {
     desc->epoll_instance = NULL;
     memset(&desc->mount_fd, 0, sizeof(desc->mount_fd));
     desc->pidfd_task = task;
-    atomic_fetch_add(&task->refs, 1);
+    atomic_inc(&task->refs);
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     memcpy(desc->path, "anon_inode:[pidfd]", sizeof("anon_inode:[pidfd]"));
     return desc;
@@ -1062,7 +1068,7 @@ static fd_description_t *alloc_mount_fd_description(int flags, const struct vfs_
     desc->epoll_instance = NULL;
     memcpy(&desc->mount_fd, mount_fd, sizeof(desc->mount_fd));
     desc->synthetic_state = NULL;
-    atomic_init(&desc->refs, 1);
+    atomic_set(&desc->refs, 1);
     fs_mutex_init(&desc->lock);
     ret = scnprintf(desc->path, sizeof(desc->path), "mnt:[%s]", mount_fd->entries[0].target);
     if (ret < 0 || (size_t)ret >= sizeof(desc->path)) {
@@ -1075,7 +1081,7 @@ static fd_description_t *alloc_mount_fd_description(int flags, const struct vfs_
 
 static void retain_fd_description(fd_description_t *desc) {
     if (desc) {
-        atomic_fetch_add(&desc->refs, 1);
+        atomic_inc(&desc->refs);
     }
 }
 
@@ -1083,7 +1089,7 @@ static void release_fd_description(fd_description_t *desc) {
     if (!desc) {
         return;
     }
-    if (atomic_fetch_sub(&desc->refs, 1) == 1) {
+    if (atomic_dec_return(&desc->refs) == 0) {
         if (desc->type == FD_TYPE_HOST || desc->type == FD_TYPE_MEMFD) {
             backing_close(desc->fd);
         } else if (desc->type == FD_TYPE_SYNTHETIC_PTY) {
@@ -1115,7 +1121,7 @@ static void fd_table_bootstrap_stdio_locked(void) {
 }
 
 void file_init_impl(void) {
-    if (atomic_exchange(&fd_table_initialized, 1) == 1) {
+    if (atomic_xchg(&fd_table_initialized, 1) == 1) {
         return;
     }
 
@@ -1129,7 +1135,7 @@ void file_init_impl(void) {
 }
 
 void file_deinit_impl(void) {
-    if (atomic_exchange(&fd_table_initialized, 0) == 0) {
+    if (atomic_xchg(&fd_table_initialized, 0) == 0) {
         return;
     }
 
@@ -1202,7 +1208,7 @@ void free_fd_impl(int fd) {
 }
 
 fd_entry_t *get_fd_entry_impl(int fd) {
-    struct task *task;
+    struct task_struct *task;
     struct file *file;
     fd_description_t *task_desc;
 
@@ -1211,7 +1217,7 @@ fd_entry_t *get_fd_entry_impl(int fd) {
     }
 
     file_init_impl();
-    task = current_task();
+    task = get_current();
     if (task && task->files) {
         fs_mutex_lock(&task->files->lock);
         if ((size_t)fd >= task->files->max_fds || !task->files->fd[fd]) {
@@ -1335,7 +1341,7 @@ void set_fd_descriptor_flags_impl(fd_entry_t *entry, int flags) {
     if (entry) {
         entry->fd_flags = flags;
         if (entry->task_local) {
-            struct task *task = current_task();
+            struct task_struct *task = get_current();
             if (task && task->files && entry->task_fd >= 0 &&
                 (size_t)entry->task_fd < task->files->max_fds) {
                 fs_mutex_lock(&task->files->lock);
@@ -1350,7 +1356,7 @@ void set_fd_descriptor_flags_impl(fd_entry_t *entry, int flags) {
 
 int64_t get_fd_offset_impl(fd_entry_t *entry) {
     if (entry && entry->task_local) {
-        struct task *task = current_task();
+        struct task_struct *task = get_current();
         int64_t pos = -1;
         if (task && task->files && entry->task_fd >= 0 &&
             (size_t)entry->task_fd < task->files->max_fds) {
@@ -1417,7 +1423,7 @@ void init_backing_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const cha
 
 int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     int newfd;
-    struct task *task;
+    struct task_struct *task;
     file_init_impl();
     fd_entry_t *old_entry;
     fd_description_t *desc;
@@ -1426,7 +1432,7 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
         return -EINVAL;
     }
 
-    task = current_task();
+    task = get_current();
     if (task && task->files) {
         struct file *old_file;
         struct file *new_file;
@@ -1502,8 +1508,8 @@ int clone_fd_entry_impl(int oldfd, int minfd, bool cloexec) {
     return newfd;
 }
 
-int pidfd_getfd_impl(struct task *target, int targetfd, unsigned int flags) {
-    struct task *current;
+int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flags) {
+    struct task_struct *current;
     struct files_struct *source_files;
     struct files_struct *dest_files;
     struct file *source_file;
@@ -1518,11 +1524,11 @@ int pidfd_getfd_impl(struct task *target, int targetfd, unsigned int flags) {
     if (!target || targetfd < 0) {
         return target ? -EBADF : -ESRCH;
     }
-    if (atomic_load(&target->exited)) {
+    if (atomic_read(&target->exited) != 0) {
         return -ESRCH;
     }
 
-    current = current_task();
+    current = get_current();
     if (!current || !current->files || !target->files) {
         return -ESRCH;
     }
@@ -1588,7 +1594,7 @@ out_unlock:
 
 int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
     fd_description_t *old_desc;
-    struct task *task;
+    struct task_struct *task;
     file_init_impl();
     fd_description_t *new_desc;
 
@@ -1596,7 +1602,7 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
         return -EBADF;
     }
 
-    task = current_task();
+    task = get_current();
     if (task && task->files) {
         struct file *old_file;
         struct file *new_file;
@@ -1653,13 +1659,13 @@ int replace_fd_entry_impl(int newfd, int oldfd, bool cloexec) {
 }
 
 int close_impl(int fd) {
-    struct task *task;
+    struct task_struct *task;
 
     file_init_impl();
     if (fd < 0 || fd >= NR_OPEN_DEFAULT) {
         return -EBADF;
     }
-    task = current_task();
+    task = get_current();
     if (task && task->files) {
         if (free_fd(task->files, fd) != 0) {
             return -1;
@@ -1677,7 +1683,7 @@ int close_impl(int fd) {
 }
 
 int close_range_impl(unsigned int first, unsigned int last, unsigned int flags) {
-    struct task *task;
+    struct task_struct *task;
     unsigned int allowed_flags = CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC;
     unsigned int upper;
 
@@ -1690,7 +1696,7 @@ int close_range_impl(unsigned int first, unsigned int last, unsigned int flags) 
     }
     upper = last >= NR_OPEN_DEFAULT ? (unsigned int)NR_OPEN_DEFAULT - 1 : last;
 
-    task = current_task();
+    task = get_current();
     if ((flags & CLOSE_RANGE_CLOEXEC) != 0) {
         if (task && task->files) {
             fs_mutex_lock(&task->files->lock);
@@ -1726,10 +1732,10 @@ int close_on_exec_impl(void) {
     int fds_to_remove[NR_OPEN_DEFAULT];
     int release_count = 0;
     int closed = 0;
-    struct task *task;
+    struct task_struct *task;
 
     file_init_impl();
-    task = current_task();
+    task = get_current();
     if (task && task->files) {
         int closed_fds[NR_OPEN_DEFAULT];
 
@@ -1931,7 +1937,7 @@ static int init_memfd_entry_impl(int fd, const char *name, unsigned int flags, i
     return 0;
 }
 
-static int init_pidfd_entry_impl(int fd, struct task *task, int flags) {
+static int init_pidfd_entry_impl(int fd, struct task_struct *task, int flags) {
     file_init_impl();
     fd_entry_t *entry = &fd_table[fd];
     fs_mutex_lock(&entry->lock);
@@ -1993,7 +1999,7 @@ int memfd_create_impl(const char *name, unsigned int flags) {
     return fd;
 }
 
-int pidfd_create_for_task_impl(struct task *task, int flags) {
+int pidfd_create_for_task_impl(struct task_struct *task, int flags) {
     const int allowed_flags = O_CLOEXEC | O_NONBLOCK;
     int fd;
 
@@ -2016,7 +2022,7 @@ int pidfd_create_for_task_impl(struct task *task, int flags) {
 }
 
 int pidfd_open_impl(int32_t pid, unsigned int flags) {
-    struct task *task;
+    struct task_struct *task;
     int fd;
     unsigned int allowed_flags = PIDFD_NONBLOCK;
 
@@ -2160,13 +2166,13 @@ long eventfd_write_entry_impl(void *entry, const void *buf, size_t count) {
         return -EINVAL;
     }
     memcpy(&value, buf, sizeof(value));
-    if (value == UINT64_MAX) {
+    if (value == U64_MAX) {
         return -EINVAL;
     }
 
     desc = fd_entry->desc;
     fs_mutex_lock(&desc->lock);
-    if (UINT64_MAX - 1 - desc->eventfd_counter < value) {
+    if (U64_MAX - 1 - desc->eventfd_counter < value) {
         fs_mutex_unlock(&desc->lock);
         return -EAGAIN;
     }
@@ -2204,7 +2210,7 @@ bool eventfd_write_ready_entry_impl(void *entry) {
 
     desc = fd_entry->desc;
     fs_mutex_lock(&desc->lock);
-    ready = desc->eventfd_counter < UINT64_MAX - 1;
+    ready = desc->eventfd_counter < U64_MAX - 1;
     fs_mutex_unlock(&desc->lock);
     return ready;
 }
@@ -2382,9 +2388,9 @@ bool get_fd_is_pidfd_impl(void *entry) {
     return fd_entry->desc && fd_entry->desc->type == FD_TYPE_PIDFD;
 }
 
-struct task *pidfd_get_task_entry_impl(void *entry) {
+struct task_struct *pidfd_get_task_entry_impl(void *entry) {
     fd_entry_t *fd_entry = (fd_entry_t *)entry;
-    struct task *task;
+    struct task_struct *task;
 
     if (!fd_entry || !fd_entry->desc || fd_entry->desc->type != FD_TYPE_PIDFD ||
         !fd_entry->desc->pidfd_task) {
@@ -2392,7 +2398,7 @@ struct task *pidfd_get_task_entry_impl(void *entry) {
     }
 
     task = fd_entry->desc->pidfd_task;
-    atomic_fetch_add(&task->refs, 1);
+    atomic_inc(&task->refs);
     return task;
 }
 
@@ -2404,7 +2410,7 @@ bool pidfd_read_ready_entry_impl(void *entry) {
         return false;
     }
 
-    return atomic_load(&fd_entry->desc->pidfd_task->exited);
+    return atomic_read(&fd_entry->desc->pidfd_task->exited) != 0;
 }
 
 int memfd_get_seals_entry_impl(void *entry) {
@@ -2688,7 +2694,7 @@ void fdtable_mark_path_deleted_impl(const char *path) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task *task = task_table[i];
+        struct task_struct *task = task_table[i];
         while (task) {
             if (task->files) {
                 fs_mutex_lock(&task->files->lock);
@@ -2721,7 +2727,7 @@ void fdtable_rename_path_impl(const char *old_path, const char *new_path) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task *task = task_table[i];
+        struct task_struct *task = task_table[i];
         while (task) {
             if (task->files) {
                 fs_mutex_lock(&task->files->lock);
@@ -2759,7 +2765,7 @@ void fdtable_exchange_paths_impl(const char *left_path, const char *right_path) 
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task *task = task_table[i];
+        struct task_struct *task = task_table[i];
         while (task) {
             if (task->files) {
                 fs_mutex_lock(&task->files->lock);
@@ -2785,7 +2791,7 @@ void fdtable_exchange_paths_impl(const char *left_path, const char *right_path) 
     kernel_mutex_unlock(&task_table_lock);
 }
 
-bool fdtable_task_is_used_impl(struct task *task, int fd) {
+bool fdtable_task_is_used_impl(struct task_struct *task, int fd) {
     bool used;
 
     if (!task || !task->files || fd < 0 || (size_t)fd >= task->files->max_fds) {
@@ -2798,7 +2804,7 @@ bool fdtable_task_is_used_impl(struct task *task, int fd) {
     return used;
 }
 
-int fdtable_task_fd_path_impl(struct task *task, int fd, char *path, size_t path_len) {
+int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size_t path_len) {
     struct file *file;
     fd_description_t *desc;
     size_t len;
@@ -2836,7 +2842,7 @@ int fdtable_task_fd_path_impl(struct task *task, int fd, char *path, size_t path
     return 0;
 }
 
-int fdtable_task_fdinfo_content_impl(struct task *task, int fd, unsigned long long mnt_id,
+int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned long long mnt_id,
                                      char *buf, size_t buf_len) {
     struct file *file;
     int64_t pos;
@@ -2879,7 +2885,7 @@ int fdtable_task_fdinfo_content_impl(struct task *task, int fd, unsigned long lo
 }
 
 void fdtable_sync_current_task_fd_impl(int fd) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     struct file *file;
     fd_description_t *desc;
 
@@ -2911,7 +2917,7 @@ void fdtable_sync_current_task_fd_impl(int fd) {
 }
 
 void fdtable_sync_current_task_from_static_impl(void) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
 
     if (!task || !task->files) {
         return;

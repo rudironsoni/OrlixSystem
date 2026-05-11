@@ -1,10 +1,9 @@
 #include <linux/fcntl.h>
 
 #include <linux/errno.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stdint.h>
+#include <linux/stdarg.h>
 #include <linux/string.h>
+#include <linux/types.h>
 
 #include "internal/fs/lock.h"
 #include "fdtable.h"

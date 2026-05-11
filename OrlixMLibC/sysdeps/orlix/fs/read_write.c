@@ -1,13 +1,12 @@
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 
-#include <linux/uio.h>
-
-extern __kernel_ssize_t read_impl(int fd, void *buf, size_t count);
-extern __kernel_ssize_t write_impl(int fd, const void *buf, size_t count);
-extern __s64 lseek_impl(int fd, __s64 offset, int whence);
-extern __kernel_ssize_t pread_impl(int fd, void *buf, size_t count, __s64 offset);
-extern __kernel_ssize_t pwrite_impl(int fd, const void *buf, size_t count, __s64 offset);
+extern ssize_t read_impl(int fd, void *buf, size_t count);
+extern ssize_t write_impl(int fd, const void *buf, size_t count);
+extern off_t lseek_impl(int fd, off_t offset, int whence);
+extern ssize_t pread_impl(int fd, void *buf, size_t count, off_t offset);
+extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, off_t offset);
 
 static long wrap_long_result(long ret) {
     if (ret < 0) {

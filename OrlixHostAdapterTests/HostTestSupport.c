@@ -8,7 +8,7 @@
  */
 
 #include "HostTestSupport.h"
-#include "internal/fs/file.h"
+#include "../OrlixHostAdapter/fs/backing_io_internal.h"
 
 #include <errno.h>
 #include <sys/types.h>
@@ -116,4 +116,12 @@ int host_test_fcntl_has_cloexec(int flags) {
 
 int host_test_fcntl_has_rdonly(int flags) {
     return (flags & O_ACCMODE) == O_RDONLY;
+}
+
+int host_test_backing_open_readonly(const char *path) {
+    return backing_open(path, O_RDONLY, 0);
+}
+
+int host_test_backing_close(int fd) {
+    return backing_close(fd);
 }

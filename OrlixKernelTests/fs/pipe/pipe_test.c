@@ -1,6 +1,10 @@
-#include <linux/fcntl.h>
-#include <linux/poll.h>
-#include <linux/stat.h>
+#include <uapi/asm-generic/errno.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/linux/poll.h>
+#include <uapi/linux/stat.h>
+#include <linux/string.h>
 #ifdef SIGPIPE
 #undef SIGPIPE
 #endif
@@ -10,11 +14,6 @@
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
-
-#include <errno.h>
-#include <poll.h>
-#include <stddef.h>
-#include <string.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -36,13 +35,10 @@ extern ssize_t pread_impl(int fd, void *buf, size_t count, int64_t offset);
 extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, int64_t offset);
 extern int fstat_impl(int fd, struct stat *statbuf);
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
-extern int poll_impl(struct pollfd *fds, nfds_t nfds, int timeout);
+extern int poll_impl(struct pollfd *fds, __kernel_ulong_t nfds, int timeout);
 extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int signal_generate_task(struct task_struct *target, int32_t sig);
-
-#ifndef SEEK_SET
-#define SEEK_SET 0
-#endif
+extern int errno;
 
 static int close_if_open(int fd) {
     if (fd >= 0) {
@@ -67,14 +63,14 @@ void pipe_contract_reset_test_state(void) {
     init_task->sid = init_task->pid;
     init_task->exit_status = 0;
     init_task->thread_pending_signals = 0;
-    atomic_store(&init_task->exited, false);
-    atomic_store(&init_task->signaled, false);
-    atomic_store(&init_task->termsig, 0);
-    atomic_store(&init_task->stopped, false);
-    atomic_store(&init_task->state, TASK_RUNNING);
-    atomic_store(&init_task->continued, false);
-    atomic_store(&init_task->stop_report_pending, false);
-    atomic_store(&init_task->continue_report_pending, false);
+    atomic_set(&init_task->exited, 0);
+    atomic_set(&init_task->signaled, 0);
+    atomic_set(&init_task->termsig, 0);
+    atomic_set(&init_task->stopped, 0);
+    atomic_set(&init_task->state, TASK_RUNNING);
+    atomic_set(&init_task->continued, 0);
+    atomic_set(&init_task->stop_report_pending, 0);
+    atomic_set(&init_task->continue_report_pending, 0);
     if (init_task->signal) {
         memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
         memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));

@@ -14,16 +14,19 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include <linux/stat.h>
-
-#include "internal/fs/file.h"
-#include "internal/fs/namei.h"
-#include "fs/fdtable.h"
-#include "fs/vfs.h"
+#include "../OrlixHostAdapter/fs/backing_io_internal.h"
 #include "HostTestSupport.h"
 
 #ifndef INVALID_FLAG_TEST_VALUE
 #define INVALID_FLAG_TEST_VALUE 0x40000000u
+#endif
+
+#ifndef SYNTHETIC_DIR_GENERIC
+#define SYNTHETIC_DIR_GENERIC 0
+#endif
+
+#ifndef MAX_PATH
+#define MAX_PATH 4096
 #endif
 
 struct linux_dirent64 {
@@ -34,10 +37,39 @@ struct linux_dirent64 {
     char d_name[];
 };
 
-extern ssize_t getdents64(int fd, void *dirp, size_t count);
-extern int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);
+extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
+extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);
 extern int stat_impl(const char *path, struct stat *statbuf);
 extern int lstat_impl(const char *path, struct stat *statbuf);
+extern int vfs_translate_path(const char *vpath, char *backing_path, size_t backing_path_len);
+extern int vfs_translate_path_at(int dirfd, const char *vpath, char *backing_path, size_t backing_path_len);
+extern int alloc_fd_impl(void);
+extern void free_fd_impl(int fd);
+extern void init_backing_dirfd_entry_impl(int fd, int real_fd, uint32_t mode, const char *path);
+extern void init_synthetic_subdir_fd_entry_impl(int fd, int flags, uint32_t mode, const char *path, int dir_class);
+
+static ssize_t host_test_getdents64(int fd, void *dirp, size_t count) {
+    ssize_t ret = getdents64_impl(fd, dirp, count);
+
+    if (ret < 0) {
+        errno = (int)-ret;
+        return -1;
+    }
+
+    return ret;
+}
+
+static int host_test_renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
+                               unsigned int flags) {
+    int ret = renameat2_impl(olddirfd, oldpath, newdirfd, newpath, flags);
+
+    if (ret < 0) {
+        errno = -ret;
+        return -1;
+    }
+
+    return ret;
+}
 
 static int vfs_test_open_host_path(const char *path, int flags, unsigned int mode) {
 #pragma clang diagnostic push
@@ -253,7 +285,7 @@ static void vfs_test_seed_linux_file(const char *path) {
     init_synthetic_subdir_fd_entry_impl(dirfd, O_RDONLY | O_DIRECTORY, 0755, "/proc", SYNTHETIC_DIR_GENERIC);
 
     errno = 0;
-    XCTAssertEqual(getdents64(dirfd, buffer, sizeof(buffer)), -1,
+    XCTAssertEqual(host_test_getdents64(dirfd, buffer, sizeof(buffer)), -1,
                    @"getdents64 should reject synthetic directories (not yet implemented)");
     XCTAssertEqual(errno, ENOTSUP, @"getdents64 should set ENOTSUP for synthetic directories");
 
@@ -286,7 +318,7 @@ static void vfs_test_seed_linux_file(const char *path) {
     init_synthetic_subdir_fd_entry_impl(dirfd, O_RDONLY | O_DIRECTORY, 0755, "/proc", SYNTHETIC_DIR_GENERIC);
 
     errno = 0;
-    XCTAssertEqual(getdents64(dirfd, buffer, sizeof(buffer)), -1,
+    XCTAssertEqual(host_test_getdents64(dirfd, buffer, sizeof(buffer)), -1,
                    @"getdents64 should reject synthetic directories (not yet implemented)");
     XCTAssertEqual(errno, ENOTSUP, @"getdents64 should set ENOTSUP for synthetic directories");
 
@@ -350,7 +382,7 @@ static void vfs_test_seed_linux_file(const char *path) {
     vfs_test_seed_linux_file("/etc/rn2-cross-src");
 
     errno = 0;
-    int ret = renameat2(AT_FDCWD, "/etc/rn2-cross-src", AT_FDCWD, "/tmp/rn2-cross-dst", 0);
+    int ret = host_test_renameat2(AT_FDCWD, "/etc/rn2-cross-src", AT_FDCWD, "/tmp/rn2-cross-dst", 0);
     XCTAssertEqual(ret, -1, @"renameat2 across routes should fail");
     XCTAssertEqual(errno, EXDEV, @"renameat2 across routes should fail with EXDEV");
 
@@ -359,14 +391,14 @@ static void vfs_test_seed_linux_file(const char *path) {
 
 - (void)testRenameat2UnknownFlagFails_HostBacked {
     errno = 0;
-    int ret = renameat2(AT_FDCWD, "/etc/src", AT_FDCWD, "/etc/dst", INVALID_FLAG_TEST_VALUE);
+    int ret = host_test_renameat2(AT_FDCWD, "/etc/src", AT_FDCWD, "/etc/dst", INVALID_FLAG_TEST_VALUE);
     XCTAssertEqual(ret, -1, @"renameat2 with unknown flag should fail");
     XCTAssertEqual(errno, EINVAL, @"renameat2 with unknown flag should report EINVAL");
 }
 
 - (void)testRenameat2EmptyPathRequiresAtEmptyPathFlag_HostBacked {
     errno = 0;
-    int ret = renameat2(AT_FDCWD, "/etc/empty-src", AT_FDCWD, "/etc/empty-dst", 0);
+    int ret = host_test_renameat2(AT_FDCWD, "/etc/empty-src", AT_FDCWD, "/etc/empty-dst", 0);
     XCTAssertEqual(ret, -1, @"renameat2 without RENAME_EMPTY_PATH should fail for missing source");
     XCTAssertEqual(errno, ENOENT, @"renameat2 without RENAME_EMPTY_PATH should report ENOENT for missing source");
 }

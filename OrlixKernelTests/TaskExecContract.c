@@ -1,14 +1,12 @@
-#include <linux/capability.h>
-#include <linux/fcntl.h>
-#include <linux/mount.h>
-#include <linux/prctl.h>
-#include <linux/securebits.h>
-#include <linux/stat.h>
-
-#include <errno.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <string.h>
+#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/prctl.h>
+#include <uapi/linux/securebits.h>
+#include <uapi/linux/stat.h>
+#include <linux/string.h>
+#include <linux/types.h>
 
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
@@ -29,6 +27,7 @@ extern int umount(const char *target);
 extern int capget(cap_user_header_t header, cap_user_data_t data);
 extern int capset(cap_user_header_t header, const cap_user_data_t data);
 extern void cred_reset_to_defaults(void);
+extern int errno;
 
 static int close_if_open(int fd) {
     if (fd >= 0 && fdtable_is_used_impl(fd)) {
@@ -113,7 +112,7 @@ int task_exec_contract_updates_task_state_and_closes_cloexec_fds(void) {
     task->exe[0] = '\0';
     memset(task->comm, 0, sizeof(task->comm));
     memcpy(task->comm, "before", 7);
-    atomic_store(&task->execed, false);
+    atomic_set(&task->execed, 0);
 
     cloexec_fd = open_impl("/dev/null", O_RDONLY | O_CLOEXEC, 0);
     if (cloexec_fd < 0) {
@@ -129,7 +128,7 @@ int task_exec_contract_updates_task_state_and_closes_cloexec_fds(void) {
         goto out;
     }
 
-    if (!atomic_load(&task->execed)) {
+    if (!atomic_read(&task->execed)) {
         errno = EPROTO;
         goto out;
     }
@@ -176,7 +175,7 @@ int task_exec_contract_uses_basename_of_path_when_argv0_is_empty(void) {
         return -1;
     }
 
-    atomic_store(&task->execed, false);
+    atomic_set(&task->execed, 0);
     if (task_exec_transition_impl("bin/echo", "") != 0) {
         return -1;
     }
@@ -189,7 +188,7 @@ int task_exec_contract_uses_basename_of_path_when_argv0_is_empty(void) {
         errno = EPROTO;
         return -1;
     }
-    if (!atomic_load(&task->execed)) {
+    if (!atomic_read(&task->execed)) {
         errno = EPROTO;
         return -1;
     }
@@ -239,7 +238,7 @@ int task_exec_contract_preserves_task_identity_and_non_exec_state(void) {
     ppid = task->ppid;
     pgid = task->pgid;
     sid = task->sid;
-    state = atomic_load(&task->state);
+    state = atomic_read(&task->state);
     memcpy(cwd, task->fs->pwd_path, sizeof(cwd));
     memcpy(root, task->fs->root_path, sizeof(root));
 
@@ -251,7 +250,7 @@ int task_exec_contract_preserves_task_identity_and_non_exec_state(void) {
         errno = EPROTO;
         return -1;
     }
-    if (atomic_load(&task->state) != state) {
+    if (atomic_read(&task->state) != state) {
         errno = EPROTO;
         return -1;
     }

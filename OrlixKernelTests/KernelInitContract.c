@@ -1,11 +1,13 @@
-#include <linux/fcntl.h>
-#include <linux/wait.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/fs.h>
+#include <uapi/linux/wait.h>
+#include <linux/dirent.h>
 
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdatomic.h>
-#include <string.h>
+#include <linux/string.h>
 
 #ifdef SIGCHLD
 #undef SIGCHLD
@@ -50,14 +52,6 @@ extern void exit_impl(int status);
 #ifndef WEXITSTATUS
 #define WEXITSTATUS(status) (((status) >> 8) & 0xff)
 #endif
-
-struct linux_dirent64 {
-    uint64_t d_ino;
-    int64_t d_off;
-    unsigned short d_reclen;
-    unsigned char d_type;
-    char d_name[];
-};
 
 static int buffer_contains(const char *buf, size_t len, const char *needle) {
     size_t needle_len;
@@ -283,7 +277,7 @@ int kernel_init_contract_init_task_identity_is_linux_shaped(void) {
         errno = EPROTO;
         return -1;
     }
-    if (task->state != TASK_RUNNING) {
+    if (atomic_read(&task->state) != TASK_RUNNING) {
         errno = EPROTO;
         return -1;
     }
@@ -640,7 +634,7 @@ int kernel_init_contract_exec_preferred_init_launches_pid1(void) {
 
     task = get_current();
     if (!task || task->pid != 1 || strcmp(task->exe, "/tmp/preferred-init") != 0 ||
-        strcmp(task->comm, "synthetic-init") != 0 || !atomic_load(&task->execed)) {
+        strcmp(task->comm, "synthetic-init") != 0 || !atomic_read(&task->execed)) {
         errno = EPROTO;
         goto out;
     }
@@ -702,7 +696,7 @@ int kernel_init_contract_exec_init_search_uses_first_existing_candidate(void) {
 
     task = get_current();
     if (!task || task->pid != 1 || strcmp(task->exe, "/sbin/init") != 0 ||
-        strcmp(task->comm, "init") != 0 || !atomic_load(&task->execed)) {
+        strcmp(task->comm, "init") != 0 || !atomic_read(&task->execed)) {
         errno = EPROTO;
         goto out;
     }
@@ -762,7 +756,7 @@ int kernel_init_contract_exec_init_preserves_pid1_identity(void) {
     task = get_current();
     if (!task || task != init_task || task->pid != 1 || task->tgid != 1 ||
         task->ppid != 0 || task->pgid != 1 || task->sid != 1 ||
-        atomic_load(&task->state) != TASK_RUNNING) {
+        atomic_read(&task->state) != TASK_RUNNING) {
         errno = EPROTO;
         goto out;
     }
@@ -1130,7 +1124,7 @@ int kernel_init_contract_orphaned_stopped_group_gets_hup_and_cont(void) {
         errno = ENOMSG;
         goto out;
     }
-    if (atomic_load(&child->stopped)) {
+    if (atomic_read(&child->stopped)) {
         errno = ESTALE;
         goto out;
     }

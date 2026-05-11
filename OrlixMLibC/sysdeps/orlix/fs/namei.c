@@ -1,9 +1,7 @@
 #include <errno.h>
 #include <stddef.h>
+#include <fcntl.h>
 #include <sys/types.h>
-
-#include <linux/fcntl.h>
-#include <linux/types.h>
 
 extern int chdir_impl(const char *path);
 extern int fchdir_impl(int fd);
@@ -17,8 +15,8 @@ extern int link_impl(const char *oldpath, const char *newpath);
 extern int linkat_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);
 extern int symlink_impl(const char *target, const char *linkpath);
 extern int symlinkat_impl(const char *target, int newdirfd, const char *linkpath);
-extern __kernel_ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz);
-extern __kernel_ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsiz);
+extern ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz);
+extern ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, unsigned int flags);
 extern int chroot_impl(const char *path);
 
@@ -30,7 +28,7 @@ static int wrap_int_result(int ret) {
     return ret;
 }
 
-static ssize_t wrap_ssize_result(__kernel_ssize_t ret) {
+static ssize_t wrap_ssize_result(ssize_t ret) {
     if (ret < 0) {
         errno = (int)-ret;
         return -1;

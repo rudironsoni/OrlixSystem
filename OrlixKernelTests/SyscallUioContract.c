@@ -1,9 +1,9 @@
 #include "SyscallUioContract.h"
 
 #include <asm/unistd.h>
-#include <linux/fcntl.h>
-#include <linux/fs.h>
-#include <linux/uio.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/linux/uio.h>
 
 #include <errno.h>
 #include <stdint.h>

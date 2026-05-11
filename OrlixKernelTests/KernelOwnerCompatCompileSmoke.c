@@ -5,8 +5,8 @@
  * importing Darwin SDK or package-facing OrlixMLibC headers.
  */
 
-#include <linux/time.h>
-#include <linux/socket.h>
+#include <uapi/linux/time.h>
+#include <uapi/linux/socket.h>
 
 #include <string.h>
 

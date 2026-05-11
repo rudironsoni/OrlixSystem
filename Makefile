@@ -22,12 +22,15 @@ IPHONESIM_SDK_FRAMEWORK_DIR := /Applications/Xcode.app/Contents/Developer/Platfo
 LINUX_KERNEL_TUPLE_ROOT := $(CURDIR)/$(LINUX_KERNEL_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/kheaders
 LINUX_KERNEL_KHEADERS_INCLUDE_ROOT := $(LINUX_KERNEL_TUPLE_ROOT)/include
 LINUX_KERNEL_UAPI_INCLUDE_ROOT := $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi
+LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
 LINUX_MLIBC_TUPLE_ROOT := $(CURDIR)/$(LINUX_MLIBC_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)
 LINUX_MLIBC_INCLUDE_ROOT := $(LINUX_MLIBC_TUPLE_ROOT)/include
 ORLIX_LINT_HOST_COMMON_FLAGS := \
 	-target arm64-apple-ios26.4-simulator \
 	-isysroot $(IPHONESIM_SDK) \
 	-mios-simulator-version-min=26.4 \
+	-U_FORTIFY_SOURCE \
+	-D_FORTIFY_SOURCE=0 \
 	-fno-modules
 ORLIX_LINT_LINUX_COMMON_FLAGS := \
 	-target aarch64-unknown-linux-gnu \
@@ -36,12 +39,15 @@ ORLIX_LINT_LINUX_COMMON_FLAGS := \
 ORLIX_LINT_KERNEL_VENDOR_FLAGS := \
 	-I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) \
 	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-ORLIX_LINT_MLIBC_UAPI_FLAGS := \
+ORLIX_LINT_MLIBC_VENDOR_FLAGS := \
 	-I$(LINUX_MLIBC_INCLUDE_ROOT)
 ORLIX_LINT_C_FLAGS := \
 	$(ORLIX_LINT_LINUX_COMMON_FLAGS) \
 	-nostdinc \
 	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h \
+	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h \
+	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h \
+	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h \
 	-isystem $(LLVM_PREFIX)/lib/clang/22/include \
 	-I$(CURDIR)/OrlixKernel \
 	-I$(CURDIR)/OrlixKernel/include \
@@ -71,13 +77,23 @@ ORLIX_LINT_HOST_KERNEL_C_FLAGS := \
 	-D__KERNEL__ \
 	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h \
 	$(ORLIX_LINT_KERNEL_VENDOR_FLAGS)
+ORLIX_LINT_KERNEL_TEST_STRICT_C_FLAGS := \
+	$(ORLIX_LINT_HOST_KERNEL_C_FLAGS) \
+	-include $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h \
+	$(ORLIX_LINT_KERNEL_VENDOR_FLAGS)
+ORLIX_LINT_KERNEL_TEST_C_FLAGS := \
+	$(ORLIX_LINT_HOST_C_FLAGS) \
+	-DORLIX_LINT_KERNEL_TEST \
+	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h \
+	-include $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h \
+	-I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) \
+	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
 ORLIX_LINT_MLIBC_C_FLAGS := \
 	$(ORLIX_LINT_HOST_C_FLAGS) \
-	$(ORLIX_LINT_MLIBC_UAPI_FLAGS)
-ORLIX_LINT_MLIBC_HEADER_FLAGS := \
-	$(ORLIX_LINT_HOST_C_FLAGS) \
-	$(ORLIX_LINT_MLIBC_UAPI_FLAGS) \
+	$(ORLIX_LINT_MLIBC_VENDOR_FLAGS) \
 	-I$(CURDIR)/OrlixMLibC/include
+ORLIX_LINT_MLIBC_HEADER_FLAGS := \
+	$(ORLIX_LINT_MLIBC_C_FLAGS)
 ORLIX_LINT_OBJC_FLAGS := \
 	$(ORLIX_LINT_HOST_COMMON_FLAGS) \
 	-fobjc-arc \
@@ -115,22 +131,29 @@ lint: build-orlix-clang-tidy-module
 		echo "clang-tidy plugin not found" >&2; \
 		exit 1; \
 	fi; \
-	c_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.(c|cc|cpp|cxx)$$' | rg -v '^OrlixKernelTests/.*\.c$$' || true)"; \
-	header_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.h$$' || true)"; \
-	objc_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.(m|mm)$$' || true)"; \
+	c_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.(c|cc|cpp|cxx)$$' | rg -v '^Orlix(Kernel|MLibC)/vendor/' || true)"; \
+	header_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.h$$' | rg -v '^Orlix(Kernel|MLibC)/vendor/' || true)"; \
+	objc_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.(m|mm)$$' | rg -v '^Orlix(Kernel|MLibC)/vendor/' || true)"; \
 	if [ -n "$$c_files" ]; then \
 		while IFS= read -r file; do \
 			flags="$(ORLIX_LINT_C_FLAGS)"; \
 			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* || "$$file" == OrlixMLibC/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
 				if [[ "$$file" == OrlixHostAdapter/fs/open_flags.c || "$$file" == OrlixHostAdapter/fs/backing_stat_translate.c ]]; then \
-					flags="$$flags $(ORLIX_LINT_MLIBC_UAPI_FLAGS)"; \
+					flags="$$flags $(ORLIX_LINT_KERNEL_VENDOR_FLAGS)"; \
 				fi; \
 				if [[ "$$file" == OrlixHostAdapter/kernel/* ]]; then \
 					flags="$(ORLIX_LINT_HOST_KERNEL_C_FLAGS)"; \
 				fi; \
 				if [[ "$$file" == OrlixMLibC/* ]]; then \
 					flags="$(ORLIX_LINT_MLIBC_C_FLAGS)"; \
+				fi; \
+			elif [[ "$$file" == OrlixKernelTests/* ]]; then \
+				flags="$(ORLIX_LINT_KERNEL_TEST_STRICT_C_FLAGS)"; \
+				if [[ "$$file" == OrlixKernelTests/MLibC*CompileSmoke.c ]]; then \
+					flags="$(ORLIX_LINT_MLIBC_C_FLAGS)"; \
+				elif [[ "$$file" == OrlixKernelTests/NativeSyscallContract.c || "$$file" == OrlixKernelTests/SignalSyscallContract.c || "$$file" == OrlixKernelTests/SyscallUioContract.c || "$$file" == OrlixKernelTests/LinuxUAPICompileSmoke.c || "$$file" == OrlixKernelTests/LinuxUAPITestSupport.c || "$$file" == OrlixKernelTests/FutexUAPICompileSmoke.c || "$$file" == OrlixKernelTests/KernelOwnerCompatCompileSmoke.c || "$$file" == OrlixKernelTests/PtraceContract.c || "$$file" == OrlixKernelTests/SeccompContract.c || "$$file" == OrlixKernelTests/ExecSyscallContract.c || "$$file" == OrlixKernelTests/kunit/kunit.c ]]; then \
+					flags="$(ORLIX_LINT_KERNEL_TEST_C_FLAGS)"; \
 				fi; \
 			fi; \
 			"$(CLANG_TIDY)" --load="$$plugin_path" --config-file=.clang-tidy "$$file" -- $$flags; \
@@ -142,7 +165,7 @@ lint: build-orlix-clang-tidy-module
 			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* || "$$file" == OrlixMLibC/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
 				if [[ "$$file" == OrlixHostAdapter/fs/open_flags.c || "$$file" == OrlixHostAdapter/fs/backing_stat_translate.c ]]; then \
-					flags="$$flags $(ORLIX_LINT_MLIBC_UAPI_FLAGS)"; \
+					flags="$$flags $(ORLIX_LINT_KERNEL_VENDOR_FLAGS)"; \
 				fi; \
 				if [[ "$$file" == OrlixMLibC/* ]]; then \
 					flags="$(ORLIX_LINT_MLIBC_HEADER_FLAGS)"; \

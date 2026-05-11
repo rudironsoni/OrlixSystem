@@ -1,9 +1,6 @@
-#include <linux/utsname.h>
-
-#include <errno.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <string.h>
+#include <uapi/linux/utsname.h>
+#include <uapi/asm-generic/errno.h>
+#include <linux/string.h>
 
 #include "UTSContract.h"
 #include "kernel/cred.h"
@@ -11,6 +8,7 @@
 #include "kernel/uts.h"
 
 extern void cred_reset_to_defaults(void);
+extern int errno;
 
 static int expect_errno(int expected) {
     if (errno != expected) {

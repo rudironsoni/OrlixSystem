@@ -2,7 +2,7 @@
 
 #include <asm/ptrace.h>
 #include <asm/unistd.h>
-#include <linux/mman.h>
+#include <uapi/linux/mman.h>
 #ifdef SIGUSR1
 #undef SIGUSR1
 #endif
@@ -21,11 +21,11 @@
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
-#include <linux/elf.h>
-#include <linux/ptrace.h>
-#include <linux/sched.h>
-#include <linux/uio.h>
-#include <linux/wait.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/ptrace.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/uio.h>
+#include <uapi/linux/wait.h>
 
 #include <errno.h>
 #include <stdatomic.h>

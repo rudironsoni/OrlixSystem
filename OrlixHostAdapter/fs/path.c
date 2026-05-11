@@ -6,7 +6,6 @@
  * Linux-owner code in fs/namei.c
  */
 
-#include "internal/fs/namei.h"
 #include "backing_stat_translate.h"
 
 /* Darwin headers - these define S_IFMT, S_ISDIR, etc. which are compatible
@@ -21,6 +20,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "backing_io_internal.h"
 #include "errno_translation.h"
 
 #pragma clang diagnostic push

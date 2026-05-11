@@ -5,16 +5,17 @@
  * Uses canonical Linux names directly.
  */
 
-#include <linux/fcntl.h>
-#include <linux/capability.h>
-#include <linux/magic.h>
-#include <linux/mount.h>
-#include <linux/sched.h>
-#include <linux/stat.h>
-#include <linux/xattr.h>
-#include <linux/fs.h>
 #include <asm/unistd.h>
 #include <asm/statfs.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/magic.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/xattr.h>
+#include <uapi/linux/fs.h>
 
 #include <errno.h>
 #include <string.h>
@@ -24,14 +25,6 @@
 #include "kernel/cred.h"
 #include "kernel/task.h"
 #include "runtime/syscall.h"
-
-/* Access mode constants - defined locally to avoid Darwin <unistd.h> */
-#ifndef X_OK
-#define X_OK 1
-#endif
-#ifndef F_OK
-#define F_OK 0
-#endif
 
 extern int chroot(const char *path);
 extern int chdir(const char *path);
@@ -369,11 +362,11 @@ int vfs_contract_faccessat_eaccess_uses_effective_credentials(void) {
     }
 
     errno = 0;
-    if (vfs_faccessat(AT_FDCWD, path, X_OK, 0) != -EACCES) {
+    if (vfs_faccessat(AT_FDCWD, path, 1, 0) != -EACCES) {
         errno = ENODATA;
         goto out;
     }
-    if (vfs_faccessat(AT_FDCWD, path, X_OK, AT_EACCESS) != 0) {
+    if (vfs_faccessat(AT_FDCWD, path, 1, AT_EACCESS) != 0) {
         goto out;
     }
     ret = 0;
@@ -390,7 +383,7 @@ out:
 
 /* Contract: vfs_faccessat reports ENOTSUP for AT_SYMLINK_NOFOLLOW */
 int vfs_contract_faccessat_symlink_nofollow_returns_enotsup(void) {
-    return vfs_faccessat(AT_FDCWD, "/etc", X_OK, AT_SYMLINK_NOFOLLOW);
+    return vfs_faccessat(AT_FDCWD, "/etc", 1, AT_SYMLINK_NOFOLLOW);
 }
 
 int vfs_contract_faccessat_follows_absolute_symlink_as_virtual_path(void) {
@@ -409,8 +402,8 @@ int vfs_contract_faccessat_follows_absolute_symlink_as_virtual_path(void) {
                   "/tmp/vfs-access-absolute-link/link") != 0) {
         goto out;
     }
-    if (vfs_faccessat(AT_FDCWD, "/tmp/vfs-access-absolute-link/link", F_OK, 0) != 0 ||
-        access("/tmp/vfs-access-absolute-link/link", F_OK) != 0) {
+    if (vfs_faccessat(AT_FDCWD, "/tmp/vfs-access-absolute-link/link", 0, 0) != 0 ||
+        access("/tmp/vfs-access-absolute-link/link", 0) != 0) {
         goto out;
     }
     ret = 0;
@@ -441,12 +434,12 @@ int vfs_contract_faccessat_symlink_loop_returns_eloop(void) {
     }
 
     errno = 0;
-    if (vfs_faccessat(AT_FDCWD, "/tmp/vfs-access-loop/a", F_OK, 0) != -ELOOP) {
+    if (vfs_faccessat(AT_FDCWD, "/tmp/vfs-access-loop/a", 0, 0) != -ELOOP) {
         errno = EIO;
         goto out;
     }
     errno = 0;
-    if (access("/tmp/vfs-access-loop/a", F_OK) != -1 || errno != ELOOP) {
+    if (access("/tmp/vfs-access-loop/a", 0) != -1 || errno != ELOOP) {
         errno = EIO;
         goto out;
     }

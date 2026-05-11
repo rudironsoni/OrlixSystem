@@ -1,18 +1,15 @@
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
 
-#include <fcntl.h>
-#include <stddef.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <uapi/linux/fcntl.h>
+#include <linux/string.h>
 
 #include "fs/vfs.h"
 #include "kernel/init.h"
 
 int close_impl(int fd);
-int open_impl(const char *pathname, int flags, mode_t mode);
-ssize_t read_impl(int fd, void *buf, size_t count);
+int open_impl(const char *pathname, int flags, unsigned int mode);
+long read_impl(int fd, void *buf, unsigned long count);
 
 static void rootfs_bootstrap_suite_init(struct kunit *test) {
     KUNIT_ASSERT_EQ(test, start_kernel(), 0);
@@ -79,7 +76,7 @@ static void test_virtual_etc_passwd_content(struct kunit *test) {
     }
 
     char buf[4096];
-    ssize_t n = read_impl(fd, buf, sizeof(buf) - 1);
+    long n = read_impl(fd, buf, sizeof(buf) - 1);
     close_impl(fd);
 
     KUNIT_ASSERT_TRUE(test, n > 0);
@@ -100,7 +97,7 @@ static void test_virtual_etc_group_content(struct kunit *test) {
     }
 
     char buf[4096];
-    ssize_t n = read_impl(fd, buf, sizeof(buf) - 1);
+    long n = read_impl(fd, buf, sizeof(buf) - 1);
     close_impl(fd);
 
     KUNIT_ASSERT_TRUE(test, n > 0);

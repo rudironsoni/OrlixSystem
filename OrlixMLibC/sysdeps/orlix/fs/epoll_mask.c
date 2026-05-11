@@ -8,6 +8,8 @@
 
 #include "epoll_mask.h"
 
+extern int pthread_sigmask(int how, const sigset_t *set, sigset_t *oldset);
+
 typedef struct epoll_sigmask_state_internal {
     sigset_t oldmask;
     bool saved;
@@ -42,7 +44,7 @@ void epoll_sigmask_restore(epoll_sigmask_state_t *state) {
     epoll_sigmask_state_internal_t *internal = (epoll_sigmask_state_internal_t *)state;
 
     if (internal->saved) {
-        pthread_sigmask(SIG_SETMASK, &internal->oldmask, NULL);
+        pthread_sigmask(SIG_SETMASK, &internal->oldmask, 0);
         internal->saved = false;
     }
 }

@@ -2,10 +2,10 @@
  * Virtual read/write/lseek implementation
  */
 
-#include <linux/fcntl.h>
-#include <linux/fs.h>
-#include <asm/stat.h>
-#include <linux/uio.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/uio.h>
 
 #include <linux/errno.h>
 #include <linux/string.h>
@@ -58,7 +58,7 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         bool nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
         ssize_t ret = pipe_read_endpoint_impl(endpoint, buf, count, nonblock);
         if (ret == -EINTR && !nonblock) {
-            task_restart_record_impl(current_task(), TASK_RESTART_PIPE_READ,
+            task_restart_record_impl(get_current(), TASK_RESTART_PIPE_READ,
                                      (uint64_t)fd, (uint64_t)(uintptr_t)buf,
                                      (uint64_t)count, 0, 0, 0);
         }
@@ -298,7 +298,7 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
         bool nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
         ssize_t ret = pipe_write_endpoint_impl(endpoint, buf, count, nonblock);
         if (ret == -EINTR && !nonblock) {
-            task_restart_record_impl(current_task(), TASK_RESTART_PIPE_WRITE,
+            task_restart_record_impl(get_current(), TASK_RESTART_PIPE_WRITE,
                                      (uint64_t)fd, (uint64_t)(uintptr_t)buf,
                                      (uint64_t)count, 0, 0, 0);
         }

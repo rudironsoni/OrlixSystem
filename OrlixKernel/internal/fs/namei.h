@@ -1,8 +1,8 @@
 #ifndef INTERNAL_FS_NAMEI_H
 #define INTERNAL_FS_NAMEI_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include <linux/stddef.h>
+#include <linux/types.h>
 
 struct stat;
 

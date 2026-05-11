@@ -1,9 +1,11 @@
 #include <asm/ioctls.h>
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 #include <asm-generic/signal-defs.h>
+#include <linux/dirent.h>
 
 #include <errno.h>
 #include <stddef.h>
@@ -41,14 +43,6 @@ extern __kernel_pid_t tcgetsid(int fd);
 extern int kernel_isatty(int fd) __asm("_isatty");
 
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
-
-struct linux_dirent64 {
-    uint64_t d_ino;
-    int64_t d_off;
-    unsigned short d_reclen;
-    unsigned char d_type;
-    char d_name[];
-};
 
 static int close_if_open(int fd) {
     if (fd >= 0) {

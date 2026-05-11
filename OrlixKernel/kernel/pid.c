@@ -1,6 +1,5 @@
 #include <linux/errno.h>
-#include <stdatomic.h>
-
+#include <linux/atomic.h>
 #include <linux/types.h>
 
 #include "task.h"
@@ -11,19 +10,19 @@
 
 /* Free list stack for O(1) PID allocation/reuse */
 static __kernel_pid_t pid_free_stack[PID_COUNT];
-static _Atomic int pid_stack_top = 0;
+static atomic_t pid_stack_top = ATOMIC_INIT(0);
 static kernel_mutex_t pid_lock = KERNEL_MUTEX_INITIALIZER;
-static atomic_bool pid_initialized = false;
+static atomic_t pid_initialized = ATOMIC_INIT(0);
 
 /* Private implementation - matches _impl() suffix convention */
 static int32_t pid_alloc_impl(void) {
     /* Ensure initialized (thread-safe via atomic flag) */
-    if (!atomic_load(&pid_initialized)) {
+    if (atomic_read(&pid_initialized) == 0) {
         pid_init();
     }
 
     kernel_mutex_lock(&pid_lock);
-    int top = atomic_load(&pid_stack_top);
+    int top = atomic_read(&pid_stack_top);
     if (top <= 0) {
         kernel_mutex_unlock(&pid_lock);
         return -ENOSPC;
@@ -31,7 +30,7 @@ static int32_t pid_alloc_impl(void) {
 
     top--;
     __kernel_pid_t pid = pid_free_stack[top];
-    atomic_store(&pid_stack_top, top);
+    atomic_set(&pid_stack_top, top);
     kernel_mutex_unlock(&pid_lock);
 
     return (int32_t)pid;
@@ -44,12 +43,12 @@ static void pid_free_impl(int32_t pid) {
     }
 
     /* Ensure initialized */
-    if (!atomic_load(&pid_initialized)) {
+    if (atomic_read(&pid_initialized) == 0) {
         pid_init();
     }
 
     kernel_mutex_lock(&pid_lock);
-    int top = atomic_load(&pid_stack_top);
+    int top = atomic_read(&pid_stack_top);
 
     /* Defensive: check for stack overflow (shouldn't happen with correct usage) */
     if (top >= PID_COUNT) {
@@ -58,7 +57,7 @@ static void pid_free_impl(int32_t pid) {
     }
 
     pid_free_stack[top] = pid;
-    atomic_store(&pid_stack_top, top + 1);
+    atomic_set(&pid_stack_top, top + 1);
     kernel_mutex_unlock(&pid_lock);
 }
 
@@ -69,12 +68,12 @@ static void pid_free_impl(int32_t pid) {
  * so that sequential allocation starts from PID_MIN.
  */
 void pid_init(void) {
-    if (atomic_load(&pid_initialized)) {
+    if (atomic_read(&pid_initialized) != 0) {
         return;
     }
 
     kernel_mutex_lock(&pid_lock);
-    if (atomic_load(&pid_initialized)) {
+    if (atomic_read(&pid_initialized) != 0) {
         kernel_mutex_unlock(&pid_lock);
         return;
     }
@@ -84,8 +83,8 @@ void pid_init(void) {
     for (__kernel_pid_t pid = PID_MAX; pid >= PID_MIN; pid--) {
         pid_free_stack[idx++] = pid;
     }
-    atomic_store(&pid_stack_top, PID_COUNT);
-    atomic_store(&pid_initialized, true);
+    atomic_set(&pid_stack_top, PID_COUNT);
+    atomic_set(&pid_initialized, 1);
 
     kernel_mutex_unlock(&pid_lock);
 }
@@ -100,16 +99,16 @@ int pid_reserve(int32_t pid) {
         return -EINVAL;
     }
 
-    if (!atomic_load(&pid_initialized)) {
+    if (atomic_read(&pid_initialized) == 0) {
         pid_init();
     }
 
     kernel_mutex_lock(&pid_lock);
-    int top = atomic_load(&pid_stack_top);
+    int top = atomic_read(&pid_stack_top);
     for (int i = 0; i < top; i++) {
         if (pid_free_stack[i] == pid) {
             pid_free_stack[i] = pid_free_stack[top - 1];
-            atomic_store(&pid_stack_top, top - 1);
+            atomic_set(&pid_stack_top, top - 1);
             kernel_mutex_unlock(&pid_lock);
             return 0;
         }

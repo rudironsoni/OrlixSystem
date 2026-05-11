@@ -4,9 +4,9 @@
 #include <asm/sigcontext.h>
 #include <asm/ucontext.h>
 #include <asm/unistd.h>
-#include <linux/mman.h>
-#include <linux/sched.h>
-#include <linux/signal.h>
+#include <uapi/linux/mman.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/signal.h>
 
 #include <errno.h>
 #include <stdint.h>

@@ -1,19 +1,19 @@
 #include "socket.h"
 
 #include <linux/errno.h>
+#include <linux/atomic.h>
 #include <linux/gfp_types.h>
 #include <linux/string.h>
-#include <stdatomic.h>
-#include <stdint.h>
 
 #include "internal/mutex.h"
 #include "../signal.h"
 #include "../task.h"
 #include "../wait_queue.h"
 
-#include <linux/poll.h>
+#include <uapi/linux/poll.h>
+#include <uapi/asm-generic/socket.h>
 #include <asm-generic/signal.h>
-#include <linux/socket.h>
+#include <uapi/linux/socket.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
@@ -57,7 +57,7 @@ struct socket_datagram {
 };
 
 struct socket_state {
-    atomic_int refs;
+    atomic_t refs;
     unsigned long long id;
     int domain;
     int type;
@@ -102,7 +102,7 @@ struct socket_state {
 
 static kernel_mutex_t socket_namespace_lock = KERNEL_MUTEX_INITIALIZER;
 static struct socket_namespace_entry *socket_namespace_entries;
-static atomic_ullong next_socket_id = 1;
+static atomic64_t next_socket_id = ATOMIC64_INIT(1);
 
 static size_t socket_space_locked(const struct socket_state *sock) {
     return SOCKET_BUFFER_SIZE - sock->len;
@@ -304,8 +304,8 @@ struct socket_state *socket_create_impl(int domain, int type, int protocol, bool
         return ERR_PTR(-ENOMEM);
     }
 
-    atomic_init(&sock->refs, 1);
-    sock->id = atomic_fetch_add(&next_socket_id, 1);
+    atomic_set(&sock->refs, 1);
+    sock->id = (unsigned long long)atomic64_inc_return(&next_socket_id);
     sock->domain = domain;
     sock->type = type;
     sock->protocol = protocol;
@@ -387,7 +387,7 @@ unsigned long long socket_identity_impl(const struct socket_state *sock) {
 
 void socket_retain_impl(struct socket_state *sock) {
     if (sock) {
-        atomic_fetch_add(&sock->refs, 1);
+        atomic_inc(&sock->refs);
     }
 }
 
@@ -401,7 +401,7 @@ void socket_release_impl(struct socket_state *sock) {
     if (!sock) {
         return;
     }
-    if (atomic_fetch_sub(&sock->refs, 1) != 1) {
+    if (atomic_dec_return(&sock->refs) != 0) {
         return;
     }
 
@@ -939,7 +939,7 @@ __kernel_ssize_t socket_sendto_impl(struct socket_state *sock,
     peer = sock->peer;
     if (!peer || !sock->peer_writes_open) {
         wait_queue_unlock(&sock->wait);
-        signal_generate_task(current_task(), SIGPIPE);
+        signal_generate_task(get_current(), SIGPIPE);
         return -EPIPE;
     }
     wait_queue_unlock(&sock->wait);
@@ -948,7 +948,7 @@ __kernel_ssize_t socket_sendto_impl(struct socket_state *sock,
     while (socket_space_locked(peer) == 0) {
         if (!peer->peer_writes_open) {
             wait_queue_unlock(&peer->wait);
-            signal_generate_task(current_task(), SIGPIPE);
+            signal_generate_task(get_current(), SIGPIPE);
             return -EPIPE;
         }
         if (nonblock) {

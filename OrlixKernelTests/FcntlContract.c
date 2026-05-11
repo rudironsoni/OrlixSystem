@@ -1,4 +1,4 @@
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
 #include <asm-generic/unistd.h>
 #ifdef SIGCHLD
 #undef SIGCHLD

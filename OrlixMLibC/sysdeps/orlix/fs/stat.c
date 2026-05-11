@@ -1,8 +1,7 @@
 #include <errno.h>
 
-#include <asm/stat.h>
-#include <linux/fcntl.h>
-#include <linux/stat.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 extern int stat_impl(const char *pathname, struct stat *statbuf);
 extern int fstat_impl(int fd, struct stat *statbuf);

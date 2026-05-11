@@ -1,8 +1,8 @@
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <linux/dirent.h>
 
-#include <dirent.h>
 #include <errno.h>
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -18,22 +18,6 @@ extern int fcntl_impl(int fd, int cmd, ...);
 extern long read_impl(int fd, void *buf, size_t count);
 extern int64_t lseek_impl(int fd, int64_t offset, int whence);
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
-
-#ifndef SEEK_SET
-#define SEEK_SET 0
-#endif
-
-#ifndef SEEK_CUR
-#define SEEK_CUR 1
-#endif
-
-struct linux_dirent64 {
-    uint64_t d_ino;
-    int64_t d_off;
-    unsigned short d_reclen;
-    unsigned char d_type;
-    char d_name[];
-};
 
 static int close_if_open(int fd) {
     if (fd >= 0) {

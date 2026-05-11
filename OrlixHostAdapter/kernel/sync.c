@@ -286,7 +286,7 @@ int kernel_thread_attr_destroy(kernel_thread_attr_t *attr) {
     return ret;
 }
 
-int kernel_thread_attr_setstacksize(kernel_thread_attr_t *attr, size_t stacksize) {
+int kernel_thread_attr_setstacksize(kernel_thread_attr_t *attr, unsigned long stacksize) {
     pthread_attr_t *pattr;
 
     if (!attr) {

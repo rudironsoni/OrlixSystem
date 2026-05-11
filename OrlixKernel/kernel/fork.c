@@ -1,11 +1,12 @@
 #include <limits.h>
 
 #include <linux/errno.h>
+#include <linux/atomic.h>
 #include <linux/string.h>
-#include <linux/capability.h>
-#include <linux/fcntl.h>
-#include <linux/resource.h>
-#include <linux/sched.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/resource.h>
+#include <uapi/linux/sched.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
@@ -97,7 +98,7 @@ static void unshare_snapshot_state(struct task_struct *task, struct unshare_stat
         return;
     }
     snapshot->had_current = true;
-    snapshot->new_pid_namespace_pending = atomic_load(&task->new_pid_namespace_pending);
+    snapshot->new_pid_namespace_pending = atomic_read(&task->new_pid_namespace_pending) != 0;
     snapshot->fs = task->fs;
     snapshot->uts_ns = task->uts_ns ? uts_get(task->uts_ns) : NULL;
     snapshot->cgroup_ns_root = task->cgroup_ns_root ? cgroup_get(task->cgroup_ns_root) : NULL;
@@ -112,7 +113,7 @@ static void unshare_restore_state(struct task_struct *task, const struct unshare
     if (!task || !snapshot || !snapshot->had_current) {
         return;
     }
-    atomic_store(&task->new_pid_namespace_pending, snapshot->new_pid_namespace_pending);
+    atomic_set(&task->new_pid_namespace_pending, snapshot->new_pid_namespace_pending ? 1 : 0);
     if (task->cred) {
         *task->cred = snapshot->cred;
     }
@@ -307,7 +308,7 @@ __kernel_pid_t fork_impl(void) {
     child->ppid = parent->pid;
     child->pgid = parent->pgid;
     child->sid = parent->sid;
-    if (atomic_load(&parent->new_pid_namespace_pending)) {
+    if (atomic_read(&parent->new_pid_namespace_pending) != 0) {
         child->pid_ns_level = parent->pid_ns_level + 1;
         child->ns_pid = 1;
     } else {
@@ -352,7 +353,7 @@ __kernel_pid_t fork_impl(void) {
     /* Reference TTY (not copy) */
     if (parent->tty) {
         child->tty = parent->tty;
-        atomic_fetch_add(&child->tty->refs, 1);
+        atomic_inc(&child->tty->refs);
     }
 
     /* Link into parent's children list */
@@ -516,7 +517,7 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
         return -ESRCH;
     }
     child_creates_new_pidns =
-        ((args->flags & CLONE_NEWPID) != 0) || atomic_load(&parent->new_pid_namespace_pending);
+        ((args->flags & CLONE_NEWPID) != 0) || atomic_read(&parent->new_pid_namespace_pending) != 0;
     if ((args->set_tid == 0) != (args->set_tid_size == 0)) {
         return -EINVAL;
     }
@@ -643,7 +644,7 @@ int unshare_impl(uint64_t flags) {
         return ret;
     }
     if ((namespace_flags & CLONE_NEWPID) != 0) {
-        atomic_store(&task->new_pid_namespace_pending, true);
+        atomic_set(&task->new_pid_namespace_pending, 1);
         namespace_flags &= ~(uint64_t)CLONE_NEWPID;
     }
     if ((namespace_flags & CLONE_FS) != 0) {
@@ -761,7 +762,7 @@ int vfork_impl(void) {
     child->pgid = parent->pgid;
     child->sid = parent->sid;
     child->vfork_parent = parent; /* Mark as vfork child */
-    if (atomic_load(&parent->new_pid_namespace_pending)) {
+    if (atomic_read(&parent->new_pid_namespace_pending) != 0) {
         child->pid_ns_level = parent->pid_ns_level + 1;
         child->ns_pid = 1;
     } else {
@@ -817,7 +818,7 @@ int vfork_impl(void) {
     /* Reference TTY */
     if (parent->tty) {
         child->tty = parent->tty;
-        atomic_fetch_add(&child->tty->refs, 1);
+        atomic_inc(&child->tty->refs);
     }
 
     /* Link into parent's children list */
@@ -828,7 +829,7 @@ int vfork_impl(void) {
     kernel_mutex_unlock(&parent->lock);
 
     /* Mark parent as suspended (vfork semantics) */
-    atomic_store(&parent->state, TASK_UNINTERRUPTIBLE);
+    atomic_set(&parent->state, TASK_UNINTERRUPTIBLE);
 
     /* Set up vfork context */
     vfork_ctx_t ctx;
@@ -873,7 +874,7 @@ int vfork_impl(void) {
                 kernel_mutex_lock(&parent->lock);
                 parent->children = child->next_sibling;
                 kernel_mutex_unlock(&parent->lock);
-                atomic_store(&parent->state, TASK_RUNNING);
+                atomic_set(&parent->state, TASK_RUNNING);
                 free_task(child);
                 active_vfork_ctx = NULL;
                 fork_frame_destroy(&ctx.child_frame);
@@ -891,7 +892,7 @@ int vfork_impl(void) {
             kernel_mutex_unlock(&ctx.lock);
 
             /* Child has execed or exited - parent can resume */
-            atomic_store(&parent->state, TASK_RUNNING);
+            atomic_set(&parent->state, TASK_RUNNING);
 
             kernel_thread_detach(child_thread);
 

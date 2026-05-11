@@ -1,16 +1,16 @@
-#include <linux/fcntl.h>
-#include <linux/elf.h>
-#include <linux/auxvec.h>
-#include <linux/capability.h>
-#include <linux/mman.h>
-#include <linux/mount.h>
-#include <linux/prctl.h>
-#include <linux/securebits.h>
-#include <linux/stat.h>
-#include <linux/xattr.h>
 #include <asm/unistd.h>
 #include <asm-generic/siginfo.h>
 #include <asm-generic/resource.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/auxvec.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/mman.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/prctl.h>
+#include <uapi/linux/securebits.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/xattr.h>
 
 #include <errno.h>
 #include <stdbool.h>

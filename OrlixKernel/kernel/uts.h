@@ -8,9 +8,7 @@
 #define KERNEL_UTS_H
 
 #include <linux/types.h>
-
-#include <stddef.h>
-#include <stdint.h>
+#include <linux/stddef.h>
 
 #ifdef __cplusplus
 extern "C" {

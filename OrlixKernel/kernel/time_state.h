@@ -8,7 +8,7 @@
 #ifndef KERNEL_TIME_INTERNAL_H
 #define KERNEL_TIME_INTERNAL_H
 
-#include <stddef.h>
+#include <linux/stddef.h>
 
 #include "internal/timekeeping.h"
 

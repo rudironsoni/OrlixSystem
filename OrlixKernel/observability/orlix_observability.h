@@ -1,8 +1,6 @@
 #ifndef ORLIX_OBSERVABILITY_H
 #define ORLIX_OBSERVABILITY_H
 
-#include <stdint.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif

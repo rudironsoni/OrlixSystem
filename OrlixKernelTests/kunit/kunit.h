@@ -1,12 +1,8 @@
 #ifndef ORLIX_KERNEL_TESTS_KUNIT_H
 #define ORLIX_KERNEL_TESTS_KUNIT_H
 
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-
 struct kunit {
-    bool failed;
+    int failed;
     const char *suite_name;
     const char *case_name;
     const char *failure_file;
@@ -22,7 +18,7 @@ struct kunit_case {
 struct kunit_suite {
     const char *name;
     const struct kunit_case *cases;
-    size_t case_count;
+    unsigned long case_count;
     void (*init)(struct kunit *test);
     void (*exit)(struct kunit *test);
 };
@@ -34,7 +30,7 @@ void kunit_init(struct kunit *test, const char *suite_name, const char *case_nam
 void kunit_failf(struct kunit *test, const char *file, int line, const char *format, ...);
 
 static inline int kunit_streq(const char *lhs, const char *rhs) {
-    size_t index = 0;
+    unsigned long index = 0;
 
     if (lhs == rhs) {
         return 1;
@@ -108,8 +104,8 @@ static inline int kunit_streq(const char *lhs, const char *rhs) {
 
 #define KUNIT_ASSERT_NOT_NULL(test, ptr)                                          \
     do {                                                                          \
-        const void *kunit_ptr = (const void *)(uintptr_t)(ptr);                   \
-        if (kunit_ptr == NULL) {                                                  \
+        const void *kunit_ptr = (const void *)(unsigned long)(ptr);               \
+        if (kunit_ptr == ((void *)0)) {                                           \
             KUNIT_FAIL((test), "expected %s to be non-NULL", #ptr);              \
         }                                                                         \
     } while (0)

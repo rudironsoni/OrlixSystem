@@ -21,7 +21,7 @@ __attribute__((visibility("default"))) int select(int nfds,
                                                   fd_set *errorfds,
                                                   struct timeval *timeout) {
     struct __kernel_old_timeval kernel_timeout;
-    struct __kernel_old_timeval *kernel_timeout_ptr = NULL;
+    struct __kernel_old_timeval *kernel_timeout_ptr = 0;
 
     if (timeout) {
         kernel_timeout.tv_sec = timeout->tv_sec;

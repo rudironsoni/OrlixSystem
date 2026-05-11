@@ -21,7 +21,7 @@ void kunit_failf(struct kunit *test, const char *file, int line, const char *for
         return;
     }
 
-    test->failed = true;
+    test->failed = 1;
     test->failure_file = file;
     test->failure_line = line;
 

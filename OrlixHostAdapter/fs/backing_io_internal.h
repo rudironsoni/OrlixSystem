@@ -1,6 +1,7 @@
 #ifndef ORLIX_HOST_ADAPTER_FS_BACKING_IO_H
 #define ORLIX_HOST_ADAPTER_FS_BACKING_IO_H
 
+#include <stdint.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
@@ -32,7 +33,7 @@ typedef sigset_t ksigset_t;
 #define KAT_FDCWD AT_FDCWD
 
 static inline int kmutex_init_impl(kmutex_t *mutex) {
-    return pthread_mutex_init(mutex, NULL);
+    return pthread_mutex_init(mutex, (const pthread_mutexattr_t *)0);
 }
 
 static inline int kmutex_destroy_impl(kmutex_t *mutex) {
@@ -48,7 +49,7 @@ static inline int kmutex_unlock_impl(kmutex_t *mutex) {
 }
 
 static inline int kcond_init_impl(kcond_t *cond) {
-    return pthread_cond_init(cond, NULL);
+    return pthread_cond_init(cond, (const pthread_condattr_t *)0);
 }
 
 static inline int kcond_destroy_impl(kcond_t *cond) {
@@ -112,13 +113,13 @@ static inline int kthread_sigmask_impl(int how, const ksigset_t *set, ksigset_t 
     return pthread_sigmask(how, set, oldset);
 }
 
-static inline int ktime_get_monotonic_impl(clockid_t clock_id, struct timespec *tp) {
-    return clock_gettime(clock_id, tp);
+static inline int ktime_get_monotonic_impl(int clock_id, struct timespec *tp) {
+    return clock_gettime((clockid_t)clock_id, tp);
 }
 
 /* Alias for ktime_get_monotonic_impl */
-static inline int kclock_gettime_impl(clockid_t clock_id, struct timespec *tp) {
-    return clock_gettime(clock_id, tp);
+static inline int kclock_gettime_impl(int clock_id, struct timespec *tp) {
+    return clock_gettime((clockid_t)clock_id, tp);
 }
 
 /* Backing root discovery - realized privately inside OrlixHostAdapter. */
@@ -126,8 +127,25 @@ int backing_root_discover_persistent(char *path, size_t path_len);
 int backing_root_discover_cache(char *path, size_t path_len);
 int backing_root_discover_temp(char *path, size_t path_len);
 
-/* Path operations live in the kernel-owned private contract. */
-#include "internal/fs/namei.h"
+/* Host-backed path mediation surface. Keep this Darwin-safe. */
+struct stat;
+int backing_stat(const char *path, struct stat *statbuf);
+int backing_lstat(const char *path, struct stat *statbuf);
+int backing_access(const char *path, int mode);
+_Bool backing_path_is_own_sandbox(const char *path);
+_Bool backing_path_is_external(const char *path);
+int backing_directory_is_empty(const char *path);
+int backing_rename_with_flags(int fromfd, const char *from, int tofd, const char *to,
+                              unsigned int flags);
+int backing_rename_exchange(const char *from, const char *to);
+int backing_mkdir(const char *pathname, uint32_t mode);
+int backing_rmdir(const char *pathname);
+int backing_unlink(const char *pathname);
+int backing_link(const char *oldpath, const char *newpath);
+int backing_linkat(const char *oldpath, const char *newpath, int follow_symlink);
+int backing_symlink(const char *target, const char *linkpath);
+long backing_readlink(const char *pathname, char *buf, size_t bufsiz);
+int backing_fchdir(int fd);
 
 /* Backing filesystem operations via direct syscalls. */
 int backing_open(const char *path, int flags, uint32_t mode);

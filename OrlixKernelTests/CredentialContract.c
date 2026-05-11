@@ -1,5 +1,5 @@
 #include <errno.h>
-#include <linux/securebits.h>
+#include <uapi/linux/securebits.h>
 
 #include "CredentialContract.h"
 #include "kernel/cred.h"

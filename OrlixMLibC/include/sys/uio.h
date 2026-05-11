@@ -1,8 +1,14 @@
 #ifndef ORLIX_MLIBC_SYS_UIO_H
 #define ORLIX_MLIBC_SYS_UIO_H
 
-#include <stddef.h>
+#include <sys/types.h>
 
-#include <linux/uio.h>
+struct iovec {
+    void *iov_base;
+    size_t iov_len;
+};
+
+#define UIO_FASTIOV 8
+#define UIO_MAXIOV 1024
 
 #endif

@@ -6,9 +6,19 @@
 typedef __INTPTR_TYPE__ ssize_t;
 #endif
 
+#ifndef _SIZE_T
+#define _SIZE_T
+typedef __UINTPTR_TYPE__ size_t;
+#endif
+
 #ifndef _TIME_T
 #define _TIME_T
 typedef __INTPTR_TYPE__ time_t;
+#endif
+
+#ifndef _CLOCK_T
+#define _CLOCK_T
+typedef __INTPTR_TYPE__ clock_t;
 #endif
 
 #ifndef _PID_T

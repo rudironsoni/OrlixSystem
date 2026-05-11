@@ -1,7 +1,7 @@
-#include <linux/fcntl.h>
-#include <linux/stat.h>
-
-#include "../OrlixMLibC/include/unistd.h"
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/linux/stat.h>
+#include <linux/dirent.h>
 
 #include <errno.h>
 #include <stdbool.h>
@@ -22,14 +22,6 @@ extern ssize_t getdents64(int fd, void *dirp, size_t count);
 extern int stat_impl(const char *pathname, struct stat *statbuf);
 extern int access(const char *pathname, int mode);
 
-struct devfs_linux_dirent64 {
-    uint64_t d_ino;
-    int64_t d_off;
-    unsigned short d_reclen;
-    unsigned char d_type;
-    char d_name[];
-};
-
 static int close_if_open(int fd) {
     if (fd >= 0) {
         return close_impl(fd);
@@ -40,7 +32,7 @@ static int close_if_open(int fd) {
 static bool dirent_buffer_contains(const char *buf, ssize_t nread, const char *name) {
     size_t pos = 0;
     while (pos < (size_t)nread) {
-        const struct devfs_linux_dirent64 *entry = (const struct devfs_linux_dirent64 *)(buf + pos);
+        const struct linux_dirent64 *entry = (const struct linux_dirent64 *)(buf + pos);
         if (entry->d_reclen == 0 || entry->d_reclen > (unsigned short)((size_t)nread - pos)) {
             return false;
         }
@@ -85,7 +77,7 @@ int devfs_contract_random_device_is_character_and_readable(void) {
         errno = ERANGE;
         return -1;
     }
-    if (access("/dev/random", F_OK) != 0) {
+    if (access("/dev/random", 0) != 0) {
         return -1;
     }
 
@@ -112,7 +104,7 @@ int devfs_contract_tty_node_exists_without_controlling_tty(void) {
         errno = ERANGE;
         return -1;
     }
-    return access("/dev/tty", F_OK);
+    return access("/dev/tty", 0);
 }
 
 int devfs_contract_tty_open_without_controlling_tty_returns_enxio(void) {
@@ -164,7 +156,7 @@ int devfs_contract_pts_directory_exists(void) {
         errno = ENOTDIR;
         return -1;
     }
-    if (access("/dev/pts", F_OK) != 0) {
+    if (access("/dev/pts", 0) != 0) {
         return -1;
     }
 

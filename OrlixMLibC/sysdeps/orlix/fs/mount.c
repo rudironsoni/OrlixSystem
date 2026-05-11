@@ -1,7 +1,7 @@
 #include <errno.h>
 #include <stddef.h>
 
-#include <linux/mount.h>
+#include <sys/mount.h>
 
 extern int mount_impl(const char *source, const char *target,
                       const char *filesystemtype, unsigned long mountflags,

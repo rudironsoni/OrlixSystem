@@ -7,17 +7,17 @@
 
 #include "../fs/fdtable.h"
 
-#include <stdint.h>
-
+#include <linux/atomic.h>
 #include <linux/errno.h>
 #include <linux/gfp_types.h>
+#include <linux/limits.h>
 #include <linux/string.h>
 
-#include <linux/elf.h>
-#include <linux/fcntl.h>
-#include <linux/fs.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
 #define BUILD_VDSO 1
-#include <linux/mman.h>
+#include <uapi/linux/mman.h>
 #undef BUILD_VDSO
 
 #ifndef MAP_ANONYMOUS
@@ -34,13 +34,13 @@ struct vm_shared_mapping {
     uint64_t file_identity;
     uint64_t page_index;
     uint8_t image[TASK_VMA_PAGE_SIZE];
-    atomic_int refs;
+    atomic_t refs;
     struct vm_shared_mapping *next;
 };
 
 struct vm_private_page {
     uint8_t image[TASK_VMA_PAGE_SIZE];
-    atomic_int refs;
+    atomic_t refs;
 };
 
 static kernel_mutex_t mm_shared_mapping_lock = KERNEL_MUTEX_INITIALIZER;
@@ -66,11 +66,11 @@ extern void kfree(const void *objp);
 static long long mm_fd_pread(int fd, void *buf, size_t count, long long offset);
 
 static void *err_ptr_impl(long error) {
-    return (void *)(intptr_t)error;
+    return (void *)error;
 }
 
 static long ptr_err_impl(const void *ptr) {
-    return (long)(intptr_t)ptr;
+    return (long)ptr;
 }
 
 static bool is_err_impl(const void *ptr) {
@@ -94,7 +94,7 @@ static void *mm_alloc_array(uint64_t count, size_t elem_size) {
 
 static void mm_shared_mapping_get(struct vm_shared_mapping *mapping) {
     if (mapping) {
-        atomic_fetch_add(&mapping->refs, 1);
+        atomic_inc(&mapping->refs);
     }
 }
 
@@ -102,7 +102,7 @@ static void mm_shared_mapping_put(struct vm_shared_mapping *mapping) {
     if (!mapping) {
         return;
     }
-    if (atomic_fetch_sub(&mapping->refs, 1) != 1) {
+    if (atomic_dec_return(&mapping->refs) != 0) {
         return;
     }
 
@@ -134,7 +134,7 @@ static struct vm_private_page *mm_private_page_alloc(const void *source, size_t 
     if (!page) {
         return NULL;
     }
-    atomic_init(&page->refs, 1);
+    atomic_set(&page->refs, 1);
     if (source && source_len > 0) {
         if (source_len > TASK_VMA_PAGE_SIZE) {
             source_len = TASK_VMA_PAGE_SIZE;
@@ -146,7 +146,7 @@ static struct vm_private_page *mm_private_page_alloc(const void *source, size_t 
 
 static void mm_private_page_get(struct vm_private_page *page) {
     if (page) {
-        atomic_fetch_add(&page->refs, 1);
+        atomic_inc(&page->refs);
     }
 }
 
@@ -160,7 +160,7 @@ void mm_private_page_put_impl(struct vm_private_page *page) {
     if (!page) {
         return;
     }
-    if (atomic_fetch_sub(&page->refs, 1) == 1) {
+    if (atomic_dec_return(&page->refs) == 0) {
         kfree(page);
     }
 }
@@ -249,7 +249,7 @@ long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *
         return -EFAULT;
     }
     page = vma->private_pages[page_index];
-    if (atomic_load(&page->refs) > 1) {
+    if (atomic_read(&page->refs) > 1) {
         private_copy = mm_private_page_alloc(page->image, TASK_VMA_PAGE_SIZE);
         if (!private_copy) {
             return -1;
@@ -345,7 +345,7 @@ static struct vm_shared_mapping *mm_shared_mapping_get_or_create(int fd, uint64_
     }
     mapping->file_identity = file_identity;
     mapping->page_index = page_index;
-    atomic_init(&mapping->refs, 1);
+    atomic_set(&mapping->refs, 1);
 
     kernel_mutex_lock(&mm_shared_mapping_lock);
     struct vm_shared_mapping *existing = mm_shared_mapping_lookup_locked(file_identity, page_index);
@@ -617,7 +617,7 @@ long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *b
 }
 
 static uint64_t mm_align_up(uint64_t value, uint64_t align) {
-    if (value > UINT64_MAX - (align - 1)) {
+    if (value > U64_MAX - (align - 1)) {
         return 0;
     }
     return (value + align - 1) & ~(align - 1);
@@ -818,7 +818,7 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
     struct task_vma *vma;
     uint64_t page_count;
 
-    if (!mm || !image || size == 0 || size > UINT64_MAX - start || mm->vma_count >= TASK_EXEC_MAX_VMAS) {
+    if (!mm || !image || size == 0 || size > U64_MAX - start || mm->vma_count >= TASK_EXEC_MAX_VMAS) {
         return -ENOMEM;
     }
     if (mm_range_overlaps(mm, start, start + size)) {
@@ -1229,7 +1229,7 @@ struct mm_struct *task_mm_dup_impl(const struct mm_struct *source) {
     if (!copy) {
         return NULL;
     }
-    atomic_init(&copy->refs, 1);
+    atomic_set(&copy->refs, 1);
     copy->exec_entry = source->exec_entry;
     copy->exec_dynamic_vaddr = source->exec_dynamic_vaddr;
     copy->exec_dynamic_size = source->exec_dynamic_size;
@@ -1495,7 +1495,7 @@ static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
     if (!mm_vmas_can_merge(left, right)) {
         return 0;
     }
-    if (left->end > UINT64_MAX - (right->end - right->start)) {
+    if (left->end > U64_MAX - (right->end - right->start)) {
         return -ENOMEM;
     }
     left_pages = left->page_count;
@@ -1673,7 +1673,7 @@ static int mm_unmap_vma_range(struct mm_struct *mm, uint32_t index,
 }
 
 void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t offset) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     uint64_t map_len;
     uint64_t map_addr;
     enum task_vma_kind kind;
@@ -1690,7 +1690,7 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
         if (!task->mm) {
             return ERR_PTR(-ENOMEM);
         }
-        atomic_init(&task->mm->refs, 1);
+        atomic_set(&task->mm->refs, 1);
     }
     if (length == 0 || mm_validate_prot(prot) != 0) {
         return ERR_PTR(-EINVAL);
@@ -1711,9 +1711,9 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
     }
 
     if ((flags & (MAP_FIXED | MAP_FIXED_NOREPLACE)) != 0) {
-        map_addr = (uint64_t)(uintptr_t)addr;
+        map_addr = (uint64_t)(unsigned long)addr;
         if ((map_addr % TASK_VMA_PAGE_SIZE) != 0 || map_addr == 0 ||
-            map_len > UINT64_MAX - map_addr) {
+            map_len > U64_MAX - map_addr) {
             return ERR_PTR(-EINVAL);
         }
         if ((flags & MAP_FIXED_NOREPLACE) != 0 &&
@@ -1728,7 +1728,7 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
     }
 
     if ((flags & MAP_FIXED) != 0 &&
-        munmap_impl((void *)(uintptr_t)map_addr, (size_t)map_len) != 0) {
+        munmap_impl((void *)(unsigned long)map_addr, (size_t)map_len) != 0) {
         return ERR_PTR(-EFAULT);
     }
 
@@ -1788,12 +1788,12 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
     mm_sort_vmas_by_start(task->mm);
     (void)mm_merge_adjacent_vmas(task->mm);
     task_mm_update_high_water_impl(task->mm);
-    return (void *)(uintptr_t)map_addr;
+    return (void *)(unsigned long)map_addr;
 }
 
 int mprotect_impl(void *addr, size_t len, int prot) {
-    struct task *task = current_task();
-    uint64_t start = (uint64_t)(uintptr_t)addr;
+    struct task_struct *task = get_current();
+    uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
 
     if (!task || !task->mm) {
@@ -1803,15 +1803,15 @@ int mprotect_impl(void *addr, size_t len, int prot) {
         return -EINVAL;
     }
     size = mm_align_up((uint64_t)len, TASK_VMA_PAGE_SIZE);
-    if (size == 0 || size > UINT64_MAX - start) {
+    if (size == 0 || size > U64_MAX - start) {
         return -ENOMEM;
     }
     return task_set_vma_page_flags_impl(task, start, size, mm_prot_to_pf(prot));
 }
 
 int munmap_impl(void *addr, size_t len) {
-    struct task *task = current_task();
-    uint64_t start = (uint64_t)(uintptr_t)addr;
+    struct task_struct *task = get_current();
+    uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
     uint64_t end;
     int unmapped = 0;
@@ -1823,7 +1823,7 @@ int munmap_impl(void *addr, size_t len) {
         return -EINVAL;
     }
     size = mm_align_up((uint64_t)len, TASK_VMA_PAGE_SIZE);
-    if (size == 0 || size > UINT64_MAX - start) {
+    if (size == 0 || size > U64_MAX - start) {
         return -ENOMEM;
     }
     end = start + size;
@@ -1977,8 +1977,8 @@ static int mm_zero_vma_range(struct task_vma *vma, uint64_t start, uint64_t end)
 }
 
 int madvise_impl(void *addr, size_t length, int advice) {
-    struct task *task = current_task();
-    uint64_t start = (uint64_t)(uintptr_t)addr;
+    struct task_struct *task = get_current();
+    uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
     uint64_t end;
 
@@ -1992,7 +1992,7 @@ int madvise_impl(void *addr, size_t length, int advice) {
         return -EINVAL;
     }
     size = mm_align_up((uint64_t)length, TASK_VMA_PAGE_SIZE);
-    if (size == 0 || size > UINT64_MAX - start) {
+    if (size == 0 || size > U64_MAX - start) {
         return -ENOMEM;
     }
     if (advice != MADV_DONTNEED) {
@@ -2017,8 +2017,8 @@ int madvise_impl(void *addr, size_t length, int advice) {
 }
 
 int mincore_impl(void *addr, size_t length, unsigned char *vec) {
-    struct task *task = current_task();
-    uint64_t start = (uint64_t)(uintptr_t)addr;
+    struct task_struct *task = get_current();
+    uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
     uint64_t page_count;
 
@@ -2035,7 +2035,7 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
         return -EINVAL;
     }
     size = mm_align_up((uint64_t)length, TASK_VMA_PAGE_SIZE);
-    if (size == 0 || size > UINT64_MAX - start) {
+    if (size == 0 || size > U64_MAX - start) {
         return -ENOMEM;
     }
     page_count = size / TASK_VMA_PAGE_SIZE;
@@ -2056,7 +2056,7 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
             long long file_size = mm_vma_file_size_impl(vma);
             uint64_t page_file_offset;
 
-            if (page_index > (UINT64_MAX - vma->backing_offset) / TASK_VMA_PAGE_SIZE) {
+            if (page_index > (U64_MAX - vma->backing_offset) / TASK_VMA_PAGE_SIZE) {
                 return -ENOMEM;
             }
             page_file_offset = vma->backing_offset + (page_index * TASK_VMA_PAGE_SIZE);
@@ -2072,9 +2072,9 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
 }
 
 void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags, void *new_address) {
-    struct task *task = current_task();
-    uint64_t old_start = (uint64_t)(uintptr_t)old_address;
-    uint64_t new_start = (uint64_t)(uintptr_t)new_address;
+    struct task_struct *task = get_current();
+    uint64_t old_start = (uint64_t)(unsigned long)old_address;
+    uint64_t new_start = (uint64_t)(unsigned long)new_address;
     uint64_t old_len;
     uint64_t new_len;
     const struct task_vma *found;
@@ -2094,7 +2094,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
     }
     old_len = mm_align_up((uint64_t)old_size, TASK_VMA_PAGE_SIZE);
     new_len = mm_align_up((uint64_t)new_size, TASK_VMA_PAGE_SIZE);
-    if (old_len == 0 || new_len == 0 || old_len > UINT64_MAX - old_start) {
+    if (old_len == 0 || new_len == 0 || old_len > U64_MAX - old_start) {
         return ERR_PTR(-ENOMEM);
     }
     found = task_find_vma_impl(task, old_start);
@@ -2103,7 +2103,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
     }
     if ((flags & MREMAP_FIXED) != 0 &&
         (new_start == 0 || (new_start % TASK_VMA_PAGE_SIZE) != 0 ||
-         new_len > UINT64_MAX - new_start)) {
+         new_len > U64_MAX - new_start)) {
         return ERR_PTR(-EINVAL);
     }
     if ((flags & MREMAP_FIXED) != 0 &&
@@ -2164,7 +2164,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
     }
     if (new_len <= old_len) {
         if (new_len < old_len &&
-            munmap_impl((void *)(uintptr_t)(old_start + new_len), (size_t)(old_len - new_len)) != 0) {
+            munmap_impl((void *)(unsigned long)(old_start + new_len), (size_t)(old_len - new_len)) != 0) {
             return ERR_PTR(-EFAULT);
         }
         return old_address;
@@ -2312,7 +2312,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
                        ((vma_flags & PF_X) ? PROT_EXEC : 0),
                        MAP_PRIVATE | MAP_ANONYMOUS | ((flags & MREMAP_FIXED) ? MAP_FIXED : 0),
                        -1, 0);
-    if ((long)(uintptr_t)mapped < 0) {
+    if ((long)(unsigned long)mapped < 0) {
         return mapped;
     }
     copy_len = old_size < new_size ? old_size : new_size;
@@ -2323,7 +2323,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
             return ERR_PTR(-ENOMEM);
         }
         if (task_read_virtual_memory_impl(task, old_start, tmp, copy_len) != (long)copy_len ||
-            task_write_virtual_memory_impl(task, (uint64_t)(uintptr_t)mapped, tmp, copy_len) != (long)copy_len) {
+            task_write_virtual_memory_impl(task, (uint64_t)(unsigned long)mapped, tmp, copy_len) != (long)copy_len) {
             kfree(tmp);
             munmap_impl(mapped, new_len);
             return ERR_PTR(-EFAULT);
@@ -2340,8 +2340,8 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
 }
 
 int msync_impl(void *addr, size_t len, int flags) {
-    struct task *task = current_task();
-    uint64_t start = (uint64_t)(uintptr_t)addr;
+    struct task_struct *task = get_current();
+    uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
     uint64_t end;
     int synced = 0;
@@ -2360,7 +2360,7 @@ int msync_impl(void *addr, size_t len, int flags) {
         return -EINVAL;
     }
     size = mm_align_up((uint64_t)len, TASK_VMA_PAGE_SIZE);
-    if (size == 0 || size > UINT64_MAX - start) {
+    if (size == 0 || size > U64_MAX - start) {
         return -ENOMEM;
     }
     end = start + size;
@@ -2438,8 +2438,8 @@ int msync_impl(void *addr, size_t len, int flags) {
 }
 
 void *brk_impl(void *addr) {
-    struct task *task = current_task();
-    uint64_t requested = (uint64_t)(uintptr_t)addr;
+    struct task_struct *task = get_current();
+    uint64_t requested = (uint64_t)(unsigned long)addr;
     uint64_t aligned;
     uint32_t brk_index = 0;
     int has_brk_vma;
@@ -2452,22 +2452,22 @@ void *brk_impl(void *addr) {
         if (!task->mm) {
             return ERR_PTR(-ENOMEM);
         }
-        atomic_init(&task->mm->refs, 1);
+        atomic_set(&task->mm->refs, 1);
     }
     if (task->mm->brk_start == 0) {
         task->mm->brk_start = MM_BRK_BASE;
         task->mm->brk_current = MM_BRK_BASE;
     }
     if (requested == 0) {
-        return (void *)(uintptr_t)task->mm->brk_current;
+        return (void *)(unsigned long)task->mm->brk_current;
     }
     if (requested < task->mm->brk_start || requested >= MM_USER_BASE) {
-        return (void *)(uintptr_t)task->mm->brk_current;
+        return (void *)(unsigned long)task->mm->brk_current;
     }
 
     aligned = mm_align_up(requested - task->mm->brk_start, TASK_VMA_PAGE_SIZE);
     if (aligned == 0 && requested > task->mm->brk_start) {
-        return (void *)(uintptr_t)task->mm->brk_current;
+        return (void *)(unsigned long)task->mm->brk_current;
     }
 
     has_brk_vma = mm_find_brk_vma(task->mm, &brk_index);
@@ -2476,17 +2476,17 @@ void *brk_impl(void *addr) {
             mm_remove_vma_at(task->mm, brk_index);
         }
         task->mm->brk_current = task->mm->brk_start;
-        return (void *)(uintptr_t)task->mm->brk_current;
+        return (void *)(unsigned long)task->mm->brk_current;
     }
 
     if (!has_brk_vma) {
         void *image = __kmalloc_noprof((size_t)aligned, GFP_KERNEL | __GFP_ZERO);
         if (!image) {
-            return (void *)(uintptr_t)task->mm->brk_current;
+            return (void *)(unsigned long)task->mm->brk_current;
         }
         if (mm_add_vma(task->mm, task->mm->brk_start, aligned, PF_R | PF_W, TASK_VMA_ANON, image) != 0) {
             kfree(image);
-            return (void *)(uintptr_t)task->mm->brk_current;
+            return (void *)(unsigned long)task->mm->brk_current;
         }
     } else {
         struct task_vma *vma = &task->mm->vmas[brk_index];
@@ -2498,17 +2498,17 @@ void *brk_impl(void *addr) {
         if (aligned > SIZE_MAX || page_count == 0 || page_count > SIZE_MAX / sizeof(uint32_t) ||
             mm_range_overlaps_except(task->mm, task->mm->brk_start, task->mm->brk_start + aligned,
                                      brk_index)) {
-            return (void *)(uintptr_t)task->mm->brk_current;
+            return (void *)(unsigned long)task->mm->brk_current;
         }
 
         resized_image = __kmalloc_noprof((size_t)aligned, GFP_KERNEL | __GFP_ZERO);
         if (!resized_image) {
-            return (void *)(uintptr_t)task->mm->brk_current;
+            return (void *)(unsigned long)task->mm->brk_current;
         }
         resized_flags = __kmalloc_noprof((size_t)page_count * sizeof(*resized_flags), GFP_KERNEL | __GFP_ZERO);
         if (!resized_flags) {
             kfree(resized_image);
-            return (void *)(uintptr_t)task->mm->brk_current;
+            return (void *)(unsigned long)task->mm->brk_current;
         }
         copy_size = vma->image_size < (size_t)aligned ? vma->image_size : (size_t)aligned;
         memcpy(resized_image, vma->image, copy_size);
@@ -2525,5 +2525,5 @@ void *brk_impl(void *addr) {
     }
 
     task->mm->brk_current = requested;
-    return (void *)(uintptr_t)task->mm->brk_current;
+    return (void *)(unsigned long)task->mm->brk_current;
 }

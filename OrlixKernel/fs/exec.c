@@ -11,11 +11,11 @@
 /* Linux UAPI headers for ABI constants and types */
 #include <linux/errno.h>
 #include <linux/string.h>
-#include <linux/fcntl.h>
-#include <linux/elf.h>
-#include <linux/auxvec.h>
-#include <linux/stat.h>
-#include <asm/stat.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/auxvec.h>
+#include <uapi/linux/stat.h>
+#include <uapi/asm/stat.h>
 #ifdef SIG_DFL
 #undef SIG_DFL
 #endif
@@ -25,7 +25,7 @@
 #ifdef SIG_ERR
 #undef SIG_ERR
 #endif
-#include <linux/signal.h>
+#include <uapi/linux/signal.h>
 
 #include "../kernel/task.h"
 
@@ -42,10 +42,10 @@ extern ssize_t read_impl(int fd, void *buf, size_t count);
 extern ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsiz);
 
 /* Forward declarations for exec variants */
-int exec_native(struct task *task, const char *path, int argc, char **argv, char **envp);
-int exec_elf(struct task *task, const char *path, int argc, char **argv, char **envp);
-int exec_wasi(struct task *task, const char *path, int argc, char **argv, char **envp);
-int exec_script(struct task *task, const char *path, int argc, char **argv, char **envp);
+int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
+int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
+int exec_wasi(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
+int exec_script(struct task_struct *task, const char *path, int argc, char **argv, char **envp);
 enum exec_image_type exec_classify(const char *path);
 int exec_build_script_argv(const char *path, int argc, char **argv,
                            char *interpreter_path, size_t interpreter_path_len,
@@ -232,14 +232,14 @@ static uint64_t exec_phdr_vaddr(const struct exec_elf_load_plan *plan) {
 }
 
 static int exec_plan_range_is_loaded(const struct exec_elf_load_plan *plan, uint64_t vaddr, uint64_t size) {
-    if (!plan || size == 0 || size > UINT64_MAX - vaddr) {
+    if (!plan || size == 0 || size > (~0ULL) - vaddr) {
         return 0;
     }
     for (uint32_t i = 0; i < plan->segment_count; i++) {
         uint64_t start = plan->segments[i].vaddr;
         uint64_t end;
 
-        if (plan->segments[i].memsz > UINT64_MAX - start) {
+        if (plan->segments[i].memsz > (~0ULL) - start) {
             continue;
         }
         end = start + plan->segments[i].memsz;
@@ -316,7 +316,7 @@ static int exec_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size,
         return 0;
     }
     if (!image || image_size == 0 || image_size < size ||
-        mm->vma_count >= TASK_EXEC_MAX_VMAS || size > UINT64_MAX - start) {
+        mm->vma_count >= TASK_EXEC_MAX_VMAS || size > (~0ULL) - start) {
         return -ENOEXEC;
     }
     for (uint32_t i = 0; i < mm->vma_count; i++) {
@@ -359,13 +359,13 @@ static int exec_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size,
     return 0;
 }
 
-static int exec_dynamic_bytes(struct task *task, uint64_t vaddr, uint64_t size,
+static int exec_dynamic_bytes(struct task_struct *task, uint64_t vaddr, uint64_t size,
                               const Elf64_Dyn **out_entries, uint64_t *out_count) {
     const struct task_vma *vma;
     uint64_t offset;
 
     if (!task || !task->mm || !out_entries || !out_count || size == 0 ||
-        size % sizeof(Elf64_Dyn) != 0 || size > UINT64_MAX - vaddr) {
+        size % sizeof(Elf64_Dyn) != 0 || size > (~0ULL) - vaddr) {
         return -ENOEXEC;
     }
 
@@ -383,7 +383,7 @@ static int exec_dynamic_bytes(struct task *task, uint64_t vaddr, uint64_t size,
     return 0;
 }
 
-static int exec_parse_dynamic_info(struct task *task,
+static int exec_parse_dynamic_info(struct task_struct *task,
                                    uint64_t vaddr,
                                    uint64_t size,
                                    struct task_dynamic_info *info) {
@@ -452,7 +452,7 @@ static int exec_parse_dynamic_info(struct task *task,
     return -ENOEXEC;
 }
 
-static int exec_build_initial_elf_stack(struct task *task,
+static int exec_build_initial_elf_stack(struct task_struct *task,
                                         const struct exec_elf_load_plan *plan,
                                         const struct exec_elf_load_plan *interp_plan) {
     struct mm_struct *mm;
@@ -782,7 +782,7 @@ static int exec_resolve_script_chain(const char *resolved_path, char **argv_copy
             goto fail;
         }
         ret = vfs_resolve_virtual_path_task_follow(interpreter_path, current_path, sizeof(current_path),
-                                                   current_task() ? current_task()->fs : NULL, true);
+                                                   get_current() ? get_current()->fs : NULL, true);
         if (ret != 0) {
             exec_free_argv(next_argv);
             ret = ret < 0 ? ret : -ENOENT;
@@ -804,7 +804,7 @@ fail:
 }
 
 /* Internal: Ensure task has an exec_image allocated */
-static int exec_image_ensure(struct task *task) {
+static int exec_image_ensure(struct task_struct *task) {
     if (!task) {
         return -EINVAL;
     }
@@ -821,7 +821,7 @@ static int exec_image_ensure(struct task *task) {
     return 0;
 }
 
-static void exec_record_script_image(struct task *task, const char *path, const char *interpreter_path) {
+static void exec_record_script_image(struct task_struct *task, const char *path, const char *interpreter_path) {
     if (!task || !task->exec_image || !path || !interpreter_path) {
         return;
     }
@@ -952,8 +952,6 @@ static int exec_read_image_file(const char *path, void **out_image, size_t *out_
     void *image;
     size_t image_capacity = 4096;
     size_t offset = 0;
-    int ret;
-
     if (!path || !out_image || !out_size) {
         return -EINVAL;
     }
@@ -1035,7 +1033,7 @@ static int exec_resolve_elf_interpreter(const char *interpreter, char *resolved,
     }
 
     ret = vfs_resolve_virtual_path_task_follow(interpreter, resolved, resolved_len,
-                                               current_task() ? current_task()->fs : NULL, true);
+                                               get_current() ? get_current()->fs : NULL, true);
     return ret;
 }
 
@@ -1259,7 +1257,7 @@ enum exec_image_type exec_classify(const char *path) {
     return EXEC_IMAGE_NONE;
 }
 
-void exec_reset_signals(struct signal_state *sighand) {
+void exec_reset_signals(struct signal_struct *sighand) {
     if (!sighand) {
         return;
     }
@@ -1292,14 +1290,14 @@ static int exec_path_from_fd(int fd, char *path, size_t path_len) {
 }
 
 static int execve_resolved_path(const char *resolved_path, char *const argv[], char *const envp[]) {
-    struct task *task;
+    struct task_struct *task;
     int ret;
 
     if (!resolved_path || resolved_path[0] == '\0') {
         return -ENOENT;
     }
 
-    task = current_task();
+    task = get_current();
     if (!task) {
         return -ESRCH;
     }
@@ -1446,7 +1444,7 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
 int execve_impl(const char *pathname, char *const argv[], char *const envp[]) {
     char resolved_path[MAX_PATH];
     int ret;
-    struct task *task;
+    struct task_struct *task;
 
     if (!pathname) {
         return -EFAULT;
@@ -1456,7 +1454,7 @@ int execve_impl(const char *pathname, char *const argv[], char *const envp[]) {
         return -ENOENT;
     }
 
-    task = current_task();
+    task = get_current();
     if (!task) {
         return -ESRCH;
     }
@@ -1525,7 +1523,7 @@ int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *con
     return execve_resolved_path(resolved_path, argv, envp);
 }
 
-int exec_native(struct task *task, const char *path, int argc, char **argv, char **envp) {
+int exec_native(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
     native_program_t program;
     if (native_lookup_program(path, &program) != 0) {
         return -ENOENT;
@@ -1538,7 +1536,7 @@ int exec_native(struct task *task, const char *path, int argc, char **argv, char
     return program.entry(argc, argv, envp);
 }
 
-int exec_elf(struct task *task, const char *path, int argc, char **argv, char **envp) {
+int exec_elf(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
     void *image = NULL;
     size_t image_size = 0;
     struct exec_elf_load_plan plan;
@@ -1727,7 +1725,7 @@ int exec_elf(struct task *task, const char *path, int argc, char **argv, char **
     return 0;
 }
 
-int exec_wasi(struct task *task, const char *path, int argc, char **argv, char **envp) {
+int exec_wasi(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
     (void)task;
     (void)path;
     (void)argc;
@@ -1736,7 +1734,7 @@ int exec_wasi(struct task *task, const char *path, int argc, char **argv, char *
     return -ENOEXEC;
 }
 
-int exec_script(struct task *task, const char *path, int argc, char **argv, char **envp) {
+int exec_script(struct task_struct *task, const char *path, int argc, char **argv, char **envp) {
     int ret;
 
     if (!task || !path || !argv) {

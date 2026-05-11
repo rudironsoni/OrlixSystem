@@ -3,17 +3,16 @@
 #include "task.h"
 #include "wait_queue.h"
 
+#include <linux/atomic.h>
 #include <linux/errno.h>
 #include <linux/string.h>
-#include <stdatomic.h>
-#include <stdint.h>
 
-#include <linux/futex.h>
+#include <uapi/linux/futex.h>
 
 #define KERNEL_WAIT_WORD_BUCKETS 64
 
 struct futex_bucket {
-    uintptr_t uaddr;
+    unsigned long uaddr;
     int used;
     struct wait_queue_head wait;
     struct futex_waiter *waiter_list;
@@ -33,10 +32,18 @@ struct futex_waiter {
 
 static struct wait_queue_head futex_table_lock;
 static struct futex_bucket futex_table[KERNEL_WAIT_WORD_BUCKETS];
-static atomic_int futex_table_state = 0;
+static atomic_t futex_table_state = ATOMIC_INIT(0);
+
+static int futex_user_load(const int *uaddr) {
+    return __atomic_load_n(uaddr, __ATOMIC_SEQ_CST);
+}
+
+static void futex_user_store(int *uaddr, int value) {
+    __atomic_store_n(uaddr, value, __ATOMIC_SEQ_CST);
+}
 
 void futex_reset_impl(void) {
-    if (atomic_load(&futex_table_state) != 2) {
+    if (atomic_read(&futex_table_state) != 2) {
         return;
     }
 
@@ -53,25 +60,25 @@ void futex_reset_impl(void) {
 static int futex_table_init_once(void) {
     int expected = 0;
 
-    if (atomic_load(&futex_table_state) == 2) {
+    if (atomic_read(&futex_table_state) == 2) {
         return 0;
     }
-    if (atomic_compare_exchange_strong(&futex_table_state, &expected, 1)) {
+    if (atomic_cmpxchg(&futex_table_state, expected, 1) == expected) {
         if (wait_queue_init(&futex_table_lock) != 0) {
-            atomic_store(&futex_table_state, 0);
+            atomic_set(&futex_table_state, 0);
             return -ENOMEM;
         }
         memset(futex_table, 0, sizeof(futex_table));
-        atomic_store(&futex_table_state, 2);
+        atomic_set(&futex_table_state, 2);
     } else {
-        while (atomic_load(&futex_table_state) == 1) {
+        while (atomic_read(&futex_table_state) == 1) {
             wait_queue_sleep_ms(1);
         }
     }
-    return atomic_load(&futex_table_state) == 2 ? 0 : -ENOMEM;
+    return atomic_read(&futex_table_state) == 2 ? 0 : -ENOMEM;
 }
 
-static struct futex_bucket *futex_find_bucket_locked(uintptr_t uaddr, int create) {
+static struct futex_bucket *futex_find_bucket_locked(unsigned long uaddr, int create) {
     struct futex_bucket *free_bucket = NULL;
 
     for (int i = 0; i < KERNEL_WAIT_WORD_BUCKETS; i++) {
@@ -136,12 +143,12 @@ static int futex_wait_common_impl(int *uaddr, int expected, int timeout_ms, uint
     if (futex_table_init_once() != 0) {
         return -ENOMEM;
     }
-    if (atomic_load((_Atomic int *)uaddr) != expected) {
+    if (futex_user_load(uaddr) != expected) {
         return -EAGAIN;
     }
 
     wait_queue_lock(&futex_table_lock);
-    bucket = futex_find_bucket_locked((uintptr_t)uaddr, 1);
+    bucket = futex_find_bucket_locked((unsigned long)uaddr, 1);
     wait_queue_unlock(&futex_table_lock);
     if (!bucket) {
         return -ENOMEM;
@@ -155,7 +162,7 @@ static int futex_wait_common_impl(int *uaddr, int expected, int timeout_ms, uint
     waiter.bitset = bitset ? bitset : FUTEX_BITSET_MATCH_ANY;
 
     wait_queue_lock(&bucket->wait);
-    if (atomic_load((_Atomic int *)uaddr) != expected) {
+    if (futex_user_load(uaddr) != expected) {
         wait_queue_unlock(&bucket->wait);
         return -EAGAIN;
     }
@@ -171,8 +178,8 @@ static int futex_wait_common_impl(int *uaddr, int expected, int timeout_ms, uint
             futex_waiter_remove_locked(bucket, &waiter);
             wait_queue_unlock(&bucket->wait);
             if (ret == -EINTR) {
-                task_restart_record_impl(current_task(), TASK_RESTART_FUTEX_WAIT,
-                                         (uint64_t)(uintptr_t)uaddr,
+                task_restart_record_impl(get_current(), TASK_RESTART_FUTEX_WAIT,
+                                         (uint64_t)(unsigned long)uaddr,
                                          (uint64_t)(int64_t)expected,
                                          (uint64_t)(int64_t)timeout_ms,
                                          0, 0, 0);
@@ -186,26 +193,24 @@ static int futex_wait_common_impl(int *uaddr, int expected, int timeout_ms, uint
             return 0;
         }
 
-	        if (waiter.requeued && waiter.bucket != bucket) {
-	            struct futex_bucket *old_bucket = bucket;
-	            struct futex_bucket *new_bucket = waiter.bucket;
-	            wait_queue_unlock(&old_bucket->wait);
-	            bucket = new_bucket;
-	            wait_queue_lock(&bucket->wait);
-	            continue;
-	        }
+        if (waiter.requeued && waiter.bucket != bucket) {
+            struct futex_bucket *old_bucket = bucket;
+            struct futex_bucket *new_bucket = waiter.bucket;
+            wait_queue_unlock(&old_bucket->wait);
+            bucket = new_bucket;
+            wait_queue_lock(&bucket->wait);
+            continue;
+        }
 
-	        /* If we were woken while not yet waiting on the new bucket, do not miss it. */
-	        if (waiter.woken) {
-	            futex_waiter_remove_locked(bucket, &waiter);
-	            wait_queue_unlock(&bucket->wait);
-	            return 0;
-	        }
+        if (waiter.woken) {
+            futex_waiter_remove_locked(bucket, &waiter);
+            wait_queue_unlock(&bucket->wait);
+            return 0;
+        }
 
-	        /* Spurious wakeups: keep waiting as long as the expected value matches. */
-	        if (waiter.check_expected && atomic_load((_Atomic int *)waiter.wait_uaddr) != waiter.expected) {
-	            futex_waiter_remove_locked(bucket, &waiter);
-	            wait_queue_unlock(&bucket->wait);
+        if (waiter.check_expected && futex_user_load(waiter.wait_uaddr) != waiter.expected) {
+            futex_waiter_remove_locked(bucket, &waiter);
+            wait_queue_unlock(&bucket->wait);
             return -EAGAIN;
         }
     }
@@ -240,7 +245,7 @@ int futex_wake_impl(int *uaddr, int max_wake) {
     }
 
     wait_queue_lock(&futex_table_lock);
-    bucket = futex_find_bucket_locked((uintptr_t)uaddr, 0);
+    bucket = futex_find_bucket_locked((unsigned long)uaddr, 0);
     wait_queue_unlock(&futex_table_lock);
     if (!bucket) {
         return 0;
@@ -279,7 +284,7 @@ static int futex_wake_bitset_impl(int *uaddr, int max_wake, uint32_t bitset) {
     }
 
     wait_queue_lock(&futex_table_lock);
-    bucket = futex_find_bucket_locked((uintptr_t)uaddr, 0);
+    bucket = futex_find_bucket_locked((unsigned long)uaddr, 0);
     wait_queue_unlock(&futex_table_lock);
     if (!bucket) {
         return 0;
@@ -319,13 +324,13 @@ static int futex_requeue_impl(int *uaddr, int nr_wake, int nr_requeue, int *uadd
     if (futex_table_init_once() != 0) {
         return -ENOMEM;
     }
-    if (use_cmp && atomic_load((_Atomic int *)uaddr) != cmpval) {
+    if (use_cmp && futex_user_load(uaddr) != cmpval) {
         return -EAGAIN;
     }
 
     wait_queue_lock(&futex_table_lock);
-    src = futex_find_bucket_locked((uintptr_t)uaddr, 0);
-    dst = futex_find_bucket_locked((uintptr_t)uaddr2, 1);
+    src = futex_find_bucket_locked((unsigned long)uaddr, 0);
+    dst = futex_find_bucket_locked((unsigned long)uaddr2, 1);
     wait_queue_unlock(&futex_table_lock);
 
     if (!dst) {
@@ -401,10 +406,10 @@ int futex_op_impl(int *uaddr, int futex_op, int val, int timeout_ms, int *uaddr2
 }
 
 int set_robust_list_impl(void *head, unsigned long len) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
 
     if (!task && task_init() == 0) {
-        task = current_task();
+        task = get_current();
     }
     if (!task) {
         return -ESRCH;
@@ -412,22 +417,22 @@ int set_robust_list_impl(void *head, unsigned long len) {
     if (!head || len == 0) {
         return -EINVAL;
     }
-    task->robust_list_head = (uint64_t)(uintptr_t)head;
+    task->robust_list_head = (uint64_t)(unsigned long)head;
     task->robust_list_len = (uint64_t)len;
     return 0;
 }
 
 int get_robust_list_impl(int pid, void **head, unsigned long *len) {
-    struct task *task;
+    struct task_struct *task;
 
     if (!head || !len) {
         return -EFAULT;
     }
     if (pid == 0) {
-        task = current_task();
+        task = get_current();
         if (!task) {
             task_init();
-            task = current_task();
+            task = get_current();
         }
     } else {
         task = task_lookup(pid);
@@ -435,7 +440,7 @@ int get_robust_list_impl(int pid, void **head, unsigned long *len) {
     if (!task) {
         return -ESRCH;
     }
-    *head = (void *)(uintptr_t)task->robust_list_head;
+    *head = (void *)(unsigned long)task->robust_list_head;
     *len = (unsigned long)task->robust_list_len;
     if (pid != 0) {
         free_task(task);
@@ -449,22 +454,22 @@ static void futex_mark_owner_died(int *uaddr, int32_t pid) {
     if (!uaddr || pid <= 0) {
         return;
     }
-    value = atomic_load((_Atomic int *)uaddr);
+    value = futex_user_load(uaddr);
     if ((value & FUTEX_TID_MASK) != pid) {
         return;
     }
-    atomic_store((_Atomic int *)uaddr, (value & ~FUTEX_TID_MASK) | FUTEX_OWNER_DIED);
+    futex_user_store(uaddr, (value & ~FUTEX_TID_MASK) | FUTEX_OWNER_DIED);
     futex_wake_impl(uaddr, 1);
 }
 
-static void futex_walk_robust_list(struct task *task) {
+static void futex_walk_robust_list(struct task_struct *task) {
     struct robust_list_head *head;
     struct robust_list *entry;
 
     if (!task || task->robust_list_head == 0) {
         return;
     }
-    head = (struct robust_list_head *)(uintptr_t)task->robust_list_head;
+    head = (struct robust_list_head *)(unsigned long)task->robust_list_head;
     entry = head->list.next;
     for (int i = 0; entry && entry != &head->list && i < 2048; i++) {
         struct robust_list *next = entry->next;
@@ -478,7 +483,7 @@ static void futex_walk_robust_list(struct task *task) {
     }
 }
 
-void futex_task_exit_impl(struct task *task) {
+void futex_task_exit_impl(struct task_struct *task) {
     int *clear_child_tid;
 
     if (!task) {
@@ -488,8 +493,8 @@ void futex_task_exit_impl(struct task *task) {
     if (task->clear_child_tid == 0) {
         return;
     }
-    clear_child_tid = (int *)(uintptr_t)task->clear_child_tid;
-    atomic_store((_Atomic int *)clear_child_tid, 0);
+    clear_child_tid = (int *)(unsigned long)task->clear_child_tid;
+    futex_user_store(clear_child_tid, 0);
     futex_wake_impl(clear_child_tid, 1);
     task->clear_child_tid = 0;
 }

@@ -8,25 +8,20 @@
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
 
-/* Minimal standard headers */
-#include <errno.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <poll.h>
-
-/* Standard system headers */
-#include <dirent.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#include <sys/select.h>
-#include <unistd.h>
+#include <uapi/asm-generic/errno.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/fs.h>
+#include <uapi/linux/poll.h>
+#include <uapi/linux/stat.h>
+#include <linux/dirent.h>
+#include <linux/fs_types.h>
+#include <linux/string.h>
+#include <linux/types.h>
 
 /* Orlix VFS types */
 #include "fs/vfs.h"
+#include "fs/fdtable.h"
 #include "fs/path.h"
 #include "kernel/task.h"
 #include "kernel/signal.h"
@@ -35,32 +30,41 @@
 #include "linux_umount2_flags.h"
 
 /* Linux UAPI test support - semantic helpers only */
-#include "LinuxUAPITestSupport.h"
+#include "../../LinuxUAPITestSupport.h"
 
 #ifndef INVALID_FLAG_TEST_VALUE
 #define INVALID_FLAG_TEST_VALUE 0x40000000u
 #endif
 
-struct linux_dirent64 {
-    uint64_t d_ino;
-    int64_t d_off;
-    unsigned short d_reclen;
-    unsigned char d_type;
-    char d_name[];
-};
+#ifndef ENOTSUP
+#define ENOTSUP EOPNOTSUPP
+#endif
 
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
+extern long read(int fd, void *buf, size_t count);
+extern long write(int fd, const void *buf, size_t count);
+extern ssize_t pread(int fd, void *buf, size_t count, int64_t offset);
+extern ssize_t pwrite(int fd, const void *buf, size_t count, int64_t offset);
+extern int64_t lseek(int fd, int64_t offset, int whence);
+extern ssize_t readlink(const char *pathname, char *buf, size_t bufsiz);
 #include "internal/fs/rootfs.h"
 extern int stat_impl(const char *path, struct stat *statbuf);
 extern int fstat_impl(int fd, struct stat *statbuf);
 extern int lstat_impl(const char *path, struct stat *statbuf);
+extern int access(const char *pathname, int mode);
+extern int dup(int oldfd);
+extern int getpid(void);
+extern int kill(int pid, int sig);
+extern int unlink(const char *pathname);
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
+extern int openat_impl(int dirfd, const char *pathname, int flags, uint32_t mode);
 extern int dup2_impl(int oldfd, int newfd);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long pread_impl(int fd, void *buf, size_t count, int64_t offset);
 extern void cred_reset_to_defaults(void);
 extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
+extern int errno;
 
 #define KUNIT_ASSERT_EQ_MSG(actual_value, expected_value, ...) \
     KUNIT_ASSERT_EQ(test, actual_value, expected_value)
@@ -74,6 +78,90 @@ extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
     KUNIT_ASSERT_STREQ(test, actual_value, expected_value)
 #define KUNIT_ASSERT_NOT_NULL_MSG(ptr, ...) \
     KUNIT_ASSERT_NOT_NULL(test, ptr)
+
+static int open(const char *pathname, int flags, ...) {
+    uint32_t mode = 0;
+
+    if (flags & (O_CREAT | O_TMPFILE)) {
+        __builtin_va_list ap;
+
+        __builtin_va_start(ap, flags);
+        mode = (uint32_t)__builtin_va_arg(ap, int);
+        __builtin_va_end(ap);
+    }
+
+    return open_impl(pathname, flags, mode);
+}
+
+static int openat(int dirfd, const char *pathname, int flags, ...) {
+    uint32_t mode = 0;
+
+    if (flags & (O_CREAT | O_TMPFILE)) {
+        __builtin_va_list ap;
+
+        __builtin_va_start(ap, flags);
+        mode = (uint32_t)__builtin_va_arg(ap, int);
+        __builtin_va_end(ap);
+    }
+
+    return openat_impl(dirfd, pathname, flags, mode);
+}
+
+static int close(int fd) {
+    return close_impl(fd);
+}
+
+static int vfs_path_join(char *buf, size_t buf_len, const char *root, const char *suffix) {
+    size_t root_len;
+    size_t suffix_len;
+
+    if (!buf || !root || !suffix || buf_len == 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    root_len = strlen(root);
+    suffix_len = strlen(suffix);
+    if (root_len + suffix_len + 1 > buf_len) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    memcpy(buf, root, root_len);
+    memcpy(buf + root_len, suffix, suffix_len + 1);
+    return 0;
+}
+
+static int vfs_path_proc_fd_string(char *buf, size_t buf_len, int fd) {
+    static const char prefix[] = "/proc/self/fd/";
+    char digits[16];
+    size_t prefix_len = sizeof(prefix) - 1;
+    size_t digit_len = 0;
+    unsigned int value;
+
+    if (!buf || buf_len == 0 || fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    value = (unsigned int)fd;
+    do {
+        digits[digit_len++] = (char)('0' + (value % 10));
+        value /= 10;
+    } while (value != 0 && digit_len < sizeof(digits));
+
+    if (prefix_len + digit_len + 1 > buf_len) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+
+    memcpy(buf, prefix, prefix_len);
+    for (size_t i = 0; i < digit_len; i++) {
+        buf[prefix_len + i] = digits[digit_len - 1 - i];
+    }
+    buf[prefix_len + digit_len] = '\0';
+    return 0;
+}
 
 static void vfs_path_suite_init(struct kunit *test) {
     KUNIT_ASSERT_EQ(test, start_kernel(), 0);
@@ -119,7 +207,8 @@ static void testTempPathTranslatesToTempBackingRoot(struct kunit *test) {
     char expectedPath[MAX_PATH];
     int ret = vfs_translate_path("/tmp/demo", host_path, sizeof(host_path));
     const char *actualPath = host_path;
-    snprintf(expectedPath, sizeof(expectedPath), "%s/demo", vfs_temp_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expectedPath, sizeof(expectedPath),
+        vfs_temp_backing_root(), "/demo"), 0);
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "temp virtual path should translate");
     KUNIT_ASSERT_STREQ_MSG(actualPath, expectedPath, "temp path should resolve under temp backing root");
@@ -132,7 +221,8 @@ static void testRelativePersistentPathMapsUnderPersistentBackingRoot(struct kuni
     char expectedPath[MAX_PATH];
     int ret = vfs_translate_path("etc/passwd", host_path, sizeof(host_path));
     const char *actualPath = host_path;
-    snprintf(expectedPath, sizeof(expectedPath), "%s/etc/passwd", vfs_persistent_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expectedPath, sizeof(expectedPath),
+        vfs_persistent_backing_root(), "/etc/passwd"), 0);
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "relative virtual path should translate");
     KUNIT_ASSERT_STREQ_MSG(actualPath, expectedPath, "relative path should resolve under persistent backing root");
@@ -157,7 +247,8 @@ static void testPersistentBackingRootReverseTranslatesToVirtualRoot(struct kunit
 static void testMappedPersistentHostPathReverseTranslatesToVirtualPath(struct kunit *test) {
     char virtual_path[MAX_PATH];
     char hostPath[MAX_PATH];
-    snprintf(hostPath, sizeof(hostPath), "%s/var/log", vfs_persistent_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(hostPath, sizeof(hostPath),
+        vfs_persistent_backing_root(), "/var/log"), 0);
     int ret = vfs_reverse_translate(hostPath, virtual_path, sizeof(virtual_path));
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "mapped persistent host path should reverse translate");
@@ -244,7 +335,8 @@ static void testPersistentFallbackRouteTranslatesAndReverseTranslates(struct kun
     KUNIT_ASSERT_EQ_MSG(ret, 0, "fallback persistent path should translate");
 
     actualPath = host_path;
-    snprintf(expectedPath, sizeof(expectedPath), "%s/var/log/messages", vfs_persistent_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expectedPath, sizeof(expectedPath),
+        vfs_persistent_backing_root(), "/var/log/messages"), 0);
     KUNIT_ASSERT_STREQ_MSG(actualPath, expectedPath,
                           "fallback persistent route should join under persistent backing root");
 
@@ -363,7 +455,8 @@ static void testTaskAwareAbsolutePathUsesVirtualRoot(struct kunit *test) {
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "absolute path translation should succeed");
     const char *result = host_path;
-    snprintf(expected, sizeof(expected), "%s/bin/ls", vfs_primary_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expected, sizeof(expected),
+        vfs_primary_backing_root(), "/bin/ls"), 0);
     KUNIT_ASSERT_STREQ_MSG(result, expected, "absolute path should resolve from virtual root");
 
     free_fs_struct(fs);
@@ -385,7 +478,8 @@ static void testTaskAwareRelativePathUsesPwd(struct kunit *test) {
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "relative path translation should succeed");
     const char *result = host_path;
-    snprintf(expected, sizeof(expected), "%s/etc/passwd", vfs_primary_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expected, sizeof(expected),
+        vfs_primary_backing_root(), "/etc/passwd"), 0);
     KUNIT_ASSERT_STREQ_MSG(result, expected, "relative path should resolve from virtual pwd");
 
     free_fs_struct(fs);
@@ -407,7 +501,8 @@ static void testTaskAwareRelativePathWithSubdirectories(struct kunit *test) {
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "nested relative path translation should succeed");
     const char *result = host_path;
-    snprintf(expected, sizeof(expected), "%s/usr/local/bin/myapp", vfs_primary_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expected, sizeof(expected),
+        vfs_primary_backing_root(), "/usr/local/bin/myapp"), 0);
     KUNIT_ASSERT_STREQ_MSG(result, expected, "relative path should resolve correctly from nested pwd");
 
     free_fs_struct(fs);
@@ -445,7 +540,8 @@ static void testTaskAwareAbsolutePathUsesTaskRootPrefix(struct kunit *test) {
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "absolute path translation should succeed from non-root task root");
     const char *result = host_path;
-    snprintf(expected, sizeof(expected), "%s/sandbox/bin/ls", vfs_primary_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expected, sizeof(expected),
+        vfs_primary_backing_root(), "/sandbox/bin/ls"), 0);
     KUNIT_ASSERT_STREQ_MSG(result, expected, "absolute paths should resolve from task root prefix");
 
     free_fs_struct(fs);
@@ -500,7 +596,8 @@ static void testVfsTranslatePathAtUsesAtFdcwd(struct kunit *test) {
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "vfs_translate_path_at with AT_FDCWD should succeed");
     const char *result = host_path;
-    snprintf(expected, sizeof(expected), "%s/etc/passwd", vfs_primary_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expected, sizeof(expected),
+        vfs_primary_backing_root(), "/etc/passwd"), 0);
     KUNIT_ASSERT_STREQ_MSG(result, expected, "AT_FDCWD should resolve from task cwd");
 }
 
@@ -511,7 +608,8 @@ static void testVfsTranslatePathAtAbsolutePathIgnoresDirfd(struct kunit *test) {
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "absolute path should succeed regardless of invalid dirfd");
     const char *result = host_path;
-    snprintf(expected, sizeof(expected), "%s/bin/ls", vfs_primary_backing_root());
+    KUNIT_ASSERT_EQ(test, vfs_path_join(expected, sizeof(expected),
+        vfs_primary_backing_root(), "/bin/ls"), 0);
     KUNIT_ASSERT_STREQ_MSG(result, expected, "absolute paths should resolve from task root");
 }
 
@@ -778,24 +876,24 @@ static void testSyntheticChildStatHandlesSupportedProcFilesAndRejectsUnsupported
 }
 
 static void testSyntheticRootAccessSucceeds(struct kunit *test) {
-    KUNIT_ASSERT_EQ_MSG(vfs_faccessat(AT_FDCWD, "/proc", F_OK, 0), 0,
+    KUNIT_ASSERT_EQ_MSG(vfs_faccessat(AT_FDCWD, "/proc", 0, 0), 0,
                    "synthetic root vfs_faccessat should succeed");
-    KUNIT_ASSERT_EQ_MSG(vfs_faccessat(AT_FDCWD, "/sys", F_OK, 0), 0,
+    KUNIT_ASSERT_EQ_MSG(vfs_faccessat(AT_FDCWD, "/sys", 0, 0), 0,
                    "synthetic root vfs_faccessat should succeed for /sys");
-    KUNIT_ASSERT_EQ_MSG(vfs_faccessat(AT_FDCWD, "/dev", F_OK, 0), 0,
+    KUNIT_ASSERT_EQ_MSG(vfs_faccessat(AT_FDCWD, "/dev", 0, 0), 0,
                    "synthetic root vfs_faccessat should succeed for /dev");
 
     errno = 0;
-    KUNIT_ASSERT_EQ_MSG(access("/proc", F_OK), 0,
+    KUNIT_ASSERT_EQ_MSG(access("/proc", 0), 0,
                    "public access should succeed for synthetic root");
 }
 
 static void testSyntheticChildAccessHandlesSupportedProcFiles(struct kunit *test) {
-    KUNIT_ASSERT_EQ_MSG(vfs_faccessat(AT_FDCWD, "/proc/meminfo", F_OK, 0), 0,
+    KUNIT_ASSERT_EQ_MSG(vfs_faccessat(AT_FDCWD, "/proc/meminfo", 0, 0), 0,
                    "/proc/meminfo should be visible through vfs_faccessat");
 
     errno = 0;
-    KUNIT_ASSERT_EQ_MSG(access("/proc/meminfo", F_OK), 0,
+    KUNIT_ASSERT_EQ_MSG(access("/proc/meminfo", 0), 0,
                    "public access should support /proc/meminfo");
 }
 
@@ -1025,19 +1123,19 @@ static void testDevUrandomStatSucceeds(struct kunit *test) {
 
 static void testDevNullAccessSucceeds(struct kunit *test) {
     errno = 0;
-    KUNIT_ASSERT_EQ_MSG(access("/dev/null", F_OK), 0, "access(/dev/null, F_OK) should succeed");
-    KUNIT_ASSERT_EQ_MSG(access("/dev/null", R_OK), 0, "access(/dev/null, R_OK) should succeed");
-    KUNIT_ASSERT_EQ_MSG(access("/dev/null", W_OK), 0, "access(/dev/null, W_OK) should succeed");
+    KUNIT_ASSERT_EQ_MSG(access("/dev/null", 0), 0, "access(/dev/null, 0) should succeed");
+    KUNIT_ASSERT_EQ_MSG(access("/dev/null", 4), 0, "access(/dev/null, 4) should succeed");
+    KUNIT_ASSERT_EQ_MSG(access("/dev/null", 2), 0, "access(/dev/null, 2) should succeed");
 }
 
 static void testDevZeroAccessSucceeds(struct kunit *test) {
     errno = 0;
-    KUNIT_ASSERT_EQ_MSG(access("/dev/zero", F_OK), 0, "access(/dev/zero, F_OK) should succeed");
+    KUNIT_ASSERT_EQ_MSG(access("/dev/zero", 0), 0, "access(/dev/zero, 0) should succeed");
 }
 
 static void testDevUrandomAccessSucceeds(struct kunit *test) {
     errno = 0;
-    KUNIT_ASSERT_EQ_MSG(access("/dev/urandom", F_OK), 0, "access(/dev/urandom, F_OK) should succeed");
+    KUNIT_ASSERT_EQ_MSG(access("/dev/urandom", 0), 0, "access(/dev/urandom, 0) should succeed");
 }
 
 static void testDevNullOpenSucceeds(struct kunit *test) {
@@ -1189,13 +1287,13 @@ static void testUnsupportedDevNodeStillFails(struct kunit *test) {
 }
 
 static void testVfsFaccessatSupportsAtFdcwd(struct kunit *test) {
-    int ret = vfs_faccessat(AT_FDCWD, "/etc", X_OK, 0);
+    int ret = vfs_faccessat(AT_FDCWD, "/etc", 1, 0);
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "vfs_faccessat with AT_FDCWD should succeed");
 }
 
 static void testVfsFaccessatRejectsInvalidFlags(struct kunit *test) {
-    int ret = vfs_faccessat(AT_FDCWD, "/etc", X_OK, INVALID_FLAG_TEST_VALUE);
+    int ret = vfs_faccessat(AT_FDCWD, "/etc", 1, INVALID_FLAG_TEST_VALUE);
 
     KUNIT_ASSERT_EQ_MSG(ret, -EINVAL, "vfs_faccessat should reject invalid flags");
 }
@@ -2094,7 +2192,7 @@ static void testProcSelfFdSymlinksReflectActualFdState(struct kunit *test) {
     // Construct the /proc/self/fd path for this fd
     char fd_path[64];
     char fdPathString[64];
-    snprintf(fdPathString, sizeof(fdPathString), "/proc/self/fd/%d", test_fd);
+    KUNIT_ASSERT_EQ(test, vfs_path_proc_fd_string(fdPathString, sizeof(fdPathString), test_fd), 0);
     const char *fdPathUTF8 = fdPathString;
     KUNIT_ASSERT_NOT_NULL_MSG(fdPathString, "fd path string should be created");
     KUNIT_ASSERT_NE_MSG(fdPathUTF8, NULL, "fd path UTF8 conversion should succeed");
@@ -2270,7 +2368,7 @@ static void testDevTtyStatFails(struct kunit *test) {
 
 static void testDevTtyAccessFails(struct kunit *test) {
     errno = 0;
-    int ret = access("/dev/tty", F_OK);
+    int ret = access("/dev/tty", 0);
 
     KUNIT_ASSERT_EQ_MSG(ret, 0, "access(/dev/tty) should report the devfs node even without a controlling tty");
 }
@@ -2604,18 +2702,18 @@ static void testLseekProcSelfFdinfoPolicyIsExplicit(struct kunit *test) {
 
     /* Current policy: synthetic proc files return ESPIPE for lseek */
     errno = 0;
-    off_t result = lseek(fd, 0, SEEK_SET);
-    KUNIT_ASSERT_EQ_MSG(result, (off_t)-1, "lseek on /proc/self/fdinfo should return -1");
+    int64_t result = lseek(fd, 0, SEEK_SET);
+    KUNIT_ASSERT_EQ_MSG(result, (int64_t)-1, "lseek on /proc/self/fdinfo should return -1");
     KUNIT_ASSERT_EQ_MSG(errno, ESPIPE, "lseek on synthetic proc file should set ESPIPE");
 
     errno = 0;
     result = lseek(fd, 0, SEEK_CUR);
-    KUNIT_ASSERT_EQ_MSG(result, (off_t)-1, "lseek(SEEK_CUR) on /proc/self/fdinfo should return -1");
+    KUNIT_ASSERT_EQ_MSG(result, (int64_t)-1, "lseek(SEEK_CUR) on /proc/self/fdinfo should return -1");
     KUNIT_ASSERT_EQ_MSG(errno, ESPIPE, "lseek on synthetic proc file should set ESPIPE");
 
     errno = 0;
     result = lseek(fd, 0, SEEK_END);
-    KUNIT_ASSERT_EQ_MSG(result, (off_t)-1, "lseek(SEEK_END) on /proc/self/fdinfo should return -1");
+    KUNIT_ASSERT_EQ_MSG(result, (int64_t)-1, "lseek(SEEK_END) on /proc/self/fdinfo should return -1");
     KUNIT_ASSERT_EQ_MSG(errno, ESPIPE, "lseek on synthetic proc file should set ESPIPE");
 
     close(fd);

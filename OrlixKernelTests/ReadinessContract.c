@@ -1,27 +1,19 @@
 #include <asm/ioctls.h>
 #include <asm/socket.h>
 #include <asm/unistd.h>
-#include <linux/eventfd.h>
-#include <linux/fcntl.h>
-#include <linux/net.h>
-#include <linux/poll.h>
-#include <linux/pidfd.h>
-#include <linux/socket.h>
-#include <linux/time.h>
-#include <linux/time_types.h>
-#include <linux/timerfd.h>
-
-#ifdef SIGUSR1
-#undef SIGUSR1
-#endif
+#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/net.h>
+#include <uapi/linux/pidfd.h>
+#include <uapi/linux/poll.h>
+#include <uapi/linux/socket.h>
+#include <uapi/linux/time.h>
+#include <uapi/linux/eventfd.h>
 #define __ASSEMBLY__ 1
-#include <asm-generic/signal.h>
+#include <uapi/asm-generic/signal.h>
 #undef __ASSEMBLY__
-#include <asm-generic/signal-defs.h>
-
-#include <errno.h>
-#include <stddef.h>
-#include <string.h>
+#include <uapi/linux/timerfd.h>
+#include <linux/string.h>
 
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
@@ -41,6 +33,7 @@ extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int signal_generate_task(struct task_struct *target, int32_t sig);
 extern void exit_impl(int status);
+extern int errno;
 
 static int close_if_open(int fd) {
     return fd >= 0 ? close_impl(fd) : 0;

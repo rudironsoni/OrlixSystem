@@ -33,6 +33,10 @@
 #error "CLOCK_REALTIME must resolve through the package-facing time.h owner"
 #endif
 
+#ifndef ITIMER_REAL
+#error "ITIMER_REAL must resolve through the package-facing sys/time.h owner"
+#endif
+
 static socklen_t mlibc_configure_probe_socklen(socklen_t len) {
     return len;
 }
@@ -57,6 +61,10 @@ static suseconds_t mlibc_configure_probe_usec(const struct timeval *tv) {
     return tv->tv_usec;
 }
 
+static time_t mlibc_configure_probe_itimer(const struct itimerval *timer) {
+    return timer->it_value.tv_sec;
+}
+
 static int mlibc_configure_probe_select_macros(fd_set *set, int fd) {
     FD_ZERO(set);
     FD_SET(fd, set);
@@ -70,5 +78,6 @@ __attribute__((unused)) static void (*volatile mlibc_configure_probe_refs[])(voi
     (void (*)(void))mlibc_configure_probe_time,
     (void (*)(void))mlibc_configure_probe_nsec,
     (void (*)(void))mlibc_configure_probe_usec,
+    (void (*)(void))mlibc_configure_probe_itimer,
     (void (*)(void))mlibc_configure_probe_select_macros,
 };

@@ -1,4 +1,4 @@
-#include <linux/futex.h>
+#include <uapi/linux/futex.h>
 
 #ifndef FUTEX_WAIT
 #error "FUTEX_WAIT must be defined by linux/futex.h"

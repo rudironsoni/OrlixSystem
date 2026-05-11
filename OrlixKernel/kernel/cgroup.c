@@ -38,7 +38,7 @@ static kernel_mutex_t cgroup_lock = KERNEL_MUTEX_INITIALIZER;
 static atomic64_t next_cgroup_ns_id = ATOMIC64_INIT(2);
 
 static bool cgroupfs_current_can_control(void) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     uint64_t owner_user_ns_id;
 
     if (!task) {
@@ -107,7 +107,7 @@ static struct cgroup *cgroup_find_absolute_locked(const char *path) {
     return NULL;
 }
 
-static int cgroup_absolute_from_visible(const struct task *task, const char *visible,
+static int cgroup_absolute_from_visible(const struct task_struct *task, const char *visible,
                                         char *out, size_t out_len) {
     const char *root_path;
     int ret;
@@ -140,7 +140,7 @@ static int cgroup_absolute_from_visible(const struct task *task, const char *vis
     return 0;
 }
 
-static int cgroup_visible_path_for_task(const struct task *task, char *out, size_t out_len) {
+static int cgroup_visible_path_for_task(const struct task_struct *task, char *out, size_t out_len) {
     const char *root_path;
     const char *task_path;
     size_t root_len;
@@ -175,8 +175,8 @@ static int cgroup_visible_path_for_task(const struct task *task, char *out, size
     return 0;
 }
 
-static bool cgroup_task_is_visible_to_task(const struct task *viewer,
-                                           const struct task *target) {
+static bool cgroup_task_is_visible_to_task(const struct task_struct *viewer,
+                                           const struct task_struct *target) {
     const char *root_path;
     const char *target_path;
 
@@ -202,7 +202,7 @@ int cgroup_init(void) {
     }
 
     memcpy(root_cgroup->path, "/", 2);
-    atomic_init(&root_cgroup->refs, 1);
+    atomic_set(&root_cgroup->refs, 1);
     root_cgroup->pids_max = -1;
     kernel_mutex_init(&root_cgroup->lock);
     kernel_mutex_unlock(&cgroup_lock);
@@ -227,7 +227,7 @@ struct cgroup *cgroup_get(struct cgroup *cgrp) {
     if (!cgrp) {
         return NULL;
     }
-    atomic_fetch_add(&cgrp->refs, 1);
+    atomic_inc(&cgrp->refs);
     return cgrp;
 }
 
@@ -235,7 +235,7 @@ void cgroup_put(struct cgroup *cgrp) {
     if (!cgrp) {
         return;
     }
-    if (atomic_fetch_sub(&cgrp->refs, 1) > 1) {
+    if (atomic_dec_return(&cgrp->refs) != 0) {
         return;
     }
     cgroup_free_tree(cgrp);
@@ -248,7 +248,7 @@ struct cgroup *cgroup_root(void) {
     return cgroup_get(root_cgroup);
 }
 
-int task_attach_cgroup(struct task *task, struct cgroup *cgrp) {
+int task_attach_cgroup(struct task_struct *task, struct cgroup *cgrp) {
     struct cgroup *old;
     int blocked = 0;
 
@@ -290,7 +290,7 @@ int task_attach_cgroup(struct task *task, struct cgroup *cgrp) {
     return 0;
 }
 
-int cgroup_attach_task_path(struct task *task, const char *path) {
+int cgroup_attach_task_path(struct task_struct *task, const char *path) {
     struct cgroup *target;
     int ret;
 
@@ -314,7 +314,7 @@ int cgroup_attach_task_path(struct task *task, const char *path) {
     return ret;
 }
 
-void task_detach_cgroup(struct task *task) {
+void task_detach_cgroup(struct task_struct *task) {
     struct cgroup *old;
 
     if (!task || !task->cgroup) {
@@ -331,7 +331,7 @@ void task_detach_cgroup(struct task *task) {
     cgroup_put(old);
 }
 
-int task_unshare_cgroup_namespace(struct task *task) {
+int task_unshare_cgroup_namespace(struct task_struct *task) {
     struct cgroup *old_root;
 
     if (!task || !task->cgroup) {
@@ -339,7 +339,7 @@ int task_unshare_cgroup_namespace(struct task *task) {
     }
     old_root = task->cgroup_ns_root;
     task->cgroup_ns_root = cgroup_get(task->cgroup);
-    task->cgroup_ns_id = atomic_fetch_add(&next_cgroup_ns_id, 1);
+    task->cgroup_ns_id = (uint64_t)atomic64_inc_return(&next_cgroup_ns_id) - 1ULL;
     task->cgroup_ns_owner_user_ns_id = cred_user_namespace_id(task->cred);
     if (task->cgroup_ns_owner_user_ns_id == 0) {
         task->cgroup_ns_owner_user_ns_id = 1;
@@ -348,7 +348,7 @@ int task_unshare_cgroup_namespace(struct task *task) {
     return 0;
 }
 
-int task_reset_cgroup_namespace(struct task *task) {
+int task_reset_cgroup_namespace(struct task_struct *task) {
     struct cgroup *old_root;
     struct cgroup *root;
 
@@ -367,28 +367,28 @@ int task_reset_cgroup_namespace(struct task *task) {
     return 0;
 }
 
-uint64_t task_cgroup_namespace_id(const struct task *task) {
+uint64_t task_cgroup_namespace_id(const struct task_struct *task) {
     if (!task) {
         return 0;
     }
     return task->cgroup_ns_id == 0 ? 1 : task->cgroup_ns_id;
 }
 
-uint64_t task_cgroup_namespace_owner_user_ns_id(const struct task *task) {
+uint64_t task_cgroup_namespace_owner_user_ns_id(const struct task_struct *task) {
     if (!task || task->cgroup_ns_owner_user_ns_id == 0) {
         return 1;
     }
     return task->cgroup_ns_owner_user_ns_id;
 }
 
-const char *task_cgroup_path(const struct task *task) {
+const char *task_cgroup_path(const struct task_struct *task) {
     if (!task || !task->cgroup) {
         return "/";
     }
     return task->cgroup->path;
 }
 
-unsigned int task_cgroup_member_count(const struct task *task) {
+unsigned int task_cgroup_member_count(const struct task_struct *task) {
     struct cgroup *cgrp;
     unsigned int count;
 
@@ -403,8 +403,8 @@ unsigned int task_cgroup_member_count(const struct task *task) {
     return count;
 }
 
-static int task_cgroup_proc_content_for_viewer(const struct task *viewer,
-                                               const struct task *task,
+static int task_cgroup_proc_content_for_viewer(const struct task_struct *viewer,
+                                               const struct task_struct *task,
                                                char *buf, size_t buflen) {
     int ret;
     char visible[MAX_PATH];
@@ -450,7 +450,7 @@ static int task_cgroup_proc_content_for_viewer(const struct task *viewer,
     return ret;
 }
 
-int task_cgroup_proc_content(const struct task *task, char *buf, size_t buflen) {
+int task_cgroup_proc_content(const struct task_struct *task, char *buf, size_t buflen) {
     int ret;
     char visible[MAX_PATH];
 
@@ -528,7 +528,7 @@ static int cgroupfs_visible_path(const char *path, char *visible, size_t visible
 
 int cgroupfs_resolve_path(const char *path, char *cgroup_path, size_t cgroup_path_len,
                           enum cgroupfs_node_type *type_out) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     char visible[MAX_PATH];
     char absolute[MAX_PATH];
     const char *file_name = NULL;
@@ -585,7 +585,7 @@ enum cgroupfs_node_type cgroupfs_classify_path(const char *path) {
 }
 
 int cgroupfs_mkdir(const char *path) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     struct cgroup *parent;
     struct cgroup *child;
     char visible[MAX_PATH];
@@ -648,7 +648,7 @@ int cgroupfs_mkdir(const char *path) {
         return -ENAMETOOLONG;
     }
     memcpy(child->path, absolute, strlen(absolute) + 1);
-    atomic_init(&child->refs, 1);
+    atomic_set(&child->refs, 1);
     child->pids_max = -1;
     kernel_mutex_init(&child->lock);
     child->parent = parent;
@@ -659,7 +659,7 @@ int cgroupfs_mkdir(const char *path) {
 }
 
 int cgroupfs_rmdir(const char *path) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     struct cgroup *cgrp;
     struct cgroup *parent;
     struct cgroup **link;
@@ -880,7 +880,7 @@ int cgroupfs_read_node(const char *cgroup_path, enum cgroupfs_node_type type,
     }
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        for (struct task *task = task_table[i]; task; task = task->hash_next) {
+        for (struct task_struct *task = task_table[i]; task; task = task->hash_next) {
             if (task->cgroup == cgrp) {
                 if (cgroup_append_uint(buf, buflen, &pos, task->pid) != 0 ||
                     cgroup_append(buf, buflen, &pos, "\n") != 0) {
@@ -984,10 +984,10 @@ static int cgroupfs_apply_subtree_control(struct cgroup *cgrp, const char *buf, 
 
 long cgroupfs_write_node(const char *cgroup_path, enum cgroupfs_node_type type,
                          const char *buf, size_t count) {
-    struct task *writer = current_task();
+    struct task_struct *writer = get_current();
     struct cgroup *target = NULL;
     int32_t pid = 0;
-    struct task *task;
+    struct task_struct *task;
     int ret;
     int parsed;
 
@@ -1049,9 +1049,9 @@ long cgroupfs_write_node(const char *cgroup_path, enum cgroupfs_node_type type,
         }
     }
     if (pid == 0) {
-        task = current_task();
+        task = get_current();
         if (task) {
-            atomic_fetch_add(&task->refs, 1);
+            atomic_inc(&task->refs);
         }
     } else {
         task = task_lookup(pid);
@@ -1137,8 +1137,8 @@ int cgroupfs_child_at(const char *path, size_t index, char *name, size_t name_le
 }
 
 int cgroup_proc_task_content(int32_t pid, char *buf, size_t buflen) {
-    struct task *viewer = current_task();
-    struct task *task;
+    struct task_struct *viewer = get_current();
+    struct task_struct *task;
     int ret;
 
     task = task_lookup(pid);

@@ -5,8 +5,8 @@
 #ifndef KERNEL_MM_H
 #define KERNEL_MM_H
 
-#include <stddef.h>
-#include <stdint.h>
+#include <linux/stddef.h>
+#include <linux/types.h>
 
 struct task_vma;
 

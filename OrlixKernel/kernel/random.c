@@ -9,10 +9,6 @@
 
 #include <linux/errno.h>
 #include <linux/random.h>
-
-#include <stddef.h>
-#include <stdint.h>
-
 #include <linux/types.h>
 
 extern void get_random_bytes(void *buf, size_t len);

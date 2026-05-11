@@ -1,6 +1,4 @@
-#include <errno.h>
-#include <stdbool.h>
-#include <stdint.h>
+#include <uapi/asm-generic/errno.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -9,6 +7,7 @@
 
 extern int library_init(const void *config);
 extern int library_is_initialized(void);
+extern int errno;
 
 static void task_group_suite_init(struct kunit *test) {
     (void)test;
@@ -38,7 +37,7 @@ static void test_initial_task_pgid_and_sid_coherence(struct kunit *test) {
 
 static void test_getpgrp_impl_returns_current_task_pgid(struct kunit *test) {
     struct task_struct *task = get_current();
-    int32_t pgid;
+    int pgid;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     pgid = getpgrp_impl();
@@ -49,7 +48,7 @@ static void test_getpgrp_impl_returns_current_task_pgid(struct kunit *test) {
 
 static void test_getpgid_impl_returns_target_pgid(struct kunit *test) {
     struct task_struct *task = get_current();
-    int32_t pgid;
+    int pgid;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     pgid = getpgid_impl(task->pid);
@@ -60,8 +59,8 @@ static void test_getpgid_impl_returns_target_pgid(struct kunit *test) {
 
 static void test_getpgid_impl_zero_returns_current_pgid(struct kunit *test) {
     struct task_struct *task = get_current();
-    int32_t pgid_zero;
-    int32_t pgid_explicit;
+    int pgid_zero;
+    int pgid_explicit;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     pgid_zero = getpgid_impl(0);
@@ -72,7 +71,7 @@ static void test_getpgid_impl_zero_returns_current_pgid(struct kunit *test) {
 }
 
 static void test_getpgid_impl_rejects_invalid_pid(struct kunit *test) {
-    int32_t pgid;
+    int pgid;
 
     errno = 0;
     pgid = getpgid_impl(-9999);
@@ -119,7 +118,7 @@ static void test_setpgid_impl_rejects_session_leader(struct kunit *test) {
 static void test_setpgid_impl_creates_new_group_with_zero(struct kunit *test) {
     struct task_struct *task = get_current();
     int result;
-    int32_t new_pgid;
+    int new_pgid;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     errno = 0;
@@ -138,7 +137,7 @@ static void test_setpgid_impl_creates_new_group_with_zero(struct kunit *test) {
 
 static void test_setsid_impl_rejects_process_group_leader(struct kunit *test) {
     struct task_struct *task = get_current();
-    int32_t result;
+    int result;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     KUNIT_ASSERT_TRUE(test, task->pgid == task->pid);
@@ -154,7 +153,7 @@ static void test_signal_mask_in_task_context(struct kunit *test) {
     struct signal_mask_bits mask = {0};
     struct signal_mask_bits oldmask = {0};
     int result;
-    bool is_blocked;
+    int is_blocked;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     KUNIT_ASSERT_TRUE(test, task->signal != NULL);

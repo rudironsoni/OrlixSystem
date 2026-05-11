@@ -1,10 +1,10 @@
 #include <asm/ioctls.h>
 #include <asm/unistd.h>
-#include <linux/eventpoll.h>
-#include <linux/fcntl.h>
-#include <linux/pidfd.h>
-#include <linux/poll.h>
-#include <linux/socket.h>
+#include <uapi/linux/eventpoll.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/pidfd.h>
+#include <uapi/linux/poll.h>
+#include <uapi/linux/socket.h>
 
 #ifdef SIGUSR1
 #undef SIGUSR1

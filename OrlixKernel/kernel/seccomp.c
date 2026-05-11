@@ -5,10 +5,10 @@
 #include "task.h"
 #include "seccomp.h"
 
-#include <stdatomic.h>
-#include <stdbool.h>
+#include <linux/atomic.h>
 #include <linux/errno.h>
 #include <linux/gfp_types.h>
+#include <linux/types.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
@@ -22,7 +22,7 @@ struct seccomp_rule {
 };
 
 struct seccomp {
-    atomic_int refs;
+    atomic_t refs;
     kernel_mutex_t lock;
     struct seccomp_rule rules[SECCOMP_RULE_MAX];
 };
@@ -33,14 +33,14 @@ struct seccomp *seccomp_alloc(void) {
     if (!policy) {
         return NULL;
     }
-    atomic_init(&policy->refs, 1);
+    atomic_set(&policy->refs, 1);
     kernel_mutex_init(&policy->lock);
     return policy;
 }
 
 struct seccomp *seccomp_get(struct seccomp *policy) {
     if (policy) {
-        atomic_fetch_add(&policy->refs, 1);
+        atomic_inc(&policy->refs);
     }
     return policy;
 }
@@ -49,7 +49,7 @@ void seccomp_put(struct seccomp *policy) {
     if (!policy) {
         return;
     }
-    if (atomic_fetch_sub(&policy->refs, 1) == 1) {
+    if (atomic_dec_return(&policy->refs) == 0) {
         kernel_mutex_destroy(&policy->lock);
         kfree(policy);
     }
@@ -84,7 +84,7 @@ static int seccomp_set_errno_rule(struct seccomp *policy, int64_t syscall_nr, in
     return 0;
 }
 
-static int seccomp_attach_policy(struct task *task, struct seccomp *policy) {
+static int seccomp_attach_policy(struct task_struct *task, struct seccomp *policy) {
     struct seccomp *old;
 
     if (!task || !policy) {
@@ -96,7 +96,7 @@ static int seccomp_attach_policy(struct task *task, struct seccomp *policy) {
     return 0;
 }
 
-int seccomp_set_task_errno_policy(struct task *task, int64_t syscall_nr, int err) {
+int seccomp_set_task_errno_policy(struct task_struct *task, int64_t syscall_nr, int err) {
     struct seccomp *policy;
     int ret;
 
@@ -115,7 +115,7 @@ int seccomp_set_task_errno_policy(struct task *task, int64_t syscall_nr, int err
     return ret;
 }
 
-int seccomp_set_thread_group_errno_policy(struct task *task, int64_t syscall_nr, int err) {
+int seccomp_set_thread_group_errno_policy(struct task_struct *task, int64_t syscall_nr, int err) {
     struct seccomp *policy;
     int ret;
 
@@ -136,7 +136,7 @@ int seccomp_set_thread_group_errno_policy(struct task *task, int64_t syscall_nr,
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        for (struct task *candidate = task_table[i]; candidate; candidate = candidate->hash_next) {
+        for (struct task_struct *candidate = task_table[i]; candidate; candidate = candidate->hash_next) {
             if (candidate->tgid == task->tgid) {
                 seccomp_attach_policy(candidate, policy);
             }
@@ -146,7 +146,7 @@ int seccomp_set_thread_group_errno_policy(struct task *task, int64_t syscall_nr,
     return 0;
 }
 
-void seccomp_clear_task_policy(struct task *task) {
+void seccomp_clear_task_policy(struct task_struct *task) {
     struct seccomp *old;
 
     if (!task) {
@@ -158,7 +158,7 @@ void seccomp_clear_task_policy(struct task *task) {
 }
 
 long seccomp_check_current_syscall(int64_t syscall_nr) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     struct seccomp *policy;
     long ret = 0;
 

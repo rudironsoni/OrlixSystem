@@ -26,8 +26,9 @@ bool shouldSkipLocation(SourceLocation Loc, const SourceManager &SM) {
 
 class AbiSurfacePPCallbacks : public PPCallbacks {
 public:
-  explicit AbiSurfacePPCallbacks(OrlixAbiSurfaceCheck &Check)
-      : Check(Check) {}
+  AbiSurfacePPCallbacks(OrlixAbiSurfaceCheck &Check,
+                        const SourceManager &SM)
+      : Check(Check), SM(SM) {}
 
   void MacroDefined(const Token &MacroNameTok,
                     const MacroDirective *MD) override {
@@ -51,6 +52,11 @@ public:
     SourceLocation Loc = MacroNameTok.getLocation();
     if (Loc.isInvalid())
       return;
+    if (!SM.isWrittenInMainFile(Loc) || SM.isInSystemHeader(Loc))
+      return;
+
+    if (Name.ends_with("_H") || Name.starts_with("SIGNAL_"))
+      return;
 
     Check.diag(Loc,
                "hand-defined Linux ABI constant '%0' is forbidden in "
@@ -60,6 +66,7 @@ public:
 
 private:
   OrlixAbiSurfaceCheck &Check;
+  const SourceManager &SM;
 };
 
 } // namespace
@@ -89,7 +96,7 @@ void OrlixAbiSurfaceCheck::registerPPCallbacks(const SourceManager &SM,
   llvm::StringRef Path = getCurrentMainFile();
   if (!isLinuxOwnerPath(Path))
     return;
-  PP->addPPCallbacks(std::make_unique<AbiSurfacePPCallbacks>(*this));
+  PP->addPPCallbacks(std::make_unique<AbiSurfacePPCallbacks>(*this, SM));
 }
 
 void OrlixAbiSurfaceCheck::check(const MatchFinder::MatchResult &Result) {

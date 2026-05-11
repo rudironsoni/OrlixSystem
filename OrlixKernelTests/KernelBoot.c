@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <string.h>
 
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
 
 #include "fs/vfs.h"
 #include "fs/fdtable.h"

@@ -1,8 +1,7 @@
 #include <errno.h>
 #include <stdint.h>
-
-#include <linux/resource.h>
-#include <linux/times.h>
+#include <sys/resource.h>
+#include <sys/times.h>
 
 extern int getrlimit_impl(int resource, struct rlimit *rlim);
 extern int setrlimit_impl(int resource, const struct rlimit *rlim);
@@ -42,8 +41,8 @@ __attribute__((visibility("default"))) int setrlimit64(int resource, const struc
     return wrap_int_result(setrlimit_impl(resource, (const struct rlimit *)rlim));
 }
 
-__attribute__((visibility("default"))) long times(struct tms *buf) {
-    return times_impl(buf);
+__attribute__((visibility("default"))) clock_t times(struct tms *buf) {
+    return (clock_t)times_impl(buf);
 }
 
 __attribute__((visibility("default"))) int getrusage(int who, struct rusage *usage) {

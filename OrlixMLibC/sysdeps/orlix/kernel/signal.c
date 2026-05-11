@@ -2,7 +2,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include "kernel/signal.h"
+#include "signal_calls.h"
 
 static int wrap_int_result(int ret) {
     if (ret < 0) {
@@ -51,7 +51,7 @@ void bridge_signal_from_host(const struct sigaction *host_act, struct signal_act
 
     out_act->handler = host_act->sa_handler;
     bridge_sigset_from_host(&host_act->sa_mask, &out_act->mask);
-    out_act->flags = host_act->sa_flags;
+    out_act->flags = (int)host_act->sa_flags;
 }
 
 void bridge_signal_to_host(const struct signal_action_slot *internal_act, struct sigaction *host_act) {
@@ -61,7 +61,7 @@ void bridge_signal_to_host(const struct signal_action_slot *internal_act, struct
 
     host_act->sa_handler = internal_act->handler;
     bridge_sigset_to_host(&internal_act->mask, &host_act->sa_mask);
-    host_act->sa_flags = internal_act->flags;
+    host_act->sa_flags = (unsigned long)internal_act->flags;
 }
 
 __attribute__((visibility("default"))) int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact) {

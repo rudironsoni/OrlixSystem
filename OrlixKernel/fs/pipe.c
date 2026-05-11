@@ -1,17 +1,18 @@
 #include <linux/errno.h>
-#include <linux/fcntl.h>
+#include <linux/atomic.h>
+#include <uapi/linux/fcntl.h>
 #ifdef SIGPIPE
 #undef SIGPIPE
 #endif
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
+#include <asm-generic/signal-defs.h>
 
-#include <linux/poll.h>
+#include <uapi/linux/poll.h>
 
 #include "pipe.h"
 
-#include <stdatomic.h>
 #include <linux/string.h>
 
 #include "internal/slab.h"
@@ -39,7 +40,7 @@ struct pipe_endpoint {
     bool read_end;
 };
 
-static atomic_ullong next_pipe_id = 1;
+static atomic64_t next_pipe_id = ATOMIC64_INIT(1);
 
 static size_t pipe_space_locked(const struct pipe_object *pipe) {
     return PIPE_BUFFER_SIZE - pipe->len;
@@ -74,7 +75,7 @@ int pipe_create_endpoint_pair(struct pipe_endpoint **read_end, struct pipe_endpo
     pipe->readers = 1;
     pipe->writers = 1;
     pipe->refs = 2;
-    pipe->id = atomic_fetch_add(&next_pipe_id, 1);
+    pipe->id = (unsigned long long)atomic64_inc_return(&next_pipe_id);
     wait_queue_init(&pipe->wait);
 
     reader->pipe = pipe;
@@ -200,7 +201,7 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     wait_queue_lock(&pipe->wait);
     if (pipe->readers == 0) {
         wait_queue_unlock(&pipe->wait);
-        signal_generate_task(current_task(), SIGPIPE);
+        signal_generate_task(get_current(), SIGPIPE);
         return -EPIPE;
     }
 
@@ -208,7 +209,7 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     while (space == 0) {
         if (pipe->readers == 0) {
             wait_queue_unlock(&pipe->wait);
-            signal_generate_task(current_task(), SIGPIPE);
+            signal_generate_task(get_current(), SIGPIPE);
             return -EPIPE;
         }
         if (nonblock) {

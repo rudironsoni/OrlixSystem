@@ -1,8 +1,8 @@
-#include <linux/fcntl.h>
-#include <linux/capability.h>
-#include <linux/mount.h>
-#include <linux/sched.h>
-#include <linux/utsname.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/utsname.h>
 
 #include <errno.h>
 #include <stdbool.h>

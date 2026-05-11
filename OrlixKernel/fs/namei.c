@@ -5,10 +5,10 @@
  * are delegated through the exported OrlixHostAdapter fs seam.
  */
 
-#include <linux/capability.h>
-#include <linux/fcntl.h>
-#include <linux/stat.h>
-#include <asm/stat.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/stat.h>
+#include <uapi/asm/stat.h>
 #include <linux/errno.h>
 #include <linux/string.h>
 
@@ -40,9 +40,6 @@ static int directory_validate_path(const char *path) {
 
     return 0;
 }
-
-/* Get current task - forward declaration */
-struct task *current_task(void);
 
 static int rename_translate_path_at(int dirfd, const char *path, char *translated_path,
                                     size_t translated_path_len) {
@@ -313,12 +310,12 @@ int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *
 
 static int directory_translate_task_path(const char *path, char *translated_path,
                                          size_t translated_path_len,
-                                         struct task **task_out) {
-    struct task *task;
+                                         struct task_struct **task_out) {
+    struct task_struct *task;
     char resolved_path[MAX_PATH];
     int ret;
 
-    task = current_task();
+    task = get_current();
     if (!task) {
         return -ESRCH;
     }
@@ -357,7 +354,7 @@ static bool directory_virtual_path_contains(const char *root, const char *path) 
 }
 
 int chdir_impl(const char *path) {
-    struct task *task;
+    struct task_struct *task;
     char translated_path[MAX_PATH];
     char resolved_virtual[MAX_PATH];
     int ret;
@@ -401,7 +398,7 @@ int chdir_impl(const char *path) {
 
 int fchdir_impl(int fd) {
     fd_entry_t *entry;
-    struct task *task;
+    struct task_struct *task;
     char fd_path[MAX_PATH];
     int ret;
 
@@ -409,7 +406,7 @@ int fchdir_impl(int fd) {
         return -EBADF;
     }
 
-    task = current_task();
+    task = get_current();
     if (!task || !task->fs) {
         return -ESRCH;
     }
@@ -437,7 +434,7 @@ int fchdir_impl(int fd) {
 }
 
 int getcwd_impl(char *buf, size_t size) {
-    struct task *task;
+    struct task_struct *task;
     char virtual_path[MAX_PATH];
     int ret;
 
@@ -449,7 +446,7 @@ int getcwd_impl(char *buf, size_t size) {
         return -EINVAL;
     }
 
-    task = current_task();
+    task = get_current();
     if (!task) {
         return -ESRCH;
     }
@@ -834,7 +831,7 @@ ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
 }
 
 int chroot_impl(const char *path) {
-    struct task *task;
+    struct task_struct *task;
     char translated_path[MAX_PATH];
     char resolved_virtual[MAX_PATH];
     char current_pwd[MAX_PATH];

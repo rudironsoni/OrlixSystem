@@ -15,7 +15,7 @@ extern "C" {
 
 struct file;
 struct files_struct;
-struct task;
+struct task_struct;
 struct __kernel_itimerspec;
 
 struct file {
@@ -165,7 +165,7 @@ int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimerspec *ne
 int timerfd_gettime_impl(int fd, struct __kernel_itimerspec *curr_value);
 int memfd_create_impl(const char *name, unsigned int flags);
 int pidfd_open_impl(int32_t pid, unsigned int flags);
-int pidfd_create_for_task_impl(struct task *task, int flags);
+int pidfd_create_for_task_impl(struct task_struct *task, int flags);
 
 bool get_fd_is_synthetic_dev_impl(void *entry);
 synthetic_dev_node_t get_fd_synthetic_dev_node_impl(void *entry);
@@ -195,7 +195,7 @@ int memfd_add_seals_entry_impl(void *entry, int seals);
 int memfd_write_allowed_entry_impl(void *entry, int64_t offset, size_t count);
 int memfd_truncate_allowed_entry_impl(void *entry, int64_t length);
 bool get_fd_is_pidfd_impl(void *entry);
-struct task *pidfd_get_task_entry_impl(void *entry);
+struct task_struct *pidfd_get_task_entry_impl(void *entry);
 bool pidfd_read_ready_entry_impl(void *entry);
 
 enum synthetic_proc_file {
@@ -243,9 +243,9 @@ bool fdtable_has_open_path_under_mount_namespace_impl(uint64_t mount_ns_id, cons
 void fdtable_mark_path_deleted_impl(const char *path);
 void fdtable_rename_path_impl(const char *old_path, const char *new_path);
 void fdtable_exchange_paths_impl(const char *left_path, const char *right_path);
-bool fdtable_task_is_used_impl(struct task *task, int fd);
-int fdtable_task_fd_path_impl(struct task *task, int fd, char *path, size_t path_len);
-int fdtable_task_fdinfo_content_impl(struct task *task, int fd, unsigned long long mnt_id,
+bool fdtable_task_is_used_impl(struct task_struct *task, int fd);
+int fdtable_task_fd_path_impl(struct task_struct *task, int fd, char *path, size_t path_len);
+int fdtable_task_fdinfo_content_impl(struct task_struct *task, int fd, unsigned long long mnt_id,
                                      char *buf, size_t buf_len);
 void fdtable_sync_current_task_fd_impl(int fd);
 void fdtable_sync_current_task_from_static_impl(void);

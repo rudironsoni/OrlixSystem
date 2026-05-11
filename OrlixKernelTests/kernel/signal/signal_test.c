@@ -1,7 +1,8 @@
-#include <errno.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <string.h>
+#include <uapi/asm-generic/errno.h>
+#define __ASSEMBLY__ 1
+#include <uapi/asm-generic/signal.h>
+#undef __ASSEMBLY__
+#include <linux/string.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -12,6 +13,25 @@ extern int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules
 extern int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void);
 extern int library_init(const void *config);
 extern int library_is_initialized(void);
+extern int errno;
+
+static void signal_test_delset(struct signal_mask_bits *set, int signo) {
+    if (!set || signo <= 0 || signo > KERNEL_SIG_NUM) {
+        return;
+    }
+    set->sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
+}
+
+static void signal_test_fillset(struct signal_mask_bits *set) {
+    int index;
+
+    if (!set) {
+        return;
+    }
+    for (index = 0; index < KERNEL_SIG_NUM_WORDS; index++) {
+        set->sig[index] = ~0ULL;
+    }
+}
 
 static void signal_suite_init(struct kunit *test) {
     (void)test;
@@ -42,7 +62,7 @@ static void test_do_sigprocmask_basic_operations(struct kunit *test) {
     struct signal_mask_bits oldmask = {0};
     struct signal_mask_bits queried = {0};
     int result;
-    bool is_blocked;
+    int is_blocked;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     KUNIT_ASSERT_TRUE(test, task->signal != NULL);
@@ -88,7 +108,7 @@ static void test_do_raise_signal_to_self(struct kunit *test) {
     struct signal_mask_bits oldmask = {0};
     struct signal_mask_bits pending = {0};
     int result;
-    bool is_pending;
+    int is_pending;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     KUNIT_ASSERT_TRUE(test, task->signal != NULL);
@@ -124,7 +144,7 @@ static void test_do_kill_signal_to_current_task(struct kunit *test) {
     struct signal_mask_bits oldmask = {0};
     struct signal_mask_bits pending = {0};
     int result;
-    bool is_pending;
+    int is_pending;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     KUNIT_ASSERT_TRUE(test, task->signal != NULL);
@@ -203,7 +223,7 @@ static void test_do_sigpending_basic_operations(struct kunit *test) {
     struct signal_mask_bits oldmask = {0};
     struct signal_mask_bits pending = {0};
     int result;
-    bool has_pending;
+    int has_pending;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     KUNIT_ASSERT_TRUE(test, task->signal != NULL);
@@ -243,33 +263,33 @@ static void test_do_sigpending_basic_operations(struct kunit *test) {
 
 static void test_signal_set_operations(struct kunit *test) {
     struct signal_mask_bits set = {0};
-    bool is_member;
+    int is_member;
 
-    is_member = sigismember(&set, 10);
+    is_member = kernel_sigismember(&set, 10);
     if (is_member) {
         KUNIT_FAIL(test, "SIGUSR1 should not be in empty set");
     }
-    sigaddset(&set, 10);
-    if (!sigismember(&set, 10)) {
+    kernel_sigaddset(&set, 10);
+    if (!kernel_sigismember(&set, 10)) {
         KUNIT_FAIL(test, "SIGUSR1 should be in set after add");
     }
-    sigaddset(&set, 12);
-    if (!sigismember(&set, 12)) {
+    kernel_sigaddset(&set, 12);
+    if (!kernel_sigismember(&set, 12)) {
         KUNIT_FAIL(test, "SIGUSR2 should be in set after add");
     }
-    sigdelset(&set, 10);
-    if (sigismember(&set, 10)) {
+    signal_test_delset(&set, 10);
+    if (kernel_sigismember(&set, 10)) {
         KUNIT_FAIL(test, "SIGUSR1 should not be in set after del");
     }
-    if (!sigismember(&set, 12)) {
+    if (!kernel_sigismember(&set, 12)) {
         KUNIT_FAIL(test, "SIGUSR2 should still be in set");
     }
-    sigfillset(&set);
-    if (!sigismember(&set, SIGCHLD)) {
+    signal_test_fillset(&set);
+    if (!kernel_sigismember(&set, SIGCHLD)) {
         KUNIT_FAIL(test, "SIGCHLD should be in filled set");
     }
-    sigemptyset(&set);
-    if (sigismember(&set, 10)) {
+    kernel_sigemptyset(&set);
+    if (kernel_sigismember(&set, 10)) {
         KUNIT_FAIL(test, "SIGUSR1 should not be in empty set after sigemptyset");
     }
 }
@@ -279,7 +299,7 @@ static void test_signal_is_blocked(struct kunit *test) {
     struct signal_mask_bits mask = {0};
     struct signal_mask_bits oldmask = {0};
     int result;
-    bool is_blocked;
+    int is_blocked;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
 

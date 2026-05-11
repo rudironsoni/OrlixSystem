@@ -55,6 +55,12 @@ int host_test_fcntl_has_cloexec(int flags);
 /* Returns non-zero if O_RDONLY is set in flags */
 int host_test_fcntl_has_rdonly(int flags);
 
+/* Open a host path read-only through the backing bridge, returns fd or -1 */
+int host_test_backing_open_readonly(const char *path);
+
+/* Close a host fd through the backing bridge, returns 0 on success or -1 */
+int host_test_backing_close(int fd);
+
 #ifdef __cplusplus
 }
 #endif

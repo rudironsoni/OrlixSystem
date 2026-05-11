@@ -56,6 +56,10 @@ public:
     bool MainFileInclude = SM.isWrittenInMainFile(HashLoc);
 
     if (LinuxOwner) {
+      if (!MainFileInclude) {
+        return;
+      }
+
       if (FileName.starts_with("Foundation/") || FileName.starts_with("UIKit/") ||
           FileName.starts_with("CoreFoundation/") ||
           FileName.starts_with("CoreServices/") ||

@@ -1,8 +1,10 @@
 #include <errno.h>
 #include <stdarg.h>
 
-#include <linux/fcntl.h>
-#include <linux/stat.h>
+#include <fcntl.h>
+#include <sys/types.h>
+
+#include <linux/types.h>
 
 extern int open_impl(const char *pathname, int flags, __kernel_mode_t mode);
 extern int openat_impl(int dirfd, const char *pathname, int flags, __kernel_mode_t mode);
@@ -18,7 +20,7 @@ static int host_result_from_kernel(int ret) {
 }
 
 __attribute__((visibility("default"))) int open(const char *pathname, int flags, ...) {
-    __kernel_mode_t mode = 0;
+    mode_t mode = 0;
 
     if ((flags & O_CREAT) != 0) {
         va_list args;
@@ -27,11 +29,11 @@ __attribute__((visibility("default"))) int open(const char *pathname, int flags,
         va_end(args);
     }
 
-    return host_result_from_kernel(open_impl(pathname, flags, mode));
+    return host_result_from_kernel(open_impl(pathname, flags, (__kernel_mode_t)mode));
 }
 
 __attribute__((visibility("default"))) int openat(int dirfd, const char *pathname, int flags, ...) {
-    __kernel_mode_t mode = 0;
+    mode_t mode = 0;
 
     if ((flags & O_CREAT) != 0) {
         va_list args;
@@ -40,11 +42,11 @@ __attribute__((visibility("default"))) int openat(int dirfd, const char *pathnam
         va_end(args);
     }
 
-    return host_result_from_kernel(openat_impl(dirfd, pathname, flags, mode));
+    return host_result_from_kernel(openat_impl(dirfd, pathname, flags, (__kernel_mode_t)mode));
 }
 
-__attribute__((visibility("default"))) int creat(const char *pathname, __kernel_mode_t mode) {
-    return host_result_from_kernel(creat_impl(pathname, mode));
+__attribute__((visibility("default"))) int creat(const char *pathname, mode_t mode) {
+    return host_result_from_kernel(creat_impl(pathname, (__kernel_mode_t)mode));
 }
 
 __attribute__((visibility("default"))) int close(int fd) {

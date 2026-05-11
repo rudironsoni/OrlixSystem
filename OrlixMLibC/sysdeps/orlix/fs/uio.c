@@ -1,8 +1,6 @@
 #include <errno.h>
-#include <stddef.h>
 #include <sys/types.h>
-
-#include <linux/uio.h>
+#include <sys/uio.h>
 
 extern long readv_impl(int fd, const struct iovec *iov, int iovcnt);
 extern long writev_impl(int fd, const struct iovec *iov, int iovcnt);

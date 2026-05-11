@@ -1,16 +1,17 @@
 #include "vfs.h"
 
 /* Linux UAPI headers for ABI constants */
-#include <linux/capability.h>
+#include <uapi/linux/capability.h>
 #include <linux/errno.h>
-#include <linux/elf.h>
-#include <linux/fcntl.h>
-#include <linux/mount.h>
-#include <asm/stat.h>
-#include <linux/stat.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/mount.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/stat.h>
+#include <linux/limits.h>
 #include <linux/stdarg.h>
 #include <linux/string.h>
-#include <linux/xattr.h>
+#include <uapi/linux/xattr.h>
 #ifdef SIGHUP
 #undef SIGHUP
 #endif
@@ -219,7 +220,7 @@ struct vfs_mount_entry {
 
 struct vfs_mount_namespace {
     struct vfs_mount_entry entries[MAX_MOUNTS];
-    atomic_int refs;
+    atomic_t refs;
     uint64_t ns_id;
     uint64_t owner_user_ns_id;
     fs_mutex_t lock;
@@ -259,10 +260,10 @@ struct vfs_metadata_entry {
 
 static struct vfs_metadata_entry vfs_metadata_table[VFS_METADATA_MAX];
 static fs_mutex_t vfs_metadata_lock = FS_MUTEX_INITIALIZER;
-static atomic_int vfs_next_mount_ns_id = 1;
-static atomic_int vfs_next_file_identity = 1;
-static atomic_int vfs_next_mount_id = 2;
-static atomic_int vfs_next_mount_peer_group_id = 1;
+static atomic_t vfs_next_mount_ns_id = ATOMIC_INIT(1);
+static atomic_t vfs_next_file_identity = ATOMIC_INIT(1);
+static atomic_t vfs_next_mount_id = ATOMIC_INIT(2);
+static atomic_t vfs_next_mount_peer_group_id = ATOMIC_INIT(1);
 
 #define VFS_DETACHED_MOUNT_MAX 64
 
@@ -284,8 +285,8 @@ static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
         return NULL;
     }
 
-    atomic_init(&mnt_ns->refs, 1);
-    mnt_ns->ns_id = (uint64_t)atomic_fetch_add(&vfs_next_mount_ns_id, 1);
+    atomic_set(&mnt_ns->refs, 1);
+    mnt_ns->ns_id = (uint64_t)atomic_inc_return(&vfs_next_mount_ns_id);
     mnt_ns->owner_user_ns_id = cred_user_namespace_id(get_current_cred());
     if (mnt_ns->owner_user_ns_id == 0) {
         mnt_ns->owner_user_ns_id = 1;
@@ -296,7 +297,7 @@ static struct vfs_mount_namespace *vfs_alloc_mount_namespace(void) {
 
 static struct vfs_mount_namespace *vfs_get_mount_namespace(struct vfs_mount_namespace *mnt_ns) {
     if (mnt_ns) {
-        atomic_fetch_add(&mnt_ns->refs, 1);
+        atomic_inc(&mnt_ns->refs);
     }
     return mnt_ns;
 }
@@ -306,7 +307,7 @@ static void vfs_put_mount_namespace(struct vfs_mount_namespace *mnt_ns) {
         return;
     }
 
-    if (atomic_fetch_sub(&mnt_ns->refs, 1) > 1) {
+    if (atomic_dec_return(&mnt_ns->refs) > 0) {
         return;
     }
 
@@ -424,7 +425,7 @@ static unsigned long vfs_mount_selected_propagation(unsigned long flags) {
 }
 
 static uint64_t vfs_mount_next_id(void) {
-    return (uint64_t)atomic_fetch_add(&vfs_next_mount_id, 1);
+    return (uint64_t)atomic_inc_return(&vfs_next_mount_id);
 }
 
 static int vfs_mount_copy_entry(struct vfs_mount_entry *entry, const char *source, const char *target,
@@ -462,7 +463,7 @@ static int vfs_mount_copy_entry(struct vfs_mount_entry *entry, const char *sourc
 }
 
 static uint64_t vfs_mount_next_peer_group_id(void) {
-    return (uint64_t)atomic_fetch_add(&vfs_next_mount_peer_group_id, 1);
+    return (uint64_t)atomic_inc_return(&vfs_next_mount_peer_group_id);
 }
 
 static uint64_t vfs_mount_existing_peer_group_locked(struct vfs_mount_namespace *mnt_ns,
@@ -1373,7 +1374,7 @@ void vfs_record_created_path(const char *resolved_vpath, uint32_t mode) {
         vfs_metadata_table[idx].active = true;
         vfs_copy_string(resolved_vpath, vfs_metadata_table[idx].path, sizeof(vfs_metadata_table[idx].path));
         if (vfs_metadata_table[idx].file_identity == 0) {
-            vfs_metadata_table[idx].file_identity = (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+            vfs_metadata_table[idx].file_identity = (uint64_t)atomic_inc_return(&vfs_next_file_identity);
         }
         vfs_metadata_table[idx].has_attrs = true;
         vfs_metadata_table[idx].uid = cred->fsuid;
@@ -1408,7 +1409,7 @@ static int vfs_record_metadata_for_stat(const char *resolved_vpath, const struct
     vfs_metadata_table[idx].active = true;
     vfs_copy_string(resolved_vpath, vfs_metadata_table[idx].path, sizeof(vfs_metadata_table[idx].path));
     if (vfs_metadata_table[idx].file_identity == 0) {
-        vfs_metadata_table[idx].file_identity = (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+        vfs_metadata_table[idx].file_identity = (uint64_t)atomic_inc_return(&vfs_next_file_identity);
     }
     vfs_metadata_table[idx].has_attrs = true;
     vfs_metadata_table[idx].uid = st->st_uid;
@@ -1441,13 +1442,13 @@ uint64_t vfs_file_identity_for_path(const char *resolved_vpath) {
             vfs_copy_string(resolved_vpath, vfs_metadata_table[idx].path,
                             sizeof(vfs_metadata_table[idx].path));
             vfs_metadata_table[idx].file_identity =
-                (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+                (uint64_t)atomic_inc_return(&vfs_next_file_identity);
         }
     }
     if (idx >= 0) {
         if (vfs_metadata_table[idx].file_identity == 0) {
             vfs_metadata_table[idx].file_identity =
-                (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+                (uint64_t)atomic_inc_return(&vfs_next_file_identity);
         }
         identity = vfs_metadata_table[idx].file_identity;
     }
@@ -1484,7 +1485,7 @@ static int vfs_metadata_ensure_locked(const char *resolved_vpath) {
     if (idx >= 0) {
         if (vfs_metadata_table[idx].file_identity == 0) {
             vfs_metadata_table[idx].file_identity =
-                (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+                (uint64_t)atomic_inc_return(&vfs_next_file_identity);
         }
         return idx;
     }
@@ -1494,7 +1495,7 @@ static int vfs_metadata_ensure_locked(const char *resolved_vpath) {
             vfs_copy_string(resolved_vpath, vfs_metadata_table[i].path,
                             sizeof(vfs_metadata_table[i].path));
             vfs_metadata_table[i].file_identity =
-                (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+                (uint64_t)atomic_inc_return(&vfs_next_file_identity);
             return (int)i;
         }
     }
@@ -1842,7 +1843,7 @@ int vfs_set_file_capabilities_follow(const char *path, uint64_t permitted, uint6
     vfs_metadata_table[idx].active = true;
     vfs_copy_string(resolved, vfs_metadata_table[idx].path, sizeof(vfs_metadata_table[idx].path));
     if (vfs_metadata_table[idx].file_identity == 0) {
-        vfs_metadata_table[idx].file_identity = (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+        vfs_metadata_table[idx].file_identity = (uint64_t)atomic_inc_return(&vfs_next_file_identity);
     }
     vfs_metadata_table[idx].has_file_caps = (permitted | inheritable) != 0 || effective;
     vfs_metadata_table[idx].cap_permitted = permitted;
@@ -1963,7 +1964,7 @@ void vfs_link_path_metadata(const char *old_resolved_vpath, const char *new_reso
         identity = vfs_metadata_table[old_idx].file_identity;
     }
     if (identity == 0) {
-        identity = (uint64_t)atomic_fetch_add(&vfs_next_file_identity, 1);
+        identity = (uint64_t)atomic_inc_return(&vfs_next_file_identity);
         if (old_idx >= 0) {
             vfs_metadata_table[old_idx].file_identity = identity;
         }
@@ -2789,7 +2790,7 @@ static int vfs_statmount_store_string(struct statmount *buf, size_t bufsize,
         return -EINVAL;
     }
     len = strlen(value) + 1;
-    if (*str_pos > UINT32_MAX || len > bufsize - base || *str_pos > (bufsize - base) - len) {
+    if (*str_pos > U32_MAX || len > bufsize - base || *str_pos > (bufsize - base) - len) {
         return -EOVERFLOW;
     }
     *offset_out = (__u32)*str_pos;
@@ -3486,7 +3487,7 @@ struct fs_struct *alloc_fs_struct(void) {
     if (!fs)
         return NULL;
 
-    atomic_init(&fs->users, 1);
+    atomic_set(&fs->users, 1);
     fs_mutex_init(&fs->lock);
     fs->umask = 022;
     fs->mnt_ns = vfs_alloc_mount_namespace();
@@ -3503,14 +3504,14 @@ struct fs_struct *get_fs_struct(struct fs_struct *fs) {
     if (!fs) {
         return NULL;
     }
-    atomic_fetch_add(&fs->users, 1);
+    atomic_inc(&fs->users);
     return fs;
 }
 
 void free_fs_struct(struct fs_struct *fs) {
     if (!fs)
         return;
-    if (atomic_fetch_sub(&fs->users, 1) > 1)
+    if (atomic_dec_return(&fs->users) > 0)
         return;
 
     vfs_put_mount_namespace(fs->mnt_ns);
@@ -3589,7 +3590,7 @@ unsigned int fs_mount_namespace_refs(struct fs_struct *fs) {
     }
 
     fs_mutex_lock(&fs->lock);
-    refs = fs->mnt_ns ? (unsigned int)atomic_load(&fs->mnt_ns->refs) : 0;
+    refs = fs->mnt_ns ? (unsigned int)atomic_read(&fs->mnt_ns->refs) : 0;
     fs_mutex_unlock(&fs->lock);
     return refs;
 }
@@ -3749,8 +3750,8 @@ void vfs_deinit(void) {
     /* Reset VFS initialization state for cold boot/reboot */
     vfs_backing_initialized = 0;
     vfs_etc_bootstrapped = 0;
-    atomic_store(&vfs_next_mount_id, 2);
-    atomic_store(&vfs_next_mount_peer_group_id, 1);
+    atomic_set(&vfs_next_mount_id, 2);
+    atomic_set(&vfs_next_mount_peer_group_id, 1);
     fs_mutex_lock(&vfs_detached_mount_lock);
     memset(vfs_detached_mount_refs, 0, sizeof(vfs_detached_mount_refs));
     fs_mutex_unlock(&vfs_detached_mount_lock);
@@ -5439,7 +5440,7 @@ int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
         return -ESRCH;
     }
 
-    switch (atomic_load(&task->state)) {
+    switch (atomic_read(&task->state)) {
         case TASK_RUNNING:
             state_char = 'R';
             break;
@@ -5923,7 +5924,7 @@ static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *
         run_start = vma->start;
         run_flags = task_vma_page_flags_impl(vma, run_start);
         for (uint64_t addr = vma->start + TASK_VMA_PAGE_SIZE; addr <= vma->end; addr += TASK_VMA_PAGE_SIZE) {
-            uint32_t flags = addr < vma->end ? task_vma_page_flags_impl(vma, addr) : run_flags ^ UINT32_MAX;
+            uint32_t flags = addr < vma->end ? task_vma_page_flags_impl(vma, addr) : run_flags ^ U32_MAX;
             if (addr < vma->end && flags == run_flags) {
                 continue;
             }
@@ -6349,7 +6350,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         return -ESRCH;
     }
 
-    switch (atomic_load(&task->state)) {
+    switch (atomic_read(&task->state)) {
         case TASK_RUNNING:
             state_char = 'R';
             break;
@@ -6385,7 +6386,7 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
         "Groups:\t",
         task->comm,
         state_char,
-        vfs_proc_task_state_name(atomic_load(&task->state)),
+        vfs_proc_task_state_name(atomic_read(&task->state)),
         task->tgid,
         task->pid,
         task->ppid,

@@ -24,7 +24,7 @@
  *   - path traversal into third_party/linux
  */
 
-#include <linux/wait.h>
+#include <uapi/linux/wait.h>
 #include <asm/signal.h>
 #include <asm-generic/errno-base.h>
 

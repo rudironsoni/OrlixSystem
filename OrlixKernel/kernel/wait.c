@@ -3,10 +3,11 @@
  */
 #include <linux/types.h>
 #include <linux/errno.h>
-#include <linux/sched.h>
+#include <linux/atomic.h>
+#include <uapi/linux/sched.h>
 #include <asm-generic/signal.h>
-#include <linux/signal.h>
-#include <linux/wait.h>
+#include <uapi/linux/signal.h>
+#include <uapi/linux/wait.h>
 
 #include "signal.h"
 #include "../fs/fdtable.h"
@@ -41,22 +42,22 @@ static bool wait_child_matches_selector(const struct task_struct *parent, const 
 }
 
 static enum wait_report_kind wait_child_report_kind(const struct task_struct *child, int options) {
-    if ((options & WUNTRACED) && atomic_load(&child->stop_report_pending)) {
+    if ((options & WUNTRACED) && atomic_read(&child->stop_report_pending)) {
         return WAIT_REPORT_STOPPED;
     }
 
-    if (atomic_load(&child->exited)) {
+    if (atomic_read(&child->exited)) {
         if ((options & (WEXITED | WUNTRACED | WCONTINUED)) != 0 &&
             (options & WEXITED) == 0) {
             return WAIT_REPORT_NONE;
         }
-        if (atomic_load(&child->signaled)) {
+        if (atomic_read(&child->signaled)) {
             return WAIT_REPORT_SIGNALED;
         }
         return WAIT_REPORT_EXITED;
     }
 
-    if ((options & WCONTINUED) && atomic_load(&child->continue_report_pending)) {
+    if ((options & WCONTINUED) && atomic_read(&child->continue_report_pending)) {
         return WAIT_REPORT_CONTINUED;
     }
 
@@ -68,10 +69,10 @@ static int wait_report_status(const struct task_struct *child, enum wait_report_
     case WAIT_REPORT_EXITED:
         return (child->exit_status & 0xff) << 8;
     case WAIT_REPORT_SIGNALED:
-        return atomic_load(&child->termsig) & 0x7f;
+        return atomic_read(&child->termsig) & 0x7f;
     case WAIT_REPORT_STOPPED:
         return ((int)(child->ptrace_event & 0xffff) << 16) |
-               (atomic_load(&child->stopsig) << 8) | 0x7f;
+               (atomic_read(&child->stopsig) << 8) | 0x7f;
     case WAIT_REPORT_CONTINUED:
         return 0xffff;
     case WAIT_REPORT_NONE:
@@ -165,10 +166,10 @@ __kernel_pid_t waitpid_impl(__kernel_pid_t pid, int *wstatus, int options) {
                   (options & WNOWAIT) == 0;
 
     if (report_kind == WAIT_REPORT_STOPPED && (options & WNOWAIT) == 0) {
-        atomic_store(&matched_child->stop_report_pending, false);
+        atomic_set(&matched_child->stop_report_pending, 0);
     } else if (report_kind == WAIT_REPORT_CONTINUED && (options & WNOWAIT) == 0) {
-        atomic_store(&matched_child->continued, false);
-        atomic_store(&matched_child->continue_report_pending, false);
+        atomic_set(&matched_child->continued, 0);
+        atomic_set(&matched_child->continue_report_pending, 0);
     }
 
     if (should_reap) {

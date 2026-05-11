@@ -15,19 +15,17 @@
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
 
-#include <stdatomic.h>
-#include <stdbool.h>
-
 #include <linux/errno.h>
 #include <linux/gfp_types.h>
+#include <linux/limits.h>
 #include <linux/string.h>
-#include <linux/fcntl.h>
-#include <linux/capability.h>
-#include <linux/elf.h>
-#include <linux/mount.h>
-#include <linux/sched.h>
-#include <linux/stat.h>
-#include <asm/stat.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/stat.h>
+#include <uapi/asm/stat.h>
 #ifdef RLIM_NLIMITS
 #undef RLIM_NLIMITS
 #endif
@@ -99,14 +97,14 @@ static struct mm_struct *task_ensure_mm_impl(struct task_struct *task) {
         if (!task->mm) {
             return NULL;
         }
-        atomic_init(&task->mm->refs, 1);
+        atomic_set(&task->mm->refs, 1);
     }
     return task->mm;
 }
 
 static __thread struct task_struct *current_task = NULL;
 struct task_struct *init_task = NULL;
-static atomic_ullong task_boot_time_ns = 0;
+static atomic64_t task_boot_time_ns = ATOMIC64_INIT(0);
 
 /* Task table - accessible to signal.c for killpg */
 kernel_mutex_t task_table_lock = KERNEL_MUTEX_INITIALIZER;
@@ -123,11 +121,11 @@ static uint64_t task_monotonic_time_ns(void) {
 
 static uint64_t task_start_time_since_boot_ns(void) {
     uint64_t now = task_monotonic_time_ns();
-    uint64_t boot = atomic_load(&task_boot_time_ns);
+    uint64_t boot = (uint64_t)atomic64_read(&task_boot_time_ns);
 
     if (boot == 0) {
         boot = now;
-        atomic_store(&task_boot_time_ns, boot);
+        atomic64_set(&task_boot_time_ns, (s64)boot);
     }
     if (now <= boot) {
         return 1;
@@ -144,7 +142,7 @@ int task_pidfd_getfd_access_impl(struct task_struct *target) {
     }
 
     if (caller == target || caller->tgid == target->tgid) {
-        if (atomic_load(&target->exited)) {
+        if (atomic_read(&target->exited)) {
             return -ESRCH;
         }
         return 0;
@@ -154,7 +152,7 @@ int task_pidfd_getfd_access_impl(struct task_struct *target) {
     if (!live_target) {
         return -ESRCH;
     }
-    if (atomic_load(&live_target->exited)) {
+    if (atomic_read(&live_target->exited)) {
         free_task(live_target);
         return -ESRCH;
     }
@@ -183,7 +181,7 @@ void set_current(struct task_struct *task) {
      * The reference is released when switching away, and on thread exit via the
      * kernel thread trampoline. */
     if (task) {
-        atomic_fetch_add(&task->refs, 1);
+        atomic_inc(&task->refs);
     }
     if (current_task) {
         free_task(current_task);
@@ -327,7 +325,7 @@ int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64
     uint64_t cursor;
     uint64_t end;
 
-    if (!task || !task->mm || size == 0 || size > UINT64_MAX - addr) {
+    if (!task || !task->mm || size == 0 || size > U64_MAX - addr) {
         return -EFAULT;
     }
 
@@ -478,10 +476,10 @@ struct mm_struct *task_mm_get_impl(struct mm_struct *mm) {
     if (!mm) {
         return NULL;
     }
-    if (atomic_load(&mm->refs) <= 0) {
-        atomic_store(&mm->refs, 1);
+    if (atomic_read(&mm->refs) <= 0) {
+        atomic_set(&mm->refs, 1);
     }
-    atomic_fetch_add(&mm->refs, 1);
+    atomic_inc(&mm->refs);
     return mm;
 }
 
@@ -489,7 +487,7 @@ void task_mm_put_impl(struct mm_struct *mm) {
     if (!mm) {
         return;
     }
-    if (atomic_load(&mm->refs) > 1 && atomic_fetch_sub(&mm->refs, 1) > 1) {
+    if (atomic_read(&mm->refs) > 1 && atomic_dec_return(&mm->refs) > 0) {
         return;
     }
     for (uint32_t i = 0; i < mm->exec_segment_count; i++) {
@@ -545,7 +543,7 @@ static long task_read_vma(struct task_vma *vma, uint64_t addr, void *buf, size_t
     if (!vma || (!vma->image && !vma->shared_pages) || vma->image_size == 0 || addr < vma->start) {
         return 0;
     }
-    if ((uint64_t)vma->image_size > UINT64_MAX - vma->start) {
+    if ((uint64_t)vma->image_size > U64_MAX - vma->start) {
         return -EFAULT;
     }
     if (addr >= vma->end) {
@@ -617,7 +615,7 @@ static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf,
     if (!vma || (!vma->image && !vma->shared_pages) || vma->image_size == 0 || addr < vma->start) {
         return 0;
     }
-    if ((uint64_t)vma->image_size > UINT64_MAX - vma->start) {
+    if ((uint64_t)vma->image_size > U64_MAX - vma->start) {
         return -EFAULT;
     }
     if (addr >= vma->end) {
@@ -702,7 +700,7 @@ static int task_grow_stack_down_impl(struct task_struct *task, uint64_t fault_ad
 
     old_image = stack->image;
     old_size = stack->image_size;
-    if (old_size > UINT64_MAX - TASK_VMA_PAGE_SIZE) {
+    if (old_size > U64_MAX - TASK_VMA_PAGE_SIZE) {
         return -ENOMEM;
     }
     new_size = old_size + TASK_VMA_PAGE_SIZE;
@@ -853,7 +851,7 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
 
     mm = task->mm;
     for (size_t total = 0; total < count;) {
-        if ((uint64_t)total > UINT64_MAX - addr) {
+        if ((uint64_t)total > U64_MAX - addr) {
             if (total > 0) {
                 return (long)total;
             }
@@ -910,7 +908,7 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
 
     mm = task->mm;
     for (size_t total = 0; total < count;) {
-        if ((uint64_t)total > UINT64_MAX - addr) {
+        if ((uint64_t)total > U64_MAX - addr) {
             if (total > 0) {
                 return (long)total;
             }
@@ -1017,8 +1015,8 @@ struct task_struct *alloc_task(void) {
     task->cgroup_ns_owner_user_ns_id = 1;
     task->vfork_parent = NULL;
     for (int i = 0; i < 16; i++) {
-        task->rlimits[i].cur = UINT64_MAX;
-        task->rlimits[i].max = UINT64_MAX;
+        task->rlimits[i].cur = U64_MAX;
+        task->rlimits[i].max = U64_MAX;
     }
     task->rlimits[RLIMIT_STACK].cur = 8ULL * 1024ULL * 1024ULL;
     task->rlimits[RLIMIT_STACK].max = 64ULL * 1024ULL * 1024ULL;
@@ -1027,18 +1025,18 @@ struct task_struct *alloc_task(void) {
     task->rlimits[RLIMIT_NOFILE].cur = NR_OPEN_DEFAULT;
     task->rlimits[RLIMIT_NOFILE].max = NR_OPEN_DEFAULT;
 
-    atomic_init(&task->state, TASK_RUNNING);
-    atomic_init(&task->refs, 1);
-    atomic_init(&task->exited, false);
-    atomic_init(&task->signaled, false);
-    atomic_init(&task->stopped, false);
-    atomic_init(&task->stopsig, 0);
-    atomic_init(&task->continued, false);
-    atomic_init(&task->stop_report_pending, false);
-    atomic_init(&task->continue_report_pending, false);
-    atomic_init(&task->execed, false);
+    atomic_set(&task->state, TASK_RUNNING);
+    atomic_set(&task->refs, 1);
+    atomic_set(&task->exited, 0);
+    atomic_set(&task->signaled, 0);
+    atomic_set(&task->stopped, 0);
+    atomic_set(&task->stopsig, 0);
+    atomic_set(&task->continued, 0);
+    atomic_set(&task->stop_report_pending, 0);
+    atomic_set(&task->continue_report_pending, 0);
+    atomic_set(&task->execed, 0);
     task->thread_pending_signals = 0;
-    atomic_init(&task->new_pid_namespace_pending, false);
+    atomic_set(&task->new_pid_namespace_pending, 0);
     task->clone_flags = 0;
     task->exec_secure = 0;
     task->exec_dumpable = 1;
@@ -1141,7 +1139,7 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         child->tgid = parent->tgid;
         child->ppid = parent->ppid;
     }
-    if ((flags & CLONE_NEWPID) != 0 || atomic_load(&parent->new_pid_namespace_pending)) {
+    if ((flags & CLONE_NEWPID) != 0 || atomic_read(&parent->new_pid_namespace_pending)) {
         child->pid_ns_level = parent->pid_ns_level + 1;
         child->ns_pid = 1;
     } else {
@@ -1213,7 +1211,7 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
 
     if ((flags & CLONE_SIGHAND) != 0 && parent->signal) {
         child->signal = parent->signal;
-        atomic_fetch_add(&child->signal->refs, 1);
+        atomic_inc(&child->signal->refs);
     } else if (parent->signal) {
         child->signal = dup_signal_struct(parent->signal);
         if (!child->signal) {
@@ -1227,7 +1225,7 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
 
     if (parent->tty) {
         child->tty = parent->tty;
-        atomic_fetch_add(&child->tty->refs, 1);
+        atomic_inc(&child->tty->refs);
     }
 
     kernel_mutex_lock(&parent->lock);
@@ -1274,13 +1272,13 @@ void task_mark_stopped_by_signal(struct task_struct *task, int32_t sig) {
         struct task_struct *peer = task_table[i];
         while (peer) {
             if (peer->tgid == task->tgid) {
-                atomic_store(&peer->termsig, 0);
-                atomic_store(&peer->state, TASK_STOPPED);
-                atomic_store(&peer->stopped, true);
-                atomic_store(&peer->stopsig, sig);
-                atomic_store(&peer->continued, false);
-                atomic_store(&peer->stop_report_pending, peer->pid == peer->tgid);
-                atomic_store(&peer->continue_report_pending, false);
+                atomic_set(&peer->termsig, 0);
+                atomic_set(&peer->state, TASK_STOPPED);
+                atomic_set(&peer->stopped, 1);
+                atomic_set(&peer->stopsig, sig);
+                atomic_set(&peer->continued, 0);
+                atomic_set(&peer->stop_report_pending, peer->pid == peer->tgid ? 1 : 0);
+                atomic_set(&peer->continue_report_pending, 0);
             }
             peer = peer->hash_next;
         }
@@ -1298,12 +1296,12 @@ void task_mark_continued_by_signal(struct task_struct *task) {
         struct task_struct *peer = task_table[i];
         while (peer) {
             if (peer->tgid == task->tgid) {
-                atomic_store(&peer->state, TASK_RUNNING);
-                atomic_store(&peer->stopped, false);
-                atomic_store(&peer->stopsig, 0);
-                atomic_store(&peer->continued, true);
-                atomic_store(&peer->stop_report_pending, false);
-                atomic_store(&peer->continue_report_pending, peer->pid == peer->tgid);
+                atomic_set(&peer->state, TASK_RUNNING);
+                atomic_set(&peer->stopped, 0);
+                atomic_set(&peer->stopsig, 0);
+                atomic_set(&peer->continued, 1);
+                atomic_set(&peer->stop_report_pending, 0);
+                atomic_set(&peer->continue_report_pending, peer->pid == peer->tgid ? 1 : 0);
             }
             peer = peer->hash_next;
         }
@@ -1316,15 +1314,15 @@ void task_mark_signaled_exit(struct task_struct *task, int32_t sig) {
         return;
     }
 
-    atomic_store(&task->signaled, true);
-    atomic_store(&task->termsig, sig);
-    atomic_store(&task->exited, true);
-    atomic_store(&task->state, TASK_ZOMBIE);
-    atomic_store(&task->stopped, false);
-    atomic_store(&task->stopsig, 0);
-    atomic_store(&task->continued, false);
-    atomic_store(&task->stop_report_pending, false);
-    atomic_store(&task->continue_report_pending, false);
+    atomic_set(&task->signaled, 1);
+    atomic_set(&task->termsig, sig);
+    atomic_set(&task->exited, 1);
+    atomic_set(&task->state, TASK_ZOMBIE);
+    atomic_set(&task->stopped, 0);
+    atomic_set(&task->stopsig, 0);
+    atomic_set(&task->continued, 0);
+    atomic_set(&task->stop_report_pending, 0);
+    atomic_set(&task->continue_report_pending, 0);
     poll_notify_readiness_impl();
 }
 
@@ -1334,15 +1332,15 @@ void task_mark_exited(struct task_struct *task, int status) {
     }
 
     task->exit_status = status;
-    atomic_store(&task->signaled, false);
-    atomic_store(&task->termsig, 0);
-    atomic_store(&task->exited, true);
-    atomic_store(&task->state, TASK_ZOMBIE);
-    atomic_store(&task->stopped, false);
-    atomic_store(&task->stopsig, 0);
-    atomic_store(&task->continued, false);
-    atomic_store(&task->stop_report_pending, false);
-    atomic_store(&task->continue_report_pending, false);
+    atomic_set(&task->signaled, 0);
+    atomic_set(&task->termsig, 0);
+    atomic_set(&task->exited, 1);
+    atomic_set(&task->state, TASK_ZOMBIE);
+    atomic_set(&task->stopped, 0);
+    atomic_set(&task->stopsig, 0);
+    atomic_set(&task->continued, 0);
+    atomic_set(&task->stop_report_pending, 0);
+    atomic_set(&task->continue_report_pending, 0);
     poll_notify_readiness_impl();
 }
 
@@ -1357,7 +1355,7 @@ void task_notify_parent_state_change(struct task_struct *task) {
     }
 
     parent = task->parent;
-    atomic_fetch_add(&parent->refs, 1);
+    atomic_inc(&parent->refs);
 
     (void)signal_generate_task(parent, SIGCHLD);
 
@@ -1374,7 +1372,7 @@ void free_task(struct task_struct *task) {
     if (!task)
         return;
 
-    if (atomic_fetch_sub(&task->refs, 1) > 1)
+    if (atomic_dec_return(&task->refs) > 0)
         return;
 
     int idx = task_hash(task->pid);
@@ -1402,7 +1400,7 @@ void free_task(struct task_struct *task) {
         cgroup_put(task->cgroup_ns_root);
     seccomp_clear_task_policy(task);
     if (task->tty)
-        atomic_fetch_sub(&task->tty->refs, 1);
+        atomic_dec(&task->tty->refs);
     if (task->mm)
         task_mm_put_impl(task->mm);
     if (task->exec_image)
@@ -1430,7 +1428,7 @@ struct task_struct *task_lookup(int32_t pid) {
         task = task->hash_next;
     }
     if (task) {
-        atomic_fetch_add(&task->refs, 1);
+        atomic_inc(&task->refs);
     }
     kernel_mutex_unlock(&task_table_lock);
     return task;
@@ -1486,14 +1484,14 @@ int task_reassign_pid_impl(struct task_struct *task, int32_t pid) {
     return 0;
 }
 
-static atomic_bool task_initialized = false;
+static atomic_t task_initialized = ATOMIC_INIT(0);
 
 int task_init(void) {
     /* Fast path: already initialized */
-    if (atomic_load(&task_initialized) && init_task) {
+    if (atomic_read(&task_initialized) && init_task) {
         if (!current_task) {
             /* Hold a reference for the thread-local current task binding. */
-            atomic_fetch_add(&init_task->refs, 1);
+            atomic_inc(&init_task->refs);
             current_task = init_task;
             fdtable_sync_current_task_from_static_impl();
         }
@@ -1504,7 +1502,7 @@ int task_init(void) {
     if (!init_task) {
         /* Re-initialize from scratch */
         pid_init();
-        atomic_store(&task_boot_time_ns, task_monotonic_time_ns());
+        atomic64_set(&task_boot_time_ns, (s64)task_monotonic_time_ns());
         if (cgroup_init() != 0) {
             return -1;
         }
@@ -1545,10 +1543,10 @@ int task_init(void) {
         }
 
         /* Hold a reference for the thread-local current task binding. */
-        atomic_fetch_add(&init_task->refs, 1);
+        atomic_inc(&init_task->refs);
         current_task = init_task;
         fdtable_sync_current_task_from_static_impl();
-        atomic_store(&task_initialized, true);
+        atomic_set(&task_initialized, 1);
         return 0;
     }
 
@@ -1560,8 +1558,8 @@ void task_deinit(void) {
      * actually free tasks like init_task. current_task is TLS but shutdown runs
      * on a specific host thread; we must release that thread's reference. */
     if (current_task) {
-        struct task_struct *task = get_current;
-        get_current = NULL;
+        struct task_struct *task = current_task;
+        current_task = NULL;
         set_current_cred(NULL);
         free_task(task);
     }
@@ -1571,8 +1569,8 @@ void task_deinit(void) {
         free_task(task);
     }
     cgroup_deinit();
-    atomic_store(&task_boot_time_ns, 0);
-    atomic_store(&task_initialized, false);
+    atomic64_set(&task_boot_time_ns, 0);
+    atomic_set(&task_initialized, 0);
 }
 
 /* ============================================================================
@@ -1698,7 +1696,7 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
     }
 
     /* Linux: if child already execve'd, reject with EACCES */
-    if (target->pid != current->pid && atomic_load(&target->execed)) {
+    if (target->pid != current->pid && atomic_read(&target->execed)) {
         kernel_mutex_unlock(&target->lock);
         free_task(target);
         return -EACCES;
@@ -1745,7 +1743,7 @@ int32_t setsid_impl(void) {
     }
 
     if (task->tty) {
-        atomic_fetch_sub(&task->tty->refs, 1);
+        atomic_dec(&task->tty->refs);
         task->tty = NULL;
     }
 
@@ -1911,7 +1909,7 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
     }
     memcpy(task->comm, comm_source, comm_len);
 
-    atomic_store(&task->execed, true);
+    atomic_set(&task->execed, 1);
 
     if (task->vfork_parent) {
         vfork_exec_notify();

@@ -1,9 +1,11 @@
 #include <asm/unistd.h>
-#include <linux/futex.h>
-#include <linux/capability.h>
-#include <linux/mman.h>
-#include <linux/sched.h>
-#include <linux/time_types.h>
+#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/futex.h>
+#include <uapi/linux/mman.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/time.h>
+#include <linux/string.h>
 #ifdef SIGUSR1
 #undef SIGUSR1
 #endif
@@ -11,33 +13,29 @@
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 
-#include <errno.h>
-#include <pthread.h>
-#include <stdatomic.h>
-#include <stdint.h>
-#include <string.h>
-#include <time.h>
-
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
 #include "kernel/init.h"
-#include "runtime/syscall.h"
 #include "kernel/cred.h"
+#include "kernel/futex.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
+#include "runtime/syscall.h"
 
-extern int futex(int *uaddr, int futex_op, int val,
-                 const struct timespec *timeout, int *uaddr2, int val3);
 extern void exit_impl(int status);
 extern int capget(cap_user_header_t header, cap_user_data_t data);
 extern int capset(cap_user_header_t header, const cap_user_data_t data);
 extern int unshare_impl(uint64_t flags);
 extern int library_init(const void *config);
 extern int library_is_initialized(void);
+extern int errno;
 
 struct futex_wait_thread {
     int *word;
-    atomic_int ready;
+    kernel_mutex_t lock;
+    kernel_cond_t cond;
+    int started;
+    int done;
     int rc;
     int saved_errno;
     struct task_struct *task;
@@ -47,13 +45,98 @@ struct futex_wait_op_thread {
     int *uaddr;
     int op;
     int val;
-    struct timespec timeout;
+    struct __kernel_timespec timeout;
     int *uaddr2;
     int val3;
-    atomic_int ready;
+    kernel_mutex_t lock;
+    kernel_cond_t cond;
+    int started;
+    int done;
     int rc;
     int saved_errno;
 };
+
+static void futex_wait_thread_init(struct futex_wait_thread *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    kernel_mutex_init(&ctx->lock);
+    kernel_cond_init(&ctx->cond);
+}
+
+static void futex_wait_thread_destroy(struct futex_wait_thread *ctx) {
+    kernel_cond_destroy(&ctx->cond);
+    kernel_mutex_destroy(&ctx->lock);
+}
+
+static void futex_wait_thread_mark_started(struct futex_wait_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->started = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void futex_wait_thread_mark_done(struct futex_wait_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->done = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void futex_wait_thread_wait_started(struct futex_wait_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->started) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void futex_wait_thread_wait_done(struct futex_wait_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->done) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void futex_wait_op_thread_init(struct futex_wait_op_thread *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    kernel_mutex_init(&ctx->lock);
+    kernel_cond_init(&ctx->cond);
+}
+
+static void futex_wait_op_thread_destroy(struct futex_wait_op_thread *ctx) {
+    kernel_cond_destroy(&ctx->cond);
+    kernel_mutex_destroy(&ctx->lock);
+}
+
+static void futex_wait_op_thread_mark_started(struct futex_wait_op_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->started = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void futex_wait_op_thread_mark_done(struct futex_wait_op_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    ctx->done = 1;
+    kernel_cond_broadcast(&ctx->cond);
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void futex_wait_op_thread_wait_started(struct futex_wait_op_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->started) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
+
+static void futex_wait_op_thread_wait_done(struct futex_wait_op_thread *ctx) {
+    kernel_mutex_lock(&ctx->lock);
+    while (!ctx->done) {
+        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    }
+    kernel_mutex_unlock(&ctx->lock);
+}
 
 static void futex_clear_pending_signal(struct task_struct *task, int sig) {
     int32_t dequeued = 0;
@@ -100,14 +183,14 @@ void futex_contract_reset_test_state(void) {
     init_task->ppid = 0;
     init_task->exit_status = 0;
     init_task->thread_pending_signals = 0;
-    atomic_store(&init_task->exited, false);
-    atomic_store(&init_task->signaled, false);
-    atomic_store(&init_task->termsig, 0);
-    atomic_store(&init_task->stopped, false);
-    atomic_store(&init_task->state, TASK_RUNNING);
-    atomic_store(&init_task->continued, false);
-    atomic_store(&init_task->stop_report_pending, false);
-    atomic_store(&init_task->continue_report_pending, false);
+    atomic_set(&init_task->exited, 0);
+    atomic_set(&init_task->signaled, 0);
+    atomic_set(&init_task->termsig, 0);
+    atomic_set(&init_task->stopped, 0);
+    atomic_set(&init_task->state, TASK_RUNNING);
+    atomic_set(&init_task->continued, 0);
+    atomic_set(&init_task->stop_report_pending, 0);
+    atomic_set(&init_task->continue_report_pending, 0);
 
     if (init_task->signal) {
         for (int sig = 0; sig < KERNEL_SIG_NUM; sig++) {
@@ -154,23 +237,36 @@ void futex_contract_reset_test_state(void) {
 
 static void *futex_wait_thread_main(void *arg) {
     struct futex_wait_thread *ctx = (struct futex_wait_thread *)arg;
-    struct timespec timeout = {2, 0};
+    struct __kernel_timespec timeout = {2, 0};
 
     if (ctx->task) {
         set_current(ctx->task);
     }
-    atomic_store(&ctx->ready, 1);
-    ctx->rc = futex(ctx->word, FUTEX_WAIT_PRIVATE, 0, &timeout, NULL, 0);
+    futex_wait_thread_mark_started(ctx);
+    ctx->rc = (int)syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)ctx->word,
+                                         FUTEX_WAIT_PRIVATE, 0, (long)(uintptr_t)&timeout, 0, 0);
+    if (ctx->rc < 0) {
+        errno = -ctx->rc;
+        ctx->rc = -1;
+    }
     ctx->saved_errno = errno;
+    futex_wait_thread_mark_done(ctx);
     return NULL;
 }
 
 static void *futex_wait_op_thread_main(void *arg) {
     struct futex_wait_op_thread *ctx = (struct futex_wait_op_thread *)arg;
 
-    atomic_store(&ctx->ready, 1);
-    ctx->rc = futex(ctx->uaddr, ctx->op, ctx->val, &ctx->timeout, ctx->uaddr2, ctx->val3);
+    futex_wait_op_thread_mark_started(ctx);
+    ctx->rc = (int)syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)ctx->uaddr,
+                                         ctx->op, ctx->val, (long)(uintptr_t)&ctx->timeout,
+                                         (long)(uintptr_t)ctx->uaddr2, ctx->val3);
+    if (ctx->rc < 0) {
+        errno = -ctx->rc;
+        ctx->rc = -1;
+    }
     ctx->saved_errno = errno;
+    futex_wait_op_thread_mark_done(ctx);
     return NULL;
 }
 
@@ -203,44 +299,46 @@ int futex_contract_wake_without_waiters_returns_zero(void) {
 
 int futex_contract_wait_timeout_returns_timedout(void) {
     int word = 0;
-    struct timespec timeout = {0, 1000000};
+    struct __kernel_timespec timeout = {0, 1000000};
+    long ret;
 
     errno = 0;
-    if (futex(&word, FUTEX_WAIT_PRIVATE, 0, &timeout, NULL, 0) != -1) {
+    ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word,
+                                FUTEX_WAIT_PRIVATE, 0, (long)(uintptr_t)&timeout, 0, 0);
+    if (ret != -ETIMEDOUT) {
         errno = EPROTO;
         return -1;
     }
-    if (errno != ETIMEDOUT) {
-        return -1;
-    }
+    errno = ETIMEDOUT;
     return 0;
 }
 
 int futex_contract_wake_releases_waiter(void) {
     struct futex_wait_thread ctx;
-    pthread_t thread;
+    kernel_thread_t thread;
     int word = 0;
     long ret;
 
+    futex_wait_thread_init(&ctx);
     ctx.word = &word;
-    atomic_init(&ctx.ready, 0);
     ctx.rc = -1;
     ctx.saved_errno = 0;
     ctx.task = NULL;
 
-    if (pthread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
+    if (kernel_thread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
+        futex_wait_thread_destroy(&ctx);
         errno = ECHILD;
         return -1;
     }
-    while (atomic_load(&ctx.ready) == 0) {
-        /* spin until the waiter has entered the futex path */
-    }
+    kernel_thread_detach(thread);
+    futex_wait_thread_wait_started(&ctx);
     ret = 0;
     for (int i = 0; i < 100000 && ret == 0; i++) {
         ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word,
                                     FUTEX_WAKE_PRIVATE, 1, 0, 0, 0);
     }
-    pthread_join(thread, NULL);
+    futex_wait_thread_wait_done(&ctx);
+    futex_wait_thread_destroy(&ctx);
     if (ret != 1 || ctx.rc != 0 || ctx.saved_errno != 0) {
         errno = EPROTO;
         return -1;
@@ -249,15 +347,15 @@ int futex_contract_wake_releases_waiter(void) {
 }
 
 int futex_contract_wake_bitset_only_wakes_matching_waiter(void) {
-    pthread_t t1;
-    pthread_t t2;
+    kernel_thread_t t1;
+    kernel_thread_t t2;
     struct futex_wait_op_thread w1;
     struct futex_wait_op_thread w2;
     int word = 0;
     long ret;
 
-    memset(&w1, 0, sizeof(w1));
-    memset(&w2, 0, sizeof(w2));
+    futex_wait_op_thread_init(&w1);
+    futex_wait_op_thread_init(&w2);
 
     w1.uaddr = &word;
     w1.op = FUTEX_WAIT_BITSET_PRIVATE;
@@ -266,7 +364,6 @@ int futex_contract_wake_bitset_only_wakes_matching_waiter(void) {
     w1.timeout.tv_nsec = 200000000; /* 200ms */
     w1.uaddr2 = NULL;
     w1.val3 = 0x00000001;
-    atomic_init(&w1.ready, 0);
     w1.rc = -1;
     w1.saved_errno = 0;
 
@@ -277,29 +374,35 @@ int futex_contract_wake_bitset_only_wakes_matching_waiter(void) {
     w2.timeout.tv_nsec = 200000000; /* 200ms */
     w2.uaddr2 = NULL;
     w2.val3 = 0x00000002;
-    atomic_init(&w2.ready, 0);
     w2.rc = -1;
     w2.saved_errno = 0;
 
-    if (pthread_create(&t1, NULL, futex_wait_op_thread_main, &w1) != 0) {
+    if (kernel_thread_create(&t1, NULL, futex_wait_op_thread_main, &w1) != 0) {
+        futex_wait_op_thread_destroy(&w1);
+        futex_wait_op_thread_destroy(&w2);
         errno = ECHILD;
         return -1;
     }
-    if (pthread_create(&t2, NULL, futex_wait_op_thread_main, &w2) != 0) {
-        pthread_join(t1, NULL);
+    kernel_thread_detach(t1);
+    if (kernel_thread_create(&t2, NULL, futex_wait_op_thread_main, &w2) != 0) {
+        futex_wait_op_thread_wait_done(&w1);
+        futex_wait_op_thread_destroy(&w1);
+        futex_wait_op_thread_destroy(&w2);
         errno = ECHILD;
         return -1;
     }
-    while (atomic_load(&w1.ready) == 0 || atomic_load(&w2.ready) == 0) {
-        /* spin */
-    }
+    kernel_thread_detach(t2);
+    futex_wait_op_thread_wait_started(&w1);
+    futex_wait_op_thread_wait_started(&w2);
 
     ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word,
                                 FUTEX_WAKE_BITSET_PRIVATE, 1, 0,
                                 0, 0x00000001);
 
-    pthread_join(t1, NULL);
-    pthread_join(t2, NULL);
+    futex_wait_op_thread_wait_done(&w1);
+    futex_wait_op_thread_wait_done(&w2);
+    futex_wait_op_thread_destroy(&w1);
+    futex_wait_op_thread_destroy(&w2);
 
     if (ret != 1) {
         errno = EPROTO;
@@ -316,26 +419,25 @@ int futex_contract_wake_bitset_only_wakes_matching_waiter(void) {
 }
 
 int futex_contract_requeue_moves_waiter_to_new_uaddr(void) {
-    pthread_t thread;
+    kernel_thread_t thread;
     struct futex_wait_thread ctx;
     int word1 = 0;
     int word2 = 0;
     long ret;
 
-    memset(&ctx, 0, sizeof(ctx));
+    futex_wait_thread_init(&ctx);
     ctx.word = &word1;
-    atomic_init(&ctx.ready, 0);
     ctx.rc = -1;
     ctx.saved_errno = 0;
     ctx.task = NULL;
 
-    if (pthread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
+    if (kernel_thread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
+        futex_wait_thread_destroy(&ctx);
         errno = ECHILD;
         return -1;
     }
-    while (atomic_load(&ctx.ready) == 0) {
-        /* spin */
-    }
+    kernel_thread_detach(thread);
+    futex_wait_thread_wait_started(&ctx);
 
     ret = 0;
     for (int i = 0; i < 100000 && ret == 0; i++) {
@@ -344,14 +446,16 @@ int futex_contract_requeue_moves_waiter_to_new_uaddr(void) {
                                     1 /* nr_requeue */, (long)(uintptr_t)&word2, 0);
     }
     if (ret != 1) {
-        pthread_join(thread, NULL);
+        futex_wait_thread_wait_done(&ctx);
+        futex_wait_thread_destroy(&ctx);
         errno = EPROTO;
         return -1;
     }
 
     ret = syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)&word2,
                                 FUTEX_WAKE_PRIVATE, 1, 0, 0, 0);
-    pthread_join(thread, NULL);
+    futex_wait_thread_wait_done(&ctx);
+    futex_wait_thread_destroy(&ctx);
 
     if (ret != 1 || ctx.rc != 0 || ctx.saved_errno != 0) {
         errno = EPROTO;
@@ -381,7 +485,7 @@ int futex_contract_interrupted_wait_records_restart(void) {
     struct task_struct *parent = get_current();
     struct task_struct *child = NULL;
     struct task_struct *restore;
-    pthread_t thread;
+    kernel_thread_t thread;
     int word = 0;
     long ret;
 
@@ -394,28 +498,30 @@ int futex_contract_interrupted_wait_records_restart(void) {
         return -1;
     }
 
+    futex_wait_thread_init(&ctx);
     ctx.word = &word;
     ctx.task = child;
-    atomic_init(&ctx.ready, 0);
     ctx.rc = -1;
     ctx.saved_errno = 0;
 
-    if (pthread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
+    if (kernel_thread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
+        futex_wait_thread_destroy(&ctx);
         task_unlink_child_impl(parent, child);
         free_task(child);
         errno = ECHILD;
         return -1;
     }
-    while (atomic_load(&ctx.ready) == 0) {
-        /* spin until the waiter has entered the futex path */
-    }
+    kernel_thread_detach(thread);
+    futex_wait_thread_wait_started(&ctx);
     if (signal_generate_task(child, SIGUSR1) != 0) {
-        pthread_join(thread, NULL);
+        futex_wait_thread_wait_done(&ctx);
+        futex_wait_thread_destroy(&ctx);
         task_unlink_child_impl(parent, child);
         free_task(child);
         return -1;
     }
-    pthread_join(thread, NULL);
+    futex_wait_thread_wait_done(&ctx);
+    futex_wait_thread_destroy(&ctx);
 
     if (ctx.rc != -1 || ctx.saved_errno != EINTR ||
         !child->mm ||
@@ -430,7 +536,7 @@ int futex_contract_interrupted_wait_records_restart(void) {
     }
 
     futex_clear_pending_signal(child, SIGUSR1);
-    atomic_store((_Atomic int *)&word, 1);
+    word = 1;
     restore = get_current();
     set_current(child);
     ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);

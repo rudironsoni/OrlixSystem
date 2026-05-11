@@ -16,10 +16,10 @@
 #include <linux/string.h>
 
 #include <linux/limits.h>
-#include <linux/capability.h>
+#include <uapi/linux/capability.h>
 #include <uapi/linux/prctl.h>
-#include <linux/securebits.h>
-#include <linux/stat.h>
+#include <uapi/linux/securebits.h>
+#include <uapi/linux/stat.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
@@ -45,7 +45,7 @@ extern void kfree(const void *objp);
 #define KERNEL_DEFAULT_FSGID    0       /* Virtual filesystem root */
 
 static uint64_t cred_full_cap_mask(void) {
-    return (CAP_LAST_CAP >= 63) ? UINT64_MAX : ((1ULL << (CAP_LAST_CAP + 1)) - 1ULL);
+    return (CAP_LAST_CAP >= 63) ? ~0ULL : ((1ULL << (CAP_LAST_CAP + 1)) - 1ULL);
 }
 
 static uint64_t cred_cap_bit(int cap) {
@@ -55,7 +55,7 @@ static uint64_t cred_cap_bit(int cap) {
     return 1ULL << cap;
 }
 
-static atomic_ullong cred_next_user_ns_id = 2;
+static atomic64_t cred_next_user_ns_id = ATOMIC64_INIT(2);
 
 static void cred_reset_caps_for_root(struct cred *cred) {
     uint64_t full;
@@ -123,10 +123,10 @@ static struct cred global_init_cred = {
     .user_ns_id = 1,
     .uid_map_inside = 0,
     .uid_map_outside = 0,
-    .uid_map_count = UINT32_MAX,
+    .uid_map_count = ~0U,
     .gid_map_inside = 0,
     .gid_map_outside = 0,
-    .gid_map_count = UINT32_MAX,
+    .gid_map_count = ~0U,
     .setgroups_allowed = true,
     .refs = 1
 };
@@ -217,10 +217,10 @@ void cred_init_defaults(struct cred *cred) {
     cred->user_ns_id = 1;
     cred->uid_map_inside = 0;
     cred->uid_map_outside = 0;
-    cred->uid_map_count = UINT32_MAX;
+    cred->uid_map_count = ~0U;
     cred->gid_map_inside = 0;
     cred->gid_map_outside = 0;
-    cred->gid_map_count = UINT32_MAX;
+    cred->gid_map_count = ~0U;
     cred->setgroups_allowed = true;
     cred_reset_caps_for_root(cred);
 }
@@ -240,7 +240,7 @@ int cred_init(void) {
 
 /* Reset global credentials to Orlix defaults - for testing */
 void cred_reset_to_defaults(void) {
-    struct task *task;
+    struct task_struct *task;
 
     /* Reset global init cred to defaults */
     global_init_cred.uid = KERNEL_DEFAULT_UID;
@@ -259,17 +259,17 @@ void cred_reset_to_defaults(void) {
     global_init_cred.user_ns_id = 1;
     global_init_cred.uid_map_inside = 0;
     global_init_cred.uid_map_outside = 0;
-    global_init_cred.uid_map_count = UINT32_MAX;
+    global_init_cred.uid_map_count = ~0U;
     global_init_cred.gid_map_inside = 0;
     global_init_cred.gid_map_outside = 0;
-    global_init_cred.gid_map_count = UINT32_MAX;
+    global_init_cred.gid_map_count = ~0U;
     global_init_cred.setgroups_allowed = true;
     cred_reset_caps_for_root(&global_init_cred);
     global_init_cred.refs = 1;
     
     /* Reset current_cred pointer to point to global_init_cred */
     current_cred = &global_init_cred;
-    task = current_task();
+    task = get_current();
     if (task && task->cred != &global_init_cred) {
         put_cred(task->cred);
         get_cred(&global_init_cred);
@@ -278,7 +278,7 @@ void cred_reset_to_defaults(void) {
 }
 
 struct cred *get_current_cred(void) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     if (task && task->cred) {
         current_cred = task->cred;
         return task->cred;
@@ -291,7 +291,7 @@ struct cred *get_current_cred(void) {
 }
 
 void set_current_cred(struct cred *cred) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     if (task && task->cred != cred) {
         if (cred) {
             get_cred(cred);
@@ -655,7 +655,7 @@ static int cred_parse_id_map_line(const char *buf, size_t count,
         while (pos < count && buf[pos] >= '0' && buf[pos] <= '9') {
             saw_digit = true;
             value = (value * 10U) + (uint64_t)(buf[pos] - '0');
-            if (value > UINT32_MAX) {
+            if (value > ~0U) {
                 return -EINVAL;
             }
             pos++;
@@ -858,7 +858,7 @@ int cred_unshare_user_namespace(struct cred *cred) {
     if (!cred) {
         return -EINVAL;
     }
-    cred->user_ns_id = (uint64_t)atomic_fetch_add(&cred_next_user_ns_id, 1);
+    cred->user_ns_id = (uint64_t)atomic64_inc_return(&cred_next_user_ns_id) - 1ULL;
     cred->uid_map_inside = 0;
     cred->uid_map_outside = cred->uid;
     cred->uid_map_count = 1;

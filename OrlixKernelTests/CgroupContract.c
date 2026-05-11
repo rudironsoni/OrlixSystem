@@ -1,10 +1,10 @@
 #include "CgroupContract.h"
 
-#include <linux/capability.h>
-#include <linux/fcntl.h>
-#include <linux/sched.h>
-#include <linux/wait.h>
 #include <asm/unistd.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/wait.h>
 #ifdef SIGCHLD
 #undef SIGCHLD
 #endif

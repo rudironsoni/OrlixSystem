@@ -240,7 +240,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
 
     if (dir_class == SYNTHETIC_DIR_PROC_SELF_TASK) {
         char dir_path[MAX_PATH];
-        struct task *target = NULL;
+        struct task_struct *target = NULL;
         int target_pid;
         int scan_pid = (cursor >= 2) ? ((int)cursor - 2) : 0;
 
@@ -255,7 +255,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
 
         kernel_mutex_lock(&task_table_lock);
         for (int bucket = 0; bucket < TASK_MAX_TASKS; bucket++) {
-            struct task *task = task_table[bucket];
+            struct task_struct *task = task_table[bucket];
 
             while (task) {
                 if (task->tgid == target->tgid && task->pid >= scan_pid) {

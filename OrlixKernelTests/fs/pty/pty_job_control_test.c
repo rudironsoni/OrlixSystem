@@ -1,14 +1,11 @@
 #include <asm/ioctls.h>
-#include <linux/fcntl.h>
+#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/fcntl.h>
+#include <linux/string.h>
 #define __ASSEMBLY__ 1
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 #include <asm-generic/signal-defs.h>
-
-#include <errno.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -26,6 +23,7 @@ extern int pty_contract_ioctl(int fd, unsigned long request, ...);
 extern __kernel_pid_t tcgetpgrp(int fd);
 extern int tcsetpgrp(int fd, __kernel_pid_t pgrp);
 extern int killpg(int pgrp, int sig);
+extern int errno;
 
 static int close_if_open(int fd) {
     if (fd >= 0) {
@@ -168,14 +166,14 @@ static void reset_pty_job_control_test_kernel_state(void) {
     init_task->sid = init_task->pid;
     init_task->exit_status = 0;
     init_task->thread_pending_signals = 0;
-    atomic_store(&init_task->exited, false);
-    atomic_store(&init_task->signaled, false);
-    atomic_store(&init_task->termsig, 0);
-    atomic_store(&init_task->stopped, false);
-    atomic_store(&init_task->state, TASK_RUNNING);
-    atomic_store(&init_task->continued, false);
-    atomic_store(&init_task->stop_report_pending, false);
-    atomic_store(&init_task->continue_report_pending, false);
+    atomic_set(&init_task->exited, 0);
+    atomic_set(&init_task->signaled, 0);
+    atomic_set(&init_task->termsig, 0);
+    atomic_set(&init_task->stopped, 0);
+    atomic_set(&init_task->state, TASK_RUNNING);
+    atomic_set(&init_task->continued, 0);
+    atomic_set(&init_task->stop_report_pending, 0);
+    atomic_set(&init_task->continue_report_pending, 0);
     if (init_task->signal) {
         memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
         memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));
@@ -630,7 +628,8 @@ int pty_job_control_contract_signal_chars_target_foreground_pgrp(void) {
     if (pty_write_master_impl(pty_index, &vintr, 1, false) != 1) {
         goto out;
     }
-    if (!signal_is_pending(sigint_peer, SIGINT) || !atomic_load(&sigint_peer->signaled) || atomic_load(&sigint_peer->termsig) != SIGINT) {
+    if (!signal_is_pending(sigint_peer, SIGINT) || !atomic_read(&sigint_peer->signaled) ||
+        atomic_read(&sigint_peer->termsig) != SIGINT) {
         errno = EPROTO;
         goto out;
     }
@@ -652,7 +651,8 @@ int pty_job_control_contract_signal_chars_target_foreground_pgrp(void) {
     if (pty_write_master_impl(pty_index, &vsusp, 1, false) != 1) {
         goto out;
     }
-    if (!signal_is_pending(sigtstp_peer, SIGTSTP) || atomic_load(&sigtstp_peer->state) != TASK_STOPPED) {
+    if (!signal_is_pending(sigtstp_peer, SIGTSTP) ||
+        atomic_read(&sigtstp_peer->state) != TASK_STOPPED) {
         errno = EPROTO;
         goto out;
     }
@@ -752,8 +752,8 @@ int pty_job_control_contract_killpg_targets_process_group(void) {
     task->pgid = peer->pgid;
     clear_pending_signal(task, SIGCONT);
     clear_pending_signal(peer, SIGCONT);
-    atomic_store(&task->signaled, false);
-    atomic_store(&peer->signaled, false);
+    atomic_set(&task->signaled, 0);
+    atomic_set(&peer->signaled, 0);
 
     errno = 0;
     if (killpg(peer->pgid, SIGCONT) != 0) {

@@ -13,14 +13,14 @@
 
 #include <linux/errno.h>
 #include <linux/string.h>
-#include <stdint.h>
+#include <linux/types.h>
 
 /* ============================================================================
  * RLIMIT - Resource limits (private implementation)
  * ============================================================================ */
 
 int getrlimit_impl(int resource, struct rlimit *rlim) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
 
     if (!rlim) {
         return -EFAULT;
@@ -37,7 +37,7 @@ int getrlimit_impl(int resource, struct rlimit *rlim) {
 }
 
 int setrlimit_impl(int resource, const struct rlimit *rlim) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
 
     if (!rlim) {
         return -EFAULT;
@@ -84,7 +84,7 @@ int getrusage_impl(int who, struct rusage *usage) {
 
 int prlimit_impl(int32_t pid, int resource, const struct rlimit *new_limit,
                  struct rlimit *old_limit) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
 
     if (pid != 0 && (!task || pid != task->pid)) {
         return -ESRCH;

@@ -2,15 +2,17 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-
-#include "fs/vfs.h"
 
 #define environ (*_NSGetEnviron())
 
+enum { PATH_MAX = 4096 };
+
 extern int execve_impl(const char *pathname, char *const argv[], char *const envp[]);
 extern int fexecve_impl(int fd, char *const argv[], char *const envp[]);
+extern void free(void *ptr);
+extern char *getenv(const char *name);
+extern char *strdup(const char *s);
 
 static int wrap_int_result(int ret) {
     if (ret < 0) {
@@ -52,7 +54,7 @@ __attribute__((visibility("default"))) int execvp(const char *file, char *const 
     saveptr = NULL;
     dir = strtok_r(path_copy, ":", &saveptr);
     while (dir) {
-        char fullpath[MAX_PATH];
+        char fullpath[PATH_MAX];
         int len = snprintf(fullpath, sizeof(fullpath), "%s/%s", dir, file);
 
         if (len > 0 && (size_t)len < sizeof(fullpath)) {

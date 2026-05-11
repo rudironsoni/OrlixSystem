@@ -5,6 +5,7 @@
  */
 
 #include <linux/errno.h>
+#include <linux/atomic.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
@@ -14,8 +15,8 @@
 extern int execve_impl(const char *pathname, char *const argv[], char *const envp[]);
 
 /* Global initialization state */
-static atomic_int library_initialized = 0;
-static atomic_int kernel_booted = 0;
+static atomic_t library_initialized = ATOMIC_INIT(0);
+static atomic_t kernel_booted = ATOMIC_INIT(0);
 static kernel_mutex_t library_init_lock = KERNEL_MUTEX_INITIALIZER;
 
 /* ============================================================================
@@ -26,7 +27,7 @@ static int kernel_init_locked(void) {
     int vfs_result;
     int task_result;
 
-    if (atomic_load(&library_initialized)) {
+    if (atomic_read(&library_initialized)) {
         return 0; /* Already initialized */
     }
 
@@ -46,20 +47,20 @@ static int kernel_init_locked(void) {
     /* Initialize native command registry */
     native_registry_init();
 
-    atomic_store(&library_initialized, 1);
+    atomic_set(&library_initialized, 1);
     return 0;
 }
 
 static void kernel_deinit_locked(void) {
-    if (!atomic_load(&library_initialized)) {
+    if (!atomic_read(&library_initialized)) {
         return;
     }
 
     task_deinit();
     file_deinit_impl();
     vfs_deinit();
-    atomic_store(&library_initialized, 0);
-    atomic_store(&kernel_booted, 0);
+    atomic_set(&library_initialized, 0);
+    atomic_set(&kernel_booted, 0);
 }
 
 /* ============================================================================
@@ -71,20 +72,20 @@ void library_deinit_destructor(void) __attribute__((destructor)) __attribute__((
 
 void library_init_constructor(void) {
     /* Fast path: check without lock */
-    if (atomic_load(&library_initialized)) {
+    if (atomic_read(&library_initialized)) {
         return;
     }
 
     kernel_mutex_lock(&library_init_lock);
 
     /* Double-check after acquiring lock */
-    if (atomic_load(&library_initialized)) {
+    if (atomic_read(&library_initialized)) {
         kernel_mutex_unlock(&library_init_lock);
         return;
     }
 
     kernel_init_locked();
-    atomic_store(&kernel_booted, 1); /* Constructor counts as booted */
+    atomic_set(&kernel_booted, 1); /* Constructor counts as booted */
 
     kernel_mutex_unlock(&library_init_lock);
 }
@@ -103,7 +104,7 @@ int library_init(const void *config) {
     int result;
     (void)config;
 
-    if (atomic_load(&library_initialized)) {
+    if (atomic_read(&library_initialized)) {
         return 0;
     }
 
@@ -115,7 +116,7 @@ int library_init(const void *config) {
 }
 
 int library_is_initialized(void) {
-    return atomic_load(&library_initialized);
+    return atomic_read(&library_initialized);
 }
 
 const char *library_version(void) {
@@ -136,7 +137,7 @@ int start_kernel(void) {
     int result;
 
     /* Fast path: already booted */
-    if (atomic_load(&kernel_booted) && atomic_load(&library_initialized)) {
+    if (atomic_read(&kernel_booted) && atomic_read(&library_initialized)) {
         /* Ensure the calling host thread has a current task bound. The kernel
          * boot state is global, but current-task binding is per host thread. */
         (void)task_init();
@@ -146,7 +147,7 @@ int start_kernel(void) {
     kernel_mutex_lock(&library_init_lock);
 
     /* Double-check after acquiring lock */
-    if (atomic_load(&kernel_booted) && atomic_load(&library_initialized)) {
+    if (atomic_read(&kernel_booted) && atomic_read(&library_initialized)) {
         kernel_mutex_unlock(&library_init_lock);
         return 0;
     }
@@ -158,19 +159,19 @@ int start_kernel(void) {
         return result;
     }
 
-    atomic_store(&kernel_booted, 1);
+    atomic_set(&kernel_booted, 1);
     kernel_mutex_unlock(&library_init_lock);
     return 0;
 }
 
 int kernel_is_booted(void) {
-    return atomic_load(&kernel_booted) && atomic_load(&library_initialized);
+    return atomic_read(&kernel_booted) && atomic_read(&library_initialized);
 }
 
 int kernel_shutdown(void) {
     kernel_mutex_lock(&library_init_lock);
 
-    if (!atomic_load(&kernel_booted) && !atomic_load(&library_initialized)) {
+    if (!atomic_read(&kernel_booted) && !atomic_read(&library_initialized)) {
         kernel_mutex_unlock(&library_init_lock);
         return 0; /* Already shut down */
     }

@@ -21,6 +21,11 @@ bool isObjectiveCKernelTest(llvm::StringRef Path) {
   return Path.ends_with(".m") || Path.ends_with(".mm");
 }
 
+bool isMLibCCompileSmoke(llvm::StringRef Path) {
+  return Path.contains("OrlixKernelTests/MLibC") &&
+         Path.ends_with("CompileSmoke.c");
+}
+
 struct RegexRule {
   const char *Pattern;
   const char *Message;
@@ -67,6 +72,16 @@ public:
                           StringRef, StringRef, const Module *, bool,
                           SrcMgr::CharacteristicKind) override {
     if (KernelTests) {
+      if (!isMLibCCompileSmoke(Path) &&
+          (FileName.starts_with("OrlixMLibC/") ||
+           FileName.starts_with("orlixmlibc/") ||
+           FileName.contains("OrlixMLibC/include/") ||
+           FileName.contains("../OrlixMLibC/") ||
+           FileName.contains("/OrlixMLibC/"))) {
+        Check.diag(HashLoc,
+                   "LinuxKernel tests must not include OrlixMLibC headers; keep libc/package ABI proof in explicit MLibC compile-smoke files only");
+      }
+
       if (FileName.starts_with("linux/") || FileName.starts_with("asm/") ||
           FileName.starts_with("asm-generic/") ||
           FileName.starts_with("uapi/")) {

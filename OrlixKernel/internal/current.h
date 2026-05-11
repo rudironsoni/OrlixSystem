@@ -5,9 +5,9 @@
 extern "C" {
 #endif
 
-struct task;
+struct task_struct;
 
-void set_current_task(struct task *task);
+void set_current(struct task_struct *task);
 
 #ifdef __cplusplus
 }

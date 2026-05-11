@@ -8,7 +8,7 @@
  * FORBIDDEN: Constant accessor soup (e.g., sigusr1(), at_nofollow())
  */
 
-#include <linux/stat.h>
+#include <uapi/linux/stat.h>
 
 /* ============================================================================
  * Stat mode semantic helpers - interpret mode values

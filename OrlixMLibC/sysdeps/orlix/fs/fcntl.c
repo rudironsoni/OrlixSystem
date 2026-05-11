@@ -1,7 +1,7 @@
 #include <errno.h>
 #include <stdarg.h>
 
-#include <linux/fcntl.h>
+#include <fcntl.h>
 
 extern int dup_impl(int oldfd);
 extern int dup2_impl(int oldfd, int newfd);

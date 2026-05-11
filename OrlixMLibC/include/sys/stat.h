@@ -3,6 +3,7 @@
 
 #include <sys/types.h>
 
+#include <asm/stat.h>
 #include <linux/stat.h>
 
 #endif

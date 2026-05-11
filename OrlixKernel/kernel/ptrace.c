@@ -1,6 +1,3 @@
-#include <stdbool.h>
-#include <stdint.h>
-
 #include "ptrace.h"
 
 #include "cred.h"
@@ -9,6 +6,7 @@
 
 #include <linux/errno.h>
 #include <linux/types.h>
+#include <linux/stddef.h>
 #ifdef SIGSTOP
 #undef SIGSTOP
 #endif
@@ -19,11 +17,11 @@
 #include <asm-generic/signal.h>
 #undef __ASSEMBLY__
 #include <asm/ptrace.h>
-#include <linux/audit.h>
-#include <linux/capability.h>
-#include <linux/elf.h>
-#include <linux/ptrace.h>
-#include <linux/uio.h>
+#include <uapi/linux/audit.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/ptrace.h>
+#include <uapi/linux/uio.h>
 
 static bool ptrace_same_credential_domain(const struct cred *tracer, const struct cred *target) {
     if (!tracer || !target || tracer->user_ns_id != target->user_ns_id) {
@@ -35,7 +33,7 @@ static bool ptrace_same_credential_domain(const struct cred *tracer, const struc
            tracer->fsgid == target->fsgid;
 }
 
-static bool ptrace_may_attach(const struct task *tracer, const struct task *target) {
+static bool ptrace_may_attach(const struct task_struct *tracer, const struct task_struct *target) {
     const struct cred *tracer_cred;
     const struct cred *target_cred;
 
@@ -50,7 +48,7 @@ static bool ptrace_may_attach(const struct task *tracer, const struct task *targ
     return target->exec_dumpable && ptrace_same_credential_domain(tracer_cred, target_cred);
 }
 
-int ptrace_may_access_task_impl(const struct task *tracer, const struct task *target) {
+int ptrace_may_access_task_impl(const struct task_struct *tracer, const struct task_struct *target) {
     if (!tracer || !target || !tracer->cred || !target->cred) {
         return -ESRCH;
     }
@@ -60,13 +58,13 @@ int ptrace_may_access_task_impl(const struct task *tracer, const struct task *ta
     return 0;
 }
 
-static bool ptrace_is_tracer(const struct task *tracer, const struct task *target) {
+static bool ptrace_is_tracer(const struct task_struct *tracer, const struct task_struct *target) {
     return tracer && target && target->ptrace_attached && target->ptracer_pid == tracer->pid;
 }
 
-static int ptrace_get_target(__kernel_pid_t pid, struct task **target_out) {
-    struct task *tracer = current_task();
-    struct task *target;
+static int ptrace_get_target(__kernel_pid_t pid, struct task_struct **target_out) {
+    struct task_struct *tracer = get_current();
+    struct task_struct *target;
 
     if (!target_out) {
         return -EINVAL;
@@ -83,7 +81,7 @@ static int ptrace_get_target(__kernel_pid_t pid, struct task **target_out) {
     return 0;
 }
 
-static int ptrace_copy_regs_to_user(struct task *target, struct iovec *iov) {
+static int ptrace_copy_regs_to_user(struct task_struct *target, struct iovec *iov) {
     struct user_pt_regs regs;
     size_t ncopy;
 
@@ -101,7 +99,7 @@ static int ptrace_copy_regs_to_user(struct task *target, struct iovec *iov) {
     return 0;
 }
 
-static int ptrace_copy_regs_from_user(struct task *target, const struct iovec *iov) {
+static int ptrace_copy_regs_from_user(struct task_struct *target, const struct iovec *iov) {
     struct user_pt_regs regs;
     size_t ncopy;
 
@@ -118,10 +116,10 @@ static int ptrace_copy_regs_from_user(struct task *target, const struct iovec *i
     return 0;
 }
 
-static long ptrace_copy_syscall_info(struct task *target, void *addr, void *data) {
+static long ptrace_copy_syscall_info(struct task_struct *target, void *addr, void *data) {
     struct ptrace_syscall_info snapshot;
     struct ptrace_syscall_info *info = (struct ptrace_syscall_info *)data;
-    unsigned long size = (unsigned long)(uintptr_t)addr;
+    unsigned long size = (unsigned long)addr;
     size_t ncopy;
 
     if (!target || !info || size == 0) {
@@ -144,12 +142,12 @@ static long ptrace_copy_syscall_info(struct task *target, void *addr, void *data
     return (long)ncopy;
 }
 
-static void ptrace_report_stop(struct task *target, int32_t sig) {
+static void ptrace_report_stop(struct task_struct *target, __s32 sig) {
     task_mark_stopped_by_signal(target, sig);
     task_notify_parent_state_change(target);
 }
 
-static void ptrace_record_event_stop(struct task *target, uint64_t event, uint64_t message) {
+static void ptrace_record_event_stop(struct task_struct *target, __u64 event, __u64 message) {
     if (!target || !target->ptrace_attached) {
         return;
     }
@@ -161,8 +159,8 @@ static void ptrace_record_event_stop(struct task *target, uint64_t event, uint64
 }
 
 long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
-    struct task *tracer = current_task();
-    struct task *target;
+    struct task_struct *tracer = get_current();
+    struct task_struct *target;
     int ret;
 
     if (!tracer) {
@@ -215,7 +213,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
             return -ESRCH;
         }
         if (data) {
-            target->ptrace_signal = (int32_t)(intptr_t)data;
+            target->ptrace_signal = (__s32)(long)data;
         }
         target->ptracer_pid = 0;
         target->ptrace_attached = false;
@@ -232,7 +230,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
     case PTRACE_CONT:
     case PTRACE_SYSCALL:
     {
-        int32_t resume_signal;
+        __s32 resume_signal;
         ret = ptrace_get_target(pid, &target);
         if (ret != 0) {
             return ret;
@@ -241,7 +239,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         target->ptrace_syscall_trace = request == PTRACE_SYSCALL;
         target->ptrace_signal = 0;
         target->ptrace_signal_stop = 0;
-        resume_signal = (int32_t)(intptr_t)data;
+        resume_signal = (__s32)(long)data;
         kernel_mutex_unlock(&target->lock);
         if (resume_signal != 0) {
             kernel_mutex_lock(&target->lock);
@@ -269,7 +267,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
             return ret;
         }
         kernel_mutex_lock(&target->lock);
-        target->ptrace_options = (uint64_t)(uintptr_t)data;
+        target->ptrace_options = (__u64)(unsigned long)data;
         kernel_mutex_unlock(&target->lock);
         free_task(target);
         return 0;
@@ -293,7 +291,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         }
         {
             long word = 0;
-            long nread = task_read_virtual_memory_impl(target, (uint64_t)(uintptr_t)addr,
+            long nread = task_read_virtual_memory_impl(target, (__u64)(unsigned long)addr,
                                                        &word, sizeof(word));
             free_task(target);
             if (nread != (long)sizeof(word)) {
@@ -308,8 +306,8 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
             return ret;
         }
         {
-            long word = (long)(intptr_t)data;
-            long nwritten = task_write_virtual_memory_impl(target, (uint64_t)(uintptr_t)addr,
+            long word = (long)data;
+            long nwritten = task_write_virtual_memory_impl(target, (__u64)(unsigned long)addr,
                                                            &word, sizeof(word));
             free_task(target);
             if (nwritten != (long)sizeof(word)) {
@@ -318,7 +316,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
             return 0;
         }
     case PTRACE_GETREGSET:
-        if ((long)(uintptr_t)addr != NT_PRSTATUS) {
+        if ((unsigned long)addr != NT_PRSTATUS) {
             return -EINVAL;
         }
         ret = ptrace_get_target(pid, &target);
@@ -332,7 +330,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
         free_task(target);
         return 0;
     case PTRACE_SETREGSET:
-        if ((long)(uintptr_t)addr != NT_PRSTATUS) {
+        if ((unsigned long)addr != NT_PRSTATUS) {
             return -EINVAL;
         }
         ret = ptrace_get_target(pid, &target);
@@ -362,7 +360,7 @@ long ptrace_impl(long request, __kernel_pid_t pid, void *addr, void *data) {
 
 int ptrace_note_syscall_entry(long number, long arg0, long arg1, long arg2,
                               long arg3, long arg4, long arg5) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
 
     if (!task || !task->ptrace_attached || !task->ptrace_syscall_trace) {
         return 0;
@@ -373,13 +371,13 @@ int ptrace_note_syscall_entry(long number, long arg0, long arg1, long arg2,
         return 0;
     }
     task->ptrace_syscall_op = PTRACE_SYSCALL_INFO_ENTRY;
-    task->ptrace_syscall_nr = (uint64_t)number;
-    task->ptrace_syscall_args[0] = (uint64_t)arg0;
-    task->ptrace_syscall_args[1] = (uint64_t)arg1;
-    task->ptrace_syscall_args[2] = (uint64_t)arg2;
-    task->ptrace_syscall_args[3] = (uint64_t)arg3;
-    task->ptrace_syscall_args[4] = (uint64_t)arg4;
-    task->ptrace_syscall_args[5] = (uint64_t)arg5;
+    task->ptrace_syscall_nr = (__u64)number;
+    task->ptrace_syscall_args[0] = (__u64)arg0;
+    task->ptrace_syscall_args[1] = (__u64)arg1;
+    task->ptrace_syscall_args[2] = (__u64)arg2;
+    task->ptrace_syscall_args[3] = (__u64)arg3;
+    task->ptrace_syscall_args[4] = (__u64)arg4;
+    task->ptrace_syscall_args[5] = (__u64)arg5;
     task->ptrace_syscall_exit_next = true;
     kernel_mutex_unlock(&task->lock);
     ptrace_report_stop(task, SIGTRAP);
@@ -387,7 +385,7 @@ int ptrace_note_syscall_entry(long number, long arg0, long arg1, long arg2,
 }
 
 void ptrace_note_syscall_exit(long retval) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
 
     if (!task || !task->ptrace_attached || !task->ptrace_syscall_trace) {
         return;
@@ -401,9 +399,9 @@ void ptrace_note_syscall_exit(long retval) {
     ptrace_report_stop(task, SIGTRAP);
 }
 
-void ptrace_note_fork_event(struct task *task, __kernel_pid_t child_pid, int clone_event) {
-    uint64_t option;
-    uint64_t event;
+void ptrace_note_fork_event(struct task_struct *task, __kernel_pid_t child_pid, int clone_event) {
+    __u64 option;
+    __u64 event;
 
     if (!task || !task->ptrace_attached) {
         return;
@@ -413,12 +411,12 @@ void ptrace_note_fork_event(struct task *task, __kernel_pid_t child_pid, int clo
     if ((task->ptrace_options & option) == 0) {
         return;
     }
-    ptrace_record_event_stop(task, event, (uint64_t)child_pid);
+    ptrace_record_event_stop(task, event, (__u64)child_pid);
 }
 
-void ptrace_rewrite_fork_event_message(struct task *task, __kernel_pid_t old_child_pid,
+void ptrace_rewrite_fork_event_message(struct task_struct *task, __kernel_pid_t old_child_pid,
                                        __kernel_pid_t new_child_pid, int clone_event) {
-    uint64_t expected_event;
+    __u64 expected_event;
 
     if (!task || !task->ptrace_attached) {
         return;
@@ -426,29 +424,29 @@ void ptrace_rewrite_fork_event_message(struct task *task, __kernel_pid_t old_chi
     expected_event = clone_event ? PTRACE_EVENT_CLONE : PTRACE_EVENT_FORK;
     kernel_mutex_lock(&task->lock);
     if (task->ptrace_event == expected_event &&
-        task->ptrace_event_message == (uint64_t)old_child_pid) {
-        task->ptrace_event_message = (uint64_t)new_child_pid;
+        task->ptrace_event_message == (__u64)old_child_pid) {
+        task->ptrace_event_message = (__u64)new_child_pid;
     }
     kernel_mutex_unlock(&task->lock);
 }
 
-void ptrace_note_exec_event(struct task *task) {
+void ptrace_note_exec_event(struct task_struct *task) {
     if (!task || !task->ptrace_attached ||
         (task->ptrace_options & PTRACE_O_TRACEEXEC) == 0) {
         return;
     }
-    ptrace_record_event_stop(task, PTRACE_EVENT_EXEC, (uint64_t)task->pid);
+    ptrace_record_event_stop(task, PTRACE_EVENT_EXEC, (__u64)task->pid);
 }
 
-void ptrace_note_exit_event(struct task *task, int status) {
+void ptrace_note_exit_event(struct task_struct *task, int status) {
     if (!task || !task->ptrace_attached ||
         (task->ptrace_options & PTRACE_O_TRACEEXIT) == 0) {
         return;
     }
-    ptrace_record_event_stop(task, PTRACE_EVENT_EXIT, (uint64_t)(status & 0xff));
+    ptrace_record_event_stop(task, PTRACE_EVENT_EXIT, (__u64)(status & 0xff));
 }
 
-int ptrace_note_signal_delivery(struct task *task, int32_t sig) {
+int ptrace_note_signal_delivery(struct task_struct *task, __s32 sig) {
     if (!task || !task->ptrace_attached || task->ptrace_signal_bypass || sig == SIGKILL) {
         return 0;
     }

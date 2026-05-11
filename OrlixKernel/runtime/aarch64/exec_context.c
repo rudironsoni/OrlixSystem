@@ -11,7 +11,7 @@
 #define AARCH64_INSN_BRK_BASE 0xd4200000U
 #define AARCH64_INSN_BRK_MASK 0xffe0001fU
 
-int aarch64_exec_context_from_task(struct task *task, struct aarch64_exec_context *context) {
+int aarch64_exec_context_from_task(struct task_struct *task, struct aarch64_exec_context *context) {
     const struct task_exec_handoff *handoff;
 
     if (!task || !context) {

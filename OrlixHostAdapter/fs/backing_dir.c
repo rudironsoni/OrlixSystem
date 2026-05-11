@@ -19,7 +19,7 @@ int backing_dir_open(int fd, int64_t offset, struct backing_dir_stream **out_str
     if (!out_stream) {
         return -linux_errno_from_darwin_errno(EFAULT);
     }
-    *out_stream = NULL;
+    *out_stream = (struct backing_dir_stream *)0;
 
     dup_fd = backing_dup(fd);
     if (dup_fd < 0) {

@@ -11,17 +11,16 @@
 
 #include "time_state.h"
 
-#include <stdint.h>
-
 #include <linux/errno.h>
+#include <linux/limits.h>
 #include <linux/string.h>
-#include <linux/time.h>
+#include <uapi/linux/time.h>
 
 #include "task.h"
 #include "signal.h"
 #include "wait_queue.h"
 
-struct host_timezone_payload {
+struct timezone_payload {
     int tz_minuteswest;
     int tz_dsttime;
 };
@@ -64,7 +63,7 @@ int gettimeofday_impl(struct __kernel_old_timeval *tv, void *tz) {
     }
     time_ns_to_timeval(ns, tv);
     if (tz) {
-        struct host_timezone_payload *payload = (struct host_timezone_payload *)tz;
+        struct timezone_payload *payload = (struct timezone_payload *)tz;
         payload->tz_minuteswest = 0;
         payload->tz_dsttime = 0;
     }
@@ -116,15 +115,15 @@ int nanosleep_impl(const struct __kernel_timespec *req, struct __kernel_timespec
     }
 
     total_ms = (uint64_t)req->tv_sec * 1000ULL + ((uint64_t)req->tv_nsec + 999999ULL) / 1000000ULL;
-    if (total_ms > (uint64_t)INT32_MAX) {
-        total_ms = (uint64_t)INT32_MAX;
+    if (total_ms > (u64)S32_MAX) {
+        total_ms = (u64)S32_MAX;
     }
 
-    if (signal_has_unblocked_pending(current_task())) {
+    if (signal_has_unblocked_pending(get_current())) {
         if (rem) {
             *rem = *req;
         }
-        task_restart_record_impl(current_task(), TASK_RESTART_NANOSLEEP,
+        task_restart_record_impl(get_current(), TASK_RESTART_NANOSLEEP,
                                  (uint64_t)(uintptr_t)req, (uint64_t)(uintptr_t)rem,
                                  0, 0, 0, 0);
         return -EINTR;
@@ -135,7 +134,7 @@ int nanosleep_impl(const struct __kernel_timespec *req, struct __kernel_timespec
         if (rem) {
             *rem = *req;
         }
-        task_restart_record_impl(current_task(), TASK_RESTART_NANOSLEEP,
+        task_restart_record_impl(get_current(), TASK_RESTART_NANOSLEEP,
                                  (uint64_t)(uintptr_t)req, (uint64_t)(uintptr_t)rem,
                                  0, 0, 0, 0);
         return -EINTR;

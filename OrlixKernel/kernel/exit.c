@@ -8,9 +8,6 @@
 #include "internal/kthread.h"
 #include "../fs/pty.h"
 
-/* External declaration for init task */
-extern struct task *initial_task;
-
 struct orphaned_pgrp_candidate {
     int32_t sid;
     int32_t pgid;
@@ -44,10 +41,10 @@ static bool task_process_group_is_orphaned_locked(int32_t sid, int32_t pgid) {
     }
 
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task *member = task_table[i];
+        struct task_struct *member = task_table[i];
         while (member) {
             if (member->sid == sid && member->pgid == pgid) {
-                struct task *parent = member->parent;
+                struct task_struct *parent = member->parent;
                 has_member = true;
                 if (parent && parent->sid == sid && parent->pgid != pgid) {
                     return false;
@@ -66,9 +63,9 @@ static bool task_process_group_has_stopped_member_locked(int32_t sid, int32_t pg
     }
 
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task *member = task_table[i];
+        struct task_struct *member = task_table[i];
         while (member) {
-            if (member->sid == sid && member->pgid == pgid && atomic_load(&member->stopped)) {
+            if (member->sid == sid && member->pgid == pgid && atomic_read(&member->stopped) != 0) {
                 return true;
             }
             member = member->hash_next;
@@ -117,7 +114,7 @@ static void task_signal_newly_orphaned_stopped_groups(const struct orphaned_pgrp
 }
 
 void exit_impl(int status) {
-    struct task *task = current_task();
+    struct task_struct *task = get_current();
     struct orphaned_pgrp_candidate orphaned_candidates[TASK_MAX_TASKS];
     size_t orphaned_candidate_count = 0;
     if (!task) {
@@ -131,12 +128,12 @@ void exit_impl(int status) {
     kernel_mutex_lock(&task->lock);
 
     /* Reparent children to init (orphan adoption) */
-    if (task->children && initial_task && initial_task != task) {
+    if (task->children && init_task && init_task != task) {
         /* Lock init's children list */
-        kernel_mutex_lock(&initial_task->lock);
+        kernel_mutex_lock(&init_task->lock);
 
         /* Iterate through all children and reparent them */
-        struct task *child = task->children;
+        struct task_struct *child = task->children;
         while (child) {
             kernel_mutex_lock(&child->lock);
 
@@ -145,8 +142,8 @@ void exit_impl(int status) {
                                                 &orphaned_candidate_count,
                                                 child->sid,
                                                 child->pgid);
-            child->parent = initial_task;
-            child->ppid = initial_task->pid;
+            child->parent = init_task;
+            child->ppid = init_task->pid;
 
             kernel_mutex_unlock(&child->lock);
             child = child->next_sibling;
@@ -154,27 +151,27 @@ void exit_impl(int status) {
 
         /* Link entire children list to init's children list */
         /* Find the last child in our list */
-        struct task *last_child = task->children;
+        struct task_struct *last_child = task->children;
         while (last_child->next_sibling) {
             last_child = last_child->next_sibling;
         }
 
         /* Prepend our children list to init's children list */
-        last_child->next_sibling = initial_task->children;
-        initial_task->children = task->children;
+        last_child->next_sibling = init_task->children;
+        init_task->children = task->children;
 
         /* Clear our children list */
         task->children = NULL;
 
         /* Wake up init if it's waiting for children */
-        if (initial_task->waiters > 0) {
-            kernel_cond_broadcast(&initial_task->wait_cond);
+        if (init_task->waiters > 0) {
+            kernel_cond_broadcast(&init_task->wait_cond);
         }
 
-        kernel_mutex_unlock(&initial_task->lock);
+        kernel_mutex_unlock(&init_task->lock);
     } else if (task->children) {
         /* No init task available, just update ppid to 1 */
-        struct task *child = task->children;
+        struct task_struct *child = task->children;
         while (child) {
             kernel_mutex_lock(&child->lock);
             task_record_orphaned_pgrp_candidate(orphaned_candidates,

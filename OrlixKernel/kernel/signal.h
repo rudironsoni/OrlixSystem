@@ -20,6 +20,7 @@
 #include <linux/atomic.h>
 #include <linux/types.h>
 
+#include "../include/signal_calls.h"
 #include "internal/mutex.h"
 
 #ifdef __cplusplus
@@ -28,17 +29,6 @@ extern "C" {
 
 /* Forward declaration - avoid circular include with task.h */
 struct task_struct;
-
-/* Signal count - Linux uses 64 signals */
-#define KERNEL_SIG_NUM 64
-#define KERNEL_SIG_NUM_WORDS ((KERNEL_SIG_NUM + 63) / 64)
-
-/* Signal handler type - private internal */
-typedef void (*sighandler_t)(int);
-
-struct signal_mask_bits {
-    u64 sig[KERNEL_SIG_NUM_WORDS];
-};
 
 int kernel_thread_sigmask(int how, const struct signal_mask_bits *set,
                           struct signal_mask_bits *oldset);
@@ -62,15 +52,6 @@ struct signal_queue {
     struct signal_queue_entry *tail;
     int count;
     kernel_mutex_t lock;
-};
-
-/* Signal action slot - private internal
- * Storage for one signal's handler configuration */
-struct signal_action_slot {
-    sighandler_t handler;
-    struct signal_mask_bits mask;
-    int32_t flags;
-    u64 restorer;
 };
 
 /* Signal stack state - private internal */
@@ -134,23 +115,6 @@ bool signal_is_blocked(const struct task_struct *task, int32_t sig);
 bool signal_is_pending(const struct task_struct *task, int32_t sig);
 bool signal_has_unblocked_pending(const struct task_struct *task);
 
-/* ============================================================================
- * INTERNAL SYSCALL IMPLEMENTATIONS (for host-bridge use)
- * These are the internal implementations that the Darwin bridge calls.
- * ============================================================================
- */
-int do_sigaction(int32_t sig, const struct signal_action_slot *act,
-                 struct signal_action_slot *oldact);
-int do_sigprocmask(int how, const struct signal_mask_bits *set,
-                   struct signal_mask_bits *oldset);
-int do_sigsetmask(const struct signal_mask_bits *set, struct signal_mask_bits *oldset);
-int do_sigpending(struct signal_mask_bits *set);
-int do_signal(int32_t signum, sighandler_t handler, sighandler_t *old_handler);
-int do_raise(int32_t sig);
-int do_pause(void);
-int do_sigsuspend(const struct signal_mask_bits *mask);
-int do_kill(int32_t pid, int32_t sig);
-int do_killpg(int32_t pgrp, int32_t sig);
 int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altstack *old_stack);
 int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, u64 return_pc,
                               u64 current_sp, u64 *frame_sp_out);

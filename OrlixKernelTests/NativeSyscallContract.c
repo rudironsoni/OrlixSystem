@@ -3,34 +3,30 @@
 #include <asm/unistd.h>
 #include <asm/ioctls.h>
 #include <asm/statfs.h>
-#include <linux/close_range.h>
-#include <linux/fcntl.h>
-#include <linux/futex.h>
-#include <linux/capability.h>
-#include <linux/elf.h>
-#include <linux/memfd.h>
-#include <linux/mman.h>
-#include <linux/net.h>
-#include <linux/pidfd.h>
-#include <linux/poll.h>
-#include <linux/prctl.h>
-#include <linux/random.h>
-#include <linux/sched.h>
-#include <linux/socket.h>
-#include <linux/stat.h>
-#include <linux/mount.h>
-#include <linux/times.h>
-#include <linux/time_types.h>
-#include <linux/utsname.h>
-#include <linux/xattr.h>
-#include <asm-generic/siginfo.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/close_range.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/futex.h>
+#include <uapi/linux/capability.h>
+#include <uapi/linux/elf.h>
+#include <uapi/linux/memfd.h>
+#include <uapi/linux/mman.h>
+#include <uapi/linux/poll.h>
+#include <uapi/linux/prctl.h>
+#include <uapi/linux/random.h>
+#include <uapi/linux/sched.h>
+#include <uapi/linux/socket.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/mount.h>
+#include <uapi/linux/times.h>
+#include <uapi/linux/time_types.h>
+#include <uapi/linux/utsname.h>
+#include <uapi/linux/xattr.h>
+#include <uapi/asm-generic/siginfo.h>
 
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #ifdef SIGBUS
 #undef SIGBUS
@@ -68,9 +64,7 @@
 #ifdef SIGSYS
 #undef SIGSYS
 #endif
-#define __ASSEMBLY__ 1
-#include <asm-generic/signal.h>
-#undef __ASSEMBLY__
+#include <uapi/asm-generic/signal.h>
 
 #ifdef SIG_BLOCK
 #undef SIG_BLOCK
@@ -96,12 +90,40 @@
 #ifdef RLIM_NLIMITS
 #undef RLIM_NLIMITS
 #endif
-#include <asm-generic/resource.h>
-#include <asm-generic/signal-defs.h>
+#include <uapi/asm-generic/resource.h>
+#include <uapi/asm-generic/signal-defs.h>
+
+#ifndef SIG_BLOCK
+#define SIG_BLOCK 0
+#endif
+#ifndef SIG_UNBLOCK
+#define SIG_UNBLOCK 1
+#endif
+#ifndef SIG_SETMASK
+#define SIG_SETMASK 2
+#endif
 
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "kernel/signal.h"
+#ifdef TASK_RUNNING
+#undef TASK_RUNNING
+#endif
+#ifdef TASK_INTERRUPTIBLE
+#undef TASK_INTERRUPTIBLE
+#endif
+#ifdef TASK_UNINTERRUPTIBLE
+#undef TASK_UNINTERRUPTIBLE
+#endif
+#ifdef TASK_STOPPED
+#undef TASK_STOPPED
+#endif
+#ifdef TASK_ZOMBIE
+#undef TASK_ZOMBIE
+#endif
+#ifdef TASK_DEAD
+#undef TASK_DEAD
+#endif
 #include "kernel/task.h"
 #ifdef WEXITED
 #undef WEXITED
@@ -115,11 +137,7 @@
 #ifdef WNOWAIT
 #undef WNOWAIT
 #endif
-#include <linux/wait.h>
-
-#ifndef F_OK
-#define F_OK 0
-#endif
+#include <uapi/linux/wait.h>
 
 struct native_unix_sockaddr {
     unsigned short sun_family;
@@ -208,6 +226,16 @@ extern int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char
 #include "runtime/syscall.h"
 
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
+extern void *calloc(size_t count, size_t size);
+
+#define memcpy  __builtin_memcpy
+#define memcmp  __builtin_memcmp
+#define memset  __builtin_memset
+#define strlen  __builtin_strlen
+#define strcmp  __builtin_strcmp
+#define strncmp __builtin_strncmp
+#define strchr  __builtin_strchr
+#define strstr  __builtin_strstr
 
 struct native_syscall_dirent64 {
     unsigned long long d_ino;
@@ -221,6 +249,27 @@ static int init_entry_seen;
 
 static int latest_signal_info_matches(struct task_struct *task, int signo, int code, uint64_t addr);
 static int read_file_into_buffer(const char *path, char *buf, size_t buf_len);
+
+static int parse_decimal_fd(const char *text, int *value) {
+    int parsed = 0;
+
+    if (!text || !value || *text == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    while (*text != '\0') {
+        if (*text < '0' || *text > '9') {
+            errno = EINVAL;
+            return -1;
+        }
+        parsed = (parsed * 10) + (*text - '0');
+        text++;
+    }
+
+    *value = parsed;
+    return 0;
+}
 
 static int close_if_open(int fd) {
     if (fd >= 0 && fdtable_is_used_impl(fd)) {
@@ -439,7 +488,9 @@ static int native_syscall_entry(int argc, char **argv, char **envp) {
 
     for (int i = 0; envp[i]; i++) {
         if (strncmp(envp[i], "OUTFD=", 6) == 0) {
-            outfd = (int)strtol(envp[i] + 6, NULL, 10);
+            if (parse_decimal_fd(envp[i] + 6, &outfd) != 0) {
+                return -1;
+            }
         }
     }
     if (outfd < 0) {
@@ -5476,7 +5527,7 @@ int native_syscall_contract_dispatches_shell_fd_vfs_syscalls(void) {
         goto out;
     }
     ret = syscall_dispatch_impl(__NR_faccessat2, AT_FDCWD, (long)(uintptr_t)renamed,
-                                F_OK, 0, 0, 0);
+                                0, 0, 0, 0);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
@@ -6849,7 +6900,7 @@ int native_syscall_contract_stack_guard_write_grows_and_below_guard_faults(void)
         errno = ENOMEM;
         return -1;
     }
-    atomic_init(&mm->refs, 1);
+    atomic_set(&mm->refs, 1);
     mm->initial_stack_base = stack_base;
     mm->initial_stack_size = stack_size;
     mm->initial_stack_image_size = stack_size;

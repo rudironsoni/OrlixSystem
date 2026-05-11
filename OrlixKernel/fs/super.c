@@ -9,7 +9,7 @@
 #include <linux/magic.h>
 #include <linux/string.h>
 #include <linux/fcntl.h>
-#include <linux/mount.h>
+#include <uapi/linux/mount.h>
 #include <linux/types.h>
 #include "fdtable.h"
 #include "vfs.h"

@@ -1,12 +1,12 @@
 #include <asm/posix_types.h>
-
-#include <errno.h>
-#include <stdatomic.h>
+#include <uapi/asm-generic/errno.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
 #include "kernel/init.h"
 #include "kernel/task.h"
+
+extern int errno;
 
 extern __kernel_pid_t getpgrp(void);
 extern __kernel_pid_t getpgid(__kernel_pid_t pid);
@@ -45,7 +45,7 @@ static void reset_process_group_session_test_kernel_state(void) {
     init_task->ppid = 0;
     init_task->pgid = init_task->pid;
     init_task->sid = init_task->pid;
-    atomic_store(&init_task->execed, false);
+    atomic_set(&init_task->execed, 0);
 
     while ((child = init_task->children) != NULL) {
         task_unlink_child_impl(init_task, child);
@@ -120,7 +120,7 @@ int process_group_session_contract_public_setpgid_rejects_execed_child(void) {
     if (!child) {
         return -1;
     }
-    atomic_store(&child->execed, true);
+    atomic_set(&child->execed, 1);
 
     errno = 0;
     if (setpgid((__kernel_pid_t)child->pid, (__kernel_pid_t)child->pid) != -1 || errno != EACCES) {

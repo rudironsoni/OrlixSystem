@@ -1,7 +1,7 @@
 #include "SeccompContract.h"
 
 #include <asm/unistd.h>
-#include <linux/sched.h>
+#include <uapi/linux/sched.h>
 
 #include <errno.h>
 #include <stdatomic.h>
