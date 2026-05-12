@@ -839,6 +839,47 @@ int signal_frame_state_get_task(const struct task *task,
     return 0;
 }
 
+int signal_frame_metadata_get_task(const struct task *task,
+                                   uint64_t *signo_out,
+                                   uint64_t *return_pc_out,
+                                   uint64_t *handler_pc_out,
+                                   uint64_t *flags_out,
+                                   uint64_t *restorer_pc_out,
+                                   uint64_t *mask_out,
+                                   uint64_t *current_sp_out,
+                                   uint64_t *size_out) {
+    if (!task || !task->mm) {
+        return -EINVAL;
+    }
+
+    if (signo_out) {
+        *signo_out = task->mm->signal_frame_signo;
+    }
+    if (return_pc_out) {
+        *return_pc_out = task->mm->signal_frame_return_pc;
+    }
+    if (handler_pc_out) {
+        *handler_pc_out = task->mm->signal_handler_pc;
+    }
+    if (flags_out) {
+        *flags_out = task->mm->signal_frame_flags;
+    }
+    if (restorer_pc_out) {
+        *restorer_pc_out = task->mm->signal_frame_restorer_pc;
+    }
+    if (mask_out) {
+        *mask_out = task->mm->signal_frame_mask;
+    }
+    if (current_sp_out) {
+        *current_sp_out = task->mm->signal_frame_current_sp;
+    }
+    if (size_out) {
+        *size_out = task->mm->signal_frame_size;
+    }
+
+    return 0;
+}
+
 bool signal_frame_restart_is_task(const struct task *task,
                                   uint64_t kind) {
     if (!task || !task->mm) {
