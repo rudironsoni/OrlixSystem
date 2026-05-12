@@ -13,7 +13,6 @@
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "kernel/signal.h"
-#include "private/kernel/signal_frame_state.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/kthread_state.h"
@@ -808,10 +807,9 @@ int pipe_contract_blocking_read_interrupted_by_signal(void) {
 
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        struct signal_frame_state frame;
-        if (signal_frame_state_get_task(child, &frame) != 0 ||
-            frame.restart_kind != TASK_RESTART_PIPE_READ ||
-            frame.restart_arg0 != (uint64_t)fds[0]) {
+        if (!signal_frame_restart_matches_task(child, TASK_RESTART_PIPE_READ,
+                                               (uint64_t)fds[0],
+                                               0, 0, 0, 0, 0)) {
             ret = ENODATA;
         } else {
             task_restart_clear_impl(child);
@@ -926,10 +924,9 @@ int pipe_contract_blocking_write_interrupted_by_signal(void) {
 
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        struct signal_frame_state frame;
-        if (signal_frame_state_get_task(child, &frame) != 0 ||
-            frame.restart_kind != TASK_RESTART_PIPE_WRITE ||
-            frame.restart_arg0 != (uint64_t)fds[1]) {
+        if (!signal_frame_restart_matches_task(child, TASK_RESTART_PIPE_WRITE,
+                                               (uint64_t)fds[1],
+                                               0, 0, 0, 0, 0)) {
             ret = ENODATA;
         } else {
             task_restart_clear_impl(child);

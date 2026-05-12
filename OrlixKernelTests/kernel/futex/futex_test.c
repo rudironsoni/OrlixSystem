@@ -14,7 +14,6 @@
 #include "kernel/cred.h"
 #include "kernel/futex.h"
 #include "kernel/signal.h"
-#include "private/kernel/signal_frame_state.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/kthread_state.h"
@@ -475,13 +474,10 @@ int futex_contract_interrupted_wait_records_restart(void) {
     futex_wait_thread_destroy(&ctx);
 
     {
-        struct signal_frame_state frame;
         if (ctx.rc != -1 || ctx.saved_errno != EINTR ||
-            signal_frame_state_get_task(child, &frame) != 0 ||
-            frame.restart_kind != TASK_RESTART_FUTEX_WAIT ||
-            frame.restart_arg0 != (uint64_t)(uintptr_t)&word ||
-            frame.restart_arg1 != 0 ||
-            frame.restart_arg2 != 2000) {
+            !signal_frame_restart_matches_task(child, TASK_RESTART_FUTEX_WAIT,
+                                               (uint64_t)(uintptr_t)&word,
+                                               0, 2000, 0, 0, 0)) {
         task_unlink_child_impl(parent, child);
         task_put(child);
         errno = ENODATA;

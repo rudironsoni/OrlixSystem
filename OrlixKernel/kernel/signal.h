@@ -81,6 +81,19 @@ int signal_proc_status_snapshot_task(const struct task *task,
                                      uint64_t *caught_out);
 int signal_frame_state_get_task(const struct task *task,
                                 struct signal_frame_state *state);
+bool signal_frame_restart_is_task(const struct task *task,
+                                  uint64_t kind);
+bool signal_frame_restart_matches_task(const struct task *task,
+                                       uint64_t kind,
+                                       uint64_t arg0,
+                                       uint64_t arg1,
+                                       uint64_t arg2,
+                                       uint64_t arg3,
+                                       uint64_t arg4,
+                                       uint64_t arg5);
+int signal_frame_restart_arg_get_task(const struct task *task,
+                                      int index,
+                                      uint64_t *value_out);
 void signal_frame_clear_task(struct task *task);
 long signal_finish_sigreturn_task(struct task *task);
 

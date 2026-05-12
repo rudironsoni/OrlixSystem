@@ -15,7 +15,6 @@
 #include "fs/pty.h"
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
-#include "private/kernel/signal_frame_state.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/kthread_state.h"
@@ -1204,13 +1203,11 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
     waitpid_restart_thread_destroy(&ctx);
 
     {
-        struct signal_frame_state frame;
         if (ctx.result != -1 || ctx.saved_errno != EINTR ||
-            signal_frame_state_get_task(waiter, &frame) != 0 ||
-            frame.restart_kind != TASK_RESTART_WAITPID ||
-            frame.restart_arg0 != (uint64_t)(int64_t)expected_pid ||
-            frame.restart_arg1 != (uint64_t)(uintptr_t)&ctx.status ||
-            frame.restart_arg2 != 0) {
+            !signal_frame_restart_matches_task(waiter, TASK_RESTART_WAITPID,
+                                               (uint64_t)(int64_t)expected_pid,
+                                               (uint64_t)(uintptr_t)&ctx.status,
+                                               0, 0, 0, 0)) {
         destroy_child_task(waiter, child);
         task_unlink_child_impl(parent, waiter);
         task_put(waiter);

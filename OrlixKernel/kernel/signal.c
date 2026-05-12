@@ -839,6 +839,67 @@ int signal_frame_state_get_task(const struct task *task,
     return 0;
 }
 
+bool signal_frame_restart_is_task(const struct task *task,
+                                  uint64_t kind) {
+    if (!task || !task->mm) {
+        return false;
+    }
+
+    return task->mm->signal_frame_restart_kind == kind;
+}
+
+bool signal_frame_restart_matches_task(const struct task *task,
+                                       uint64_t kind,
+                                       uint64_t arg0,
+                                       uint64_t arg1,
+                                       uint64_t arg2,
+                                       uint64_t arg3,
+                                       uint64_t arg4,
+                                       uint64_t arg5) {
+    if (!task || !task->mm) {
+        return false;
+    }
+
+    return task->mm->signal_frame_restart_kind == kind &&
+           task->mm->signal_frame_restart_arg0 == arg0 &&
+           task->mm->signal_frame_restart_arg1 == arg1 &&
+           task->mm->signal_frame_restart_arg2 == arg2 &&
+           task->mm->signal_frame_restart_arg3 == arg3 &&
+           task->mm->signal_frame_restart_arg4 == arg4 &&
+           task->mm->signal_frame_restart_arg5 == arg5;
+}
+
+int signal_frame_restart_arg_get_task(const struct task *task,
+                                      int index,
+                                      uint64_t *value_out) {
+    if (!task || !task->mm || !value_out || index < 0 || index > 5) {
+        return -EINVAL;
+    }
+
+    switch (index) {
+    case 0:
+        *value_out = task->mm->signal_frame_restart_arg0;
+        return 0;
+    case 1:
+        *value_out = task->mm->signal_frame_restart_arg1;
+        return 0;
+    case 2:
+        *value_out = task->mm->signal_frame_restart_arg2;
+        return 0;
+    case 3:
+        *value_out = task->mm->signal_frame_restart_arg3;
+        return 0;
+    case 4:
+        *value_out = task->mm->signal_frame_restart_arg4;
+        return 0;
+    case 5:
+        *value_out = task->mm->signal_frame_restart_arg5;
+        return 0;
+    default:
+        return -EINVAL;
+    }
+}
+
 void signal_frame_clear_task(struct task *task) {
     if (!task || !task->mm) {
         return;

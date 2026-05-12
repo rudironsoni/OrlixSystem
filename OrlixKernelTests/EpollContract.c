@@ -14,7 +14,6 @@
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "private/kernel/kthread_state.h"
-#include "private/kernel/signal_frame_state.h"
 #include "private/kernel/signal_state.h"
 #include "private/kernel/task_state.h"
 #include "runtime/syscall.h"
@@ -580,19 +579,18 @@ static void *epoll_wait_thread(void *arg) {
 static void *epoll_restart_thread(void *arg) {
     struct epoll_thread_case *ctx = arg;
     struct epoll_event event;
-    struct signal_frame_state frame;
     long ret;
 
     task_set_current(ctx->task);
     case_mark_started(ctx);
     ret = epoll_wait_impl(ctx->epfd, &event, 1, -1);
     if (ret != -1 || errno != EINTR ||
-        signal_frame_state_get_task(ctx->task, &frame) != 0 ||
-        frame.restart_kind != TASK_RESTART_EPOLL_WAIT ||
-        frame.restart_arg0 != (uint64_t)(int64_t)ctx->epfd ||
-        frame.restart_arg1 != (uint64_t)(uintptr_t)&event ||
-        frame.restart_arg2 != 1 ||
-        (int)frame.restart_arg3 != -1) {
+        !signal_frame_restart_matches_task(ctx->task, TASK_RESTART_EPOLL_WAIT,
+                                           (uint64_t)(int64_t)ctx->epfd,
+                                           (uint64_t)(uintptr_t)&event,
+                                           1,
+                                           (uint64_t)(int64_t)-1,
+                                           0, 0)) {
         case_mark_done(ctx, ENODATA);
         return NULL;
     }
@@ -600,8 +598,7 @@ static void *epoll_restart_thread(void *arg) {
     case_mark_restart_ready(ctx);
     ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
     if (ret == 1 && (event.events & EPOLLIN) &&
-        signal_frame_state_get_task(ctx->task, &frame) == 0 &&
-        frame.restart_kind == TASK_RESTART_NONE) {
+        signal_frame_restart_is_task(ctx->task, TASK_RESTART_NONE)) {
         case_mark_done(ctx, 0);
     } else {
         case_mark_done(ctx, ret < 0 ? (int)-ret : EIO);
@@ -780,12 +777,16 @@ int epoll_contract_wait_signal_interrupt_returns_intr(void) {
     }
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        struct signal_frame_state frame;
-        if (signal_frame_state_get_task(child, &frame) != 0 ||
-            frame.restart_kind != TASK_RESTART_EPOLL_WAIT ||
-            frame.restart_arg0 != (uint64_t)(int64_t)epfd ||
-            frame.restart_arg2 != 1 ||
-            (int)frame.restart_arg3 != -1) {
+        uint64_t restart_arg0 = 0;
+        uint64_t restart_arg2 = 0;
+        uint64_t restart_arg3 = 0;
+        if (!signal_frame_restart_is_task(child, TASK_RESTART_EPOLL_WAIT) ||
+            signal_frame_restart_arg_get_task(child, 0, &restart_arg0) != 0 ||
+            signal_frame_restart_arg_get_task(child, 2, &restart_arg2) != 0 ||
+            signal_frame_restart_arg_get_task(child, 3, &restart_arg3) != 0 ||
+            restart_arg0 != (uint64_t)(int64_t)epfd ||
+            restart_arg2 != 1 ||
+            (int)restart_arg3 != -1) {
             ret = ENODATA;
         } else {
             task_restart_clear_impl(child);
