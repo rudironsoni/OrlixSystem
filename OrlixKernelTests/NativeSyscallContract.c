@@ -6052,18 +6052,7 @@ static int status_value_kb(const char *content, const char *name, uint64_t *out_
 }
 
 static int latest_signal_info_matches(struct task *task, int signo, int code, uint64_t addr) {
-    struct signal_queue_entry *entry;
-
-    if (!task || !task->signal) {
-        return 0;
-    }
-
-    entry = task->signal->queue.tail;
-    return entry &&
-           entry->sig == signo &&
-           entry->si_signo == signo &&
-           entry->si_code == code &&
-           entry->fault_addr == addr;
+    return signal_latest_queued_info_matches(task, signo, code, addr);
 }
 
 static void clear_pending_task_signal(struct task *task, int signo) {

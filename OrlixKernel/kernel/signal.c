@@ -588,6 +588,67 @@ void signal_clear_pending_task(struct task *task, int32_t sig) {
     signal_clear_pending_markers_task(task, sig);
 }
 
+int signal_queued_count_task(const struct task *task, int32_t sig) {
+    struct signal_queue_entry *entry;
+    int count = 0;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return 0;
+    }
+
+    kernel_mutex_lock((kernel_mutex_t *)&task->signal->queue.lock);
+    for (entry = task->signal->queue.head; entry; entry = entry->next) {
+        if (entry->sig == sig) {
+            count++;
+        }
+    }
+    kernel_mutex_unlock((kernel_mutex_t *)&task->signal->queue.lock);
+    return count;
+}
+
+bool signal_thread_pending(const struct task *task, int32_t sig) {
+    int idx;
+    u64 bit;
+
+    if (!task || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return false;
+    }
+    idx = (sig - 1) >> 6;
+    bit = 1ULL << ((sig - 1) & 63);
+    return idx < KERNEL_SIG_NUM_WORDS && (task->thread_pending_signals & bit) != 0;
+}
+
+bool signal_shared_pending(const struct task *task, int32_t sig) {
+    int idx;
+    u64 bit;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return false;
+    }
+    idx = (sig - 1) >> 6;
+    bit = 1ULL << ((sig - 1) & 63);
+    return idx < KERNEL_SIG_NUM_WORDS && (task->signal->shared_pending.sig[idx] & bit) != 0;
+}
+
+bool signal_latest_queued_info_matches(const struct task *task, int32_t sig, int32_t code, u64 addr) {
+    struct signal_queue_entry *entry;
+    bool matches;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return false;
+    }
+
+    kernel_mutex_lock((kernel_mutex_t *)&task->signal->queue.lock);
+    entry = task->signal->queue.tail;
+    matches = entry &&
+              entry->sig == sig &&
+              entry->si_signo == sig &&
+              entry->si_code == code &&
+              entry->fault_addr == addr;
+    kernel_mutex_unlock((kernel_mutex_t *)&task->signal->queue.lock);
+    return matches;
+}
+
 void signal_recompute_pending(struct task *task) {
     /* Recompute whether task has any deliverable pending signals */
     if (!task || !task->signal)

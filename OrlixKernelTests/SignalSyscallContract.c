@@ -32,24 +32,6 @@ static void signal_contract_disable_altstack(void) {
     syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&disabled, 0, 0, 0, 0, 0);
 }
 
-static int signal_contract_queued_count(struct task *task, int signo) {
-    struct signal_queue_entry *entry;
-    int count = 0;
-
-    if (!task || !task->signal || signo < 1 || signo > KERNEL_SIG_NUM) {
-        return 0;
-    }
-
-    kernel_mutex_lock(&task->signal->queue.lock);
-    for (entry = task->signal->queue.head; entry; entry = entry->next) {
-        if (entry->sig == signo) {
-            count++;
-        }
-    }
-    kernel_mutex_unlock(&task->signal->queue.lock);
-    return count;
-}
-
 static sigset_t signal_contract_mask_all_except(int signo) {
     sigset_t mask = {0};
 
@@ -125,8 +107,8 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
 
     ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, signo, 0, 0, 0, 0);
     if (ret != 0 ||
-        child->thread_pending_signals != 0 ||
-        (child->signal->shared_pending.sig[idx] & bit) == 0) {
+        signal_thread_pending(child, signo) ||
+        !signal_shared_pending(child, signo)) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto fail;
     }
@@ -173,8 +155,8 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
 
     ret = syscall_dispatch_impl(__NR_pidfd_send_signal, thread_pidfd, signo, 0, 0, 0, 0);
     if (ret != 0 ||
-        thread->thread_pending_signals != 0 ||
-        parent->thread_pending_signals != 0 ||
+        signal_thread_pending(thread, signo) ||
+        signal_thread_pending(parent, signo) ||
         signal_dequeue(parent, NULL, &dequeued) != 1 ||
         dequeued != signo) {
         errno = ret < 0 ? (int)-ret : EPROTO;
@@ -246,9 +228,9 @@ int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
     /* Linux: sig==0 performs permission/existence checks but does not queue a signal. */
     ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, 0, 0, 0, 0, 0);
     if (ret != 0 ||
-        child->thread_pending_signals != 0 ||
-        (child->signal->shared_pending.sig[idx] & bit) != 0 ||
-        signal_contract_queued_count(child, signo) != 0) {
+        signal_thread_pending(child, signo) ||
+        signal_shared_pending(child, signo) ||
+        signal_queued_count_task(child, signo) != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto fail;
     }
@@ -889,15 +871,15 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
 
     if (signal_generate_task_info(task, signo, 100, 0x1000) != 0 ||
         signal_generate_task_info(task, signo, 101, 0x2000) != 0 ||
-        signal_contract_queued_count(task, signo) != 2 ||
+        signal_queued_count_task(task, signo) != 2 ||
         signal_dequeue(task, &only_realtime, &dequeued) != 1 ||
         dequeued != signo ||
         !signal_is_pending(task, signo) ||
-        signal_contract_queued_count(task, signo) != 1 ||
+        signal_queued_count_task(task, signo) != 1 ||
         signal_dequeue(task, &only_realtime, &dequeued) != 1 ||
         dequeued != signo ||
         signal_is_pending(task, signo) ||
-        signal_contract_queued_count(task, signo) != 0) {
+        signal_queued_count_task(task, signo) != 0) {
         errno = EPROTO;
         signal_clear_queued_task(task, signo);
         task->signal->blocked = old_blocked;
@@ -906,7 +888,7 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
 
     if (signal_generate_task(task, SIGUSR1) != 0 ||
         signal_generate_task(task, SIGUSR1) != 0 ||
-        signal_contract_queued_count(task, SIGUSR1) != 1) {
+        signal_queued_count_task(task, SIGUSR1) != 1) {
         errno = EALREADY;
         signal_clear_queued_task(task, SIGUSR1);
         task->signal->blocked = old_blocked;
