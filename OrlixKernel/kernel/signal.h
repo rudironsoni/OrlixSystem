@@ -60,6 +60,11 @@ int signal_queued_count_task(const struct task *task, int32_t sig);
 bool signal_thread_pending(const struct task *task, int32_t sig);
 bool signal_shared_pending(const struct task *task, int32_t sig);
 bool signal_latest_queued_info_matches(const struct task *task, int32_t sig, int32_t code, u64 addr);
+int signal_blocked_get_task(const struct task *task, sigset_t *mask);
+int signal_blocked_set_task(struct task *task, const sigset_t *mask);
+int signal_blocked_clear_task(struct task *task);
+bool signal_action_default_task(const struct task *task, int32_t sig);
+bool signal_altstack_has_flags_task(const struct task *task, int32_t flags);
 
 /* Recompute pending state after mask changes */
 void signal_recompute_pending(struct task *task);

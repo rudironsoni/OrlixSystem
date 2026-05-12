@@ -649,6 +649,42 @@ bool signal_latest_queued_info_matches(const struct task *task, int32_t sig, int
     return matches;
 }
 
+int signal_blocked_get_task(const struct task *task, sigset_t *mask) {
+    if (!task || !task->signal || !mask) {
+        return -EINVAL;
+    }
+
+    *mask = task->signal->blocked;
+    return 0;
+}
+
+int signal_blocked_set_task(struct task *task, const sigset_t *mask) {
+    if (!task || !task->signal || !mask) {
+        return -EINVAL;
+    }
+
+    task->signal->blocked = *mask;
+    return 0;
+}
+
+int signal_blocked_clear_task(struct task *task) {
+    sigset_t empty = {0};
+
+    return signal_blocked_set_task(task, &empty);
+}
+
+bool signal_action_default_task(const struct task *task, int32_t sig) {
+    return signal_action_is_default(task, sig);
+}
+
+bool signal_altstack_has_flags_task(const struct task *task, int32_t flags) {
+    if (!task || !task->signal) {
+        return false;
+    }
+
+    return (task->signal->altstack.ss_flags & flags) == flags;
+}
+
 void signal_recompute_pending(struct task *task) {
     /* Recompute whether task has any deliverable pending signals */
     if (!task || !task->signal)

@@ -48,6 +48,33 @@ static int signal_contract_sigset_contains(const sigset_t *set, int signo) {
     return sigismember((sigset_t *)set, signo) != 0;
 }
 
+static int signal_contract_read_blocked(struct task *task, sigset_t *mask) {
+    int ret = signal_blocked_get_task(task, mask);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+static int signal_contract_write_blocked(struct task *task, const sigset_t *mask) {
+    int ret = signal_blocked_set_task(task, mask);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
+static int signal_contract_clear_blocked(struct task *task) {
+    int ret = signal_blocked_clear_task(task);
+    if (ret != 0) {
+        errno = -ret;
+        return -1;
+    }
+    return 0;
+}
+
 static void signal_contract_set_task_identity(struct task *task, uint32_t uid) {
     if (!task || !task->cred) {
         return;
@@ -80,8 +107,6 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     int pidfd = -1;
     int thread_pidfd = -1;
     const int signo = SIGUSR1;
-    const int idx = (signo - 1) >> 6;
-    const uint64_t bit = 1ULL << ((signo - 1) & 63);
     int32_t dequeued = 0;
 
     if (!parent || !parent->signal) {
@@ -89,7 +114,9 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
         return -1;
     }
 
-    saved_parent_blocked = parent->signal->blocked;
+    if (signal_contract_read_blocked(parent, &saved_parent_blocked) != 0) {
+        goto fail;
+    }
 
     child = task_create_child_impl(parent);
     if (!child || !child->signal) {
@@ -97,7 +124,13 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
         goto fail;
     }
 
-    child->signal->blocked.sig[idx] |= bit;
+    {
+        sigset_t child_blocked = {0};
+        sigaddset(&child_blocked, signo);
+        if (signal_contract_write_blocked(child, &child_blocked) != 0) {
+            goto fail;
+        }
+    }
     signal_clear_queued_task(child, signo);
     pidfd = pidfd_open_impl(child->pid, 0);
     if (pidfd < 0) {
@@ -133,7 +166,9 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     }
 
     cred_reset_to_defaults();
-    saved_parent_blocked = parent->signal->blocked;
+    if (signal_contract_read_blocked(parent, &saved_parent_blocked) != 0) {
+        goto fail;
+    }
 
     thread_pid = clone_impl(CLONE_THREAD | CLONE_VM | CLONE_SIGHAND);
     if (thread_pid < 0) {
@@ -167,7 +202,9 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     signal_clear_queued_task(thread, signo);
     signal_clear_queued_task(child, signo);
     signal_clear_queued_task(parent, signo);
-    parent->signal->blocked = saved_parent_blocked;
+    if (signal_contract_write_blocked(parent, &saved_parent_blocked) != 0) {
+        return -1;
+    }
     task_put(thread);
     task_put(child);
     cred_reset_to_defaults();
@@ -189,7 +226,7 @@ fail:
         task_put(child);
     }
     signal_clear_queued_task(parent, signo);
-    parent->signal->blocked = saved_parent_blocked;
+    (void)signal_contract_write_blocked(parent, &saved_parent_blocked);
     cred_reset_to_defaults();
     return -1;
 }
@@ -201,15 +238,15 @@ int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
     long ret;
     int pidfd = -1;
     const int signo = SIGUSR1;
-    const int idx = (signo - 1) >> 6;
-    const uint64_t bit = 1ULL << ((signo - 1) & 63);
 
     if (!parent || !parent->signal) {
         errno = ESRCH;
         return -1;
     }
 
-    saved_parent_blocked = parent->signal->blocked;
+    if (signal_contract_read_blocked(parent, &saved_parent_blocked) != 0) {
+        goto fail;
+    }
 
     child = task_create_child_impl(parent);
     if (!child || !child->signal) {
@@ -217,7 +254,13 @@ int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
         goto fail;
     }
 
-    child->signal->blocked.sig[idx] |= bit;
+    {
+        sigset_t child_blocked = {0};
+        sigaddset(&child_blocked, signo);
+        if (signal_contract_write_blocked(child, &child_blocked) != 0) {
+            goto fail;
+        }
+    }
     signal_clear_queued_task(child, signo);
     pidfd = pidfd_open_impl(child->pid, 0);
     if (pidfd < 0) {
@@ -270,7 +313,9 @@ int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
     close_impl(pidfd);
     signal_clear_queued_task(child, signo);
     signal_clear_queued_task(parent, signo);
-    parent->signal->blocked = saved_parent_blocked;
+    if (signal_contract_write_blocked(parent, &saved_parent_blocked) != 0) {
+        return -1;
+    }
     task_put(child);
     cred_reset_to_defaults();
     return 0;
@@ -284,7 +329,7 @@ fail:
         task_put(child);
     }
     signal_clear_queued_task(parent, signo);
-    parent->signal->blocked = saved_parent_blocked;
+    (void)signal_contract_write_blocked(parent, &saved_parent_blocked);
     cred_reset_to_defaults();
     return -1;
 }
@@ -392,7 +437,9 @@ int signal_syscall_contract_frame_writes_virtual_record(void) {
         errno = ESRCH;
         return -1;
     }
-    old_blocked = task->signal->blocked;
+    if (signal_contract_read_blocked(task, &old_blocked) != 0) {
+        return -1;
+    }
     signal_contract_disable_altstack();
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -411,13 +458,17 @@ int signal_syscall_contract_frame_writes_virtual_record(void) {
         frame_words[0] != SIGTERM ||
         frame_words[1] != 0x5678) {
         errno = EPROTO;
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         signal_contract_disable_altstack();
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         return -1;
     }
 
-    task->signal->blocked = old_blocked;
+    if (signal_contract_write_blocked(task, &old_blocked) != 0) {
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
     signal_contract_disable_altstack();
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
     return 0;
@@ -437,7 +488,9 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
         errno = ESRCH;
         return -1;
     }
-    old_blocked = task->signal->blocked;
+    if (signal_contract_read_blocked(task, &old_blocked) != 0) {
+        return -1;
+    }
     signal_contract_disable_altstack();
     act = (struct sigaction){0};
     old_act = (struct sigaction){0};
@@ -454,7 +507,7 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if ((long)(uintptr_t)mapped < 0) {
         errno = -(int)(long)(uintptr_t)mapped;
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_act,
                               0, sizeof(old_act.sa_mask), 0, 0);
         return -1;
@@ -467,7 +520,7 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
         task->mm->signal_handler_pc != 0x9000 ||
         task->mm->signal_frame_flags != (SA_RESTART | SA_ONSTACK)) {
         errno = EPROTO;
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_act,
                               0, sizeof(old_act.sa_mask), 0, 0);
         signal_contract_disable_altstack();
@@ -475,7 +528,13 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
         return -1;
     }
 
-    task->signal->blocked = old_blocked;
+    if (signal_contract_write_blocked(task, &old_blocked) != 0) {
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_act,
+                              0, sizeof(old_act.sa_mask), 0, 0);
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
     syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_act,
                           0, sizeof(old_act.sa_mask), 0, 0);
     signal_contract_disable_altstack();
@@ -500,7 +559,9 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
         errno = ESRCH;
         return -1;
     }
-    old_blocked = task->signal->blocked;
+    if (signal_contract_read_blocked(task, &old_blocked) != 0) {
+        return -1;
+    }
     signal_contract_disable_altstack();
     act = (struct sigaction){0};
     old_act = (struct sigaction){0};
@@ -519,7 +580,7 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
                                 0, sizeof(block_set), 0, 0);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
                               0, sizeof(old_act.sa_mask), 0, 0);
         return -1;
@@ -529,7 +590,7 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if ((long)(uintptr_t)mapped < 0) {
         errno = -(int)(long)(uintptr_t)mapped;
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
                               0, sizeof(old_act.sa_mask), 0, 0);
         return -1;
@@ -552,7 +613,7 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
         task->mm->signal_frame_restorer_pc != 0x9200 ||
         task->mm->signal_frame_mask != block_term) {
         errno = EPROTO;
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
                               0, sizeof(old_act.sa_mask), 0, 0);
         signal_contract_disable_altstack();
@@ -560,7 +621,13 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
         return -1;
     }
 
-    task->signal->blocked = old_blocked;
+    if (signal_contract_write_blocked(task, &old_blocked) != 0) {
+        syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
+                              0, sizeof(old_act.sa_mask), 0, 0);
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
     syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
                           0, sizeof(old_act.sa_mask), 0, 0);
     signal_contract_disable_altstack();
@@ -620,7 +687,7 @@ int signal_syscall_contract_rt_sigreturn_restores_mask_and_altstack(void) {
     ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK, 0,
                                 (long)(uintptr_t)&queried, sizeof(queried), 0, 0);
     if (ret != 0 || !signal_contract_sigset_contains(&queried, SIGTERM) ||
-        (task->signal->altstack.ss_flags & SS_ONSTACK) != 0) {
+        signal_altstack_has_flags_task(task, SS_ONSTACK)) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         signal_contract_disable_altstack();
         syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
@@ -740,7 +807,9 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
         errno = ESRCH;
         return -1;
     }
-    old_blocked = task->signal->blocked;
+    if (signal_contract_read_blocked(task, &old_blocked) != 0) {
+        return -1;
+    }
     signal_contract_disable_altstack();
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -759,7 +828,7 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
         task_read_virtual_memory_impl(task, frame_sp + 128, &context, sizeof(context)) !=
             (long)sizeof(context)) {
         errno = EPROTO;
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         signal_contract_disable_altstack();
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         return -1;
@@ -774,13 +843,17 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
         context.uc_mcontext.pc != 0x13579bdf ||
         task->mm->signal_frame_size < 128 + sizeof(context)) {
         errno = ENODATA;
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         signal_contract_disable_altstack();
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         return -1;
     }
 
-    task->signal->blocked = old_blocked;
+    if (signal_contract_write_blocked(task, &old_blocked) != 0) {
+        signal_contract_disable_altstack();
+        syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+        return -1;
+    }
     signal_contract_disable_altstack();
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
     return 0;
@@ -862,9 +935,13 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
         errno = ESRCH;
         return -1;
     }
-    old_blocked = task->signal->blocked;
+    if (signal_contract_read_blocked(task, &old_blocked) != 0) {
+        return -1;
+    }
     only_realtime = signal_contract_mask_all_except(signo);
-    sigemptyset(&task->signal->blocked);
+    if (signal_contract_clear_blocked(task) != 0) {
+        return -1;
+    }
     signal_clear_queued_task(task, signo);
     signal_clear_queued_task(task, SIGUSR1);
 
@@ -881,7 +958,7 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
         signal_queued_count_task(task, signo) != 0) {
         errno = EPROTO;
         signal_clear_queued_task(task, signo);
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         return -1;
     }
 
@@ -890,11 +967,14 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
         signal_queued_count_task(task, SIGUSR1) != 1) {
         errno = EALREADY;
         signal_clear_queued_task(task, SIGUSR1);
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         return -1;
     }
     signal_clear_queued_task(task, SIGUSR1);
-    task->signal->blocked = old_blocked;
+    if (signal_contract_write_blocked(task, &old_blocked) != 0) {
+        signal_clear_queued_task(task, SIGUSR1);
+        return -1;
+    }
     return 0;
 }
 
@@ -906,8 +986,6 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
     sigset_t old_blocked;
     uint64_t frame_sp = 0;
     uint64_t block_term = 1ULL << (SIGTERM - 1);
-    uint64_t block_usr1 = 1ULL << (SIGUSR1 - 1);
-    uint64_t block_usr2 = 1ULL << (SIGUSR2 - 1);
     void *mapped;
     long ret;
 
@@ -918,7 +996,9 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
     act = (struct sigaction){0};
     old_usr1 = (struct sigaction){0};
     old_usr2 = (struct sigaction){0};
-    old_blocked = task->signal->blocked;
+    if (signal_contract_read_blocked(task, &old_blocked) != 0) {
+        return -1;
+    }
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if ((long)(uintptr_t)mapped < 0) {
@@ -926,7 +1006,14 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
         return -1;
     }
 
-    task->signal->blocked.sig[0] = block_term;
+    {
+        sigset_t blocked = {0};
+        sigaddset(&blocked, SIGTERM);
+        if (signal_contract_write_blocked(task, &blocked) != 0) {
+            syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
+            return -1;
+        }
+    }
     act.sa_handler = (__sighandler_t)(uintptr_t)0x7100;
     act.sa_flags = SA_RESETHAND;
     sigaddset(&act.sa_mask, SIGUSR2);
@@ -936,15 +1023,17 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
         signal_prepare_frame_impl(task, SIGUSR1, 0x1111,
                                   (uint64_t)(uintptr_t)mapped + 16384, &frame_sp) != 0 ||
         task->mm->signal_frame_mask != block_term ||
-        (task->signal->blocked.sig[0] & block_term) == 0 ||
-        (task->signal->blocked.sig[0] & block_usr1) == 0 ||
-        (task->signal->blocked.sig[0] & block_usr2) == 0 ||
-        task->signal->actions[SIGUSR1 - 1].sa_handler != SIG_DFL) {
+        !signal_is_blocked(task, SIGTERM) ||
+        !signal_is_blocked(task, SIGUSR1) ||
+        !signal_is_blocked(task, SIGUSR2) ||
+        !signal_action_default_task(task, SIGUSR1)) {
         errno = EPROTO;
         goto out;
     }
 
-    task->signal->blocked.sig[0] = 0;
+    if (signal_contract_clear_blocked(task) != 0) {
+        goto out;
+    }
     act = (struct sigaction){0};
     act.sa_handler = (__sighandler_t)(uintptr_t)0x7200;
     act.sa_flags = SA_NODEFER;
@@ -953,7 +1042,7 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
     if (ret != 0 ||
         signal_prepare_frame_impl(task, SIGUSR2, 0x2222,
                                   (uint64_t)(uintptr_t)mapped + 16384, &frame_sp) != 0 ||
-        (task->signal->blocked.sig[0] & block_usr2) != 0) {
+        signal_is_blocked(task, SIGUSR2)) {
         errno = ENOTRECOVERABLE;
         goto out;
     }
@@ -967,7 +1056,7 @@ out:
                               0, sizeof(old_usr1.sa_mask), 0, 0);
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_usr2,
                               0, sizeof(old_usr2.sa_mask), 0, 0);
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         errno = saved_errno;
     }
@@ -990,7 +1079,9 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
 
     act = (struct sigaction){0};
     old_usr1 = (struct sigaction){0};
-    old_blocked = task->signal->blocked;
+    if (signal_contract_read_blocked(task, &old_blocked) != 0) {
+        return -1;
+    }
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if ((long)(uintptr_t)mapped < 0) {
@@ -1038,7 +1129,10 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
     {
         struct __kernel_timespec req = {.tv_sec = 0, .tv_nsec = 1000000};
         struct __kernel_timespec rem = {0};
-        task->signal->blocked = old_blocked;
+        if (signal_contract_write_blocked(task, &old_blocked) != 0) {
+            errno = EPROTO;
+            goto out;
+        }
         signal_generate_task(task, SIGUSR1);
         if (nanosleep_impl(&req, &rem) != -1 ||
             errno != EINTR ||
@@ -1063,7 +1157,7 @@ out:
         int saved_errno = errno;
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_usr1,
                               0, sizeof(old_usr1.sa_mask), 0, 0);
-        task->signal->blocked = old_blocked;
+        (void)signal_contract_write_blocked(task, &old_blocked);
         signal_clear_pending_task(task, SIGUSR1);
         task->mm->signal_frame_restartable = 0;
         task_restart_clear_impl(task);
