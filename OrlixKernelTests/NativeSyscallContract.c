@@ -70,6 +70,7 @@ extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
                      unsigned int flags);
 #include "runtime/native/registry.h"
+#include "private/runtime/native/registry_state.h"
 #include "runtime/syscall.h"
 
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);

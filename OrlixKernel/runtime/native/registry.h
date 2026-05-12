@@ -10,13 +10,8 @@ extern "C" {
 typedef int (*native_entry_fn)(int argc, char **argv, char **envp);
 struct native_cmd;
 typedef struct native_cmd native_cmd_t;
-
-typedef struct native_program {
-    const char *path;
-    const char *artifact_path;
-    const char *abi;
-    native_entry_fn entry;
-} native_program_t;
+struct native_program;
+typedef struct native_program native_program_t;
 
 /* Native command registry */
 void native_registry_init(void);

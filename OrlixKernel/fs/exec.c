@@ -25,6 +25,7 @@
 #include "../kernel/signal.h"
 #include "../kernel/cred.h"
 #include "../runtime/native/registry.h"
+#include "../private/runtime/native/registry_state.h"
 #include "internal/slab.h"
 #include "fdtable.h"
 #include "vfs.h"
