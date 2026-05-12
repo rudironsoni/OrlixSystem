@@ -1251,21 +1251,6 @@ enum exec_image_type exec_classify(const char *path) {
     return EXEC_IMAGE_NONE;
 }
 
-void exec_reset_signals(struct signal_state *sighand) {
-    if (!sighand) {
-        return;
-    }
-
-    for (int i = 0; i < KERNEL_SIG_NUM; i++) {
-        if (sighand->actions[i].sa_handler != SIG_IGN) {
-            sighand->actions[i].sa_handler = SIG_DFL;
-        }
-    }
-
-    memset(&sighand->blocked, 0, sizeof(sighand->blocked));
-    memset(&sighand->pending, 0, sizeof(sighand->pending));
-}
-
 static int exec_path_from_fd(int fd, char *path, size_t path_len) {
     fd_entry_t *entry;
     int ret;
@@ -1367,9 +1352,7 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
             exec_free_argv(envp_copy);
             return -1;
         }
-        if (task->signal) {
-            exec_reset_signals(task->signal);
-        }
+        signal_reset_on_exec(task);
         exec_record_script_image(task, resolved_path, final_interpreter_path);
         if (final_type == EXEC_IMAGE_ELF) {
             launch_status = exec_elf(task, final_path, launch_argc, launch_argv, envp_copy);
@@ -1408,9 +1391,7 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
             exec_free_argv(envp_copy);
             return -1;
         }
-        if (task->signal) {
-            exec_reset_signals(task->signal);
-        }
+        signal_reset_on_exec(task);
         launch_status = exec_elf(task, resolved_path, argc, argv_copy, envp_copy);
     } else {
         if (task_record_exec_strings_impl(argv_copy, envp_copy) < 0) {
@@ -1423,9 +1404,7 @@ static int execve_resolved_path(const char *resolved_path, char *const argv[], c
             exec_free_argv(envp_copy);
             return -1;
         }
-        if (task->signal) {
-            exec_reset_signals(task->signal);
-        }
+        signal_reset_on_exec(task);
         launch_status = exec_native(task, resolved_path, argc, argv_copy, envp_copy);
     }
 

@@ -959,8 +959,13 @@ void signal_reset_on_exec(struct task *task) {
     if (!task || !task->signal)
         return;
 
-    /* Reset signal handlers that have SA_RESETHAND flag set */
-    /* For now, simplified: reset pending signals */
+    for (int sig = 0; sig < KERNEL_SIG_NUM; sig++) {
+        if (task->signal->actions[sig].sa_handler != SIG_IGN) {
+            task->signal->actions[sig].sa_handler = SIG_DFL;
+        }
+    }
+
+    sigemptyset(&task->signal->blocked);
     sigemptyset(&task->signal->pending);
     sigemptyset(&task->signal->shared_pending);
     task->thread_pending_signals = 0;

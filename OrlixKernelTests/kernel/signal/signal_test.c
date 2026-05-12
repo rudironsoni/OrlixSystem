@@ -102,8 +102,7 @@ static void test_do_raise_signal_to_self(struct kunit *test) {
         KUNIT_FAIL(test, "block SIGUSR1 should succeed");
     }
 
-    task->thread_pending_signals = 0;
-    memset(&task->signal->shared_pending, 0, sizeof(task->signal->shared_pending));
+    signal_clear_pending_markers_task(task, 10);
 
     result = do_raise(10);
     if (result != 0) {
@@ -138,8 +137,7 @@ static void test_do_kill_signal_to_current_task(struct kunit *test) {
         KUNIT_FAIL(test, "block SIGUSR1 should succeed");
     }
 
-    task->thread_pending_signals = 0;
-    memset(&task->signal->shared_pending, 0, sizeof(task->signal->shared_pending));
+    signal_clear_pending_markers_task(task, 10);
 
     result = do_kill(task->pid, 10);
     if (result != 0) {
@@ -217,8 +215,7 @@ static void test_do_sigpending_basic_operations(struct kunit *test) {
         KUNIT_FAIL(test, "block SIGUSR2 should succeed");
     }
 
-    task->thread_pending_signals = 0;
-    memset(&task->signal->shared_pending, 0, sizeof(task->signal->shared_pending));
+    signal_clear_pending_markers_task(task, 12);
 
     result = do_sigpending(&pending);
     if (result != 0) {
