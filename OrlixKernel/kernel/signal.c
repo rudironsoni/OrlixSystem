@@ -516,6 +516,39 @@ int signal_dequeue(struct task *task, sigset_t *mask, int32_t *sig) {
     return -EAGAIN;
 }
 
+void signal_clear_queued_task(struct task *task, int32_t sig) {
+    struct signal_queue_entry *prev = NULL;
+    struct signal_queue_entry *entry;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+
+    kernel_mutex_lock(&task->signal->queue.lock);
+    entry = task->signal->queue.head;
+    while (entry) {
+        struct signal_queue_entry *next = entry->next;
+        if (entry->sig == sig) {
+            if (prev) {
+                prev->next = next;
+            } else {
+                task->signal->queue.head = next;
+            }
+            if (task->signal->queue.tail == entry) {
+                task->signal->queue.tail = prev;
+            }
+            task->signal->queue.count--;
+            kfree(entry);
+        } else {
+            prev = entry;
+        }
+        entry = next;
+    }
+    kernel_mutex_unlock(&task->signal->queue.lock);
+
+    signal_clear_pending_task(task, sig);
+}
+
 void signal_clear_next_pending_task(struct task *task, int32_t sig) {
     sigset_t mask;
     int32_t delivered;

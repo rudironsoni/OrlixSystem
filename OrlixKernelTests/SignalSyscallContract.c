@@ -32,38 +32,6 @@ static void signal_contract_disable_altstack(void) {
     syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&disabled, 0, 0, 0, 0, 0);
 }
 
-static void signal_contract_clear_queued_signal(struct task *task, int signo) {
-    struct signal_queue_entry *prev = NULL;
-    struct signal_queue_entry *entry;
-
-    if (!task || !task->signal || signo < 1 || signo > KERNEL_SIG_NUM) {
-        return;
-    }
-
-    kernel_mutex_lock(&task->signal->queue.lock);
-    entry = task->signal->queue.head;
-    while (entry) {
-        struct signal_queue_entry *next = entry->next;
-        if (entry->sig == signo) {
-            if (prev) {
-                prev->next = next;
-            } else {
-                task->signal->queue.head = next;
-            }
-            if (task->signal->queue.tail == entry) {
-                task->signal->queue.tail = prev;
-            }
-            task->signal->queue.count--;
-            free(entry);
-        } else {
-            prev = entry;
-        }
-        entry = next;
-    }
-    kernel_mutex_unlock(&task->signal->queue.lock);
-    signal_clear_pending_task(task, signo);
-}
-
 static int signal_contract_queued_count(struct task *task, int signo) {
     struct signal_queue_entry *entry;
     int count = 0;
@@ -149,7 +117,7 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     }
 
     child->signal->blocked.sig[idx] |= bit;
-    signal_contract_clear_queued_signal(child, signo);
+    signal_clear_queued_task(child, signo);
     pidfd = pidfd_open_impl(child->pid, 0);
     if (pidfd < 0) {
         goto fail;
@@ -169,7 +137,7 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
         goto fail;
     }
 
-    signal_contract_clear_queued_signal(child, signo);
+    signal_clear_queued_task(child, signo);
     signal_contract_set_task_identity(child, 2000);
     signal_contract_set_task_identity(parent, 1000);
     ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, signo, 0, 0, 0, 0);
@@ -196,8 +164,8 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
         goto fail;
     }
 
-    signal_contract_clear_queued_signal(thread, signo);
-    signal_contract_clear_queued_signal(parent, signo);
+    signal_clear_queued_task(thread, signo);
+    signal_clear_queued_task(parent, signo);
     thread_pidfd = pidfd_open_impl(thread->pid, 0);
     if (thread_pidfd < 0) {
         goto fail;
@@ -215,9 +183,9 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
 
     close_impl(thread_pidfd);
     close_impl(pidfd);
-    signal_contract_clear_queued_signal(thread, signo);
-    signal_contract_clear_queued_signal(child, signo);
-    signal_contract_clear_queued_signal(parent, signo);
+    signal_clear_queued_task(thread, signo);
+    signal_clear_queued_task(child, signo);
+    signal_clear_queued_task(parent, signo);
     parent->signal->blocked = saved_parent_blocked;
     task_put(thread);
     task_put(child);
@@ -232,14 +200,14 @@ fail:
         close_impl(pidfd);
     }
     if (thread) {
-        signal_contract_clear_queued_signal(thread, signo);
+        signal_clear_queued_task(thread, signo);
         task_put(thread);
     }
     if (child) {
-        signal_contract_clear_queued_signal(child, signo);
+        signal_clear_queued_task(child, signo);
         task_put(child);
     }
-    signal_contract_clear_queued_signal(parent, signo);
+    signal_clear_queued_task(parent, signo);
     parent->signal->blocked = saved_parent_blocked;
     cred_reset_to_defaults();
     return -1;
@@ -269,7 +237,7 @@ int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
     }
 
     child->signal->blocked.sig[idx] |= bit;
-    signal_contract_clear_queued_signal(child, signo);
+    signal_clear_queued_task(child, signo);
     pidfd = pidfd_open_impl(child->pid, 0);
     if (pidfd < 0) {
         goto fail;
@@ -319,8 +287,8 @@ int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
     }
 
     close_impl(pidfd);
-    signal_contract_clear_queued_signal(child, signo);
-    signal_contract_clear_queued_signal(parent, signo);
+    signal_clear_queued_task(child, signo);
+    signal_clear_queued_task(parent, signo);
     parent->signal->blocked = saved_parent_blocked;
     task_put(child);
     cred_reset_to_defaults();
@@ -331,10 +299,10 @@ fail:
         close_impl(pidfd);
     }
     if (child) {
-        signal_contract_clear_queued_signal(child, signo);
+        signal_clear_queued_task(child, signo);
         task_put(child);
     }
-    signal_contract_clear_queued_signal(parent, signo);
+    signal_clear_queued_task(parent, signo);
     parent->signal->blocked = saved_parent_blocked;
     cred_reset_to_defaults();
     return -1;
@@ -916,8 +884,8 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
     old_blocked = task->signal->blocked;
     only_realtime = signal_contract_mask_all_except(signo);
     sigemptyset(&task->signal->blocked);
-    signal_contract_clear_queued_signal(task, signo);
-    signal_contract_clear_queued_signal(task, SIGUSR1);
+    signal_clear_queued_task(task, signo);
+    signal_clear_queued_task(task, SIGUSR1);
 
     if (signal_generate_task_info(task, signo, 100, 0x1000) != 0 ||
         signal_generate_task_info(task, signo, 101, 0x2000) != 0 ||
@@ -931,7 +899,7 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
         signal_is_pending(task, signo) ||
         signal_contract_queued_count(task, signo) != 0) {
         errno = EPROTO;
-        signal_contract_clear_queued_signal(task, signo);
+        signal_clear_queued_task(task, signo);
         task->signal->blocked = old_blocked;
         return -1;
     }
@@ -940,11 +908,11 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
         signal_generate_task(task, SIGUSR1) != 0 ||
         signal_contract_queued_count(task, SIGUSR1) != 1) {
         errno = EALREADY;
-        signal_contract_clear_queued_signal(task, SIGUSR1);
+        signal_clear_queued_task(task, SIGUSR1);
         task->signal->blocked = old_blocked;
         return -1;
     }
-    signal_contract_clear_queued_signal(task, SIGUSR1);
+    signal_clear_queued_task(task, SIGUSR1);
     task->signal->blocked = old_blocked;
     return 0;
 }
