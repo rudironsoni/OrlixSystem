@@ -23,7 +23,6 @@
 
 extern int errno;
 
-extern void free(void *);
 extern int nanosleep_impl(const struct __kernel_timespec *req, struct __kernel_timespec *rem);
 
 static void signal_contract_disable_altstack(void) {
