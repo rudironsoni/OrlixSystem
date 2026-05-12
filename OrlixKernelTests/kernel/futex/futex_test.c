@@ -191,10 +191,10 @@ void futex_contract_reset_test_state(void) {
 
     if (task_init_process->signal) {
         for (int sig = 0; sig < KERNEL_SIG_NUM; sig++) {
-            task_init_process->signal->actions[sig].handler = NULL;
-            task_init_process->signal->actions[sig].flags = 0;
-            task_init_process->signal->actions[sig].restorer = 0;
-            memset(&task_init_process->signal->actions[sig].mask, 0, sizeof(task_init_process->signal->actions[sig].mask));
+            task_init_process->signal->actions[sig].sa_handler = SIG_DFL;
+            task_init_process->signal->actions[sig].sa_flags = 0;
+            task_init_process->signal->actions[sig].sa_restorer = 0;
+            sigemptyset(&task_init_process->signal->actions[sig].sa_mask);
         }
         memset(&task_init_process->signal->blocked, 0, sizeof(task_init_process->signal->blocked));
         memset(&task_init_process->signal->pending, 0, sizeof(task_init_process->signal->pending));

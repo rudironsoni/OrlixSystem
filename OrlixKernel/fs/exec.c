@@ -1256,8 +1256,8 @@ void exec_reset_signals(struct signal_state *sighand) {
     }
 
     for (int i = 0; i < KERNEL_SIG_NUM; i++) {
-        if (sighand->actions[i].handler != SIG_IGN) {
-            sighand->actions[i].handler = SIG_DFL;
+        if (sighand->actions[i].sa_handler != SIG_IGN) {
+            sighand->actions[i].sa_handler = SIG_DFL;
         }
     }
 

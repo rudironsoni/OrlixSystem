@@ -96,7 +96,7 @@ static int cgroup_contract_write_current_pid(const char *path) {
 }
 
 static void cgroup_contract_clear_pending_signal(struct task *task, int sig) {
-    struct signal_mask_bits mask;
+    sigset_t mask;
     int delivered;
 
     if (!task) {

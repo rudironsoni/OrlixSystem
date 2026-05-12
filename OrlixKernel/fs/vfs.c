@@ -5456,7 +5456,7 @@ static void vfs_proc_task_signal_status(const struct task *task,
         blocked = task->signal->blocked.sig[0];
         queued = task->signal->queue.count < 0 ? 0U : (unsigned int)task->signal->queue.count;
         for (int sig = 1; sig <= KERNEL_SIG_NUM; sig++) {
-            sighandler_t handler = task->signal->actions[sig - 1].handler;
+            __sighandler_t handler = task->signal->actions[sig - 1].sa_handler;
             uint64_t bit = 1ULL << (sig - 1);
 
             if (!handler) {

@@ -2,6 +2,7 @@
 #define PRIVATE_KERNEL_SIGNAL_STATE_H
 
 #include <linux/atomic.h>
+#include <linux/signal.h>
 #include <linux/types.h>
 
 #include "kernel/signal.h"
@@ -27,25 +28,19 @@ struct signal_queue {
     kernel_mutex_t lock;
 };
 
-struct signal_altstack {
-    void *ss_sp;
-    size_t ss_size;
-    int32_t ss_flags;
-};
-
 struct signal_state {
     atomic_t refs;
-    struct signal_action_slot actions[KERNEL_SIG_NUM];
-    struct signal_mask_bits blocked;
-    struct signal_mask_bits pending;
-    struct signal_mask_bits shared_pending;
+    struct sigaction actions[KERNEL_SIG_NUM];
+    sigset_t blocked;
+    sigset_t pending;
+    sigset_t shared_pending;
     struct signal_queue queue;
-    struct signal_altstack altstack;
+    stack_t altstack;
     kernel_mutex_t lock;
 };
 
 struct pending_signals {
-    struct signal_mask_bits signal;
+    sigset_t signal;
     struct signal_queue queue;
 };
 

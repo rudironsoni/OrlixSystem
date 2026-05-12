@@ -98,14 +98,12 @@ static int signal_contract_queued_count(struct task *task, int signo) {
     return count;
 }
 
-static struct signal_mask_bits signal_contract_mask_all_except(int signo) {
-    struct signal_mask_bits mask = {0};
+static sigset_t signal_contract_mask_all_except(int signo) {
+    sigset_t mask = {0};
 
-    for (unsigned int i = 0; i < (sizeof(mask.sig) / sizeof(mask.sig[0])); i++) {
-        mask.sig[i] = ~0ULL;
-    }
+    sigfillset(&mask);
     if (signo >= 1 && signo <= KERNEL_SIG_NUM) {
-        mask.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
+        sigdelset(&mask, signo);
     }
     return mask;
 }
@@ -136,7 +134,7 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     struct task *parent = task_current();
     struct task *child = NULL;
     struct task *thread = NULL;
-    struct signal_mask_bits saved_parent_blocked;
+    sigset_t saved_parent_blocked;
     long ret;
     int32_t thread_pid;
     int pidfd = -1;
@@ -259,7 +257,7 @@ fail:
 int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
     struct task *parent = task_current();
     struct task *child = NULL;
-    struct signal_mask_bits saved_parent_blocked;
+    sigset_t saved_parent_blocked;
     long ret;
     int pidfd = -1;
     const int signo = SIGUSR1;
@@ -358,7 +356,7 @@ int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void) {
     long ret;
     act.sa_handler = (__sighandler_t)(uintptr_t)0x1000;
     act.sa_flags = SA_RESTART | SA_ONSTACK;
-    act.sa_mask.sig[0] = 1ULL << (2 - 1);
+    sigaddset(&act.sa_mask, 2);
 
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGINT, (long)(uintptr_t)&act,
                                 (long)(uintptr_t)&oldact, sizeof(act.sa_mask), 0, 0);
@@ -372,7 +370,7 @@ int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void) {
     if (ret != 0 ||
         queried.sa_handler != act.sa_handler ||
         queried.sa_flags != act.sa_flags ||
-        queried.sa_mask.sig[0] != act.sa_mask.sig[0]) {
+        !sigequalsets(&queried.sa_mask, &act.sa_mask)) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         return -1;
     }
@@ -445,7 +443,7 @@ int signal_syscall_contract_sigaltstack_and_frame_policy(void) {
 int signal_syscall_contract_frame_writes_virtual_record(void) {
     struct task *task = task_current();
     stack_t stack;
-    struct signal_mask_bits old_blocked;
+    sigset_t old_blocked;
     uint64_t frame_sp = 0;
     uint64_t frame_words[2] = {0, 0};
     void *mapped;
@@ -490,7 +488,7 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
     struct sigaction act;
     struct sigaction old_act;
     stack_t stack;
-    struct signal_mask_bits old_blocked;
+    sigset_t old_blocked;
     uint64_t frame_sp = 0;
     void *mapped;
     long ret;
@@ -550,7 +548,7 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
     struct sigaction act;
     struct sigaction old_act;
     stack_t stack;
-    struct signal_mask_bits old_blocked;
+    sigset_t old_blocked;
     uint64_t frame_sp = 0;
     uint64_t frame_words[8] = {0};
     uint64_t block_set = 1ULL << (SIGTERM - 1);
@@ -568,7 +566,7 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
     act.sa_handler = (__sighandler_t)(uintptr_t)0x9100;
     act.sa_restorer = (__sigrestore_t)(uintptr_t)0x9200;
     act.sa_flags = SA_RESTART | SA_ONSTACK | SA_RESTORER;
-    act.sa_mask.sig[0] = 1ULL << (SIGINT - 1);
+    sigaddset(&act.sa_mask, SIGINT);
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&act,
                                 (long)(uintptr_t)&old_act, sizeof(act.sa_mask), 0, 0);
     if (ret != 0) {
@@ -784,7 +782,7 @@ int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
 int signal_syscall_contract_frame_contains_linux_ucontext(void) {
     struct task *task = task_current();
     stack_t stack;
-    struct signal_mask_bits old_blocked;
+    sigset_t old_blocked;
     uint64_t frame_sp = 0;
     uint64_t block_set = 1ULL << (SIGTERM - 1);
     struct ucontext context;
@@ -906,8 +904,8 @@ int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void)
 
 int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void) {
     struct task *task = task_current();
-    struct signal_mask_bits old_blocked;
-    struct signal_mask_bits only_realtime;
+    sigset_t old_blocked;
+    sigset_t only_realtime;
     int signo = SIGRTMIN;
     int dequeued = 0;
 
@@ -917,7 +915,7 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
     }
     old_blocked = task->signal->blocked;
     only_realtime = signal_contract_mask_all_except(signo);
-    task->signal->blocked = (struct signal_mask_bits){0};
+    sigemptyset(&task->signal->blocked);
     signal_contract_clear_queued_signal(task, signo);
     signal_contract_clear_queued_signal(task, SIGUSR1);
 
@@ -956,7 +954,7 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
     struct sigaction act;
     struct sigaction old_usr1;
     struct sigaction old_usr2;
-    struct signal_mask_bits old_blocked;
+    sigset_t old_blocked;
     uint64_t frame_sp = 0;
     uint64_t block_term = 1ULL << (SIGTERM - 1);
     uint64_t block_usr1 = 1ULL << (SIGUSR1 - 1);
@@ -982,7 +980,7 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
     task->signal->blocked.sig[0] = block_term;
     act.sa_handler = (__sighandler_t)(uintptr_t)0x7100;
     act.sa_flags = SA_RESETHAND;
-    act.sa_mask.sig[0] = block_usr2;
+    sigaddset(&act.sa_mask, SIGUSR2);
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&act,
                                 (long)(uintptr_t)&old_usr1, sizeof(act.sa_mask), 0, 0);
     if (ret != 0 ||
@@ -992,7 +990,7 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
         (task->signal->blocked.sig[0] & block_term) == 0 ||
         (task->signal->blocked.sig[0] & block_usr1) == 0 ||
         (task->signal->blocked.sig[0] & block_usr2) == 0 ||
-        task->signal->actions[SIGUSR1 - 1].handler != SIG_DFL) {
+        task->signal->actions[SIGUSR1 - 1].sa_handler != SIG_DFL) {
         errno = EPROTO;
         goto out;
     }
@@ -1031,7 +1029,7 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
     struct task *task = task_current();
     struct sigaction act;
     struct sigaction old_usr1;
-    struct signal_mask_bits old_blocked;
+    sigset_t old_blocked;
     void *mapped;
     uint64_t frame_sp = 0;
     long ret;

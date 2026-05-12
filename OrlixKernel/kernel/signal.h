@@ -18,6 +18,7 @@
 #define KERNEL_SIGNAL_H
 
 #include <linux/atomic.h>
+#include <linux/signal.h>
 #include <linux/types.h>
 
 #include "../include/signal_calls.h"
@@ -30,13 +31,11 @@ extern "C" {
 /* Forward declaration - avoid circular include with task.h */
 struct task;
 struct signal_state;
-struct signal_altstack;
 
-int kernel_thread_sigmask(int how, const struct signal_mask_bits *set,
-                          struct signal_mask_bits *oldset);
-int kernel_sigemptyset(struct signal_mask_bits *set);
-int kernel_sigaddset(struct signal_mask_bits *set, int signo);
-int kernel_sigismember(const struct signal_mask_bits *set, int signo);
+int kernel_thread_sigmask(int how, const sigset_t *set, sigset_t *oldset);
+int kernel_sigemptyset(sigset_t *set);
+int kernel_sigaddset(sigset_t *set, int signo);
+int kernel_sigismember(sigset_t *set, int signo);
 
 /* Initialize signal state for a new task */
 int signal_init_task(struct task *task);
@@ -52,7 +51,7 @@ void signal_reset_on_exec(struct task *task);
 /* Virtual signal enqueue helpers */
 int signal_enqueue_task(struct task *task, int32_t sig);
 int signal_enqueue_group(int32_t pgid, int32_t sig);
-int signal_dequeue(struct task *task, struct signal_mask_bits *mask, int32_t *sig);
+int signal_dequeue(struct task *task, sigset_t *mask, int32_t *sig);
 
 /* Recompute pending state after mask changes */
 void signal_recompute_pending(struct task *task);
@@ -73,7 +72,7 @@ bool signal_is_blocked(const struct task *task, int32_t sig);
 bool signal_is_pending(const struct task *task, int32_t sig);
 bool signal_has_unblocked_pending(const struct task *task);
 
-int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altstack *old_stack);
+int do_sigaltstack(const stack_t *new_stack, stack_t *old_stack);
 int signal_prepare_frame_impl(struct task *task, int32_t sig, u64 return_pc,
                               u64 current_sp, u64 *frame_sp_out);
 

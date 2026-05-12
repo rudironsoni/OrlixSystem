@@ -31,45 +31,34 @@ enum {
     frame_ucontext_offset = 128,
 };
 
-int kernel_thread_sigmask(int how, const struct signal_mask_bits *set,
-                          struct signal_mask_bits *oldset) {
+int kernel_thread_sigmask(int how, const sigset_t *set, sigset_t *oldset) {
     (void)how;
     (void)set;
     (void)oldset;
     return 0;
 }
 
-int kernel_sigemptyset(struct signal_mask_bits *set) {
+int kernel_sigemptyset(sigset_t *set) {
     if (!set) {
         return -EINVAL;
     }
-    memset(set->sig, 0, sizeof(set->sig));
+    sigemptyset(set);
     return 0;
 }
 
-int kernel_sigaddset(struct signal_mask_bits *set, int signo) {
-    unsigned int signal_bit;
-    unsigned int signal_word;
-
+int kernel_sigaddset(sigset_t *set, int signo) {
     if (!set || signo <= 0 || signo > KERNEL_SIG_NUM) {
         return -EINVAL;
     }
-    signal_bit = (unsigned int)(signo - 1);
-    signal_word = signal_bit / 64U;
-    set->sig[signal_word] |= 1ULL << (signal_bit % 64U);
+    sigaddset(set, signo);
     return 0;
 }
 
-int kernel_sigismember(const struct signal_mask_bits *set, int signo) {
-    unsigned int signal_bit;
-    unsigned int signal_word;
-
+int kernel_sigismember(sigset_t *set, int signo) {
     if (!set || signo <= 0 || signo > KERNEL_SIG_NUM) {
         return -EINVAL;
     }
-    signal_bit = (unsigned int)(signo - 1);
-    signal_word = signal_bit / 64U;
-    return (set->sig[signal_word] & (1ULL << (signal_bit % 64U))) != 0;
+    return sigismember(set, signo);
 }
 
 struct signal_state *alloc_signal_struct(void) {
@@ -82,14 +71,15 @@ struct signal_state *alloc_signal_struct(void) {
 
     /* Initialize default handlers (SIG_DFL = NULL) */
     for (int i = 0; i < KERNEL_SIG_NUM; i++) {
-        sig->actions[i].handler = NULL;
-        memset(&sig->actions[i].mask, 0, sizeof(struct signal_mask_bits));
-        sig->actions[i].flags = 0;
+        sig->actions[i].sa_handler = SIG_DFL;
+        sigemptyset(&sig->actions[i].sa_mask);
+        sig->actions[i].sa_flags = 0;
+        sig->actions[i].sa_restorer = 0;
     }
 
-    memset(&sig->blocked, 0, sizeof(struct signal_mask_bits));
-    memset(&sig->pending, 0, sizeof(struct signal_mask_bits));
-    memset(&sig->shared_pending, 0, sizeof(struct signal_mask_bits));
+    sigemptyset(&sig->blocked);
+    sigemptyset(&sig->pending);
+    sigemptyset(&sig->shared_pending);
     sig->altstack.ss_sp = NULL;
     sig->altstack.ss_size = 0;
     sig->altstack.ss_flags = 2;
@@ -132,8 +122,8 @@ struct signal_state *dup_signal_struct(struct signal_state *parent) {
     child->blocked = parent->blocked;
 
     /* But pending signals are cleared */
-    memset(&child->pending, 0, sizeof(struct signal_mask_bits));
-    memset(&child->shared_pending, 0, sizeof(struct signal_mask_bits));
+    sigemptyset(&child->pending);
+    sigemptyset(&child->shared_pending);
 
     return child;
 }
@@ -238,12 +228,12 @@ static bool signal_default_action_is_ignore(int32_t sig) {
 }
 
 static bool signal_action_is_ignored(const struct task *task, int32_t sig) {
-    sighandler_t handler;
+    __sighandler_t handler;
 
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return false;
     }
-    handler = task->signal->actions[sig - 1].handler;
+    handler = task->signal->actions[sig - 1].sa_handler;
     if (handler == SIG_IGN) {
         return true;
     }
@@ -271,7 +261,7 @@ static bool signal_action_is_default(const struct task *task, int32_t sig) {
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return true;
     }
-    return task->signal->actions[sig - 1].handler == SIG_DFL;
+    return task->signal->actions[sig - 1].sa_handler == SIG_DFL;
 }
 
 static int apply_signal_to_task_pending(struct task *task, int32_t sig, int32_t code,
@@ -492,7 +482,7 @@ int signal_enqueue_group(int32_t pgid, int32_t sig) {
     return signal_generate_pgrp(pgid, sig);
 }
 
-int signal_dequeue(struct task *task, struct signal_mask_bits *mask, int32_t *sig) {
+int signal_dequeue(struct task *task, sigset_t *mask, int32_t *sig) {
     if (!task || !task->signal || !sig)
         return -EINVAL;
 
@@ -612,8 +602,8 @@ void signal_reset_on_exec(struct task *task) {
 
     /* Reset signal handlers that have SA_RESETHAND flag set */
     /* For now, simplified: reset pending signals */
-    memset(&task->signal->pending, 0, sizeof(struct signal_mask_bits));
-    memset(&task->signal->shared_pending, 0, sizeof(struct signal_mask_bits));
+    sigemptyset(&task->signal->pending);
+    sigemptyset(&task->signal->shared_pending);
     task->thread_pending_signals = 0;
 }
 
@@ -634,8 +624,7 @@ int signal_init_task(struct task *task) {
  * These use only private internal types from kernel/signal.h
  */
 
-int do_sigaction(int32_t sig, const struct signal_action_slot *act,
-                 struct signal_action_slot *oldact) {
+int do_sigaction(int32_t sig, const struct sigaction *act, struct sigaction *oldact) {
     if (sig < 1 || sig >= KERNEL_SIG_NUM) {
         return -EINVAL;
     }
@@ -660,8 +649,7 @@ int do_sigaction(int32_t sig, const struct signal_action_slot *act,
     return 0;
 }
 
-int do_sigprocmask(int how, const struct signal_mask_bits *set,
-		   struct signal_mask_bits *oldset) {
+int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset) {
 	struct task *task = task_current();
 	if (!task || !task->signal) {
 		return -ESRCH;
@@ -696,11 +684,11 @@ int do_sigprocmask(int how, const struct signal_mask_bits *set,
 	return 0;
 }
 
-int do_sigsetmask(const struct signal_mask_bits *set, struct signal_mask_bits *oldset) {
+int do_sigsetmask(const sigset_t *set, sigset_t *oldset) {
     return do_sigprocmask(SIG_SETMASK, set, oldset);
 }
 
-int do_sigpending(struct signal_mask_bits *set) {
+int do_sigpending(sigset_t *set) {
     if (!set) {
         return -EFAULT;
     }
@@ -718,7 +706,7 @@ int do_sigpending(struct signal_mask_bits *set) {
     return 0;
 }
 
-int do_signal(int32_t signum, sighandler_t handler, sighandler_t *old_handler) {
+int do_signal(int32_t signum, __sighandler_t handler, __sighandler_t *old_handler) {
     if (signum < 1 || signum >= KERNEL_SIG_NUM) {
         return -EINVAL;
     }
@@ -733,11 +721,12 @@ int do_signal(int32_t signum, sighandler_t handler, sighandler_t *old_handler) {
     }
 
     if (old_handler) {
-        *old_handler = task->signal->actions[signum - 1].handler;
+        *old_handler = task->signal->actions[signum - 1].sa_handler;
     }
-    task->signal->actions[signum - 1].handler = handler;
-    task->signal->actions[signum - 1].flags = 0;
-    memset(&task->signal->actions[signum - 1].mask, 0, sizeof(struct signal_mask_bits));
+    task->signal->actions[signum - 1].sa_handler = handler;
+    task->signal->actions[signum - 1].sa_flags = 0;
+    task->signal->actions[signum - 1].sa_restorer = 0;
+    sigemptyset(&task->signal->actions[signum - 1].sa_mask);
 
     return 0;
 }
@@ -750,12 +739,8 @@ int do_raise(int32_t sig) {
     return signal_generate_task(task, sig);
 }
 
-static int is_sigset_empty(const struct signal_mask_bits *set) {
-    for (int i = 0; i < KERNEL_SIG_NUM_WORDS; i++) {
-        if (set->sig[i] != 0)
-            return 0;
-    }
-    return 1;
+static int is_sigset_empty(sigset_t *set) {
+    return sigisemptyset(set);
 }
 
 int do_pause(void) {
@@ -777,7 +762,7 @@ int do_pause(void) {
     return -EINTR;
 }
 
-int do_sigsuspend(const struct signal_mask_bits *mask) {
+int do_sigsuspend(const sigset_t *mask) {
     struct task *task = task_current();
     if (!task || !task->signal) {
         return -ESRCH;
@@ -788,7 +773,7 @@ int do_sigsuspend(const struct signal_mask_bits *mask) {
     }
 
     /* Save old mask */
-    struct signal_mask_bits old_mask = task->signal->blocked;
+    sigset_t old_mask = task->signal->blocked;
 
     /* Install new mask */
     task->signal->blocked = *mask;
@@ -846,7 +831,7 @@ int do_killpg(int32_t pgrp, int32_t sig) {
     return signal_generate_pgrp(pgrp, sig);
 }
 
-int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altstack *old_stack) {
+int do_sigaltstack(const stack_t *new_stack, stack_t *old_stack) {
     struct task *task = task_current();
 
     if (!task || !task->signal) {
@@ -873,7 +858,7 @@ int signal_prepare_frame_impl(struct task *task, int32_t sig, uint64_t return_pc
     uint64_t frame_record[frame_record_words];
     struct ucontext context;
     size_t frame_size = frame_ucontext_offset + sizeof(context);
-    const struct signal_action_slot *action;
+    const struct sigaction *action;
 
     if (!task || !task->signal || !task->mm || sig < 1 || sig > KERNEL_SIG_NUM || !frame_sp_out) {
         return -EINVAL;
@@ -894,8 +879,8 @@ int signal_prepare_frame_impl(struct task *task, int32_t sig, uint64_t return_pc
     memset(frame_record, 0, sizeof(frame_record));
     frame_record[0] = (uint64_t)sig;
     frame_record[1] = return_pc;
-    frame_record[2] = (uint64_t)(uintptr_t)action->handler;
-    frame_record[3] = (uint64_t)(uint32_t)action->flags;
+    frame_record[2] = (uint64_t)(uintptr_t)action->sa_handler;
+    frame_record[3] = (uint64_t)(uint32_t)action->sa_flags;
     frame_record[4] = task->signal->blocked.sig[0];
     frame_record[5] = (uint64_t)(uintptr_t)task->signal->altstack.ss_sp;
     frame_record[6] = (uint64_t)task->signal->altstack.ss_size;
@@ -924,9 +909,9 @@ int signal_prepare_frame_impl(struct task *task, int32_t sig, uint64_t return_pc
     task->mm->signal_frame_sp = frame_sp;
     task->mm->signal_frame_signo = (uint64_t)sig;
     task->mm->signal_frame_return_pc = return_pc;
-    task->mm->signal_handler_pc = (uint64_t)(uintptr_t)action->handler;
-    task->mm->signal_frame_flags = (uint64_t)(uint32_t)action->flags;
-    task->mm->signal_frame_restorer_pc = action->restorer;
+    task->mm->signal_handler_pc = (uint64_t)(uintptr_t)action->sa_handler;
+    task->mm->signal_frame_flags = (uint64_t)(uint32_t)action->sa_flags;
+    task->mm->signal_frame_restorer_pc = (uint64_t)(uintptr_t)action->sa_restorer;
     task->mm->signal_frame_mask = task->signal->blocked.sig[0];
     task->mm->signal_frame_altstack_sp = (uint64_t)(uintptr_t)task->signal->altstack.ss_sp;
     task->mm->signal_frame_altstack_size = (uint64_t)task->signal->altstack.ss_size;
@@ -934,22 +919,21 @@ int signal_prepare_frame_impl(struct task *task, int32_t sig, uint64_t return_pc
     task->mm->signal_frame_current_sp = current_sp;
     task->mm->signal_frame_size = frame_size;
     task->mm->signal_frame_ucontext_flags = 1;
-    task->mm->signal_frame_restartable = (action->flags & SA_RESTART) != 0 ? 1 : 0;
+    task->mm->signal_frame_restartable = (action->sa_flags & SA_RESTART) != 0 ? 1 : 0;
     task->mm->signal_frame_restart_return_pc = return_pc;
     task->mm->signal_frame_restart_sp = current_sp;
     task->mm->signal_frame_restart_signo = (uint64_t)sig;
     for (int i = 0; i < KERNEL_SIG_NUM_WORDS; i++) {
-        task->signal->blocked.sig[i] |= action->mask.sig[i];
+        task->signal->blocked.sig[i] |= action->sa_mask.sig[i];
     }
-    if ((action->flags & SA_NODEFER) == 0) {
+    if ((action->sa_flags & SA_NODEFER) == 0) {
         task->signal->blocked.sig[(sig - 1) >> 6] |= (1ULL << ((sig - 1) & 63));
     }
-    if ((action->flags & SA_RESETHAND) != 0 && sig != SIGKILL && sig != SIGSTOP) {
-        task->signal->actions[sig - 1].handler = SIG_DFL;
-        task->signal->actions[sig - 1].flags = 0;
-        task->signal->actions[sig - 1].restorer = 0;
-        memset(&task->signal->actions[sig - 1].mask, 0,
-               sizeof(task->signal->actions[sig - 1].mask));
+    if ((action->sa_flags & SA_RESETHAND) != 0 && sig != SIGKILL && sig != SIGSTOP) {
+        task->signal->actions[sig - 1].sa_handler = SIG_DFL;
+        task->signal->actions[sig - 1].sa_flags = 0;
+        task->signal->actions[sig - 1].sa_restorer = 0;
+        sigemptyset(&task->signal->actions[sig - 1].sa_mask);
     }
     *frame_sp_out = frame_sp;
     return 0;

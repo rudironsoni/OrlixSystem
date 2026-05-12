@@ -153,16 +153,16 @@ static void test_setsid_impl_rejects_process_group_leader(struct kunit *test) {
 
 static void test_signal_mask_in_task_context(struct kunit *test) {
     struct task *task = task_current();
-    struct signal_mask_bits mask = {0};
-    struct signal_mask_bits oldmask = {0};
+    sigset_t mask = {0};
+    sigset_t oldmask = {0};
     int result;
     int is_blocked;
 
     KUNIT_ASSERT_TRUE(test, task != NULL);
     KUNIT_ASSERT_TRUE(test, task->signal != NULL);
 
-    mask.sig[(10 - 1) >> 6] |= (1ULL << ((10 - 1) & 63));
-    result = do_sigprocmask(0, &mask, &oldmask);
+    sigaddset(&mask, 10);
+    result = do_sigprocmask(SIG_BLOCK, &mask, &oldmask);
     if (result != 0) {
         KUNIT_FAIL(test, "SIG_BLOCK should succeed");
     }
@@ -170,7 +170,7 @@ static void test_signal_mask_in_task_context(struct kunit *test) {
     if (!is_blocked) {
         KUNIT_FAIL(test, "SIGUSR1 should be blocked");
     }
-    result = do_sigprocmask(1, &mask, NULL);
+    result = do_sigprocmask(SIG_UNBLOCK, &mask, NULL);
     if (result != 0) {
         KUNIT_FAIL(test, "SIG_UNBLOCK should succeed");
     }

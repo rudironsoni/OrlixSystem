@@ -491,7 +491,7 @@ int pty_job_control_contract_background_write_delivers_sigttou(void) {
     struct task *task = task_current();
     struct task *foreground_peer = NULL;
     struct task *background_peer = NULL;
-    sighandler_t saved_sigttou_handler;
+    __sighandler_t saved_sigttou_handler;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -512,7 +512,7 @@ int pty_job_control_contract_background_write_delivers_sigttou(void) {
         return -1;
     }
 
-    saved_sigttou_handler = task->signal->actions[SIGTTOU - 1].handler;
+    saved_sigttou_handler = task->signal->actions[SIGTTOU - 1].sa_handler;
 
     saved_pgid = task->pgid;
     saved_ppid = task->ppid;
@@ -565,7 +565,7 @@ int pty_job_control_contract_background_write_delivers_sigttou(void) {
 
 out:
     if (task && task->signal) {
-        task->signal->actions[SIGTTOU - 1].handler = saved_sigttou_handler;
+        task->signal->actions[SIGTTOU - 1].sa_handler = saved_sigttou_handler;
     }
     task->parent = saved_parent;
     task->ppid = saved_ppid;
@@ -586,7 +586,7 @@ int pty_job_control_contract_signal_chars_target_foreground_pgrp(void) {
     struct task *sigint_peer = NULL;
     struct task *sigquit_peer = NULL;
     struct task *sigtstp_peer = NULL;
-    sighandler_t saved_sigttou_handler;
+    __sighandler_t saved_sigttou_handler;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -604,8 +604,8 @@ int pty_job_control_contract_signal_chars_target_foreground_pgrp(void) {
         return -1;
     }
 
-    saved_sigttou_handler = task->signal->actions[SIGTTOU - 1].handler;
-    task->signal->actions[SIGTTOU - 1].handler = SIG_IGN;
+    saved_sigttou_handler = task->signal->actions[SIGTTOU - 1].sa_handler;
+    task->signal->actions[SIGTTOU - 1].sa_handler = SIG_IGN;
 
     sigint_peer = alloc_session_peer(task->sid, task->pid + 100, task->pid);
     sigquit_peer = alloc_session_peer(task->sid, task->pid + 200, task->pid);
@@ -660,7 +660,7 @@ int pty_job_control_contract_signal_chars_target_foreground_pgrp(void) {
 
 out:
     if (task && task->signal) {
-        task->signal->actions[SIGTTOU - 1].handler = saved_sigttou_handler;
+        task->signal->actions[SIGTTOU - 1].sa_handler = saved_sigttou_handler;
     }
     close_if_open(master_fd);
     close_if_open(slave_fd);

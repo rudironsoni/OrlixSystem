@@ -167,23 +167,23 @@ extern int fremovexattr_impl(int fd, const char *name);
 static long syscall_result(long ret);
 
 static int syscall_copy_sigset_to_mask(const uint64_t *sigset, size_t sigsetsize,
-                                       struct signal_mask_bits *mask) {
-    if (!mask || sigsetsize != sizeof(uint64_t)) {
+                                       sigset_t *mask) {
+    if (!mask || sigsetsize != sizeof(sigset_t)) {
         return -EINVAL;
     }
-    memset(mask, 0, sizeof(*mask));
+    sigemptyset(mask);
     if (sigset) {
-        mask->sig[0] = *sigset;
+        memcpy(mask, sigset, sizeof(*mask));
     }
     return 0;
 }
 
-static int syscall_copy_mask_to_sigset(const struct signal_mask_bits *mask, uint64_t *sigset,
+static int syscall_copy_mask_to_sigset(const sigset_t *mask, uint64_t *sigset,
                                        size_t sigsetsize) {
-    if (!mask || !sigset || sigsetsize != sizeof(uint64_t)) {
+    if (!mask || !sigset || sigsetsize != sizeof(sigset_t)) {
         return -EINVAL;
     }
-    *sigset = mask->sig[0];
+    memcpy(sigset, mask, sizeof(*mask));
     return 0;
 }
 
@@ -392,52 +392,6 @@ static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) 
     return child_pid;
 }
 
-static void syscall_sigaction_from_linux(const struct sigaction *linux_act,
-                                         struct signal_action_slot *act) {
-    memset(act, 0, sizeof(*act));
-    if (!linux_act) {
-        return;
-    }
-    act->handler = (sighandler_t)linux_act->sa_handler;
-    act->flags = (int32_t)linux_act->sa_flags;
-    act->restorer = (uint64_t)(uintptr_t)linux_act->sa_restorer;
-    act->mask.sig[0] = linux_act->sa_mask.sig[0];
-}
-
-static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
-                                       struct sigaction *linux_act) {
-    memset(linux_act, 0, sizeof(*linux_act));
-    if (!act) {
-        return;
-    }
-    linux_act->sa_handler = (__sighandler_t)act->handler;
-    linux_act->sa_flags = (unsigned long)act->flags;
-    linux_act->sa_restorer = (__sigrestore_t)(uintptr_t)act->restorer;
-    linux_act->sa_mask.sig[0] = act->mask.sig[0];
-}
-
-static void syscall_sigaltstack_from_linux(const stack_t *linux_stack,
-                                           struct signal_altstack *stack) {
-    memset(stack, 0, sizeof(*stack));
-    if (!linux_stack) {
-        return;
-    }
-    stack->ss_sp = linux_stack->ss_sp;
-    stack->ss_size = linux_stack->ss_size;
-    stack->ss_flags = linux_stack->ss_flags;
-}
-
-static void syscall_sigaltstack_to_linux(const struct signal_altstack *stack,
-                                         stack_t *linux_stack) {
-    memset(linux_stack, 0, sizeof(*linux_stack));
-    if (!stack) {
-        return;
-    }
-    linux_stack->ss_sp = stack->ss_sp;
-    linux_stack->ss_size = stack->ss_size;
-    linux_stack->ss_flags = stack->ss_flags;
-}
-
 static long syscall_result(long ret) {
     if (ret < 0) {
         if (ret >= -4095) {
@@ -490,9 +444,9 @@ static int syscall_timespec_to_timeval(const struct __kernel_timespec *timeout, 
 }
 
 static int syscall_apply_temporary_sigmask(const struct syscall_sigmask_arg *arg,
-                                           struct signal_mask_bits *old_mask,
+                                           sigset_t *old_mask,
                                            int *changed) {
-    struct signal_mask_bits new_mask;
+    sigset_t new_mask;
 
     *changed = 0;
     if (!arg) {
@@ -517,7 +471,7 @@ static int syscall_apply_temporary_sigmask(const struct syscall_sigmask_arg *arg
     return 0;
 }
 
-static void syscall_restore_sigmask(const struct signal_mask_bits *old_mask, int changed) {
+static void syscall_restore_sigmask(const sigset_t *old_mask, int changed) {
     if (changed) {
         do_sigsetmask(old_mask, NULL);
     }
@@ -952,16 +906,16 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)get_robust_list_impl((int)arg0, (void **)(uintptr_t)arg1,
                                                          (unsigned long *)(uintptr_t)arg2));
     case __NR_rt_sigaction: {
-        struct signal_action_slot act;
-        struct signal_action_slot oldact;
-        const struct signal_action_slot *act_ptr = NULL;
-        struct signal_action_slot *oldact_ptr = NULL;
+        struct sigaction act = {0};
+        struct sigaction oldact = {0};
+        const struct sigaction *act_ptr = NULL;
+        struct sigaction *oldact_ptr = NULL;
 
-        if (arg3 != sizeof(uint64_t)) {
+        if (arg3 != sizeof(sigset_t)) {
             return -EINVAL;
         }
         if (arg1) {
-            syscall_sigaction_from_linux((const struct sigaction *)(uintptr_t)arg1, &act);
+            act = *(const struct sigaction *)(uintptr_t)arg1;
             act_ptr = &act;
         }
         if (arg2) {
@@ -974,18 +928,18 @@ static long syscall_dispatch_inner_impl(long number,
             }
         }
         if (arg2) {
-            syscall_sigaction_to_linux(&oldact, (struct sigaction *)(uintptr_t)arg2);
+            *(struct sigaction *)(uintptr_t)arg2 = oldact;
         }
         return 0;
     }
     case __NR_sigaltstack: {
-        struct signal_altstack new_stack;
-        struct signal_altstack old_stack;
-        const struct signal_altstack *new_stack_ptr = NULL;
-        struct signal_altstack *old_stack_ptr = NULL;
+        stack_t new_stack = {0};
+        stack_t old_stack = {0};
+        const stack_t *new_stack_ptr = NULL;
+        stack_t *old_stack_ptr = NULL;
 
         if (arg0) {
-            syscall_sigaltstack_from_linux((const stack_t *)(uintptr_t)arg0, &new_stack);
+            new_stack = *(const stack_t *)(uintptr_t)arg0;
             new_stack_ptr = &new_stack;
         }
         if (arg1) {
@@ -998,7 +952,7 @@ static long syscall_dispatch_inner_impl(long number,
             }
         }
         if (arg1) {
-            syscall_sigaltstack_to_linux(&old_stack, (stack_t *)(uintptr_t)arg1);
+            *(stack_t *)(uintptr_t)arg1 = old_stack;
         }
         return 0;
     }
@@ -1075,12 +1029,12 @@ static long syscall_dispatch_inner_impl(long number,
         }
     }
     case __NR_rt_sigprocmask: {
-        struct signal_mask_bits set;
-        struct signal_mask_bits oldset;
-        const struct signal_mask_bits *set_ptr = NULL;
-        struct signal_mask_bits *oldset_ptr = NULL;
+        sigset_t set;
+        sigset_t oldset;
+        const sigset_t *set_ptr = NULL;
+        sigset_t *oldset_ptr = NULL;
 
-        if (arg3 != sizeof(uint64_t)) {
+        if (arg3 != sizeof(sigset_t)) {
             return -EINVAL;
         }
         if (arg1) {
@@ -1131,7 +1085,7 @@ static long syscall_dispatch_inner_impl(long number,
         struct __kernel_old_timeval timeout_value;
         struct __kernel_old_timeval *timeout_ptr = NULL;
         const struct syscall_sigmask_arg *sigmask_arg = (const struct syscall_sigmask_arg *)(uintptr_t)arg5;
-        struct signal_mask_bits old_mask;
+        sigset_t old_mask;
         int mask_changed = 0;
         int ret;
 
@@ -1166,7 +1120,7 @@ static long syscall_dispatch_inner_impl(long number,
             .ss = (const uint64_t *)(uintptr_t)arg4,
             .ss_len = (size_t)arg5,
         };
-        struct signal_mask_bits old_mask;
+        sigset_t old_mask;
         int mask_changed = 0;
         int ret;
 
