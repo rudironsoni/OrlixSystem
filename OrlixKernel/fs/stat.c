@@ -2,7 +2,7 @@
  * Virtual stat/fstat implementation
  */
 #include <linux/fcntl.h>
-#include <asm/stat.h>
+#include <uapi/asm/stat.h>
 #include <linux/stat.h>
 
 #include <linux/errno.h>
@@ -14,10 +14,6 @@
 #include "internal/fs/file.h"
 #include "internal/fs/namei.h"
 #include "vfs.h"
-
-#ifndef MAX_PATH
-#define MAX_PATH 4096
-#endif
 
 int stat_impl(const char *pathname, struct stat *statbuf) {
     int ret;

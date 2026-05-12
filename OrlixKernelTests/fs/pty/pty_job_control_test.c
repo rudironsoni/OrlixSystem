@@ -1,4 +1,4 @@
-#include <asm/ioctls.h>
+#include <uapi/asm/ioctls.h>
 #include <uapi/linux/errno.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/signal.h>

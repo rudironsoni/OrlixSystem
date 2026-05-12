@@ -7,7 +7,7 @@
 #include <linux/errno.h>
 #include <linux/types.h>
 #include <linux/stddef.h>
-#include <asm/ptrace.h>
+#include <uapi/asm/ptrace.h>
 #include <uapi/linux/audit.h>
 #include <uapi/linux/capability.h>
 #include <uapi/linux/elf.h>

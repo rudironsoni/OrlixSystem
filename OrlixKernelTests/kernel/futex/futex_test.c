@@ -1,4 +1,4 @@
-#include <asm/unistd.h>
+#include <uapi/asm/unistd.h>
 #include <uapi/linux/errno.h>
 #include <uapi/linux/capability.h>
 #include <uapi/linux/futex.h>

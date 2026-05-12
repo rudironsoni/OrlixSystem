@@ -5,9 +5,9 @@
  * Uses canonical Linux names directly.
  */
 
-#include <asm/unistd.h>
+#include <uapi/asm/unistd.h>
 #include <uapi/asm/stat.h>
-#include <asm/statfs.h>
+#include <uapi/asm/statfs.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/capability.h>
 #include <uapi/linux/magic.h>

@@ -58,6 +58,11 @@ void scanLines(ClangTidyCheck &Check, const SourceManager &SM, StringRef Buffer,
               "local fallback definitions for Linux ABI constants are forbidden in LinuxKernel tests; use vendored Linux headers instead") {
         continue;
       }
+      if (std::string(Rule.Message) ==
+              "MAX_PATH ownership belongs to OrlixKernel/fs/path.h; duplicate repo-local definitions are forbidden in LinuxKernel tests" &&
+          Path.ends_with("OrlixKernel/fs/path.h")) {
+        continue;
+      }
       std::smatch Match;
       if (std::regex_search(Line, Match, std::regex(Rule.Pattern))) {
         unsigned Column = static_cast<unsigned>(Match.position() + 1);
@@ -209,6 +214,8 @@ const std::vector<RegexRule> KernelTestRules = {
      "direct compiler builtin string or memory calls are forbidden in LinuxKernel tests; use Linux-owned headers or fix the owning header surface instead"},
     {R"(\b__builtin_va_(start|arg|end|copy)\s*\(|\b__builtin_va_list\b)",
      "direct compiler builtin varargs use is forbidden in LinuxKernel tests; use vendored linux/stdarg.h instead"},
+    {R"(^\s*#\s*define\s+MAX_PATH\b)",
+     "MAX_PATH ownership belongs to OrlixKernel/fs/path.h; duplicate repo-local definitions are forbidden in LinuxKernel tests"},
     {R"(^\s*#\s*undef\s+(TASK_[A-Z0-9_]+|SIG[A-Z0-9_]+|W[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|CLONE_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",
      "undef escapes around vendored Linux names are forbidden in LinuxKernel tests; fix the ownership or lint environment instead"},
     {R"(^\s*#\s*ifndef\s+(?![A-Z0-9_]*_H\b)(S_[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|SIG[A-Z0-9_]+|CLONE_[A-Z0-9_]+|EPOLL[A-Z0-9_]*|O_[A-Z0-9_]+|F_[A-Z0-9_]+|AT_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",

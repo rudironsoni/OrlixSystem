@@ -1,9 +1,9 @@
 #include "SignalSyscallContract.h"
 
-#include <asm/signal.h>
-#include <asm/sigcontext.h>
-#include <asm/ucontext.h>
-#include <asm/unistd.h>
+#include <uapi/asm/signal.h>
+#include <uapi/asm/sigcontext.h>
+#include <uapi/asm/ucontext.h>
+#include <uapi/asm/unistd.h>
 #include <uapi/linux/mman.h>
 #include <uapi/linux/sched.h>
 #include <uapi/linux/signal.h>

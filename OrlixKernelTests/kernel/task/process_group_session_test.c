@@ -1,4 +1,4 @@
-#include <asm/posix_types.h>
+#include <uapi/asm/posix_types.h>
 #include <uapi/linux/errno.h>
 
 #include "../../kunit/kunit.h"

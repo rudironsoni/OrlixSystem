@@ -28,18 +28,10 @@
 #include "kernel/signal.h"
 #include "kernel/init.h"
 #include "runtime/native/registry.h"
-#include "linux_umount2_flags.h"
-
 /* Linux UAPI test support - semantic helpers only */
 #include "../../LinuxUAPITestSupport.h"
 
-#ifndef INVALID_FLAG_TEST_VALUE
-#define INVALID_FLAG_TEST_VALUE 0x40000000u
-#endif
-
-#ifndef ENOTSUP
-#define ENOTSUP EOPNOTSUPP
-#endif
+enum { INVALID_FLAG_TEST_VALUE = 0x40000000u };
 
 extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
@@ -351,7 +343,7 @@ static void testSyntheticRouteRejectsHostJoin(struct kunit *test) {
     char host_path[MAX_PATH];
     int ret = vfs_translate_path("/dev/null", host_path, sizeof(host_path));
 
-    KUNIT_ASSERT_EQ_MSG(ret, -ENOTSUP, "synthetic route should not join to a host backing root");
+    KUNIT_ASSERT_EQ_MSG(ret, -EOPNOTSUPP, "synthetic route should not join to a host backing root");
 }
 
 static void testDescriptorDrivenPathClassification(struct kunit *test) {
@@ -924,7 +916,7 @@ static void testSyntheticChildOpenHandlesSupportedProcFilesAndRejectsUnsupported
     errno = 0;
     KUNIT_ASSERT_EQ_MSG(openat(AT_FDCWD, "/sys/kernel", O_RDONLY), -1,
                    "public openat should reject unsupported synthetic routes before host fallback");
-    KUNIT_ASSERT_EQ_MSG(errno, ENOTSUP, "public openat should set ENOTSUP for unsupported synthetic routes");
+    KUNIT_ASSERT_EQ_MSG(errno, EOPNOTSUPP, "public openat should set EOPNOTSUPP for unsupported synthetic routes");
 }
 
 static void testSyntheticRootOpenDirectorySucceeds(struct kunit *test) {
@@ -1307,8 +1299,8 @@ static void testVfsFaccessatAtEaccessUsesEffectiveCredentials(struct kunit *test
 
 static void testVfsFaccessatReportsUnsupportedSymlinkNoFollow(struct kunit *test) {
     extern int vfs_contract_faccessat_symlink_nofollow_returns_enotsup(void);
-    KUNIT_ASSERT_EQ_MSG(vfs_contract_faccessat_symlink_nofollow_returns_enotsup(), -ENOTSUP,
-                   "vfs_faccessat Linux AT_SYMLINK_NOFOLLOW should return ENOTSUP");
+    KUNIT_ASSERT_EQ_MSG(vfs_contract_faccessat_symlink_nofollow_returns_enotsup(), -EOPNOTSUPP,
+                   "vfs_faccessat Linux AT_SYMLINK_NOFOLLOW should return EOPNOTSUPP");
 }
 
 static void testFaccessatFollowsAbsoluteSymlinkAsVirtualPath(struct kunit *test) {

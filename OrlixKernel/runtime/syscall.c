@@ -1,6 +1,6 @@
 #include "syscall.h"
 
-#include <asm/unistd.h>
+#include <uapi/asm/unistd.h>
 #include <linux/errno.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/futex.h>

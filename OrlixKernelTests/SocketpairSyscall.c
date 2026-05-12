@@ -1,4 +1,4 @@
-#include <asm/unistd.h>
+#include <uapi/asm/unistd.h>
 #include <linux/net.h>
 
 #include "runtime/syscall.h"

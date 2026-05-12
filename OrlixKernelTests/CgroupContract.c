@@ -1,6 +1,6 @@
 #include "CgroupContract.h"
 
-#include <asm/unistd.h>
+#include <uapi/asm/unistd.h>
 #include <uapi/linux/capability.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/sched.h>

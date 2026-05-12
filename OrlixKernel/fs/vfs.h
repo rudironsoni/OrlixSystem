@@ -1,7 +1,7 @@
 #ifndef VFS_H
 #define VFS_H
 
-#include <asm/statfs.h>
+#include <uapi/asm/statfs.h>
 #include <linux/atomic.h>
 #include <linux/types.h>
 

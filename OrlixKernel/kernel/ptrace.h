@@ -7,7 +7,7 @@
 #ifndef KERNEL_PTRACE_H
 #define KERNEL_PTRACE_H
 
-#include <asm/posix_types.h>
+#include <uapi/asm/posix_types.h>
 #include <linux/types.h>
 
 struct task;

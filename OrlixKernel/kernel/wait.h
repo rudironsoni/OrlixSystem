@@ -2,7 +2,7 @@
 #define KERNEL_WAIT_H
 
 #include <linux/types.h>
-#include <asm/posix_types.h>
+#include <uapi/asm/posix_types.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -2,7 +2,7 @@
 #include <uapi/linux/fs.h>
 #include <uapi/linux/signal.h>
 #include <uapi/linux/errno.h>
-#include <asm/unistd.h>
+#include <uapi/asm/unistd.h>
 #include <linux/string.h>
 
 #include <stdbool.h>

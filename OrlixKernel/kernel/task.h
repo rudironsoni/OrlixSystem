@@ -20,6 +20,7 @@
 #include <linux/types.h>
 #include <linux/atomic.h>
 
+#include "../fs/path.h"
 #include "internal/kthread.h"
 #include "internal/mutex.h"
 
@@ -35,10 +36,6 @@ extern "C" {
 #define TASK_EXEC_MAX_VMAS ((TASK_EXEC_MAX_LOAD_SEGMENTS * 2) + 2)
 #define TASK_EXEC_MAX_DYNAMIC_NEEDED 16
 #define TASK_VMA_PAGE_SIZE 4096ULL
-
-#ifndef MAX_PATH
-#define MAX_PATH PATH_MAX
-#endif
 
 /* Forward declarations for private subsystem state */
 struct task;

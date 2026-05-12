@@ -1,5 +1,5 @@
-#include <asm/ioctls.h>
-#include <asm/unistd.h>
+#include <uapi/asm/ioctls.h>
+#include <uapi/asm/unistd.h>
 #include <uapi/linux/errno.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/pidfd.h>

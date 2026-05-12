@@ -41,6 +41,11 @@ void scanLines(ClangTidyCheck &Check, const SourceManager &SM, StringRef Buffer,
       End = Buffer.size();
     std::string Line(Buffer.slice(Start, End).str());
     for (const auto &Rule : Rules) {
+      if (Path.ends_with("OrlixKernel/fs/path.h") &&
+          std::string(Rule.Message) ==
+              "MAX_PATH ownership belongs to OrlixKernel/fs/path.h; duplicate repo-local definitions are forbidden") {
+        continue;
+      }
       std::smatch Match;
       if (std::regex_search(Line, Match, std::regex(Rule.Pattern))) {
         unsigned Column = static_cast<unsigned>(Match.position() + 1);
@@ -67,6 +72,8 @@ const std::vector<RegexRule> SourceRules = {
      "direct compiler builtin string or memory calls are forbidden in Linux-owner code; use Linux-owned headers or fix the owning header surface instead"},
     {R"(\b__builtin_va_(start|arg|end|copy)\s*\(|\b__builtin_va_list\b)",
      "direct compiler builtin varargs use is forbidden in Linux-owner code; use vendored linux/stdarg.h instead"},
+    {R"(^\s*#\s*define\s+MAX_PATH\b)",
+     "MAX_PATH ownership belongs to OrlixKernel/fs/path.h; duplicate repo-local definitions are forbidden"},
     {R"(^\s*#\s*undef\s+(TASK_[A-Z0-9_]+|SIG[A-Z0-9_]+|W[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|CLONE_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",
      "undef escapes around vendored Linux names are forbidden in Linux-owner code; fix the ownership or lint environment instead"},
     {R"(\b(dlsym|RTLD_NEXT|RTLD_DEFAULT|dlopen|pthread_[a-z_]+|objc_[a-z_]+|mach_[a-z_]+|os_log)\b)",

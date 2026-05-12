@@ -1,8 +1,8 @@
 #include "NativeSyscallContract.h"
 
-#include <asm/unistd.h>
-#include <asm/ioctls.h>
-#include <asm/statfs.h>
+#include <uapi/asm/unistd.h>
+#include <uapi/asm/ioctls.h>
+#include <uapi/asm/statfs.h>
 #include <uapi/asm/stat.h>
 #include <uapi/linux/close_range.h>
 #include <uapi/linux/fcntl.h>

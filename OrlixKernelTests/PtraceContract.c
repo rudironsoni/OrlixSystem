@@ -1,7 +1,7 @@
 #include "PtraceContract.h"
 
-#include <asm/ptrace.h>
-#include <asm/unistd.h>
+#include <uapi/asm/ptrace.h>
+#include <uapi/asm/unistd.h>
 #include <uapi/linux/mman.h>
 #include <uapi/linux/signal.h>
 #include <uapi/linux/elf.h>

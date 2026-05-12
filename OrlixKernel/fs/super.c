@@ -4,7 +4,7 @@
  * Host filesystem statistics do not define the Linux-facing contract here.
  */
 
-#include <asm/statfs.h>
+#include <uapi/asm/statfs.h>
 #include <linux/errno.h>
 #include <linux/magic.h>
 #include <linux/mount.h>

@@ -10,8 +10,6 @@
 #include "kernel/cgroup.h"
 #include "kernel/task.h"
 
-#define MAX_PATH 4096
-
 static int open_alloc_fd(void) {
     int fd = alloc_fd_impl();
 
