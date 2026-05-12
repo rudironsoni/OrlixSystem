@@ -155,7 +155,6 @@ static void reset_pty_job_control_test_kernel_state(void) {
     task_init_process->pgid = task_init_process->pid;
     task_init_process->sid = task_init_process->pid;
     task_init_process->exit_status = 0;
-    task_init_process->thread_pending_signals = 0;
     atomic_set(&task_init_process->exited, 0);
     atomic_set(&task_init_process->signaled, 0);
     atomic_set(&task_init_process->termsig, 0);
