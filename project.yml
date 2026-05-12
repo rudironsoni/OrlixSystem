@@ -378,7 +378,10 @@ targets:
     - OrlixKernelTests/LinuxUAPITestSupport.h
     - path: OrlixKernelTests/VFSAtContract.c
       compilerFlags:
-      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
+        - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
+    - path: OrlixKernelTests/MountContract.c
+      compilerFlags:
+        - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/FcntlContract.c
       compilerFlags:
       - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)

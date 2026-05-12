@@ -46,6 +46,7 @@
 		4A6E2F60EC377F94A076C65E /* cgroup.c in Sources */ = {isa = PBXBuildFile; fileRef = F02066DD397EB58D2D012315 /* cgroup.c */; };
 		4BDF4DC2AEA42D7A0884033D /* eventpoll.c in Sources */ = {isa = PBXBuildFile; fileRef = 5CA513B58BA56C32C3D8C4F5 /* eventpoll.c */; };
 		4CC87E3BA480BF8A9D4BDFCC /* KernelProcessGroupSessionTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 649D9A390D9887FF95B57E63 /* KernelProcessGroupSessionTests.m */; };
+		4D67A3660244AF6624F55760 /* MountContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 8456D2DBC9D6E6D83A7B67E6 /* MountContract.c */; settings = {COMPILER_FLAGS = "$(ORLIX_KERNEL_TEST_STRICT_CFLAGS)"; }; };
 		4E4518431001F4AFE3A7EDD3 /* EpollSocketContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 0D40D1B5F8093422AA759F4A /* EpollSocketContract.c */; settings = {COMPILER_FLAGS = "$(ORLIX_KERNEL_TEST_STRICT_CFLAGS)"; }; };
 		4EA6FCFD08901D10BFEE2105 /* PTYSessionIoctlShim.c in Sources */ = {isa = PBXBuildFile; fileRef = F57E103ADA9BC025D9D82EB7 /* PTYSessionIoctlShim.c */; };
 		4EBC42471423BC6539FF3751 /* EpollTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 1BE8E6D3279E4DD0231DB711 /* EpollTests.m */; };
@@ -295,6 +296,7 @@
 		8383C67C95A306049D9DF0BC /* xattr.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = xattr.c; sourceTree = "<group>"; };
 		838E887EC3F4B36078E99CEE /* pty.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = pty.c; sourceTree = "<group>"; };
 		84245D3FA37D3059CF6B6B7A /* HostTestSupport.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = HostTestSupport.c; sourceTree = "<group>"; };
+		8456D2DBC9D6E6D83A7B67E6 /* MountContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = MountContract.c; sourceTree = "<group>"; };
 		88D9107BD95B20C2E495FB01 /* SignalSyscallContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SignalSyscallContract.h; sourceTree = "<group>"; };
 		8B1CF9495806F5C54C7E3113 /* orlix_observability.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = orlix_observability.c; sourceTree = "<group>"; };
 		8CF0AA8646A0B520A0C2E146 /* uio.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = uio.c; sourceTree = "<group>"; };
@@ -495,6 +497,7 @@
 				6F0D2C981B4804AA4EE393A6 /* LinuxUAPICompileSmoke.c */,
 				4724078A9689D911E749B5AB /* LinuxUAPITestSupport.c */,
 				C8F1C8D5573E54576D4AF692 /* LinuxUAPITestSupport.h */,
+				8456D2DBC9D6E6D83A7B67E6 /* MountContract.c */,
 				41C8B74AB95F36EB71EA522D /* NamespaceContract.c */,
 				C3302730CF4FE82D2EBFDA3F /* NamespaceContract.h */,
 				1777614420D897C3AD42F018 /* NamespaceTests.m */,
@@ -970,6 +973,7 @@
 				42EA1A3370EBA248F8B11EA9 /* LinuxKernelDynamicTestCase.m in Sources */,
 				34D27A8A1EA1C280455CC5FD /* LinuxUAPICompileSmoke.c in Sources */,
 				E406E883B29A46BA3B44DC2F /* LinuxUAPITestSupport.c in Sources */,
+				4D67A3660244AF6624F55760 /* MountContract.c in Sources */,
 				E003157AB4A767053C09FA83 /* NamespaceContract.c in Sources */,
 				D83945E1C0951AE3E00CBF36 /* NamespaceTests.m in Sources */,
 				D77BA9DF54C3260887B8542F /* NativeSyscallContract.c in Sources */,
