@@ -23,6 +23,7 @@
 
 #include "internal/slab.h"
 #include "internal/timekeeping.h"
+#include "private/fs/fdtable_state.h"
 #include "../private/kernel/task_state.h"
 #include "internal/fs/lock.h"
 

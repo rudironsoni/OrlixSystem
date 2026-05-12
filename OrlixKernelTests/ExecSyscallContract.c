@@ -20,6 +20,7 @@
 
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
+#include "private/kernel/cred_state.h"
 #include "kernel/cred.h"
 #include "kernel/mm.h"
 #include "kernel/signal.h"

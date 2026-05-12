@@ -2,6 +2,7 @@
 #include <uapi/linux/securebits.h>
 
 #include "CredentialContract.h"
+#include "private/kernel/cred_state.h"
 #include "kernel/cred.h"
 
 extern int errno;

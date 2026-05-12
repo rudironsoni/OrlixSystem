@@ -11,6 +11,7 @@
 #include "../fs/fdtable.h"
 #include "../fs/vfs.h"
 #include "cgroup.h"
+#include "../private/kernel/cred_state.h"
 #include "cred.h"
 #include "fork.h"
 #include "ptrace.h"

@@ -16,6 +16,7 @@
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
 #include "private/kernel/signal_state.h"
+#include "private/kernel/cred_state.h"
 #include "kernel/cred.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"

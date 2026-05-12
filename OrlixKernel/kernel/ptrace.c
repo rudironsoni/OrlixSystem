@@ -1,5 +1,6 @@
 #include "ptrace.h"
 
+#include "../private/kernel/cred_state.h"
 #include "cred.h"
 #include "signal.h"
 #include "../private/kernel/signal_state.h"

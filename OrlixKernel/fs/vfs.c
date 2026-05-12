@@ -23,9 +23,11 @@
 #include "internal/fs/rootfs.h"
 
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "pty.h"
 #include "../private/kernel/task_state.h"
 #include "../private/kernel/signal_state.h"
+#include "../private/kernel/cred_state.h"
 #include "../kernel/cgroup.h"
 #include "../kernel/task.h"
 #include "../kernel/cred.h"
