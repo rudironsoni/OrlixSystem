@@ -5450,25 +5450,16 @@ static void vfs_proc_task_signal_status(const struct task *task,
     uint64_t caught = 0;
 
     if (task && task->signal) {
-        kernel_mutex_lock(&task->signal->lock);
-        private_pending = task->thread_pending_signals;
-        shared_pending = task->signal->shared_pending.sig[0];
-        blocked = task->signal->blocked.sig[0];
-        queued = task->signal->queue.count < 0 ? 0U : (unsigned int)task->signal->queue.count;
-        for (int sig = 1; sig <= KERNEL_SIG_NUM; sig++) {
-            __sighandler_t handler = task->signal->actions[sig - 1].sa_handler;
-            uint64_t bit = 1ULL << (sig - 1);
-
-            if (!handler) {
-                continue;
-            }
-            if ((uintptr_t)handler == 1U) {
-                ignored |= bit;
-            } else {
-                caught |= bit;
-            }
+        if (signal_proc_status_snapshot_task(task, &queued, &private_pending,
+                                             &shared_pending, &blocked,
+                                             &ignored, &caught) != 0) {
+            queued = 0;
+            private_pending = 0;
+            shared_pending = 0;
+            blocked = 0;
+            ignored = 0;
+            caught = 0;
         }
-        kernel_mutex_unlock(&task->signal->lock);
     }
 
     if (queued_out) {

@@ -218,10 +218,7 @@ static bool pty_valid_index(unsigned int pty_index) {
 }
 
 static bool pty_signal_is_ignored(const struct task *task, int signal_number) {
-    if (!task || !task->signal || signal_number <= 0 || signal_number > KERNEL_SIG_NUM) {
-        return false;
-    }
-    return task->signal->actions[signal_number - 1].sa_handler == SIG_IGN;
+    return signal_handler_ignored_task(task, signal_number);
 }
 
 static struct task *pty_lookup_task_locked(int32_t pid) {

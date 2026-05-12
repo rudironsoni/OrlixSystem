@@ -213,6 +213,15 @@ const std::vector<RegexRule> KernelTestRules = {
      "host syscall forward declarations are forbidden in test support"},
     {R"(\bsnprintf\s*\()",
      "snprintf is forbidden in test support"},
+    {R"(\b[A-Za-z_][A-Za-z0-9_>]*->signal->(actions|blocked|shared_pending|queue|altstack)\b)",
+     "direct signal private-state field access is forbidden in LinuxKernel tests outside the owning signal subsystem tests; add or use a signal-owned API instead"},
+    {R"(\b[A-Za-z_][A-Za-z0-9_>]*->mm->signal_frame_[A-Za-z0-9_]+\b)",
+     "direct signal frame bookkeeping access is forbidden in LinuxKernel tests; add or use an owner API instead"},
+};
+
+const std::vector<RegexRule> KernelSignalSubsystemRules = {
+    {R"(\b[A-Za-z_][A-Za-z0-9_>]*->mm->signal_frame_[A-Za-z0-9_]+\b)",
+     "direct signal frame bookkeeping access is forbidden in LinuxKernel tests; add or use an owner API instead"},
 };
 
 const std::vector<RegexRule> HostAdapterRules = {
@@ -367,7 +376,11 @@ void OrlixTestPolicyCheck::scanMainFile() {
     scanLines(*this, SM, Buffer, HostAdapterRules, Path);
   }
   if (isKernelTestPath(Path)) {
-    scanLines(*this, SM, Buffer, KernelTestRules, Path);
+    if (Path.contains("OrlixKernelTests/kernel/signal/")) {
+      scanLines(*this, SM, Buffer, KernelSignalSubsystemRules, Path);
+    } else {
+      scanLines(*this, SM, Buffer, KernelTestRules, Path);
+    }
   }
 }
 

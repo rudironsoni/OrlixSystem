@@ -14,6 +14,7 @@
 #include "kernel/cred.h"
 #include "kernel/futex.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_frame_state.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
@@ -173,39 +174,8 @@ void futex_contract_reset_test_state(void) {
     atomic_set(&task_init_process->stop_report_pending, 0);
     atomic_set(&task_init_process->continue_report_pending, 0);
 
-    if (task_init_process->signal) {
-        for (int sig = 0; sig < KERNEL_SIG_NUM; sig++) {
-            task_init_process->signal->actions[sig].sa_handler = SIG_DFL;
-            task_init_process->signal->actions[sig].sa_flags = 0;
-            task_init_process->signal->actions[sig].sa_restorer = 0;
-            sigemptyset(&task_init_process->signal->actions[sig].sa_mask);
-        }
-        memset(&task_init_process->signal->blocked, 0, sizeof(task_init_process->signal->blocked));
-        memset(&task_init_process->signal->pending, 0, sizeof(task_init_process->signal->pending));
-        memset(&task_init_process->signal->shared_pending, 0, sizeof(task_init_process->signal->shared_pending));
-        task_init_process->signal->altstack.ss_sp = NULL;
-        task_init_process->signal->altstack.ss_size = 0;
-        task_init_process->signal->altstack.ss_flags = 2;
-    }
-
-    if (task_init_process->mm) {
-        task_init_process->mm->signal_frame_return_pc = 0;
-        task_init_process->mm->signal_handler_pc = 0;
-        task_init_process->mm->signal_frame_flags = 0;
-        task_init_process->mm->signal_frame_restorer_pc = 0;
-        task_init_process->mm->signal_frame_mask = 0;
-        task_init_process->mm->signal_frame_altstack_sp = 0;
-        task_init_process->mm->signal_frame_altstack_size = 0;
-        task_init_process->mm->signal_frame_altstack_flags = 0;
-        task_init_process->mm->signal_frame_current_sp = 0;
-        task_init_process->mm->signal_frame_size = 0;
-        task_init_process->mm->signal_frame_ucontext_flags = 0;
-        task_init_process->mm->signal_frame_restartable = 0;
-        task_init_process->mm->signal_frame_restart_return_pc = 0;
-        task_init_process->mm->signal_frame_restart_sp = 0;
-        task_init_process->mm->signal_frame_restart_signo = 0;
-        task_restart_clear_impl(task_init_process);
-    }
+    signal_reset_task_state(task_init_process);
+    signal_frame_clear_task(task_init_process);
 
     while ((child = task_init_process->children) != NULL) {
         task_unlink_child_impl(task_init_process, child);
@@ -504,16 +474,19 @@ int futex_contract_interrupted_wait_records_restart(void) {
     futex_wait_thread_wait_done(&ctx);
     futex_wait_thread_destroy(&ctx);
 
-    if (ctx.rc != -1 || ctx.saved_errno != EINTR ||
-        !child->mm ||
-        child->mm->signal_frame_restart_kind != TASK_RESTART_FUTEX_WAIT ||
-        child->mm->signal_frame_restart_arg0 != (uint64_t)(uintptr_t)&word ||
-        child->mm->signal_frame_restart_arg1 != 0 ||
-        child->mm->signal_frame_restart_arg2 != 2000) {
+    {
+        struct signal_frame_state frame;
+        if (ctx.rc != -1 || ctx.saved_errno != EINTR ||
+            signal_frame_state_get_task(child, &frame) != 0 ||
+            frame.restart_kind != TASK_RESTART_FUTEX_WAIT ||
+            frame.restart_arg0 != (uint64_t)(uintptr_t)&word ||
+            frame.restart_arg1 != 0 ||
+            frame.restart_arg2 != 2000) {
         task_unlink_child_impl(parent, child);
         task_put(child);
         errno = ENODATA;
         return -1;
+        }
     }
 
     signal_clear_pending_task(child, SIGUSR1);

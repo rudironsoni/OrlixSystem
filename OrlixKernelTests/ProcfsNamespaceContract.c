@@ -50,12 +50,7 @@ static void reset_procfs_namespace_state(void) {
     uts_reset_current_namespace();
     if (task_current()) {
         atomic_set(&task_current()->new_pid_namespace_pending, 0);
-        task_current()->thread_pending_signals = 0;
-        if (task_current()->signal) {
-            memset(&task_current()->signal->pending, 0, sizeof(task_current()->signal->pending));
-            memset(&task_current()->signal->shared_pending, 0,
-                   sizeof(task_current()->signal->shared_pending));
-        }
+        signal_reset_task_state(task_current());
     }
 }
 

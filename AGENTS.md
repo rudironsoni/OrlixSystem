@@ -121,6 +121,9 @@ Wrong-direction changes are forbidden:
 - If a Linux-owner file only parses after adding `__builtin_*` aliases, implicit builtin declarations, or compiler-only macro rewrites, treat that as a build/lint environment or ownership bug. Fix the owning header surface or lint environment instead of keeping the builtin escape hatch.
 - Do not introduce repo-local private shim headers, split-contract headers, or reduced include façades whose purpose is to avoid including the real vendored Linux kernel header graph.
 - If the full vendored Linux header graph trips lint or the Apple toolchain, the fix belongs in the build/lint environment and vendor integration layer, not in a new repo-local private header that cuts around Linux truth.
+- Non-`private/**` headers under `OrlixKernel/fs/`, `OrlixKernel/kernel/`, and `OrlixKernel/runtime/` must stay declaration/API-oriented. Repo-private runtime state layouts, snapshot records, linked-list nodes, queue internals, synthetic classification records, and similar implementation detail containers belong under `OrlixKernel/private/**`, not in those owner headers.
+- If a new repo-private struct layout seems “convenient” in an owner header because tests or another subsystem want to inspect it, stop. Either keep the detail local to the owning `.c` file, or move the shared layout under `OrlixKernel/private/**`.
+- Cross-subsystem convenience reaches through private state are forbidden. Files outside the owning subsystem must not directly poke or inspect fields such as `task->signal->...`, `task->mm->signal_frame_*`, or comparable private runtime state just because the field already exists. Add or use an owner API instead.
 
 ## 3) Narrow Subsystem Seams Only
 
@@ -401,6 +404,9 @@ Forbidden implementation behavior:
 - moving semantic problems into tests instead of fixing subsystem ownership
 - stopping at the smallest green test when the architecture is still wrong
 - narrowing behavior to one current test case instead of modeling the Linux-facing rule
+- dumping unrelated subsystem plumbing into giant junk-drawer owner headers instead of splitting private implementation detail under `OrlixKernel/private/**` or narrower subsystem-owned headers
+- adding repo-private runtime snapshot structs, frame records, queue records, or bookkeeping containers to non-`private/**` owner headers for convenience
+- reading or mutating another subsystem's private state fields directly when an owner seam should exist
 
 Required implementation behavior:
 - use vendored generated Linux headers for kernel/userspace contract truth

@@ -349,8 +349,10 @@ __kernel_pid_t fork_impl(void) {
 
     /* Copy signal handlers */
     if (parent->signal && child->signal) {
-        memcpy(child->signal->actions, parent->signal->actions, sizeof(parent->signal->actions));
-        child->signal->blocked = parent->signal->blocked;
+        if (signal_copy_fork_state_task(child, parent) != 0) {
+            task_put(child);
+            return -ENOMEM;
+        }
     }
 
     /* Reference TTY (not copy) */
@@ -814,8 +816,13 @@ int vfork_impl(void) {
 
     /* Copy signal handlers */
     if (parent->signal && child->signal) {
-        memcpy(child->signal->actions, parent->signal->actions, sizeof(parent->signal->actions));
-        child->signal->blocked = parent->signal->blocked;
+        if (signal_copy_fork_state_task(child, parent) != 0) {
+            kernel_mutex_lock(&parent->lock);
+            parent->children = child->next_sibling;
+            kernel_mutex_unlock(&parent->lock);
+            task_put(child);
+            return -ENOMEM;
+        }
     }
 
     /* Reference TTY */

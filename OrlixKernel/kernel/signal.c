@@ -15,6 +15,7 @@
 #include <uapi/asm/ucontext.h>
 
 #include "../private/kernel/signal_state.h"
+#include "../private/kernel/signal_frame_state.h"
 #include "../private/kernel/task_state.h"
 #include "../private/kernel/cred_state.h"
 #include "signal.h"
@@ -588,6 +589,27 @@ void signal_clear_pending_task(struct task *task, int32_t sig) {
     signal_clear_pending_markers_task(task, sig);
 }
 
+void signal_reset_task_state(struct task *task) {
+    if (!task || !task->signal) {
+        return;
+    }
+
+    for (int sig = 0; sig < KERNEL_SIG_NUM; sig++) {
+        task->signal->actions[sig].sa_handler = SIG_DFL;
+        task->signal->actions[sig].sa_flags = 0;
+        task->signal->actions[sig].sa_restorer = 0;
+        sigemptyset(&task->signal->actions[sig].sa_mask);
+    }
+
+    sigemptyset(&task->signal->blocked);
+    sigemptyset(&task->signal->pending);
+    sigemptyset(&task->signal->shared_pending);
+    task->thread_pending_signals = 0;
+    task->signal->altstack.ss_sp = NULL;
+    task->signal->altstack.ss_size = 0;
+    task->signal->altstack.ss_flags = SS_DISABLE;
+}
+
 int signal_queued_count_task(const struct task *task, int32_t sig) {
     struct signal_queue_entry *entry;
     int count = 0;
@@ -683,6 +705,174 @@ bool signal_altstack_has_flags_task(const struct task *task, int32_t flags) {
     }
 
     return (task->signal->altstack.ss_flags & flags) == flags;
+}
+
+bool signal_handler_ignored_task(const struct task *task, int32_t sig) {
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return false;
+    }
+
+    return task->signal->actions[sig - 1].sa_handler == SIG_IGN;
+}
+
+int signal_handler_get_task(const struct task *task, int32_t sig,
+                            __sighandler_t *handler) {
+    if (!task || !task->signal || !handler || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return -EINVAL;
+    }
+
+    *handler = task->signal->actions[sig - 1].sa_handler;
+    return 0;
+}
+
+int signal_handler_set_task(struct task *task, int32_t sig,
+                            __sighandler_t handler) {
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return -EINVAL;
+    }
+
+    task->signal->actions[sig - 1].sa_handler = handler;
+    return 0;
+}
+
+int signal_copy_fork_state_task(struct task *child, const struct task *parent) {
+    if (!child || !parent || !child->signal || !parent->signal) {
+        return -EINVAL;
+    }
+
+    memcpy(child->signal->actions, parent->signal->actions,
+           sizeof(parent->signal->actions));
+    child->signal->blocked = parent->signal->blocked;
+    return 0;
+}
+
+int signal_proc_status_snapshot_task(const struct task *task,
+                                     unsigned int *queued_out,
+                                     uint64_t *private_pending_out,
+                                     uint64_t *shared_pending_out,
+                                     uint64_t *blocked_out,
+                                     uint64_t *ignored_out,
+                                     uint64_t *caught_out) {
+    unsigned int queued = 0;
+    uint64_t private_pending = 0;
+    uint64_t shared_pending = 0;
+    uint64_t blocked = 0;
+    uint64_t ignored = 0;
+    uint64_t caught = 0;
+
+    if (!task || !task->signal) {
+        return -EINVAL;
+    }
+
+    kernel_mutex_lock(&task->signal->lock);
+    private_pending = task->thread_pending_signals;
+    shared_pending = task->signal->shared_pending.sig[0];
+    blocked = task->signal->blocked.sig[0];
+    queued = task->signal->queue.count < 0 ? 0U : (unsigned int)task->signal->queue.count;
+    for (int sig = 1; sig <= KERNEL_SIG_NUM; sig++) {
+        __sighandler_t handler = task->signal->actions[sig - 1].sa_handler;
+        uint64_t bit = 1ULL << (sig - 1);
+
+        if (!handler) {
+            continue;
+        }
+        if ((uintptr_t)handler == 1U) {
+            ignored |= bit;
+        } else {
+            caught |= bit;
+        }
+    }
+    kernel_mutex_unlock(&task->signal->lock);
+
+    if (queued_out) {
+        *queued_out = queued;
+    }
+    if (private_pending_out) {
+        *private_pending_out = private_pending;
+    }
+    if (shared_pending_out) {
+        *shared_pending_out = shared_pending;
+    }
+    if (blocked_out) {
+        *blocked_out = blocked;
+    }
+    if (ignored_out) {
+        *ignored_out = ignored;
+    }
+    if (caught_out) {
+        *caught_out = caught;
+    }
+
+    return 0;
+}
+
+int signal_frame_state_get_task(const struct task *task,
+                                struct signal_frame_state *state) {
+    if (!task || !task->mm || !state) {
+        return -EINVAL;
+    }
+
+    state->sp = task->mm->signal_frame_sp;
+    state->signo = task->mm->signal_frame_signo;
+    state->return_pc = task->mm->signal_frame_return_pc;
+    state->handler_pc = task->mm->signal_handler_pc;
+    state->flags = task->mm->signal_frame_flags;
+    state->restorer_pc = task->mm->signal_frame_restorer_pc;
+    state->mask = task->mm->signal_frame_mask;
+    state->altstack_sp = task->mm->signal_frame_altstack_sp;
+    state->altstack_size = task->mm->signal_frame_altstack_size;
+    state->altstack_flags = task->mm->signal_frame_altstack_flags;
+    state->current_sp = task->mm->signal_frame_current_sp;
+    state->size = task->mm->signal_frame_size;
+    state->ucontext_flags = task->mm->signal_frame_ucontext_flags;
+    state->restartable = task->mm->signal_frame_restartable;
+    state->restart_return_pc = task->mm->signal_frame_restart_return_pc;
+    state->restart_sp = task->mm->signal_frame_restart_sp;
+    state->restart_signo = task->mm->signal_frame_restart_signo;
+    state->restart_kind = (enum task_restart_kind)task->mm->signal_frame_restart_kind;
+    state->restart_arg0 = task->mm->signal_frame_restart_arg0;
+    state->restart_arg1 = task->mm->signal_frame_restart_arg1;
+    state->restart_arg2 = task->mm->signal_frame_restart_arg2;
+    state->restart_arg3 = task->mm->signal_frame_restart_arg3;
+    state->restart_arg4 = task->mm->signal_frame_restart_arg4;
+    state->restart_arg5 = task->mm->signal_frame_restart_arg5;
+    return 0;
+}
+
+void signal_frame_clear_task(struct task *task) {
+    if (!task || !task->mm) {
+        return;
+    }
+
+    task->mm->signal_frame_sp = 0;
+    task->mm->signal_frame_signo = 0;
+    task->mm->signal_frame_return_pc = 0;
+    task->mm->signal_handler_pc = 0;
+    task->mm->signal_frame_flags = 0;
+    task->mm->signal_frame_restorer_pc = 0;
+    task->mm->signal_frame_mask = 0;
+    task->mm->signal_frame_altstack_sp = 0;
+    task->mm->signal_frame_altstack_size = 0;
+    task->mm->signal_frame_altstack_flags = 0;
+    task->mm->signal_frame_current_sp = 0;
+    task->mm->signal_frame_size = 0;
+    task->mm->signal_frame_ucontext_flags = 0;
+    task->mm->signal_frame_restartable = 0;
+    task->mm->signal_frame_restart_return_pc = 0;
+    task->mm->signal_frame_restart_sp = 0;
+    task->mm->signal_frame_restart_signo = 0;
+    task_restart_clear_impl(task);
+}
+
+long signal_finish_sigreturn_task(struct task *task) {
+    if (!task || !task->mm) {
+        return -ESRCH;
+    }
+    if (task->signal) {
+        task->signal->blocked.sig[0] = task->mm->signal_frame_mask;
+        task->signal->altstack.ss_flags &= ~1;
+    }
+    return (long)task->mm->signal_frame_return_pc;
 }
 
 void signal_recompute_pending(struct task *task) {

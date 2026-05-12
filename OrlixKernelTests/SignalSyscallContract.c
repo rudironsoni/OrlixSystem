@@ -17,6 +17,7 @@
 #include "kernel/signal.h"
 #include "private/kernel/signal_state.h"
 #include "private/kernel/cred_state.h"
+#include "private/kernel/signal_frame_state.h"
 #include "kernel/cred.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
@@ -39,6 +40,15 @@ static sigset_t signal_contract_mask_all_except(int signo) {
         sigdelset(&mask, signo);
     }
     return mask;
+}
+
+static int signal_contract_read_frame(const struct task *task,
+                                      struct signal_frame_state *frame) {
+    if (signal_frame_state_get_task(task, frame) != 0) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
 }
 
 static int signal_contract_sigset_contains(const sigset_t *set, int signo) {
@@ -372,6 +382,7 @@ int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void) {
 
 int signal_syscall_contract_sigaltstack_and_frame_policy(void) {
     struct task *task = task_current();
+    struct signal_frame_state frame;
     stack_t stack;
     stack_t old_stack;
     uint64_t frame_sp = 0;
@@ -406,8 +417,9 @@ int signal_syscall_contract_sigaltstack_and_frame_policy(void) {
     if (signal_prepare_frame_impl(task, SIGINT, 0x1234, 0x80000000, &frame_sp) != 0 ||
         frame_sp < (uint64_t)(uintptr_t)mapped ||
         frame_sp >= (uint64_t)(uintptr_t)mapped + 16384 ||
-        task->mm->signal_frame_signo != SIGINT ||
-        task->mm->signal_frame_return_pc != 0x1234) {
+        signal_contract_read_frame(task, &frame) != 0 ||
+        frame.signo != SIGINT ||
+        frame.return_pc != 0x1234) {
         errno = EPROTO;
         signal_contract_disable_altstack();
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
@@ -476,6 +488,7 @@ int signal_syscall_contract_frame_writes_virtual_record(void) {
 
 int signal_syscall_contract_frame_records_handler_handoff(void) {
     struct task *task = task_current();
+    struct signal_frame_state frame;
     struct sigaction act;
     struct sigaction old_act;
     stack_t stack;
@@ -517,8 +530,9 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
     stack.ss_size = 16384;
     if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
         signal_prepare_frame_impl(task, SIGUSR1, 0xaaaa, 0x80000000, &frame_sp) != 0 ||
-        task->mm->signal_handler_pc != 0x9000 ||
-        task->mm->signal_frame_flags != (SA_RESTART | SA_ONSTACK)) {
+        signal_contract_read_frame(task, &frame) != 0 ||
+        frame.handler_pc != 0x9000 ||
+        frame.flags != (SA_RESTART | SA_ONSTACK)) {
         errno = EPROTO;
         (void)signal_contract_write_blocked(task, &old_blocked);
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_act,
@@ -544,6 +558,7 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
 
 int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
     struct task *task = task_current();
+    struct signal_frame_state frame;
     struct sigaction act;
     struct sigaction old_act;
     stack_t stack;
@@ -610,8 +625,9 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
         frame_words[5] != (uint64_t)(uintptr_t)mapped ||
         frame_words[6] != 16384 ||
         (frame_words[7] & 1) == 0 ||
-        task->mm->signal_frame_restorer_pc != 0x9200 ||
-        task->mm->signal_frame_mask != block_term) {
+        signal_contract_read_frame(task, &frame) != 0 ||
+        frame.restorer_pc != 0x9200 ||
+        frame.mask != block_term) {
         errno = EPROTO;
         (void)signal_contract_write_blocked(task, &old_blocked);
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&old_act,
@@ -705,6 +721,7 @@ int signal_syscall_contract_rt_sigreturn_restores_mask_and_altstack(void) {
 
 int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
     struct task *task = task_current();
+    struct signal_frame_state frame;
     stack_t stack;
     uint64_t frame_sp = 0;
     uint64_t frame_words[12] = {0};
@@ -751,8 +768,9 @@ int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
         frame_words[9] != frame_sp ||
         frame_words[10] != block_term ||
         frame_words[11] == 0 ||
-        task->mm->signal_frame_current_sp != 0x7ffff000 ||
-        task->mm->signal_frame_size < sizeof(frame_words)) {
+        signal_contract_read_frame(task, &frame) != 0 ||
+        frame.current_sp != 0x7ffff000 ||
+        frame.size < sizeof(frame_words)) {
         errno = ENODATA;
         signal_contract_disable_altstack();
         syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK, (long)(uintptr_t)&block_set,
@@ -795,6 +813,7 @@ int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
 
 int signal_syscall_contract_frame_contains_linux_ucontext(void) {
     struct task *task = task_current();
+    struct signal_frame_state frame;
     stack_t stack;
     sigset_t old_blocked;
     uint64_t frame_sp = 0;
@@ -841,7 +860,8 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
         context.uc_sigmask.sig[0] != block_term ||
         context.uc_mcontext.sp != 0x7fff0000 ||
         context.uc_mcontext.pc != 0x13579bdf ||
-        task->mm->signal_frame_size < 128 + sizeof(context)) {
+        signal_contract_read_frame(task, &frame) != 0 ||
+        frame.size < 128 + sizeof(context)) {
         errno = ENODATA;
         (void)signal_contract_write_blocked(task, &old_blocked);
         signal_contract_disable_altstack();
@@ -980,6 +1000,7 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
 
 int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(void) {
     struct task *task = task_current();
+    struct signal_frame_state frame;
     struct sigaction act;
     struct sigaction old_usr1;
     struct sigaction old_usr2;
@@ -1022,7 +1043,8 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
     if (ret != 0 ||
         signal_prepare_frame_impl(task, SIGUSR1, 0x1111,
                                   (uint64_t)(uintptr_t)mapped + 16384, &frame_sp) != 0 ||
-        task->mm->signal_frame_mask != block_term ||
+        signal_contract_read_frame(task, &frame) != 0 ||
+        frame.mask != block_term ||
         !signal_is_blocked(task, SIGTERM) ||
         !signal_is_blocked(task, SIGUSR1) ||
         !signal_is_blocked(task, SIGUSR2) ||
@@ -1065,6 +1087,7 @@ out:
 
 int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
     struct task *task = task_current();
+    struct signal_frame_state frame;
     struct sigaction act;
     struct sigaction old_usr1;
     sigset_t old_blocked;
@@ -1101,11 +1124,12 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
     if (ret != 0 ||
         signal_prepare_frame_impl(task, SIGUSR1, 0x3333,
                                   (uint64_t)(uintptr_t)mapped + 16384, &frame_sp) != 0 ||
-        task->mm->signal_frame_restartable != 1 ||
-        task->mm->signal_frame_restart_return_pc != 0x3333 ||
-        task->mm->signal_frame_restart_sp != (uint64_t)(uintptr_t)mapped + 16384 ||
-        task->mm->signal_frame_restart_signo != SIGUSR1 ||
-        task->mm->signal_frame_restart_kind != TASK_RESTART_NONE ||
+        signal_contract_read_frame(task, &frame) != 0 ||
+        frame.restartable != 1 ||
+        frame.restart_return_pc != 0x3333 ||
+        frame.restart_sp != (uint64_t)(uintptr_t)mapped + 16384 ||
+        frame.restart_signo != SIGUSR1 ||
+        frame.restart_kind != TASK_RESTART_NONE ||
         syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0) != -EINTR) {
         errno = EPROTO;
         goto out;
@@ -1118,9 +1142,10 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
     if (ret != 0 ||
         signal_prepare_frame_impl(task, SIGUSR1, 0x4444,
                                   (uint64_t)(uintptr_t)mapped + 16384, &frame_sp) != 0 ||
-        task->mm->signal_frame_restartable != 0 ||
-        task->mm->signal_frame_restart_return_pc != 0x4444 ||
-        task->mm->signal_frame_restart_kind != TASK_RESTART_NONE ||
+        signal_contract_read_frame(task, &frame) != 0 ||
+        frame.restartable != 0 ||
+        frame.restart_return_pc != 0x4444 ||
+        frame.restart_kind != TASK_RESTART_NONE ||
         syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0) != -EINTR) {
         errno = ENODATA;
         goto out;
@@ -1136,15 +1161,17 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
         signal_generate_task(task, SIGUSR1);
         if (nanosleep_impl(&req, &rem) != -1 ||
             errno != EINTR ||
-            task->mm->signal_frame_restart_kind != TASK_RESTART_NANOSLEEP ||
-            task->mm->signal_frame_restart_arg0 != (uint64_t)(uintptr_t)&req ||
-            task->mm->signal_frame_restart_arg1 != (uint64_t)(uintptr_t)&rem) {
+            signal_contract_read_frame(task, &frame) != 0 ||
+            frame.restart_kind != TASK_RESTART_NANOSLEEP ||
+            frame.restart_arg0 != (uint64_t)(uintptr_t)&req ||
+            frame.restart_arg1 != (uint64_t)(uintptr_t)&rem) {
             errno = EBADMSG;
             goto out;
         }
         signal_clear_pending_task(task, SIGUSR1);
         if (syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0) != 0 ||
-            task->mm->signal_frame_restart_kind != TASK_RESTART_NONE) {
+            signal_contract_read_frame(task, &frame) != 0 ||
+            frame.restart_kind != TASK_RESTART_NONE) {
             errno = EALREADY;
             goto out;
         }
@@ -1159,8 +1186,7 @@ out:
                               0, sizeof(old_usr1.sa_mask), 0, 0);
         (void)signal_contract_write_blocked(task, &old_blocked);
         signal_clear_pending_task(task, SIGUSR1);
-        task->mm->signal_frame_restartable = 0;
-        task_restart_clear_impl(task);
+        signal_frame_clear_task(task);
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);
         errno = saved_errno;
     }

@@ -12,6 +12,7 @@
 
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_frame_state.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
@@ -491,6 +492,7 @@ static void *select_thread(void *arg) {
 
 static void *select_restart_thread(void *arg) {
     struct readiness_thread_case *ctx = arg;
+    struct signal_frame_state frame;
     __kernel_fd_set readfds;
     long ret;
 
@@ -500,12 +502,12 @@ static void *select_restart_thread(void *arg) {
     case_mark_started(ctx);
     ret = select_impl(ctx->fd + 1, &readfds, NULL, NULL, NULL);
     if (ret != -1 || errno != EINTR ||
-        !ctx->task->mm ||
-        ctx->task->mm->signal_frame_restart_kind != TASK_RESTART_SELECT ||
-        ctx->task->mm->signal_frame_restart_arg0 != (uint64_t)(int64_t)(ctx->fd + 1) ||
-        ctx->task->mm->signal_frame_restart_arg1 != (uint64_t)(uintptr_t)&readfds ||
-        ctx->task->mm->signal_frame_restart_arg2 != 0 ||
-        ctx->task->mm->signal_frame_restart_arg3 != 0) {
+        signal_frame_state_get_task(ctx->task, &frame) != 0 ||
+        frame.restart_kind != TASK_RESTART_SELECT ||
+        frame.restart_arg0 != (uint64_t)(int64_t)(ctx->fd + 1) ||
+        frame.restart_arg1 != (uint64_t)(uintptr_t)&readfds ||
+        frame.restart_arg2 != 0 ||
+        frame.restart_arg3 != 0) {
         case_mark_done(ctx, ENODATA);
         return NULL;
     }
@@ -513,7 +515,8 @@ static void *select_restart_thread(void *arg) {
     case_mark_restart_ready(ctx);
     ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
     if (ret == 1 && fdset_isset(ctx->fd, &readfds) &&
-        ctx->task->mm->signal_frame_restart_kind == TASK_RESTART_NONE) {
+        signal_frame_state_get_task(ctx->task, &frame) == 0 &&
+        frame.restart_kind == TASK_RESTART_NONE) {
         case_mark_done(ctx, 0);
     } else {
         case_mark_done(ctx, ret < 0 ? (int)-ret : EIO);
@@ -675,10 +678,11 @@ int readiness_contract_poll_pipe_signal_interrupt_returns_intr(void) {
     }
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        if (!child->mm ||
-            child->mm->signal_frame_restart_kind != TASK_RESTART_POLL ||
-            child->mm->signal_frame_restart_arg1 != 1 ||
-            (int)child->mm->signal_frame_restart_arg2 != -1) {
+        struct signal_frame_state frame;
+        if (signal_frame_state_get_task(child, &frame) != 0 ||
+            frame.restart_kind != TASK_RESTART_POLL ||
+            frame.restart_arg1 != 1 ||
+            (int)frame.restart_arg2 != -1) {
             ret = ENODATA;
         } else {
             task_restart_clear_impl(child);
@@ -848,9 +852,10 @@ int readiness_contract_select_signal_interrupt_returns_intr(void) {
     }
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        if (!child->mm ||
-            child->mm->signal_frame_restart_kind != TASK_RESTART_SELECT ||
-            child->mm->signal_frame_restart_arg0 != (uint64_t)(int64_t)(fds[0] + 1)) {
+        struct signal_frame_state frame;
+        if (signal_frame_state_get_task(child, &frame) != 0 ||
+            frame.restart_kind != TASK_RESTART_SELECT ||
+            frame.restart_arg0 != (uint64_t)(int64_t)(fds[0] + 1)) {
             ret = ENODATA;
         } else {
             task_restart_clear_impl(child);

@@ -15,6 +15,7 @@
 #include "fs/pty.h"
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_frame_state.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
@@ -84,10 +85,7 @@ static void reset_wait_job_control_test_kernel_state(void) {
     atomic_set(&task_init_process->continued, 0);
     atomic_set(&task_init_process->stop_report_pending, 0);
     atomic_set(&task_init_process->continue_report_pending, 0);
-    if (task_init_process->signal) {
-        memset(&task_init_process->signal->pending, 0, sizeof(task_init_process->signal->pending));
-        memset(&task_init_process->signal->shared_pending, 0, sizeof(task_init_process->signal->shared_pending));
-    }
+    signal_reset_task_state(task_init_process);
 
     while ((child = task_init_process->children) != NULL) {
         task_unlink_child_impl(task_init_process, child);
@@ -1205,17 +1203,20 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
     waitpid_restart_thread_wait_done(&ctx);
     waitpid_restart_thread_destroy(&ctx);
 
-    if (ctx.result != -1 || ctx.saved_errno != EINTR ||
-        !waiter->mm ||
-        waiter->mm->signal_frame_restart_kind != TASK_RESTART_WAITPID ||
-        waiter->mm->signal_frame_restart_arg0 != (uint64_t)(int64_t)expected_pid ||
-        waiter->mm->signal_frame_restart_arg1 != (uint64_t)(uintptr_t)&ctx.status ||
-        waiter->mm->signal_frame_restart_arg2 != 0) {
+    {
+        struct signal_frame_state frame;
+        if (ctx.result != -1 || ctx.saved_errno != EINTR ||
+            signal_frame_state_get_task(waiter, &frame) != 0 ||
+            frame.restart_kind != TASK_RESTART_WAITPID ||
+            frame.restart_arg0 != (uint64_t)(int64_t)expected_pid ||
+            frame.restart_arg1 != (uint64_t)(uintptr_t)&ctx.status ||
+            frame.restart_arg2 != 0) {
         destroy_child_task(waiter, child);
         task_unlink_child_impl(parent, waiter);
         task_put(waiter);
         errno = ENODATA;
         return -1;
+        }
     }
 
     signal_clear_pending_markers_task(waiter, SIGUSR1);

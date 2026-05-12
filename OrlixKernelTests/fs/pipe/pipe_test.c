@@ -13,6 +13,7 @@
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_frame_state.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
@@ -65,10 +66,7 @@ void pipe_contract_reset_test_state(void) {
     atomic_set(&task_init_process->continued, 0);
     atomic_set(&task_init_process->stop_report_pending, 0);
     atomic_set(&task_init_process->continue_report_pending, 0);
-    if (task_init_process->signal) {
-        memset(&task_init_process->signal->pending, 0, sizeof(task_init_process->signal->pending));
-        memset(&task_init_process->signal->shared_pending, 0, sizeof(task_init_process->signal->shared_pending));
-    }
+    signal_reset_task_state(task_init_process);
 
     while ((child = task_init_process->children) != NULL) {
         task_unlink_child_impl(task_init_process, child);
@@ -810,9 +808,10 @@ int pipe_contract_blocking_read_interrupted_by_signal(void) {
 
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        if (!child->mm ||
-            child->mm->signal_frame_restart_kind != TASK_RESTART_PIPE_READ ||
-            child->mm->signal_frame_restart_arg0 != (uint64_t)fds[0]) {
+        struct signal_frame_state frame;
+        if (signal_frame_state_get_task(child, &frame) != 0 ||
+            frame.restart_kind != TASK_RESTART_PIPE_READ ||
+            frame.restart_arg0 != (uint64_t)fds[0]) {
             ret = ENODATA;
         } else {
             task_restart_clear_impl(child);
@@ -927,9 +926,10 @@ int pipe_contract_blocking_write_interrupted_by_signal(void) {
 
     ret = case_wait_done(&ctx);
     if (ret == EINTR) {
-        if (!child->mm ||
-            child->mm->signal_frame_restart_kind != TASK_RESTART_PIPE_WRITE ||
-            child->mm->signal_frame_restart_arg0 != (uint64_t)fds[1]) {
+        struct signal_frame_state frame;
+        if (signal_frame_state_get_task(child, &frame) != 0 ||
+            frame.restart_kind != TASK_RESTART_PIPE_WRITE ||
+            frame.restart_arg0 != (uint64_t)fds[1]) {
             ret = ENODATA;
         } else {
             task_restart_clear_impl(child);

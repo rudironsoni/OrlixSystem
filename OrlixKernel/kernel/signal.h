@@ -31,6 +31,7 @@ extern "C" {
 /* Forward declaration - avoid circular include with task.h */
 struct task;
 struct signal_state;
+struct signal_frame_state;
 
 int kernel_thread_sigmask(int how, const sigset_t *set, sigset_t *oldset);
 int kernel_sigemptyset(sigset_t *set);
@@ -56,6 +57,7 @@ void signal_clear_queued_task(struct task *task, int32_t sig);
 void signal_clear_next_pending_task(struct task *task, int32_t sig);
 void signal_clear_pending_markers_task(struct task *task, int32_t sig);
 void signal_clear_pending_task(struct task *task, int32_t sig);
+void signal_reset_task_state(struct task *task);
 int signal_queued_count_task(const struct task *task, int32_t sig);
 bool signal_thread_pending(const struct task *task, int32_t sig);
 bool signal_shared_pending(const struct task *task, int32_t sig);
@@ -65,6 +67,23 @@ int signal_blocked_set_task(struct task *task, const sigset_t *mask);
 int signal_blocked_clear_task(struct task *task);
 bool signal_action_default_task(const struct task *task, int32_t sig);
 bool signal_altstack_has_flags_task(const struct task *task, int32_t flags);
+bool signal_handler_ignored_task(const struct task *task, int32_t sig);
+int signal_handler_get_task(const struct task *task, int32_t sig,
+                            __sighandler_t *handler);
+int signal_handler_set_task(struct task *task, int32_t sig,
+                            __sighandler_t handler);
+int signal_copy_fork_state_task(struct task *child, const struct task *parent);
+int signal_proc_status_snapshot_task(const struct task *task,
+                                     unsigned int *queued_out,
+                                     uint64_t *private_pending_out,
+                                     uint64_t *shared_pending_out,
+                                     uint64_t *blocked_out,
+                                     uint64_t *ignored_out,
+                                     uint64_t *caught_out);
+int signal_frame_state_get_task(const struct task *task,
+                                struct signal_frame_state *state);
+void signal_frame_clear_task(struct task *task);
+long signal_finish_sigreturn_task(struct task *task);
 
 /* Recompute pending state after mask changes */
 void signal_recompute_pending(struct task *task);

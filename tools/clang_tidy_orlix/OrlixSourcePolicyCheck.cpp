@@ -84,6 +84,21 @@ const std::vector<RegexRule> SourceRules = {
      "Darwin/iOS platform tokens are forbidden in Linux-owner code"},
 };
 
+const std::vector<RegexRule> NonPrivateOwnerHeaderRules = {
+    {R"(^\s*(typedef\s+)?struct\s+[A-Za-z_][A-Za-z0-9_]*\s*\{)",
+     "repo-private struct layout definitions are forbidden in non-private OrlixKernel owner headers; move the layout under OrlixKernel/private/** or keep the header API-only"},
+};
+
+const std::vector<RegexRule> NonSignalOwnerRules = {
+    {R"(\b[A-Za-z_][A-Za-z0-9_>]*->signal->(actions|blocked|shared_pending|queue|altstack)\b)",
+     "direct signal private-state field access is forbidden outside the signal owner; add or use a signal-owned API instead"},
+};
+
+const std::vector<RegexRule> NonSignalFrameOwnerRules = {
+    {R"(\b[A-Za-z_][A-Za-z0-9_>]*->mm->signal_frame_[A-Za-z0-9_]+\b)",
+     "direct signal frame bookkeeping access is forbidden outside the owning signal/task/mm surfaces; add or use an owner API instead"},
+};
+
 } // namespace
 
 OrlixSourcePolicyCheck::OrlixSourcePolicyCheck(llvm::StringRef Name,
@@ -127,6 +142,24 @@ void OrlixSourcePolicyCheck::scanMainFile() {
 
   StringRef Buffer = SM.getBufferData(FID);
   scanLines(*this, SM, Buffer, Path, SourceRules);
+
+  if (hasExtension(Path, ".h") &&
+      (pathHasComponent(Path, "OrlixKernel/fs/") ||
+       pathHasComponent(Path, "OrlixKernel/kernel/")) &&
+      !pathHasComponent(Path, "OrlixKernel/private/")) {
+    scanLines(*this, SM, Buffer, Path, NonPrivateOwnerHeaderRules);
+  }
+
+  if (!Path.ends_with("OrlixKernel/kernel/signal.c")) {
+    scanLines(*this, SM, Buffer, Path, NonSignalOwnerRules);
+  }
+
+  if (!Path.ends_with("OrlixKernel/kernel/signal.c") &&
+      !Path.ends_with("OrlixKernel/kernel/task.c") &&
+      !Path.ends_with("OrlixKernel/kernel/mm.c") &&
+      !Path.ends_with("OrlixKernel/private/kernel/task_state.h")) {
+    scanLines(*this, SM, Buffer, Path, NonSignalFrameOwnerRules);
+  }
 }
 
 } // namespace clang::tidy::orlix

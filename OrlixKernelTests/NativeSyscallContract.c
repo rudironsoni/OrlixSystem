@@ -5365,11 +5365,17 @@ int native_syscall_contract_dispatches_pidfd_syscalls(void) {
     return 0;
 
 out:
-    if (!sigisemptyset(&old_sigmask) || (parent && parent->signal &&
-        sigismember(&parent->signal->blocked, SIGCHLD) != 0)) {
-        syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK,
-                              (long)(uintptr_t)&block_sigchld, 0,
-                              sizeof(block_sigchld), 0, 0);
+    {
+        sigset_t blocked_now = {0};
+        bool parent_blocks_sigchld =
+            parent && signal_blocked_get_task(parent, &blocked_now) == 0 &&
+            sigismember(&blocked_now, SIGCHLD) != 0;
+
+        if (!sigisemptyset(&old_sigmask) || parent_blocks_sigchld) {
+            syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_UNBLOCK,
+                                  (long)(uintptr_t)&block_sigchld, 0,
+                                  sizeof(block_sigchld), 0, 0);
+        }
     }
     signal_clear_pending_markers_task(parent, SIGCHLD);
     close_if_open(pidfd);
