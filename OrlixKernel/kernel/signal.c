@@ -516,6 +516,22 @@ int signal_dequeue(struct task *task, sigset_t *mask, int32_t *sig) {
     return -EAGAIN;
 }
 
+void signal_clear_next_pending_task(struct task *task, int32_t sig) {
+    sigset_t mask;
+    int32_t delivered;
+
+    if (!task || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    sigemptyset(&mask);
+    while (signal_dequeue(task, &mask, &delivered) == 1) {
+        if (delivered != sig) {
+            signal_generate_task(task, delivered);
+            break;
+        }
+    }
+}
+
 void signal_clear_pending_markers_task(struct task *task, int32_t sig) {
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return;

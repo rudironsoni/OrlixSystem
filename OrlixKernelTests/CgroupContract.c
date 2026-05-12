@@ -95,22 +95,6 @@ static int cgroup_contract_write_current_pid(const char *path) {
     return cgroup_contract_write_file(path, pidbuf);
 }
 
-static void cgroup_contract_clear_pending_signal(struct task *task, int sig) {
-    sigset_t mask;
-    int delivered;
-
-    if (!task) {
-        return;
-    }
-    memset(&mask, 0, sizeof(mask));
-    while (signal_dequeue(task, &mask, &delivered) == 1) {
-        if (delivered != sig) {
-            signal_generate_task(task, delivered);
-            break;
-        }
-    }
-}
-
 static void cgroup_contract_format_pid(int32_t pid, char *buf, unsigned long size) {
     char digits[16];
     unsigned long len = 0;
@@ -967,7 +951,7 @@ out:
             task_unlink_child_impl(parent, child);
             task_put(child);
         }
-        cgroup_contract_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_next_pending_task(parent, SIGCHLD);
         cgroup_contract_restore_root();
         errno = saved_errno;
     }
