@@ -2,7 +2,7 @@
 #include <setjmp.h>
 #include <stdlib.h>
 
-#include "fork.h"
+#include "../../OrlixKernel/private/kernel/fork_frame_state.h"
 
 struct fork_frame_impl {
     jmp_buf buf;

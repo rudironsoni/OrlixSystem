@@ -1,5 +1,5 @@
-#ifndef INTERNAL_FORK_H
-#define INTERNAL_FORK_H
+#ifndef PRIVATE_KERNEL_FORK_FRAME_STATE_H
+#define PRIVATE_KERNEL_FORK_FRAME_STATE_H
 
 #ifdef __cplusplus
 extern "C" {
