@@ -8,6 +8,7 @@
 #include "internal/mutex.h"
 #include "../signal.h"
 #include "../task.h"
+#include "../../private/kernel/wait_queue_state.h"
 #include "../wait_queue.h"
 
 #include <uapi/asm/socket.h>

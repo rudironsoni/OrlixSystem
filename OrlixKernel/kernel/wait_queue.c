@@ -2,6 +2,7 @@
 
 #include <linux/errno.h>
 
+#include "../private/kernel/wait_queue_state.h"
 #include "signal.h"
 #include "../private/kernel/signal_state.h"
 #include "task.h"

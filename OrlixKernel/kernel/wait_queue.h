@@ -7,10 +7,7 @@
 extern "C" {
 #endif
 
-struct wait_queue_head {
-    kernel_mutex_t lock;
-    kernel_cond_t cond;
-};
+struct wait_queue_head;
 
 int wait_queue_init(struct wait_queue_head *queue);
 int wait_queue_destroy(struct wait_queue_head *queue);

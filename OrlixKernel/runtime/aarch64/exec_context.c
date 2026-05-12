@@ -5,6 +5,7 @@
 #include "exec_context.h"
 
 #include "../../kernel/task.h"
+#include "../../private/runtime/aarch64/exec_context_state.h"
 #include "../../private/kernel/task_state.h"
 #include <linux/errno.h>
 

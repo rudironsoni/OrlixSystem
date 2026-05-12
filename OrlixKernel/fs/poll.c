@@ -10,6 +10,7 @@
 #include "pipe.h"
 #include "pty.h"
 #include "kernel/net/socket.h"
+#include "../private/kernel/wait_queue_state.h"
 #include "../kernel/wait_queue.h"
 #include "../kernel/task.h"
 

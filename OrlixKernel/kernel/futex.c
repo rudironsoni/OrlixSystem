@@ -2,6 +2,7 @@
 
 #include "task.h"
 #include "../private/kernel/task_state.h"
+#include "../private/kernel/wait_queue_state.h"
 #include "wait_queue.h"
 
 #include <linux/atomic.h>
