@@ -495,7 +495,7 @@ int pty_job_control_contract_background_write_delivers_sigttou(void) {
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
-    pty_linux_termios_t termios;
+    struct termios termios;
     char byte = 'x';
     int32_t background_pgid;
     int saved_pgid;
@@ -543,7 +543,7 @@ int pty_job_control_contract_background_write_delivers_sigttou(void) {
     if (pty_get_termios_impl(pty_index, &termios) != 0) {
         goto out;
     }
-    termios.c_lflag |= PTY_LFLAG_TOSTOP;
+    termios.c_lflag |= TOSTOP;
     task->pgid = foreground_peer->pgid;
     if (pty_set_termios_impl(pty_index, &termios) != 0) {
         goto out;

@@ -55,45 +55,42 @@ int ioctl_impl(int fd, unsigned long request, void *arg) {
                 result = -EFAULT;
                 break;
             }
-            result = pty_get_termios_impl(pty_index, (pty_linux_termios_t *)arg);
+            result = pty_get_termios_impl(pty_index, (struct termios *)arg);
             break;
         case TCSETS:
             if (!arg) {
                 result = -EFAULT;
                 break;
             }
-            result = pty_set_termios_with_action_impl(pty_index, (const pty_linux_termios_t *)arg,
-                                                      PTY_TCSET_ACTION_NOW);
+            result = pty_set_termios_with_action_impl(pty_index, (const struct termios *)arg, TCSANOW);
             break;
         case TCSETSW:
             if (!arg) {
                 result = -EFAULT;
                 break;
             }
-            result = pty_set_termios_with_action_impl(pty_index, (const pty_linux_termios_t *)arg,
-                                                      PTY_TCSET_ACTION_DRAIN);
+            result = pty_set_termios_with_action_impl(pty_index, (const struct termios *)arg, TCSADRAIN);
             break;
         case TCSETSF:
             if (!arg) {
                 result = -EFAULT;
                 break;
             }
-            result = pty_set_termios_with_action_impl(pty_index, (const pty_linux_termios_t *)arg,
-                                                      PTY_TCSET_ACTION_FLUSH);
+            result = pty_set_termios_with_action_impl(pty_index, (const struct termios *)arg, TCSAFLUSH);
             break;
         case TIOCGWINSZ:
             if (!arg) {
                 result = -EFAULT;
                 break;
             }
-            result = pty_get_winsize_impl(pty_index, (pty_linux_winsize_t *)arg);
+            result = pty_get_winsize_impl(pty_index, (struct winsize *)arg);
             break;
         case TIOCSWINSZ:
             if (!arg) {
                 result = -EFAULT;
                 break;
             }
-            result = pty_set_winsize_impl(pty_index, (const pty_linux_winsize_t *)arg);
+            result = pty_set_winsize_impl(pty_index, (const struct winsize *)arg);
             break;
         case TIOCSCTTY:
             result = pty_set_controlling_tty_impl(pty_index, (int)(intptr_t)arg);

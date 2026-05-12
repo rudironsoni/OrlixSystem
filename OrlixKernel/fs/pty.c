@@ -20,19 +20,6 @@ void poll_notify_readiness_impl(void);
 #define PTY_MAX 128
 #define PTY_BUFFER_CAPACITY 4096
 
-#define PTY_LFLAG_ISIG 0x00000001U
-#define PTY_LFLAG_ICANON 0x00000002U
-#define PTY_LFLAG_ECHO 0x00000008U
-
-#define PTY_CC_VINTR 0
-#define PTY_CC_VQUIT 1
-#define PTY_CC_VERASE 2
-#define PTY_CC_VKILL 3
-#define PTY_CC_VEOF 4
-#define PTY_CC_VTIME 5
-#define PTY_CC_VMIN 6
-#define PTY_CC_VSUSP 10
-
 typedef struct pty_ring_buffer {
     unsigned char data[PTY_BUFFER_CAPACITY];
     size_t head;
@@ -47,8 +34,8 @@ typedef struct pty_pair {
     bool slave_locked;
     bool has_controlling_session;
     int32_t controlling_sid;
-    pty_linux_termios_t termios;
-    pty_linux_winsize_t winsize;
+    struct termios termios;
+    struct winsize winsize;
     int32_t foreground_pgrp;
     pty_ring_buffer_t master_to_slave;
     pty_ring_buffer_t slave_to_master;
@@ -95,19 +82,19 @@ static void pty_ring_clear(pty_ring_buffer_t *ring) {
     ring->len = 0;
 }
 
-static bool pty_termios_has_flag(const pty_linux_termios_t *termios, uint32_t flag) {
+static bool pty_termios_has_flag(const struct termios *termios, tcflag_t flag) {
     return (termios->c_lflag & flag) != 0;
 }
 
 static void pty_emit_echo_byte_impl(pty_pair_t *pair, unsigned char byte) {
-    if (!pty_termios_has_flag(&pair->termios, PTY_LFLAG_ECHO)) {
+    if (!pty_termios_has_flag(&pair->termios, ECHO)) {
         return;
     }
     (void)pty_ring_write(&pair->slave_to_master, &byte, 1);
 }
 
 static void pty_emit_echo_erase_impl(pty_pair_t *pair) {
-    if (!pty_termios_has_flag(&pair->termios, PTY_LFLAG_ECHO)) {
+    if (!pty_termios_has_flag(&pair->termios, ECHO)) {
         return;
     }
     static const unsigned char seq[3] = {'\b', ' ', '\b'};
@@ -131,16 +118,16 @@ static bool pty_flush_canonical_pending_impl(pty_pair_t *pair) {
 }
 
 static bool pty_deliver_signal_char_impl(pty_pair_t *pair, unsigned char byte) {
-    if (!pty_termios_has_flag(&pair->termios, PTY_LFLAG_ISIG)) {
+    if (!pty_termios_has_flag(&pair->termios, ISIG)) {
         return false;
     }
 
     int signal_number = 0;
-    if (byte == pair->termios.c_cc[PTY_CC_VINTR]) {
+    if (byte == pair->termios.c_cc[VINTR]) {
         signal_number = SIGINT;
-    } else if (byte == pair->termios.c_cc[PTY_CC_VQUIT]) {
+    } else if (byte == pair->termios.c_cc[VQUIT]) {
         signal_number = SIGQUIT;
-    } else if (byte == pair->termios.c_cc[PTY_CC_VSUSP]) {
+    } else if (byte == pair->termios.c_cc[VSUSP]) {
         signal_number = SIGTSTP;
     }
 
@@ -159,7 +146,7 @@ static bool pty_accept_canonical_byte_impl(pty_pair_t *pair, unsigned char byte)
         return true;
     }
 
-    if (byte == pair->termios.c_cc[PTY_CC_VERASE]) {
+    if (byte == pair->termios.c_cc[VERASE]) {
         if (pair->canonical_pending_len > 0) {
             pair->canonical_pending_len--;
             pty_emit_echo_erase_impl(pair);
@@ -167,7 +154,7 @@ static bool pty_accept_canonical_byte_impl(pty_pair_t *pair, unsigned char byte)
         return true;
     }
 
-    if (byte == pair->termios.c_cc[PTY_CC_VKILL]) {
+    if (byte == pair->termios.c_cc[VKILL]) {
         if (pair->canonical_pending_len > 0) {
             pair->canonical_pending_len = 0;
             pty_emit_echo_byte_impl(pair, '\n');
@@ -175,7 +162,7 @@ static bool pty_accept_canonical_byte_impl(pty_pair_t *pair, unsigned char byte)
         return true;
     }
 
-    if (byte == pair->termios.c_cc[PTY_CC_VEOF]) {
+    if (byte == pair->termios.c_cc[VEOF]) {
         return pty_flush_canonical_pending_impl(pair);
     }
 
@@ -208,7 +195,7 @@ static ssize_t pty_write_master_linedisc_impl(pty_pair_t *pair, const void *buf,
 
     for (size_t i = 0; i < count; i++) {
         bool ok;
-        if (pty_termios_has_flag(&pair->termios, PTY_LFLAG_ICANON)) {
+        if (pty_termios_has_flag(&pair->termios, ICANON)) {
             ok = pty_accept_canonical_byte_impl(pair, src[i]);
         } else {
             ok = pty_accept_noncanonical_byte_impl(pair, src[i]);
@@ -750,9 +737,9 @@ ssize_t pty_read_slave_impl(unsigned int pty_index, void *buf, size_t count, boo
         return access_result;
     }
 
-    if (!pty_termios_has_flag(&pair->termios, PTY_LFLAG_ICANON)) {
-        unsigned char vmin = pair->termios.c_cc[PTY_CC_VMIN];
-        unsigned char vtime = pair->termios.c_cc[PTY_CC_VTIME];
+    if (!pty_termios_has_flag(&pair->termios, ICANON)) {
+        unsigned char vmin = pair->termios.c_cc[VMIN];
+        unsigned char vtime = pair->termios.c_cc[VTIME];
         size_t available = pair->master_to_slave.len;
 
         if (vmin == 0) {
@@ -793,7 +780,7 @@ ssize_t pty_write_slave_impl(unsigned int pty_index, const void *buf, size_t cou
         return -EIO;
     }
 
-    bool tostop = (pair->termios.c_lflag & PTY_LFLAG_TOSTOP) != 0;
+    bool tostop = (pair->termios.c_lflag & TOSTOP) != 0;
     int access_result = pty_check_background_write_access(pair, tostop, false);
     if (access_result != 0) {
         fs_mutex_unlock(&pty_lock);
@@ -919,7 +906,7 @@ int pty_get_lock_impl(unsigned int pty_index, int *locked) {
     return 0;
 }
 
-int pty_get_termios_impl(unsigned int pty_index, pty_linux_termios_t *termios) {
+int pty_get_termios_impl(unsigned int pty_index, struct termios *termios) {
     if (!termios || !pty_valid_index(pty_index)) {
         return -EINVAL;
     }
@@ -935,11 +922,11 @@ int pty_get_termios_impl(unsigned int pty_index, pty_linux_termios_t *termios) {
     return 0;
 }
 
-int pty_set_termios_with_action_impl(unsigned int pty_index, const pty_linux_termios_t *termios, int action) {
+int pty_set_termios_with_action_impl(unsigned int pty_index, const struct termios *termios, int action) {
     if (!termios || !pty_valid_index(pty_index)) {
         return -EINVAL;
     }
-    if (action != PTY_TCSET_ACTION_NOW && action != PTY_TCSET_ACTION_DRAIN && action != PTY_TCSET_ACTION_FLUSH) {
+    if (action != TCSANOW && action != TCSADRAIN && action != TCSAFLUSH) {
         return -EINVAL;
     }
 
@@ -956,7 +943,7 @@ int pty_set_termios_with_action_impl(unsigned int pty_index, const pty_linux_ter
         return access_result;
     }
 
-    if (action == PTY_TCSET_ACTION_FLUSH) {
+    if (action == TCSAFLUSH) {
         pty_ring_clear(&pair->master_to_slave);
         pair->canonical_pending_len = 0;
     }
@@ -968,11 +955,11 @@ int pty_set_termios_with_action_impl(unsigned int pty_index, const pty_linux_ter
     return 0;
 }
 
-int pty_set_termios_impl(unsigned int pty_index, const pty_linux_termios_t *termios) {
-    return pty_set_termios_with_action_impl(pty_index, termios, PTY_TCSET_ACTION_NOW);
+int pty_set_termios_impl(unsigned int pty_index, const struct termios *termios) {
+    return pty_set_termios_with_action_impl(pty_index, termios, TCSANOW);
 }
 
-int pty_get_winsize_impl(unsigned int pty_index, pty_linux_winsize_t *winsize) {
+int pty_get_winsize_impl(unsigned int pty_index, struct winsize *winsize) {
     if (!winsize || !pty_valid_index(pty_index)) {
         return -EINVAL;
     }
@@ -988,7 +975,7 @@ int pty_get_winsize_impl(unsigned int pty_index, pty_linux_winsize_t *winsize) {
     return 0;
 }
 
-int pty_set_winsize_impl(unsigned int pty_index, const pty_linux_winsize_t *winsize) {
+int pty_set_winsize_impl(unsigned int pty_index, const struct winsize *winsize) {
     if (!winsize || !pty_valid_index(pty_index)) {
         return -EINVAL;
     }
