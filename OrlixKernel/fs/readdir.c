@@ -9,7 +9,7 @@
 #include <linux/sprintf.h>
 #include <linux/string.h>
 
-#include "internal/fs/readdir.h"
+#include "../private/fs/backing_dir_state.h"
 #include "fdtable.h"
 #include "internal/fs/file.h"
 #include "path.h"
