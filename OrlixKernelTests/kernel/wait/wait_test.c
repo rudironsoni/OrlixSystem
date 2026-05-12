@@ -1,12 +1,12 @@
 #include <asm/ioctls.h>
 #include <asm/unistd.h>
-#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/sched.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/wait.h>
-#include <uapi/asm-generic/signal.h>
 #include <linux/string.h>
-#include <asm-generic/siginfo.h>
+#include <uapi/asm/siginfo.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -40,14 +40,6 @@ static int wait_status_exit_code(int status) {
     return (status >> 8) & 0xff;
 }
 
-static int wait_status_signaled(int status) {
-    return (status & 0x7f) != 0 && (status & 0x7f) != 0x7f;
-}
-
-static int wait_status_term_signal(int status) {
-    return status & 0x7f;
-}
-
 static int wait_status_stopped(int status) {
     return (status & 0xff) == 0x7f;
 }
@@ -67,7 +59,7 @@ static int close_if_open(int fd) {
     return 0;
 }
 
-static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+static void clear_pending_signal(struct task *task, int32_t sig) {
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return;
     }
@@ -76,43 +68,43 @@ static void clear_pending_signal(struct task_struct *task, int32_t sig) {
 }
 
 static void reset_wait_job_control_test_kernel_state(void) {
-    struct task_struct *child;
+    struct task *child;
 
     start_kernel();
-    if (!kernel_is_booted() || !init_task) {
+    if (!kernel_is_booted() || !task_init_process) {
         return;
     }
 
-    set_current(init_task);
-    init_task->parent = NULL;
-    init_task->ppid = 0;
-    init_task->pgid = init_task->pid;
-    init_task->sid = init_task->pid;
-    init_task->exit_status = 0;
-    init_task->thread_pending_signals = 0;
-    atomic_set(&init_task->exited, 0);
-    atomic_set(&init_task->signaled, 0);
-    atomic_set(&init_task->termsig, 0);
-    atomic_set(&init_task->stopped, 0);
-    atomic_set(&init_task->state, TASK_RUNNING);
-    atomic_set(&init_task->continued, 0);
-    atomic_set(&init_task->stop_report_pending, 0);
-    atomic_set(&init_task->continue_report_pending, 0);
-    if (init_task->signal) {
-        memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
-        memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));
+    task_set_current(task_init_process);
+    task_init_process->parent = NULL;
+    task_init_process->ppid = 0;
+    task_init_process->pgid = task_init_process->pid;
+    task_init_process->sid = task_init_process->pid;
+    task_init_process->exit_status = 0;
+    task_init_process->thread_pending_signals = 0;
+    atomic_set(&task_init_process->exited, 0);
+    atomic_set(&task_init_process->signaled, 0);
+    atomic_set(&task_init_process->termsig, 0);
+    atomic_set(&task_init_process->stopped, 0);
+    atomic_set(&task_init_process->state, RUN_STATE_RUNNING);
+    atomic_set(&task_init_process->continued, 0);
+    atomic_set(&task_init_process->stop_report_pending, 0);
+    atomic_set(&task_init_process->continue_report_pending, 0);
+    if (task_init_process->signal) {
+        memset(&task_init_process->signal->pending, 0, sizeof(task_init_process->signal->pending));
+        memset(&task_init_process->signal->shared_pending, 0, sizeof(task_init_process->signal->shared_pending));
     }
 
-    while ((child = init_task->children) != NULL) {
-        task_unlink_child_impl(init_task, child);
+    while ((child = task_init_process->children) != NULL) {
+        task_unlink_child_impl(task_init_process, child);
         child->parent = NULL;
         child->ppid = 0;
-        free_task(child);
+        task_put(child);
     }
 }
 
 struct waitpid_restart_thread {
-    struct task_struct *task;
+    struct task *task;
     int32_t child_pid;
     int status;
     int32_t result;
@@ -167,7 +159,7 @@ static void waitpid_restart_thread_wait_done(struct waitpid_restart_thread *ctx)
 static void *waitpid_restart_thread_main(void *arg) {
     struct waitpid_restart_thread *ctx = arg;
 
-    set_current(ctx->task);
+    task_set_current(ctx->task);
     waitpid_restart_thread_mark_started(ctx);
     ctx->result = waitpid_impl(ctx->child_pid, &ctx->status, 0);
     ctx->saved_errno = errno;
@@ -265,8 +257,8 @@ static int detach_controlling_tty_if_present(void) {
     return close_impl(tty_fd);
 }
 
-static struct task_struct *create_child_task(struct task_struct *parent, int own_pgrp) {
-    struct task_struct *child;
+static struct task *create_child_task(struct task *parent, int own_pgrp) {
+    struct task *child;
 
     child = task_create_child_impl(parent);
     if (!child) {
@@ -275,25 +267,25 @@ static struct task_struct *create_child_task(struct task_struct *parent, int own
 
     if (own_pgrp && setpgid_impl(child->pid, child->pid) != 0) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         return NULL;
     }
 
     return child;
 }
 
-static void destroy_child_task(struct task_struct *parent, struct task_struct *child) {
+static void destroy_child_task(struct task *parent, struct task *child) {
     if (!child) {
         return;
     }
     if (parent) {
         task_unlink_child_impl(parent, child);
     }
-    free_task(child);
+    task_put(child);
 }
 
-static int stop_and_wait_status(struct task_struct *parent, struct task_struct *child, int32_t sig, int *status_out) {
-    struct task_struct *cursor;
+static int stop_and_wait_status(struct task *parent, struct task *child, int32_t sig, int *status_out) {
+    struct task *cursor;
     int status = 0;
     int32_t waited;
 
@@ -333,13 +325,13 @@ static int stop_and_wait_status(struct task_struct *parent, struct task_struct *
     return 0;
 }
 
-static int exit_child_with_status(struct task_struct *parent, struct task_struct *child, int exit_status) {
-    struct task_struct *saved_current = get_current();
-    struct task_struct *cursor;
+static int exit_child_with_status(struct task *parent, struct task *child, int exit_status) {
+    struct task *saved_current = task_current();
+    struct task *cursor;
     clear_pending_signal(parent, SIGCHLD);
-    set_current(child);
+    task_set_current(child);
     exit_impl(exit_status);
-    set_current(saved_current);
+    task_set_current(saved_current);
     if (!atomic_read(&child->exited)) {
         errno = ENODATA;
         return -1;
@@ -369,9 +361,9 @@ int wait_job_control_contract_no_children_returns_echild(void) {
 }
 
 int wait_job_control_contract_specific_non_child_returns_echild(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *grandchild = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *grandchild = NULL;
     int result = -1;
 
     if (!parent) {
@@ -403,8 +395,8 @@ out:
 }
 
 int wait_job_control_contract_wnohang_returns_zero_for_running_child(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int result = -1;
 
     child = create_child_task(parent, 0);
@@ -426,9 +418,9 @@ out:
 }
 
 int wait_job_control_contract_reaps_exited_child(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *lookup = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *lookup = NULL;
     int status = 0;
     int32_t child_pid;
 
@@ -451,7 +443,7 @@ int wait_job_control_contract_reaps_exited_child(void) {
     }
     lookup = task_lookup(child_pid);
     if (lookup) {
-        free_task(lookup);
+        task_put(lookup);
         errno = EPROTO;
         return -1;
     }
@@ -459,8 +451,8 @@ int wait_job_control_contract_reaps_exited_child(void) {
 }
 
 int wait_job_control_contract_second_wait_after_reap_returns_echild(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int32_t child_pid;
 
     child = create_child_task(parent, 0);
@@ -485,8 +477,8 @@ int wait_job_control_contract_second_wait_after_reap_returns_echild(void) {
 }
 
 int wait_job_control_contract_null_status_still_reaps_exited_child(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int32_t child_pid;
 
     child = create_child_task(parent, 0);
@@ -511,8 +503,8 @@ int wait_job_control_contract_null_status_still_reaps_exited_child(void) {
 }
 
 int wait_job_control_contract_reports_stopped_child_with_wuntraced(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int result;
 
     child = create_child_task(parent, 0);
@@ -525,8 +517,8 @@ int wait_job_control_contract_reports_stopped_child_with_wuntraced(void) {
 }
 
 int wait_job_control_contract_stopped_child_without_wuntraced_wnohang_returns_zero(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int result = -1;
 
     child = create_child_task(parent, 0);
@@ -550,9 +542,9 @@ out:
 }
 
 int wait_job_control_contract_stopped_child_is_not_reaped(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *lookup = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *lookup = NULL;
 
     child = create_child_task(parent, 0);
     if (!child) {
@@ -567,14 +559,14 @@ int wait_job_control_contract_stopped_child_is_not_reaped(void) {
         errno = EPROTO;
         return -1;
     }
-    free_task(lookup);
+    task_put(lookup);
     destroy_child_task(parent, child);
     return 0;
 }
 
 int wait_job_control_contract_reports_continued_child_with_wcontinued(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int status = 0;
 
     child = create_child_task(parent, 0);
@@ -610,8 +602,8 @@ int wait_job_control_contract_continued_status_is_linux_wifcontinued(void) {
 }
 
 int wait_job_control_contract_continued_report_is_consumed(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int status = 0;
     int result = -1;
 
@@ -643,9 +635,9 @@ out:
 }
 
 int wait_job_control_contract_pid_zero_selects_same_process_group(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *same_group = NULL;
-    struct task_struct *other_group = NULL;
+    struct task *parent = task_current();
+    struct task *same_group = NULL;
+    struct task *other_group = NULL;
     int status = 0;
     int result = -1;
     int32_t same_group_pid = 0;
@@ -675,8 +667,8 @@ out:
 }
 
 int wait_job_control_contract_negative_pid_selects_process_group(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int status = 0;
     int32_t group;
     int32_t child_pid;
@@ -703,8 +695,8 @@ int wait_job_control_contract_negative_pid_selects_process_group(void) {
 }
 
 int wait_job_control_contract_child_stop_generates_sigchld_for_parent(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = create_child_task(parent, 0);
+    struct task *parent = task_current();
+    struct task *child = create_child_task(parent, 0);
     int result;
 
     if (!child) {
@@ -716,8 +708,8 @@ int wait_job_control_contract_child_stop_generates_sigchld_for_parent(void) {
 }
 
 int wait_job_control_contract_child_continue_generates_sigchld_for_parent(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int status = 0;
 
     child = create_child_task(parent, 0);
@@ -750,8 +742,8 @@ int wait_job_control_contract_child_continue_generates_sigchld_for_parent(void) 
 }
 
 int wait_job_control_contract_child_exit_generates_sigchld_for_parent(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int32_t child_pid;
 
     child = create_child_task(parent, 0);
@@ -771,8 +763,8 @@ int wait_job_control_contract_child_exit_generates_sigchld_for_parent(void) {
 }
 
 int wait_job_control_contract_public_waitpid_reports_exited_child_status(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int32_t child_pid;
     int status = 0;
 
@@ -803,8 +795,8 @@ int wait_job_control_contract_public_waitpid_reports_exited_child_status(void) {
 }
 
 int wait_job_control_contract_wait4_reports_exited_child_status(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int32_t child_pid;
     int status = 0;
 
@@ -835,8 +827,8 @@ int wait_job_control_contract_wait4_reports_exited_child_status(void) {
 }
 
 int wait_job_control_contract_public_waitpid_reports_stopped_child_with_wuntraced(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int status = 0;
 
     if (!parent) {
@@ -870,8 +862,8 @@ int wait_job_control_contract_public_waitpid_reports_stopped_child_with_wuntrace
 }
 
 int wait_job_control_contract_public_waitpid_reports_continued_child_with_wcontinued(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int status = 0;
 
     if (!parent) {
@@ -909,8 +901,8 @@ int wait_job_control_contract_public_waitpid_reports_continued_child_with_wconti
 }
 
 int wait_job_control_contract_waitid_reports_exited_child_status(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int32_t child_pid;
     siginfo_t info;
 
@@ -942,8 +934,8 @@ int wait_job_control_contract_waitid_reports_exited_child_status(void) {
 }
 
 int wait_job_control_contract_waitid_wnowait_preserves_waitable_child(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int32_t child_pid;
     siginfo_t info;
     int status = 0;
@@ -992,7 +984,7 @@ static int expect_child_io_stop(long io_result, int expected_errno) {
     return 0;
 }
 
-static int expect_parent_wait_stop(struct task_struct *parent, struct task_struct *child, int expected_signal) {
+static int expect_parent_wait_stop(struct task *parent, struct task *child, int expected_signal) {
     int status = 0;
 
     if (waitpid_impl(child->pid, &status, WUNTRACED) != child->pid) {
@@ -1011,9 +1003,9 @@ static int expect_parent_wait_stop(struct task_struct *parent, struct task_struc
 }
 
 int wait_job_control_contract_pty_background_read_stop_is_waitpid_visible(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved_current = parent;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved_current = parent;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -1035,20 +1027,20 @@ int wait_job_control_contract_pty_background_read_stop_is_waitpid_visible(void) 
     }
 
     clear_pending_signal(parent, SIGCHLD);
-    set_current(child);
+    task_set_current(child);
     errno = 0;
     if (expect_child_io_stop(read_impl(slave_fd, &byte, 1), EINTR) != 0) {
-        set_current(saved_current);
+        task_set_current(saved_current);
         goto out;
     }
-    set_current(saved_current);
+    task_set_current(saved_current);
     if (expect_parent_wait_stop(parent, child, SIGTTIN) != 0) {
         goto out;
     }
     result = 0;
 
 out:
-    set_current(saved_current);
+    task_set_current(saved_current);
     destroy_child_task(parent, child);
     close_if_open(master_fd);
     close_if_open(slave_fd);
@@ -1057,9 +1049,9 @@ out:
 }
 
 int wait_job_control_contract_pty_background_write_tostop_stop_is_waitpid_visible(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved_current = parent;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved_current = parent;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -1089,20 +1081,20 @@ int wait_job_control_contract_pty_background_write_tostop_stop_is_waitpid_visibl
     }
 
     clear_pending_signal(parent, SIGCHLD);
-    set_current(child);
+    task_set_current(child);
     errno = 0;
     if (expect_child_io_stop(write_impl(slave_fd, &byte, 1), EINTR) != 0) {
-        set_current(saved_current);
+        task_set_current(saved_current);
         goto out;
     }
-    set_current(saved_current);
+    task_set_current(saved_current);
     if (expect_parent_wait_stop(parent, child, SIGTTOU) != 0) {
         goto out;
     }
     result = 0;
 
 out:
-    set_current(saved_current);
+    task_set_current(saved_current);
     destroy_child_task(parent, child);
     close_if_open(master_fd);
     close_if_open(slave_fd);
@@ -1111,8 +1103,8 @@ out:
 }
 
 int wait_job_control_contract_pty_vsusp_stop_is_waitpid_visible(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -1165,10 +1157,10 @@ out:
 }
 
 int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *waiter = NULL;
-    struct task_struct *child = NULL;
-    struct task_struct *restore;
+    struct task *parent = task_current();
+    struct task *waiter = NULL;
+    struct task *child = NULL;
+    struct task *restore;
     struct waitpid_restart_thread ctx;
     kernel_thread_t thread;
     long ret;
@@ -1186,7 +1178,7 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
     child = task_create_child_impl(waiter);
     if (!child) {
         task_unlink_child_impl(parent, waiter);
-        free_task(waiter);
+        task_put(waiter);
         return -1;
     }
     expected_pid = child->pid;
@@ -1202,7 +1194,7 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
         waitpid_restart_thread_destroy(&ctx);
         destroy_child_task(waiter, child);
         task_unlink_child_impl(parent, waiter);
-        free_task(waiter);
+        task_put(waiter);
         errno = ECHILD;
         return -1;
     }
@@ -1213,7 +1205,7 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
         waitpid_restart_thread_destroy(&ctx);
         destroy_child_task(waiter, child);
         task_unlink_child_impl(parent, waiter);
-        free_task(waiter);
+        task_put(waiter);
         return -1;
     }
     waitpid_restart_thread_wait_done(&ctx);
@@ -1227,7 +1219,7 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
         waiter->mm->signal_frame_restart_arg2 != 0) {
         destroy_child_task(waiter, child);
         task_unlink_child_impl(parent, waiter);
-        free_task(waiter);
+        task_put(waiter);
         errno = ENODATA;
         return -1;
     }
@@ -1237,14 +1229,14 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
     task_mark_exited(child, 7);
     task_notify_parent_state_change(child);
 
-    restore = get_current();
-    set_current(waiter);
+    restore = task_current();
+    task_set_current(waiter);
     ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
     status = ctx.status;
-    set_current(restore);
+    task_set_current(restore);
 
     task_unlink_child_impl(parent, waiter);
-    free_task(waiter);
+    task_put(waiter);
 
     if (ret != expected_pid || !wait_status_exited(status) ||
         wait_status_exit_code(status) != 7) {
@@ -1255,8 +1247,8 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
 }
 
 int wait_job_control_contract_clone_thread_is_not_waitable(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int32_t child_pid;
     int status = 0;
     int result = -1;
@@ -1286,8 +1278,8 @@ int wait_job_control_contract_clone_thread_is_not_waitable(void) {
 out: {
         int saved_errno = errno;
         task_unlink_child_impl(parent, child);
-        free_task(child);
-        free_task(child);
+        task_put(child);
+        task_put(child);
         errno = saved_errno;
     }
     return result;

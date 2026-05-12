@@ -13,6 +13,7 @@
 #include "fdtable.h"
 #include "internal/fs/file.h"
 #include "internal/fs/lock.h"
+#include "internal/random.h"
 #include "pipe.h"
 #include "pty.h"
 #include "vfs.h"
@@ -22,7 +23,6 @@
 
 extern int ftruncate_impl(int fd, int64_t length);
 extern int fdatasync_impl(int fd);
-extern void get_random_bytes(void *buf, size_t len);
 
 ssize_t read_impl(int fd, void *buf, size_t count) {
     if (count == 0) {
@@ -58,7 +58,7 @@ ssize_t read_impl(int fd, void *buf, size_t count) {
         bool nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
         ssize_t ret = pipe_read_endpoint_impl(endpoint, buf, count, nonblock);
         if (ret == -EINTR && !nonblock) {
-            task_restart_record_impl(get_current(), TASK_RESTART_PIPE_READ,
+            task_restart_record_impl(task_current(), TASK_RESTART_PIPE_READ,
                                      (uint64_t)fd, (uint64_t)(uintptr_t)buf,
                                      (uint64_t)count, 0, 0, 0);
         }
@@ -298,7 +298,7 @@ ssize_t write_impl(int fd, const void *buf, size_t count) {
         bool nonblock = (get_fd_flags_impl(entry) & O_NONBLOCK) != 0;
         ssize_t ret = pipe_write_endpoint_impl(endpoint, buf, count, nonblock);
         if (ret == -EINTR && !nonblock) {
-            task_restart_record_impl(get_current(), TASK_RESTART_PIPE_WRITE,
+            task_restart_record_impl(task_current(), TASK_RESTART_PIPE_WRITE,
                                      (uint64_t)fd, (uint64_t)(uintptr_t)buf,
                                      (uint64_t)count, 0, 0, 0);
         }

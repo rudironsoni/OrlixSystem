@@ -7,11 +7,9 @@
 
 #include <uapi/linux/time.h>
 #include <uapi/linux/time_types.h>
-#include <uapi/asm-generic/socket.h>
 #include <linux/net.h>
 #include <linux/socket.h>
-
-#define memset __builtin_memset
+#include <linux/string.h>
 
 #ifndef AF_UNIX
 #error "AF_UNIX must resolve through vendored Linux kernel headers"

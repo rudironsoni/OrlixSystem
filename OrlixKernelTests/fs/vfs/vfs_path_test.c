@@ -8,7 +8,7 @@
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
 
-#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/errno.h>
 #include <uapi/asm/stat.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/fs.h>
@@ -16,6 +16,7 @@
 #include <uapi/linux/stat.h>
 #include <linux/dirent.h>
 #include <linux/fs_types.h>
+#include <linux/stdarg.h>
 #include <linux/string.h>
 #include <linux/types.h>
 
@@ -40,7 +41,7 @@
 #define ENOTSUP EOPNOTSUPP
 #endif
 
-extern ssize_t getdents64(int fd, void *dirp, size_t count);
+extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern char *getcwd_impl(char *buf, size_t size);
 extern long read(int fd, void *buf, size_t count);
 extern long write(int fd, const void *buf, size_t count);
@@ -83,11 +84,11 @@ static int open(const char *pathname, int flags, ...) {
     uint32_t mode = 0;
 
     if (flags & (O_CREAT | O_TMPFILE)) {
-        __builtin_va_list ap;
+        va_list ap;
 
-        __builtin_va_start(ap, flags);
-        mode = (uint32_t)__builtin_va_arg(ap, int);
-        __builtin_va_end(ap);
+        va_start(ap, flags);
+        mode = (uint32_t)va_arg(ap, int);
+        va_end(ap);
     }
 
     return open_impl(pathname, flags, mode);
@@ -97,11 +98,11 @@ static int openat(int dirfd, const char *pathname, int flags, ...) {
     uint32_t mode = 0;
 
     if (flags & (O_CREAT | O_TMPFILE)) {
-        __builtin_va_list ap;
+        va_list ap;
 
-        __builtin_va_start(ap, flags);
-        mode = (uint32_t)__builtin_va_arg(ap, int);
-        __builtin_va_end(ap);
+        va_start(ap, flags);
+        mode = (uint32_t)va_arg(ap, int);
+        va_end(ap);
     }
 
     return openat_impl(dirfd, pathname, flags, mode);
@@ -441,7 +442,7 @@ static void testParentEscapeIsRejected(struct kunit *test) {
 
 static void testTaskAwareAbsolutePathUsesVirtualRoot(struct kunit *test) {
     /* Create an fs_struct with custom root */
-    struct fs_struct *fs = alloc_fs_struct();
+    struct fs_context *fs = alloc_fs_struct();
     KUNIT_ASSERT_TRUE_MSG(fs != NULL, "fs_struct allocation should succeed");
     if (!fs) return;
 
@@ -464,7 +465,7 @@ static void testTaskAwareAbsolutePathUsesVirtualRoot(struct kunit *test) {
 
 static void testTaskAwareRelativePathUsesPwd(struct kunit *test) {
     /* Create an fs_struct with custom pwd */
-    struct fs_struct *fs = alloc_fs_struct();
+    struct fs_context *fs = alloc_fs_struct();
     KUNIT_ASSERT_TRUE_MSG(fs != NULL, "fs_struct allocation should succeed");
     if (!fs) return;
 
@@ -487,7 +488,7 @@ static void testTaskAwareRelativePathUsesPwd(struct kunit *test) {
 
 static void testTaskAwareRelativePathWithSubdirectories(struct kunit *test) {
     /* Create an fs_struct with nested pwd */
-    struct fs_struct *fs = alloc_fs_struct();
+    struct fs_context *fs = alloc_fs_struct();
     KUNIT_ASSERT_TRUE_MSG(fs != NULL, "fs_struct allocation should succeed");
     if (!fs) return;
 
@@ -510,7 +511,7 @@ static void testTaskAwareRelativePathWithSubdirectories(struct kunit *test) {
 
 static void testTaskAwareParentEscapeRejected(struct kunit *test) {
     /* Create an fs_struct */
-    struct fs_struct *fs = alloc_fs_struct();
+    struct fs_context *fs = alloc_fs_struct();
     KUNIT_ASSERT_TRUE_MSG(fs != NULL, "fs_struct allocation should succeed");
     if (!fs) return;
 
@@ -527,7 +528,7 @@ static void testTaskAwareParentEscapeRejected(struct kunit *test) {
 }
 
 static void testTaskAwareAbsolutePathUsesTaskRootPrefix(struct kunit *test) {
-    struct fs_struct *fs = alloc_fs_struct();
+    struct fs_context *fs = alloc_fs_struct();
     KUNIT_ASSERT_TRUE_MSG(fs != NULL, "fs_struct allocation should succeed");
     if (!fs) return;
 
@@ -548,21 +549,21 @@ static void testTaskAwareAbsolutePathUsesTaskRootPrefix(struct kunit *test) {
 }
 
 static void testGetcwdMatchesTaskPwdAndRelativeResolution(struct kunit *test) {
-    struct task_struct *originalTask = get_current();
-    struct task_struct *task = alloc_task();
+    struct task *originalTask = task_current();
+    struct task *task = alloc_task();
     KUNIT_ASSERT_TRUE_MSG(task != NULL, "task allocation should succeed");
     if (!task) return;
 
     task->fs = alloc_fs_struct();
     KUNIT_ASSERT_TRUE_MSG(task->fs != NULL, "fs_struct allocation should succeed");
     if (!task->fs) {
-        free_task(task);
+        task_put(task);
         return;
     }
 
     fs_init_root(task->fs, "/");
     fs_init_pwd(task->fs, "/usr/local");
-    set_current(task);
+    task_set_current(task);
 
     char cwd[MAX_PATH];
     char resolved[MAX_PATH];
@@ -581,8 +582,8 @@ static void testGetcwdMatchesTaskPwdAndRelativeResolution(struct kunit *test) {
     KUNIT_ASSERT_STREQ_MSG(resolved, expected,
                           "relative resolution should agree with task getcwd state");
 
-    set_current(originalTask);
-    free_task(task);
+    task_set_current(originalTask);
+    task_put(task);
 }
 
 /* ============================================================================
@@ -957,8 +958,8 @@ static void testSyntheticRootGetdents64ReturnsDotAndDotdot(struct kunit *test) {
     char *buffer = aligned.storage;
     memset(buffer, 0, sizeof(aligned));
 
-    ssize_t nread = getdents64(fd, buffer, sizeof(aligned.storage));
-    KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64(/proc) should return > 0 bytes, got %zd errno %d", nread, errno);
+    ssize_t nread = getdents64_impl(fd, buffer, sizeof(aligned.storage));
+    KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64_impl(/proc) should return > 0 bytes, got %zd errno %d", nread, errno);
 
     // Parse the entries to verify . and ..
     bool found_dot = false;
@@ -985,12 +986,12 @@ static void testSyntheticRootGetdents64ReturnsDotAndDotdot(struct kunit *test) {
         pos += entry->d_reclen;
     }
 
-    KUNIT_ASSERT_TRUE_MSG(found_dot, "getdents64(/proc) should return '.' entry");
-    KUNIT_ASSERT_TRUE_MSG(found_dotdot, "getdents64(/proc) should return '..' entry");
+    KUNIT_ASSERT_TRUE_MSG(found_dot, "getdents64_impl(/proc) should return '.' entry");
+    KUNIT_ASSERT_TRUE_MSG(found_dotdot, "getdents64_impl(/proc) should return '..' entry");
 
     // Second call should return 0 (EOF)
-    nread = getdents64(fd, buffer, sizeof(aligned.storage));
-    KUNIT_ASSERT_EQ_MSG(nread, 0, "Second getdents64(/proc) should return 0 (EOF)");
+    nread = getdents64_impl(fd, buffer, sizeof(aligned.storage));
+    KUNIT_ASSERT_EQ_MSG(nread, 0, "Second getdents64_impl(/proc) should return 0 (EOF)");
 
     close(fd);
 }
@@ -1005,8 +1006,8 @@ static void testSyntheticSysAndDevGetdents64ReturnsDotAndDotdot(struct kunit *te
         char *buffer = aligned.storage;
         memset(buffer, 0, sizeof(aligned));
 
-        ssize_t nread = getdents64(sys_fd, buffer, sizeof(aligned.storage));
-        KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64(/sys) should return > 0 bytes");
+        ssize_t nread = getdents64_impl(sys_fd, buffer, sizeof(aligned.storage));
+        KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64_impl(/sys) should return > 0 bytes");
 
         bool found_dot = false;
         bool found_dotdot = false;
@@ -1032,12 +1033,12 @@ static void testSyntheticSysAndDevGetdents64ReturnsDotAndDotdot(struct kunit *te
             pos += entry->d_reclen;
         }
 
-        KUNIT_ASSERT_TRUE_MSG(found_dot, "getdents64(/sys) should return '.' entry");
-        KUNIT_ASSERT_TRUE_MSG(found_dotdot, "getdents64(/sys) should return '..' entry");
+        KUNIT_ASSERT_TRUE_MSG(found_dot, "getdents64_impl(/sys) should return '.' entry");
+        KUNIT_ASSERT_TRUE_MSG(found_dotdot, "getdents64_impl(/sys) should return '..' entry");
 
         // Second call should return 0 (EOF)
-        nread = getdents64(sys_fd, buffer, sizeof(aligned.storage));
-        KUNIT_ASSERT_EQ_MSG(nread, 0, "Second getdents64(/sys) should return 0 (EOF)");
+        nread = getdents64_impl(sys_fd, buffer, sizeof(aligned.storage));
+        KUNIT_ASSERT_EQ_MSG(nread, 0, "Second getdents64_impl(/sys) should return 0 (EOF)");
 
         close(sys_fd);
     }
@@ -1051,8 +1052,8 @@ static void testSyntheticSysAndDevGetdents64ReturnsDotAndDotdot(struct kunit *te
         char *buffer = aligned.storage;
         memset(buffer, 0, sizeof(aligned));
 
-        ssize_t nread = getdents64(dev_fd, buffer, sizeof(aligned.storage));
-        KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64(/dev) should return > 0 bytes");
+        ssize_t nread = getdents64_impl(dev_fd, buffer, sizeof(aligned.storage));
+        KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64_impl(/dev) should return > 0 bytes");
 
         bool found_dot = false;
         bool found_dotdot = false;
@@ -1078,12 +1079,12 @@ static void testSyntheticSysAndDevGetdents64ReturnsDotAndDotdot(struct kunit *te
             pos += entry->d_reclen;
         }
 
-        KUNIT_ASSERT_TRUE_MSG(found_dot, "getdents64(/dev) should return '.' entry");
-        KUNIT_ASSERT_TRUE_MSG(found_dotdot, "getdents64(/dev) should return '..' entry");
+        KUNIT_ASSERT_TRUE_MSG(found_dot, "getdents64_impl(/dev) should return '.' entry");
+        KUNIT_ASSERT_TRUE_MSG(found_dotdot, "getdents64_impl(/dev) should return '..' entry");
 
         // Second call should return 0 (EOF)
-        nread = getdents64(dev_fd, buffer, sizeof(aligned.storage));
-        KUNIT_ASSERT_EQ_MSG(nread, 0, "Second getdents64(/dev) should return 0 (EOF)");
+        nread = getdents64_impl(dev_fd, buffer, sizeof(aligned.storage));
+        KUNIT_ASSERT_EQ_MSG(nread, 0, "Second getdents64_impl(/dev) should return 0 (EOF)");
 
         close(dev_fd);
     }
@@ -1255,35 +1256,35 @@ static void testUnsupportedDevNodeStillFails(struct kunit *test) {
     KUNIT_ASSERT_EQ_MSG(stat_impl("/dev/sda", &st), -1, "stat(/dev/sda) should fail for unsupported dev node");
     KUNIT_ASSERT_EQ_MSG(errno, ENOENT, "stat(/dev/sda) should set ENOENT");
 
-    struct task_struct *original_task = get_current();
-    struct task_struct *isolated_task = alloc_task();
+    struct task *original_task = task_current();
+    struct task *isolated_task = alloc_task();
     KUNIT_ASSERT_TRUE_MSG(isolated_task != NULL, "task allocation should succeed");
     if (!isolated_task) return;
 
     isolated_task->fs = alloc_fs_struct();
     KUNIT_ASSERT_TRUE_MSG(isolated_task->fs != NULL, "fs_struct allocation should succeed");
     if (!isolated_task->fs) {
-        free_task(isolated_task);
+        task_put(isolated_task);
         return;
     }
 
     isolated_task->signal = alloc_signal_struct();
     KUNIT_ASSERT_TRUE_MSG(isolated_task->signal != NULL, "signal_struct allocation should succeed");
     if (!isolated_task->signal) {
-        free_task(isolated_task);
+        task_put(isolated_task);
         return;
     }
 
     fs_init_root(isolated_task->fs, "/");
     fs_init_pwd(isolated_task->fs, "/");
-    set_current(isolated_task);
+    task_set_current(isolated_task);
 
     errno = 0;
     KUNIT_ASSERT_EQ_MSG(open("/dev/tty", O_RDONLY), -1, "open(/dev/tty) should fail without usable controlling tty");
     KUNIT_ASSERT_TRUE_MSG(errno == ENXIO || errno == EIO, "open(/dev/tty) should set ENXIO (no controlling tty) or EIO (unusable controlling tty)");
 
-    set_current(original_task);
-    free_task(isolated_task);
+    task_set_current(original_task);
+    task_put(isolated_task);
 }
 
 static void testVfsFaccessatSupportsAtFdcwd(struct kunit *test) {
@@ -2103,7 +2104,7 @@ static void testProcSelfStatmSucceeds(struct kunit *test) {
 
 static void testProcSelfExeIsSymlink(struct kunit *test) {
     struct stat st;
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     KUNIT_ASSERT_TRUE_MSG(task != NULL, "current task should exist");
     if (!task) return;
 
@@ -2326,36 +2327,36 @@ static void testVfsTranslatePathRejectsZeroBufferSize(struct kunit *test) {
  * ============================================================================ */
 
 static void testDevTtyOpenFailsWithoutControllingTty(struct kunit *test) {
-    struct task_struct *original_task = get_current();
-    struct task_struct *isolated_task = alloc_task();
+    struct task *original_task = task_current();
+    struct task *isolated_task = alloc_task();
     KUNIT_ASSERT_TRUE_MSG(isolated_task != NULL, "task allocation should succeed");
     if (!isolated_task) return;
 
     isolated_task->fs = alloc_fs_struct();
     KUNIT_ASSERT_TRUE_MSG(isolated_task->fs != NULL, "fs_struct allocation should succeed");
     if (!isolated_task->fs) {
-        free_task(isolated_task);
+        task_put(isolated_task);
         return;
     }
 
     isolated_task->signal = alloc_signal_struct();
     KUNIT_ASSERT_TRUE_MSG(isolated_task->signal != NULL, "signal_struct allocation should succeed");
     if (!isolated_task->signal) {
-        free_task(isolated_task);
+        task_put(isolated_task);
         return;
     }
 
     fs_init_root(isolated_task->fs, "/");
     fs_init_pwd(isolated_task->fs, "/");
-    set_current(isolated_task);
+    task_set_current(isolated_task);
 
     errno = 0;
     int fd = open("/dev/tty", O_RDWR);
     KUNIT_ASSERT_EQ_MSG(fd, -1, "open(/dev/tty) should fail without controlling tty");
     KUNIT_ASSERT_TRUE_MSG(errno == ENXIO || errno == EIO, "open(/dev/tty) should set ENXIO or EIO");
 
-    set_current(original_task);
-    free_task(isolated_task);
+    task_set_current(original_task);
+    task_put(isolated_task);
 }
 
 static void testDevTtyStatFails(struct kunit *test) {
@@ -2429,15 +2430,15 @@ static void testGetdents64HostBackedDirectoryDoesNotCorruptFdLifecycle(struct ku
     char *buffer = aligned.storage;
     memset(buffer, 0, sizeof(aligned));
 
-    ssize_t nread = getdents64(fd, buffer, sizeof(aligned.storage));
-    KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64(/etc) should return > 0 bytes");
+    ssize_t nread = getdents64_impl(fd, buffer, sizeof(aligned.storage));
+    KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64_impl(/etc) should return > 0 bytes");
 
     /* Close the directory */
     close(fd);
 
     /* Open another file - should not get EBADF from fd reuse corruption */
     int fd2 = open("/etc/passwd", O_RDONLY);
-    KUNIT_ASSERT_TRUE_MSG(fd2 >= 0, "open(/etc/passwd) should succeed after getdents64/close cycle");
+    KUNIT_ASSERT_TRUE_MSG(fd2 >= 0, "open(/etc/passwd) should succeed after getdents64_impl/close cycle");
     if (fd2 >= 0) {
         char buf[64];
         ssize_t n = read(fd2, buf, sizeof(buf));
@@ -2463,8 +2464,8 @@ static void testGetdents64ProcSelfFdListsOpenFd(struct kunit *test) {
     char *buffer = aligned.storage;
     memset(buffer, 0, sizeof(aligned));
 
-    ssize_t nread = getdents64(proc_fd, buffer, sizeof(aligned.storage));
-    KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64(/proc/self/fd) should return > 0 bytes");
+    ssize_t nread = getdents64_impl(proc_fd, buffer, sizeof(aligned.storage));
+    KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64_impl(/proc/self/fd) should return > 0 bytes");
 
     /* Look for the test fd entry */
     bool found_test_fd = false;
@@ -2499,7 +2500,7 @@ static void testGetdents64ProcSelfFdListsOpenFd(struct kunit *test) {
         pos += entry->d_reclen;
     }
 
-    KUNIT_ASSERT_TRUE_MSG(found_test_fd, "getdents64(/proc/self/fd) should list the open test fd");
+    KUNIT_ASSERT_TRUE_MSG(found_test_fd, "getdents64_impl(/proc/self/fd) should list the open test fd");
 
     close(proc_fd);
     close(test_fd);
@@ -2522,8 +2523,8 @@ static void testGetdents64ProcSelfFdinfoListsOpenFd(struct kunit *test) {
     char *buffer = aligned.storage;
     memset(buffer, 0, sizeof(aligned));
 
-    ssize_t nread = getdents64(proc_fd, buffer, sizeof(aligned.storage));
-    KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64(/proc/self/fdinfo) should return > 0 bytes");
+    ssize_t nread = getdents64_impl(proc_fd, buffer, sizeof(aligned.storage));
+    KUNIT_ASSERT_TRUE_MSG(nread > 0, "getdents64_impl(/proc/self/fdinfo) should return > 0 bytes");
 
     /* Look for the test fd entry */
     bool found_test_fd = false;
@@ -2559,7 +2560,7 @@ static void testGetdents64ProcSelfFdinfoListsOpenFd(struct kunit *test) {
         pos += entry->d_reclen;
     }
 
-    KUNIT_ASSERT_TRUE_MSG(found_test_fd, "getdents64(/proc/self/fdinfo) should list the open test fd");
+    KUNIT_ASSERT_TRUE_MSG(found_test_fd, "getdents64_impl(/proc/self/fdinfo) should list the open test fd");
 
     close(proc_fd);
     close(test_fd);

@@ -1,10 +1,11 @@
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/errno.h>
+#include <uapi/asm/stat.h>
 #include <uapi/linux/fs.h>
-#include <linux/stat.h>
+#include <uapi/linux/stat.h>
 #include <linux/dirent.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -15,10 +16,12 @@
 #include "kernel/signal.h"
 #include "kernel/task.h"
 
+extern int errno;
+
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
-extern ssize_t getdents64(int fd, void *dirp, size_t count);
+extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern int stat_impl(const char *pathname, struct stat *statbuf);
 extern int access(const char *pathname, int mode);
 
@@ -108,34 +111,34 @@ int devfs_contract_tty_node_exists_without_controlling_tty(void) {
 }
 
 int devfs_contract_tty_open_without_controlling_tty_returns_enxio(void) {
-    struct task_struct *original = get_current();
-    struct task_struct *task = alloc_task();
+    struct task *original = task_current();
+    struct task *task = alloc_task();
     if (!task) {
         return -1;
     }
 
     task->fs = alloc_fs_struct();
     if (!task->fs) {
-        free_task(task);
+        task_put(task);
         return -1;
     }
     task->signal = alloc_signal_struct();
     if (!task->signal) {
-        free_task(task);
+        task_put(task);
         return -1;
     }
     fs_init_root(task->fs, "/");
     fs_init_pwd(task->fs, "/");
 
-    set_current(task);
+    task_set_current(task);
     errno = 0;
     int fd = open_impl("/dev/tty", O_RDWR, 0);
     int saved_errno = errno;
     if (fd >= 0) {
         close_if_open(fd);
     }
-    set_current(original);
-    free_task(task);
+    task_set_current(original);
+    task_put(task);
 
     if (fd != -1 || saved_errno != ENXIO) {
         errno = saved_errno ? saved_errno : ERANGE;
@@ -175,7 +178,7 @@ int devfs_contract_dev_directory_lists_linux_device_nodes(void) {
         return -1;
     }
 
-    ssize_t nread = getdents64(fd, buf, sizeof(buf));
+    ssize_t nread = getdents64_impl(fd, buf, sizeof(buf));
     close_if_open(fd);
     if (nread <= 0) {
         errno = ENODATA;
@@ -234,7 +237,7 @@ int devfs_contract_allocated_pty_slave_is_visible_in_devpts(void) {
         pty_close_end_impl(pty_index, true);
         return -1;
     }
-    ssize_t nread = getdents64(dirfd, buf, sizeof(buf));
+    ssize_t nread = getdents64_impl(dirfd, buf, sizeof(buf));
     close_if_open(dirfd);
     pty_close_end_impl(pty_index, true);
 

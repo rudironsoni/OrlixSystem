@@ -82,12 +82,12 @@ ORLIX_LINT_KERNEL_TEST_STRICT_C_FLAGS := \
 	-include $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h \
 	$(ORLIX_LINT_KERNEL_VENDOR_FLAGS)
 ORLIX_LINT_KERNEL_TEST_C_FLAGS := \
-	$(ORLIX_LINT_HOST_C_FLAGS) \
-	-DORLIX_LINT_KERNEL_TEST \
-	-include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h \
-	-include $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h \
-	-I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) \
-	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
+	$(ORLIX_LINT_LINUX_COMMON_FLAGS) \
+	-nostdinc \
+	-D__EXPORTED_HEADERS__ \
+	-isystem $(LLVM_PREFIX)/lib/clang/22/include \
+	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT) \
+	-I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
 ORLIX_LINT_MLIBC_C_FLAGS := \
 	$(ORLIX_LINT_HOST_C_FLAGS) \
 	$(ORLIX_LINT_MLIBC_VENDOR_FLAGS) \
@@ -152,11 +152,9 @@ lint: build-orlix-clang-tidy-module
 				flags="$(ORLIX_LINT_KERNEL_TEST_STRICT_C_FLAGS)"; \
 				if [[ "$$file" == OrlixKernelTests/MLibC*CompileSmoke.c ]]; then \
 					flags="$(ORLIX_LINT_MLIBC_C_FLAGS)"; \
-				elif [[ "$$file" == OrlixKernelTests/NativeSyscallContract.c || "$$file" == OrlixKernelTests/SignalSyscallContract.c || "$$file" == OrlixKernelTests/LinuxUAPICompileSmoke.c || "$$file" == OrlixKernelTests/LinuxUAPITestSupport.c || "$$file" == OrlixKernelTests/FutexUAPICompileSmoke.c || "$$file" == OrlixKernelTests/SeccompContract.c || "$$file" == OrlixKernelTests/ExecSyscallContract.c ]]; then \
+				elif [[ "$$file" == OrlixKernelTests/LinuxUAPICompileSmoke.c || "$$file" == OrlixKernelTests/LinuxUAPITestSupport.c ]]; then \
 					flags="$(ORLIX_LINT_KERNEL_TEST_C_FLAGS)"; \
 				elif [[ "$$file" == OrlixKernelTests/PTYSessionIoctlShim.c ]]; then \
-					flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
-				elif [[ "$$file" == OrlixKernelTests/kunit/kunit.c ]]; then \
 					flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
 				fi; \
 			fi; \
@@ -377,7 +375,11 @@ _vendor-linux-tree:
 			require_file "$$include_root/linux/fs.h"; \
 			require_file "$$include_root/linux/sched.h"; \
 			require_dir "$$include_root/asm"; \
+			require_dir "$$include_root/uapi/asm"; \
+			require_dir "$$include_root/uapi/asm-generic"; \
 			require_file "$$include_root/uapi/linux/types.h"; \
+			require_file "$$include_root/uapi/asm/signal.h"; \
+			require_file "$$include_root/uapi/asm/ucontext.h"; \
 			require_file "$$include_root/uapi/linux/time_types.h"; \
 			if grep -q 'WITH Linux-syscall-note' "$$include_root/linux/types.h"; then \
 				echo "unexpected UAPI linux/types.h in OrlixKernel vendor root" >&2; \
@@ -401,7 +403,9 @@ _vendor-linux-tree:
 			require_file "$$include_root/linux/wait.h"; \
 			require_file "$$include_root/linux/futex.h"; \
 			require_file "$$include_root/linux/seccomp.h"; \
+			require_dir "$$include_root/asm"; \
 			require_file "$$include_root/asm/signal.h"; \
+			require_file "$$include_root/asm/ucontext.h"; \
 			require_file "$$include_root/asm/unistd.h"; \
 			require_file "$$include_root/asm-generic/errno-base.h"; \
 		}; \

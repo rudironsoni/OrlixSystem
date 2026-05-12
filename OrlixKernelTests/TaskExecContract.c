@@ -1,4 +1,4 @@
-#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/capability.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/mount.h>
@@ -23,9 +23,9 @@ extern int chmod(const char *pathname, uint32_t mode);
 extern int chown(const char *pathname, __kernel_uid32_t owner, __kernel_gid32_t group);
 extern int mount(const char *source, const char *target, const char *filesystemtype,
                  unsigned long mountflags, const void *data);
-extern int umount(const char *target);
-extern int capget(cap_user_header_t header, cap_user_data_t data);
-extern int capset(cap_user_header_t header, const cap_user_data_t data);
+extern int umount_impl(const char *target);
+extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
+extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 extern void cred_reset_to_defaults(void);
 extern int errno;
 
@@ -48,13 +48,13 @@ static int task_exec_contract_cap_has_effective(const struct __user_cap_data_str
 static int task_exec_contract_cap_has_permitted(const struct __user_cap_data_struct *data, int cap);
 
 int task_exec_contract_rejects_missing_current_task(void) {
-    struct task_struct *saved = get_current();
+    struct task *saved = task_current();
     int result;
 
-    set_current(NULL);
+    task_set_current(NULL);
     errno = 0;
     result = task_exec_transition_impl("/bin/test", "test");
-    set_current(saved);
+    task_set_current(saved);
 
     if (result != -1) {
         errno = EPROTO;
@@ -97,7 +97,7 @@ int task_exec_contract_rejects_too_long_path(void) {
 }
 
 int task_exec_contract_updates_task_state_and_closes_cloexec_fds(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     int cloexec_fd = -1;
     int keep_fd = -1;
     char link_target[MAX_PATH];
@@ -168,7 +168,7 @@ out:
 }
 
 int task_exec_contract_uses_basename_of_path_when_argv0_is_empty(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -197,7 +197,7 @@ int task_exec_contract_uses_basename_of_path_when_argv0_is_empty(void) {
 }
 
 int task_exec_contract_truncates_comm_to_task_comm_len_minus_one(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     static const char argv0[] = "1234567890abcdefXYZ";
 
     if (!task) {
@@ -218,7 +218,7 @@ int task_exec_contract_truncates_comm_to_task_comm_len_minus_one(void) {
 }
 
 int task_exec_contract_preserves_task_identity_and_non_exec_state(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     int32_t pid;
     int32_t tgid;
     int32_t ppid;
@@ -611,7 +611,7 @@ int task_exec_contract_file_capability_exec_grants_permitted_and_effective(void)
     if (vfs_set_file_capabilities("/tmp/task-exec-filecap-file", cap_setuid, 0, true) != 0 ||
         setuid_impl(1000) != 0 ||
         task_exec_transition_impl("/tmp/task-exec-filecap-file", "filecap-file") != 0 ||
-        capget(&header, data) != 0) {
+        capget_impl(&header, data) != 0) {
         goto out;
     }
     if (!task_exec_contract_cap_has_permitted(data, CAP_SETUID) ||
@@ -619,7 +619,7 @@ int task_exec_contract_file_capability_exec_grants_permitted_and_effective(void)
         errno = EPROTO;
         goto out;
     }
-    if (!get_current() || get_current()->exec_secure != 1 || get_current()->exec_dumpable != 0) {
+    if (!task_current() || task_current()->exec_secure != 1 || task_current()->exec_dumpable != 0) {
         errno = ENODATA;
         goto out;
     }
@@ -658,7 +658,7 @@ int task_exec_contract_no_new_privs_blocks_file_capability_exec_gain(void) {
         prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
         setuid_impl(1000) != 0 ||
         task_exec_transition_impl("/tmp/task-exec-nnp-filecap-file", "nnp-filecap-file") != 0 ||
-        capget(&header, data) != 0) {
+        capget_impl(&header, data) != 0) {
         goto out;
     }
     if (task_exec_contract_cap_has_permitted(data, CAP_SETUID) ||
@@ -666,7 +666,7 @@ int task_exec_contract_no_new_privs_blocks_file_capability_exec_gain(void) {
         errno = EPROTO;
         goto out;
     }
-    if (!get_current() || get_current()->exec_secure != 0 || get_current()->exec_dumpable != 1) {
+    if (!task_current() || task_current()->exec_secure != 0 || task_current()->exec_dumpable != 1) {
         errno = ENODATA;
         goto out;
     }
@@ -707,7 +707,7 @@ int task_exec_contract_keepcaps_preserves_permitted_caps_after_setuid(void) {
     if (setuid_impl(1000) != 0) {
         return -1;
     }
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         return -1;
     }
     if (!task_exec_contract_cap_has_permitted(data, CAP_SETUID)) {
@@ -720,7 +720,7 @@ int task_exec_contract_keepcaps_preserves_permitted_caps_after_setuid(void) {
     }
 
     data[CAP_SETUID / 32].effective |= 1U << (CAP_SETUID % 32);
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         return -1;
     }
     if (setuid_impl(2000) != 0) {
@@ -784,11 +784,11 @@ int task_exec_contract_ambient_capability_survives_plain_exec(void) {
     if (setuid_impl(1000) != 0) {
         goto out;
     }
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         goto out;
     }
     data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         goto out;
     }
     if (prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != 0) {
@@ -798,17 +798,17 @@ int task_exec_contract_ambient_capability_survives_plain_exec(void) {
         errno = EPROTO;
         goto out;
     }
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         goto out;
     }
     data[CAP_SETUID / 32].effective &= ~(1U << (CAP_SETUID % 32));
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         goto out;
     }
     if (task_exec_transition_impl("/tmp/task-exec-ambient-file", "ambient-file") != 0) {
         goto out;
     }
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         goto out;
     }
     if (!task_exec_contract_cap_has_effective(data, CAP_SETUID)) {
@@ -848,11 +848,11 @@ int task_exec_contract_no_new_privs_setuid_exec_clears_ambient_capability(void) 
         chmod("/tmp/task-exec-nnp-ambient-suid-file", S_ISUID | 0755) != 0 ||
         prctl_impl(PR_SET_KEEPCAPS, 1, 0, 0, 0) != 0 ||
         setuid_impl(1000) != 0 ||
-        capget(&header, data) != 0) {
+        capget_impl(&header, data) != 0) {
         goto out;
     }
     data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
-    if (capset(&header, data) != 0 ||
+    if (capset_impl(&header, data) != 0 ||
         prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != 0 ||
         prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SETUID, 0, 0) != 1 ||
         prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
@@ -864,7 +864,7 @@ int task_exec_contract_no_new_privs_setuid_exec_clears_ambient_capability(void) 
         errno = EPROTO;
         goto out;
     }
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         goto out;
     }
     if (task_exec_contract_cap_has_effective(data, CAP_SETUID)) {
@@ -887,7 +887,7 @@ int task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(void) {
     int ret = -1;
 
     cred_reset_to_defaults();
-    umount("/tmp/task-exec-nosuid-target");
+    umount_impl("/tmp/task-exec-nosuid-target");
     unlink_impl("/tmp/task-exec-nosuid-source/suid-file");
     rmdir_impl("/tmp/task-exec-nosuid-source");
     rmdir_impl("/tmp/task-exec-nosuid-target");
@@ -921,7 +921,7 @@ int task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(void) {
 out:
     close_if_open(fd);
     cred_reset_to_defaults();
-    umount("/tmp/task-exec-nosuid-target");
+    umount_impl("/tmp/task-exec-nosuid-target");
     unlink_impl("/tmp/task-exec-nosuid-source/suid-file");
     rmdir_impl("/tmp/task-exec-nosuid-source");
     rmdir_impl("/tmp/task-exec-nosuid-target");
@@ -939,7 +939,7 @@ int task_exec_contract_nosuid_mount_blocks_file_capability_exec_gain(void) {
     int ret = -1;
 
     cred_reset_to_defaults();
-    umount("/tmp/task-exec-nosuid-filecap-target");
+    umount_impl("/tmp/task-exec-nosuid-filecap-target");
     unlink_impl("/tmp/task-exec-nosuid-filecap-source/filecap-file");
     rmdir_impl("/tmp/task-exec-nosuid-filecap-source");
     rmdir_impl("/tmp/task-exec-nosuid-filecap-target");
@@ -963,7 +963,7 @@ int task_exec_contract_nosuid_mount_blocks_file_capability_exec_gain(void) {
         setuid_impl(1000) != 0 ||
         task_exec_transition_impl("/tmp/task-exec-nosuid-filecap-target/filecap-file",
                                   "nosuid-filecap-file") != 0 ||
-        capget(&header, data) != 0) {
+        capget_impl(&header, data) != 0) {
         goto out;
     }
     if (task_exec_contract_cap_has_permitted(data, CAP_SETUID) ||
@@ -971,7 +971,7 @@ int task_exec_contract_nosuid_mount_blocks_file_capability_exec_gain(void) {
         errno = EPROTO;
         goto out;
     }
-    if (!get_current() || get_current()->exec_secure != 0 || get_current()->exec_dumpable != 1) {
+    if (!task_current() || task_current()->exec_secure != 0 || task_current()->exec_dumpable != 1) {
         errno = ENODATA;
         goto out;
     }
@@ -982,7 +982,7 @@ out:
     close_if_open(fd);
     cred_reset_to_defaults();
     vfs_remove_file_capabilities("/tmp/task-exec-nosuid-filecap-source/filecap-file");
-    umount("/tmp/task-exec-nosuid-filecap-target");
+    umount_impl("/tmp/task-exec-nosuid-filecap-target");
     unlink_impl("/tmp/task-exec-nosuid-filecap-source/filecap-file");
     rmdir_impl("/tmp/task-exec-nosuid-filecap-source");
     rmdir_impl("/tmp/task-exec-nosuid-filecap-target");
@@ -993,7 +993,7 @@ int task_exec_contract_noexec_mount_blocks_exec_transition(void) {
     int fd = -1;
     int ret = -1;
 
-    umount("/tmp/task-exec-noexec-target");
+    umount_impl("/tmp/task-exec-noexec-target");
     unlink_impl("/tmp/task-exec-noexec-source/file");
     rmdir_impl("/tmp/task-exec-noexec-source");
     rmdir_impl("/tmp/task-exec-noexec-target");
@@ -1025,7 +1025,7 @@ int task_exec_contract_noexec_mount_blocks_exec_transition(void) {
 
 out:
     close_if_open(fd);
-    umount("/tmp/task-exec-noexec-target");
+    umount_impl("/tmp/task-exec-noexec-target");
     unlink_impl("/tmp/task-exec-noexec-source/file");
     rmdir_impl("/tmp/task-exec-noexec-source");
     rmdir_impl("/tmp/task-exec-noexec-target");
@@ -1040,11 +1040,11 @@ int task_exec_contract_ambient_raise_requires_inheritable_cap(void) {
     struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
 
     cred_reset_to_defaults();
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         return -1;
     }
     data[CAP_SETUID / 32].inheritable &= ~(1U << (CAP_SETUID % 32));
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         return -1;
     }
     if (prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != -EPERM) {
@@ -1063,11 +1063,11 @@ int task_exec_contract_securebits_block_ambient_raise(void) {
     struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
 
     cred_reset_to_defaults();
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         return -1;
     }
     data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         return -1;
     }
     if (prctl_impl(PR_SET_SECUREBITS, SECBIT_NO_CAP_AMBIENT_RAISE, 0, 0, 0) != 0) {
@@ -1089,11 +1089,11 @@ int task_exec_contract_capability_bounding_drop_blocks_inheritable_and_clears_am
     struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
 
     cred_reset_to_defaults();
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         return -1;
     }
     data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
-    if (capset(&header, data) != 0 ||
+    if (capset_impl(&header, data) != 0 ||
         prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, CAP_SETUID, 0, 0) != 0 ||
         prctl_impl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_IS_SET, CAP_SETUID, 0, 0) != 1) {
         cred_reset_to_defaults();
@@ -1105,18 +1105,18 @@ int task_exec_contract_capability_bounding_drop_blocks_inheritable_and_clears_am
         cred_reset_to_defaults();
         return -1;
     }
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         cred_reset_to_defaults();
         return -1;
     }
     data[CAP_SETUID / 32].inheritable &= ~(1U << (CAP_SETUID % 32));
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         cred_reset_to_defaults();
         return -1;
     }
     data[CAP_SETUID / 32].inheritable |= 1U << (CAP_SETUID % 32);
     errno = 0;
-    if (capset(&header, data) != -1 || errno != EPERM) {
+    if (capset_impl(&header, data) != -1 || errno != EPERM) {
         cred_reset_to_defaults();
         errno = EPROTO;
         return -1;

@@ -4,14 +4,13 @@
 
 #include "elf_reloc.h"
 
+#include <linux/elf.h>
 #include <linux/errno.h>
 #include <linux/string.h>
 
-#include <uapi/linux/elf.h>
-
 #include "../../kernel/task.h"
 
-static int read_exact(struct task_struct *task, uint64_t addr, void *buf, size_t size) {
+static int read_exact(struct task *task, uint64_t addr, void *buf, size_t size) {
     long nread = task_read_virtual_memory_impl(task, addr, buf, size);
     if (nread != (long)size) {
         return nread >= 0 ? -EFAULT : (int)nread;
@@ -19,7 +18,7 @@ static int read_exact(struct task_struct *task, uint64_t addr, void *buf, size_t
     return 0;
 }
 
-static int write_u64(struct task_struct *task, uint64_t addr, uint64_t value) {
+static int write_u64(struct task *task, uint64_t addr, uint64_t value) {
     long nwritten = task_write_virtual_memory_impl(task, addr, &value, sizeof(value));
     if (nwritten != (long)sizeof(value)) {
         return nwritten >= 0 ? -EFAULT : (int)nwritten;
@@ -27,7 +26,7 @@ static int write_u64(struct task_struct *task, uint64_t addr, uint64_t value) {
     return 0;
 }
 
-static int relocation_symbol_value(struct task_struct *task,
+static int relocation_symbol_value(struct task *task,
                                    const struct task_dynamic_info *dynamic,
                                    uint64_t symbol_index,
                                    uint64_t *out_value) {
@@ -51,7 +50,7 @@ static int relocation_symbol_value(struct task_struct *task,
     return 0;
 }
 
-static int apply_rela(struct task_struct *task,
+static int apply_rela(struct task *task,
                       const struct task_dynamic_info *dynamic,
                       uint64_t load_base,
                       const Elf64_Rela *rela) {
@@ -87,7 +86,7 @@ static int apply_rela(struct task_struct *task,
     }
 }
 
-static int apply_rela_table(struct task_struct *task,
+static int apply_rela_table(struct task *task,
                             const struct task_dynamic_info *dynamic,
                             uint64_t load_base,
                             uint64_t rela_vaddr,
@@ -128,7 +127,7 @@ static int apply_rela_table(struct task_struct *task,
     return 0;
 }
 
-int aarch64_apply_dynamic_relocations(struct task_struct *task,
+int aarch64_apply_dynamic_relocations(struct task *task,
                                       const struct task_dynamic_info *dynamic,
                                       u64 load_base,
                                       u32 *out_applied) {

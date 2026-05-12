@@ -5,7 +5,6 @@
 #include <linux/errno.h>
 #include <linux/atomic.h>
 #include <uapi/linux/sched.h>
-#include <asm-generic/signal.h>
 #include <uapi/linux/signal.h>
 #include <uapi/linux/wait.h>
 
@@ -23,7 +22,7 @@ enum wait_report_kind {
     WAIT_REPORT_CONTINUED,
 };
 
-static bool wait_child_matches_selector(const struct task_struct *parent, const struct task_struct *child,
+static bool wait_child_matches_selector(const struct task *parent, const struct task *child,
                                         __kernel_pid_t pid) {
     if (!parent || !child) {
         return false;
@@ -41,7 +40,7 @@ static bool wait_child_matches_selector(const struct task_struct *parent, const 
     return child->pgid == -pid;
 }
 
-static enum wait_report_kind wait_child_report_kind(const struct task_struct *child, int options) {
+static enum wait_report_kind wait_child_report_kind(const struct task *child, int options) {
     if ((options & WUNTRACED) && atomic_read(&child->stop_report_pending)) {
         return WAIT_REPORT_STOPPED;
     }
@@ -64,7 +63,7 @@ static enum wait_report_kind wait_child_report_kind(const struct task_struct *ch
     return WAIT_REPORT_NONE;
 }
 
-static int wait_report_status(const struct task_struct *child, enum wait_report_kind report_kind) {
+static int wait_report_status(const struct task *child, enum wait_report_kind report_kind) {
     switch (report_kind) {
     case WAIT_REPORT_EXITED:
         return (child->exit_status & 0xff) << 8;
@@ -81,7 +80,7 @@ static int wait_report_status(const struct task_struct *child, enum wait_report_
     }
 }
 
-static int wait_record_restart(struct task_struct *parent, __kernel_pid_t pid, int *wstatus, int options) {
+static int wait_record_restart(struct task *parent, __kernel_pid_t pid, int *wstatus, int options) {
     return task_restart_record_impl(parent, TASK_RESTART_WAITPID,
                                     (uint64_t)(int64_t)pid,
                                     (uint64_t)(uintptr_t)wstatus,
@@ -90,9 +89,9 @@ static int wait_record_restart(struct task_struct *parent, __kernel_pid_t pid, i
 }
 
 __kernel_pid_t waitpid_impl(__kernel_pid_t pid, int *wstatus, int options) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
-    struct task_struct *matched_child;
+    struct task *parent = task_current();
+    struct task *child;
+    struct task *matched_child;
     enum wait_report_kind report_kind;
     bool matched_any_child;
     __kernel_pid_t matched_pid;
@@ -173,7 +172,7 @@ __kernel_pid_t waitpid_impl(__kernel_pid_t pid, int *wstatus, int options) {
     }
 
     if (should_reap) {
-        struct task_struct **link = &parent->children;
+        struct task **link = &parent->children;
         while (*link && *link != matched_child) {
             link = &(*link)->next_sibling;
         }
@@ -195,7 +194,7 @@ __kernel_pid_t waitpid_impl(__kernel_pid_t pid, int *wstatus, int options) {
     }
 
     if (should_reap) {
-        free_task(matched_child);
+        task_put(matched_child);
     }
 
     return matched_pid;
@@ -212,8 +211,8 @@ int waitid_impl(int idtype, __kernel_pid_t id, void *infop_arg, int options, voi
     int selector;
     int status = 0;
     __kernel_pid_t waited;
-    struct task_struct *target_task = NULL;
-    struct task_struct *parent = get_current();
+    struct task *target_task = NULL;
+    struct task *parent = task_current();
 
     (void)rusage;
     if (!infop) {
@@ -250,7 +249,7 @@ int waitid_impl(int idtype, __kernel_pid_t id, void *infop_arg, int options, voi
             return -ECHILD;
         }
         if (!parent || target_task->parent != parent) {
-            free_task(target_task);
+            task_put(target_task);
             return -ECHILD;
         }
         selector = target_task->pid;
@@ -262,7 +261,7 @@ int waitid_impl(int idtype, __kernel_pid_t id, void *infop_arg, int options, voi
 
     waited = waitpid_impl(selector, &status, options);
     if (target_task) {
-        free_task(target_task);
+        task_put(target_task);
     }
     if (waited < 0) {
         return (int)waited;

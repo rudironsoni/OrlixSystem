@@ -1,12 +1,12 @@
 #include <asm/unistd.h>
-#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/capability.h>
 #include <uapi/linux/futex.h>
 #include <uapi/linux/mman.h>
 #include <uapi/linux/sched.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/time.h>
 #include <linux/string.h>
-#include <uapi/asm-generic/signal.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -18,8 +18,8 @@
 #include "runtime/syscall.h"
 
 extern void exit_impl(int status);
-extern int capget(cap_user_header_t header, cap_user_data_t data);
-extern int capset(cap_user_header_t header, const cap_user_data_t data);
+extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
+extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 extern int unshare_impl(uint64_t flags);
 extern int library_init(const void *config);
 extern int library_is_initialized(void);
@@ -33,7 +33,7 @@ struct futex_wait_thread {
     int done;
     int rc;
     int saved_errno;
-    struct task_struct *task;
+    struct task *task;
 };
 
 struct futex_wait_op_thread {
@@ -133,7 +133,7 @@ static void futex_wait_op_thread_wait_done(struct futex_wait_op_thread *ctx) {
     kernel_mutex_unlock(&ctx->lock);
 }
 
-static void futex_clear_pending_signal(struct task_struct *task, int sig) {
+static void futex_clear_pending_signal(struct task *task, int sig) {
     int32_t dequeued = 0;
 
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
@@ -149,85 +149,85 @@ static void futex_clear_pending_signal(struct task_struct *task, int sig) {
     task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
-static void futex_release_lookup_child(struct task_struct *parent, struct task_struct **child) {
+static void futex_release_lookup_child(struct task *parent, struct task **child) {
     if (!parent || !child || !*child) {
         return;
     }
     task_unlink_child_impl(parent, *child);
-    free_task(*child);
-    free_task(*child);
+    task_put(*child);
+    task_put(*child);
     *child = NULL;
 }
 
 void futex_contract_reset_test_state(void) {
-    struct task_struct *child;
+    struct task *child;
 
     if (!library_is_initialized()) {
         library_init(NULL);
     }
     start_kernel();
 
-    if (!kernel_is_booted() || !init_task) {
+    if (!kernel_is_booted() || !task_init_process) {
         return;
     }
 
     futex_reset_impl();
 
-    set_current(init_task);
-    init_task->parent = NULL;
-    init_task->ppid = 0;
-    init_task->exit_status = 0;
-    init_task->thread_pending_signals = 0;
-    atomic_set(&init_task->exited, 0);
-    atomic_set(&init_task->signaled, 0);
-    atomic_set(&init_task->termsig, 0);
-    atomic_set(&init_task->stopped, 0);
-    atomic_set(&init_task->state, TASK_RUNNING);
-    atomic_set(&init_task->continued, 0);
-    atomic_set(&init_task->stop_report_pending, 0);
-    atomic_set(&init_task->continue_report_pending, 0);
+    task_set_current(task_init_process);
+    task_init_process->parent = NULL;
+    task_init_process->ppid = 0;
+    task_init_process->exit_status = 0;
+    task_init_process->thread_pending_signals = 0;
+    atomic_set(&task_init_process->exited, 0);
+    atomic_set(&task_init_process->signaled, 0);
+    atomic_set(&task_init_process->termsig, 0);
+    atomic_set(&task_init_process->stopped, 0);
+    atomic_set(&task_init_process->state, RUN_STATE_RUNNING);
+    atomic_set(&task_init_process->continued, 0);
+    atomic_set(&task_init_process->stop_report_pending, 0);
+    atomic_set(&task_init_process->continue_report_pending, 0);
 
-    if (init_task->signal) {
+    if (task_init_process->signal) {
         for (int sig = 0; sig < KERNEL_SIG_NUM; sig++) {
-            init_task->signal->actions[sig].handler = NULL;
-            init_task->signal->actions[sig].flags = 0;
-            init_task->signal->actions[sig].restorer = 0;
-            memset(&init_task->signal->actions[sig].mask, 0, sizeof(init_task->signal->actions[sig].mask));
+            task_init_process->signal->actions[sig].handler = NULL;
+            task_init_process->signal->actions[sig].flags = 0;
+            task_init_process->signal->actions[sig].restorer = 0;
+            memset(&task_init_process->signal->actions[sig].mask, 0, sizeof(task_init_process->signal->actions[sig].mask));
         }
-        memset(&init_task->signal->blocked, 0, sizeof(init_task->signal->blocked));
-        memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
-        memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));
-        init_task->signal->altstack.ss_sp = NULL;
-        init_task->signal->altstack.ss_size = 0;
-        init_task->signal->altstack.ss_flags = 2;
+        memset(&task_init_process->signal->blocked, 0, sizeof(task_init_process->signal->blocked));
+        memset(&task_init_process->signal->pending, 0, sizeof(task_init_process->signal->pending));
+        memset(&task_init_process->signal->shared_pending, 0, sizeof(task_init_process->signal->shared_pending));
+        task_init_process->signal->altstack.ss_sp = NULL;
+        task_init_process->signal->altstack.ss_size = 0;
+        task_init_process->signal->altstack.ss_flags = 2;
     }
 
-    if (init_task->mm) {
-        init_task->mm->signal_frame_return_pc = 0;
-        init_task->mm->signal_handler_pc = 0;
-        init_task->mm->signal_frame_flags = 0;
-        init_task->mm->signal_frame_restorer_pc = 0;
-        init_task->mm->signal_frame_mask = 0;
-        init_task->mm->signal_frame_altstack_sp = 0;
-        init_task->mm->signal_frame_altstack_size = 0;
-        init_task->mm->signal_frame_altstack_flags = 0;
-        init_task->mm->signal_frame_current_sp = 0;
-        init_task->mm->signal_frame_size = 0;
-        init_task->mm->signal_frame_ucontext_flags = 0;
-        init_task->mm->signal_frame_restartable = 0;
-        init_task->mm->signal_frame_restart_return_pc = 0;
-        init_task->mm->signal_frame_restart_sp = 0;
-        init_task->mm->signal_frame_restart_signo = 0;
-        task_restart_clear_impl(init_task);
+    if (task_init_process->mm) {
+        task_init_process->mm->signal_frame_return_pc = 0;
+        task_init_process->mm->signal_handler_pc = 0;
+        task_init_process->mm->signal_frame_flags = 0;
+        task_init_process->mm->signal_frame_restorer_pc = 0;
+        task_init_process->mm->signal_frame_mask = 0;
+        task_init_process->mm->signal_frame_altstack_sp = 0;
+        task_init_process->mm->signal_frame_altstack_size = 0;
+        task_init_process->mm->signal_frame_altstack_flags = 0;
+        task_init_process->mm->signal_frame_current_sp = 0;
+        task_init_process->mm->signal_frame_size = 0;
+        task_init_process->mm->signal_frame_ucontext_flags = 0;
+        task_init_process->mm->signal_frame_restartable = 0;
+        task_init_process->mm->signal_frame_restart_return_pc = 0;
+        task_init_process->mm->signal_frame_restart_sp = 0;
+        task_init_process->mm->signal_frame_restart_signo = 0;
+        task_restart_clear_impl(task_init_process);
     }
 
-    while ((child = init_task->children) != NULL) {
-        task_unlink_child_impl(init_task, child);
+    while ((child = task_init_process->children) != NULL) {
+        task_unlink_child_impl(task_init_process, child);
         child->parent = NULL;
         child->ppid = 0;
     }
 
-    set_current(init_task);
+    task_set_current(task_init_process);
 }
 
 static void *futex_wait_thread_main(void *arg) {
@@ -235,7 +235,7 @@ static void *futex_wait_thread_main(void *arg) {
     struct __kernel_timespec timeout = {2, 0};
 
     if (ctx->task) {
-        set_current(ctx->task);
+        task_set_current(ctx->task);
     }
     futex_wait_thread_mark_started(ctx);
     ctx->rc = (int)syscall_dispatch_impl(__NR_futex, (long)(uintptr_t)ctx->word,
@@ -477,9 +477,9 @@ int futex_contract_cmp_requeue_rejects_mismatch(void) {
 
 int futex_contract_interrupted_wait_records_restart(void) {
     struct futex_wait_thread ctx;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *restore;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *restore;
     kernel_thread_t thread;
     int word = 0;
     long ret;
@@ -502,7 +502,7 @@ int futex_contract_interrupted_wait_records_restart(void) {
     if (kernel_thread_create(&thread, NULL, futex_wait_thread_main, &ctx) != 0) {
         futex_wait_thread_destroy(&ctx);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         errno = ECHILD;
         return -1;
     }
@@ -512,7 +512,7 @@ int futex_contract_interrupted_wait_records_restart(void) {
         futex_wait_thread_wait_done(&ctx);
         futex_wait_thread_destroy(&ctx);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         return -1;
     }
     futex_wait_thread_wait_done(&ctx);
@@ -525,20 +525,20 @@ int futex_contract_interrupted_wait_records_restart(void) {
         child->mm->signal_frame_restart_arg1 != 0 ||
         child->mm->signal_frame_restart_arg2 != 2000) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         errno = ENODATA;
         return -1;
     }
 
     futex_clear_pending_signal(child, SIGUSR1);
     word = 1;
-    restore = get_current();
-    set_current(child);
+    restore = task_current();
+    task_set_current(child);
     ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
-    set_current(restore);
+    task_set_current(restore);
 
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 
     if (ret != -EAGAIN) {
         errno = EPROTO;
@@ -586,9 +586,9 @@ struct robust_test_node {
 };
 
 int futex_contract_exit_clears_child_tid_and_marks_robust_futex(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
-    struct task_struct *restore;
+    struct task *parent = task_current();
+    struct task *child;
+    struct task *restore;
     struct robust_list_head head;
     struct robust_test_node node;
     int clear_child_tid = 7;
@@ -611,38 +611,38 @@ int futex_contract_exit_clears_child_tid_and_marks_robust_futex(void) {
     node.list.next = &head.list;
     node.futex_word = child->pid | FUTEX_WAITERS;
 
-    restore = get_current();
-    set_current(child);
+    restore = task_current();
+    task_set_current(child);
     ret = syscall_dispatch_impl(__NR_set_robust_list, (long)(uintptr_t)&head, sizeof(head), 0, 0, 0, 0);
     if (ret != 0) {
-        set_current(restore);
+        task_set_current(restore);
         errno = ret < 0 ? (int)-ret : EPROTO;
         return -1;
     }
     ret = syscall_dispatch_impl(__NR_set_tid_address, (long)(uintptr_t)&clear_child_tid, 0, 0, 0, 0, 0);
     if (ret != child->pid) {
-        set_current(restore);
+        task_set_current(restore);
         errno = ret < 0 ? (int)-ret : EPROTO;
         return -1;
     }
 
     exit_impl(0);
-    set_current(restore);
+    task_set_current(restore);
 
     if (clear_child_tid != 0 ||
         (node.futex_word & FUTEX_OWNER_DIED) == 0 ||
         (node.futex_word & FUTEX_TID_MASK) != 0) {
         errno = EPROTO;
-        free_task(child);
+        task_put(child);
         return -1;
     }
-    free_task(child);
+    task_put(child);
     return 0;
 }
 
 int futex_contract_clone_thread_shares_vm_and_thread_group(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int32_t child_pid;
     void *mapped;
     const char byte = 'T';
@@ -685,15 +685,15 @@ int futex_contract_clone_thread_shares_vm_and_thread_group(void) {
 
 out_child:
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
     return result;
 }
 
 int futex_contract_clone3_sets_parent_child_and_clear_tid(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     struct clone_args args;
     int parent_tid = 0;
     int child_tid = 0;
@@ -739,15 +739,15 @@ int futex_contract_clone3_sets_parent_child_and_clear_tid(void) {
 
 out_child:
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
     return result;
 }
 
 int futex_contract_clone3_set_tid_supports_repo_pid_model(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     struct clone_args args;
     struct __user_cap_header_struct header = {
         .version = _LINUX_CAPABILITY_VERSION_3,
@@ -771,12 +771,12 @@ int futex_contract_clone3_set_tid_supports_repo_pid_model(void) {
     }
 
     for (int candidate = 64; candidate < 512; candidate++) {
-        struct task_struct *existing = task_lookup(candidate);
+        struct task *existing = task_lookup(candidate);
         if (!existing) {
             requested_pid = candidate;
             break;
         }
-        free_task(existing);
+        task_put(existing);
     }
     if (requested_pid == 0) {
         errno = EAGAIN;
@@ -896,13 +896,13 @@ int futex_contract_clone3_set_tid_supports_repo_pid_model(void) {
     }
     futex_release_lookup_child(parent, &child);
 
-    if (capget(&header, original_caps) != 0) {
+    if (capget_impl(&header, original_caps) != 0) {
         goto out;
     }
     memcpy(modified_caps, original_caps, sizeof(modified_caps));
     modified_caps[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
     modified_caps[CAP_CHECKPOINT_RESTORE / 32].effective &= ~(1U << (CAP_CHECKPOINT_RESTORE % 32));
-    if (capset(&header, modified_caps) != 0) {
+    if (capset_impl(&header, modified_caps) != 0) {
         goto out;
     }
     caps_modified = true;
@@ -921,7 +921,7 @@ out:
     futex_release_lookup_child(parent, &child);
     if (caps_modified) {
         int saved_errno = errno;
-        if (capset(&header, original_caps) != 0) {
+        if (capset_impl(&header, original_caps) != 0) {
             return -1;
         }
         errno = saved_errno;
@@ -930,9 +930,9 @@ out:
 }
 
 int futex_contract_clear_child_tid_is_per_thread_not_mm_shared(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
-    struct task_struct *restore;
+    struct task *parent = task_current();
+    struct task *child;
+    struct task *restore;
     struct clone_args args;
     int child_tid = 0;
     int parent_clear = 11;
@@ -971,10 +971,10 @@ int futex_contract_clear_child_tid_is_per_thread_not_mm_shared(void) {
         goto out_child;
     }
 
-    restore = get_current();
-    set_current(child);
+    restore = task_current();
+    task_set_current(child);
     exit_impl(0);
-    set_current(restore);
+    task_set_current(restore);
     if (child_tid != 0 ||
         parent_clear != 11 ||
         parent->clear_child_tid != (uint64_t)(uintptr_t)&parent_clear) {
@@ -985,8 +985,8 @@ int futex_contract_clear_child_tid_is_per_thread_not_mm_shared(void) {
 
 out_child:
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
     parent->clear_child_tid = 0;
     return result;
 }

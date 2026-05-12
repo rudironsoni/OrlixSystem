@@ -90,7 +90,7 @@ void pid_init(void) {
 }
 
 /* Public wrappers declared in task.h */
-int32_t alloc_pid(void) {
+int32_t task_alloc_pid(void) {
     return pid_alloc_impl();
 }
 
@@ -118,6 +118,6 @@ int pid_reserve(int32_t pid) {
     return -EEXIST;
 }
 
-void free_pid(int32_t pid) {
+void task_free_pid(int32_t pid) {
     pid_free_impl(pid);
 }

@@ -316,7 +316,7 @@ int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int ti
         ret = poll_wait_for_readiness_impl(wait_ms);
         if (ret < 0) {
             if (ret == -EINTR) {
-                task_restart_record_impl(get_current(), TASK_RESTART_EPOLL_WAIT,
+                task_restart_record_impl(task_current(), TASK_RESTART_EPOLL_WAIT,
                                          (uint64_t)(int64_t)epfd,
                                          (uint64_t)(unsigned long)events,
                                          (uint64_t)(int64_t)maxevents,

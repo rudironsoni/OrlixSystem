@@ -1,15 +1,17 @@
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
 #include <uapi/linux/fs.h>
+#include <uapi/linux/errno.h>
 #include <linux/dirent.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "kernel/task.h"
+
+extern int errno;
 
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
@@ -522,9 +524,9 @@ out:
 }
 
 int exec_fd_contract_child_close_on_exec_does_not_close_parent_descriptor(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved = parent;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved = parent;
     int fd = -1;
     int child_closed = -1;
     int result = -1;
@@ -550,9 +552,9 @@ int exec_fd_contract_child_close_on_exec_does_not_close_parent_descriptor(void) 
         goto out;
     }
 
-    set_current(child);
+    task_set_current(child);
     child_closed = close_on_exec_impl();
-    set_current(saved);
+    task_set_current(saved);
 
     if (child_closed != 1) {
         errno = EPROTO;
@@ -569,11 +571,11 @@ int exec_fd_contract_child_close_on_exec_does_not_close_parent_descriptor(void) 
 
 out:
     if (child) {
-        set_current(saved);
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
-    set_current(saved);
+    task_set_current(saved);
     close_if_open(fd);
     return result;
 }

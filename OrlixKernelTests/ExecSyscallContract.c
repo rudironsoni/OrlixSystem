@@ -1,6 +1,6 @@
 #include <asm/unistd.h>
-#include <asm-generic/siginfo.h>
-#include <asm-generic/resource.h>
+#include <uapi/asm/siginfo.h>
+#include <uapi/linux/resource.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/elf.h>
 #include <uapi/linux/auxvec.h>
@@ -9,12 +9,12 @@
 #include <uapi/linux/mount.h>
 #include <uapi/linux/prctl.h>
 #include <uapi/linux/securebits.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/stat.h>
 #include <uapi/linux/xattr.h>
-#include <uapi/asm-generic/signal.h>
+#include <uapi/linux/errno.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -29,8 +29,10 @@
 #include "runtime/native/registry.h"
 #include "runtime/syscall.h"
 
+extern int errno;
+
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
-extern int fexecve(int fd, char *const argv[], char *const envp[]);
+extern int fexecve_impl(int fd, char *const argv[], char *const envp[]);
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern long read_impl(int fd, void *buf, size_t count);
@@ -44,16 +46,16 @@ extern int mkdir_impl(const char *pathname, uint32_t mode);
 extern int rmdir_impl(const char *pathname);
 extern int mount(const char *source, const char *target, const char *filesystemtype,
                  unsigned long mountflags, const void *data);
-extern int umount(const char *target);
+extern int umount_impl(const char *target);
 extern int ftruncate_impl(int fd, int64_t length);
 extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
-extern bool signal_is_pending(const struct task_struct *task, int32_t sig);
+extern bool signal_is_pending(const struct task *task, int32_t sig);
 
-static bool task_execed(const struct task_struct *task) {
+static bool task_execed(const struct task *task) {
     return task && atomic_read(&task->execed) != 0;
 }
 
-static void task_reset_execed(struct task_struct *task) {
+static void task_reset_execed(struct task *task) {
     if (task) {
         atomic_set(&task->execed, 0);
     }
@@ -186,7 +188,7 @@ static int expect_nul_vector(const char *buf, ssize_t len, const char *const exp
     return 0;
 }
 
-static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+static void clear_pending_signal(struct task *task, int32_t sig) {
     int32_t dequeued = 0;
 
     if (!task || !task->signal || sig <= 0 || sig > KERNEL_SIG_NUM) {
@@ -202,7 +204,7 @@ static void clear_pending_signal(struct task_struct *task, int32_t sig) {
     task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
-static int find_auxv_value(const struct task_struct *task, uint64_t type, uint64_t *out_value) {
+static int find_auxv_value(const struct task *task, uint64_t type, uint64_t *out_value) {
     if (!task || !task->mm || !out_value) {
         errno = EINVAL;
         return -1;
@@ -219,7 +221,7 @@ static int find_auxv_value(const struct task_struct *task, uint64_t type, uint64
     return -1;
 }
 
-static int expect_stack_addr(const struct task_struct *task, uint64_t addr) {
+static int expect_stack_addr(const struct task *task, uint64_t addr) {
     if (!task || !task->mm) {
         errno = EINVAL;
         return -1;
@@ -232,7 +234,7 @@ static int expect_stack_addr(const struct task_struct *task, uint64_t addr) {
     return 0;
 }
 
-static int stack_image_offset(const struct task_struct *task, uint64_t addr, size_t size, size_t *out_offset) {
+static int stack_image_offset(const struct task *task, uint64_t addr, size_t size, size_t *out_offset) {
     if (!task || !task->mm || !task->mm->initial_stack_image || !out_offset) {
         errno = EINVAL;
         return -1;
@@ -247,7 +249,7 @@ static int stack_image_offset(const struct task_struct *task, uint64_t addr, siz
     return 0;
 }
 
-static int stack_image_read_u64(const struct task_struct *task, uint64_t *cursor, uint64_t *out_value) {
+static int stack_image_read_u64(const struct task *task, uint64_t *cursor, uint64_t *out_value) {
     size_t offset;
 
     if (!cursor || !out_value) {
@@ -262,7 +264,7 @@ static int stack_image_read_u64(const struct task_struct *task, uint64_t *cursor
     return 0;
 }
 
-static int expect_stack_string(const struct task_struct *task, uint64_t addr, const char *expected) {
+static int expect_stack_string(const struct task *task, uint64_t addr, const char *expected) {
     size_t offset;
     size_t len;
 
@@ -281,7 +283,7 @@ static int expect_stack_string(const struct task_struct *task, uint64_t addr, co
     return 0;
 }
 
-static int expect_auxv_value(const struct task_struct *task, uint64_t type, uint64_t expected) {
+static int expect_auxv_value(const struct task *task, uint64_t type, uint64_t expected) {
     uint64_t value = 0;
 
     if (find_auxv_value(task, type, &value) != 0) {
@@ -294,7 +296,7 @@ static int expect_auxv_value(const struct task_struct *task, uint64_t type, uint
     return 0;
 }
 
-static int expect_common_elf_initial_stack(const struct task_struct *task,
+static int expect_common_elf_initial_stack(const struct task *task,
                                            const Elf64_Ehdr *ehdr,
                                            int expected_argc,
                                            int expected_envc) {
@@ -350,7 +352,7 @@ static int expect_common_elf_initial_stack(const struct task_struct *task,
     return 0;
 }
 
-static int expect_materialized_stack_vector(const struct task_struct *task,
+static int expect_materialized_stack_vector(const struct task *task,
                                             const char *const expected_argv[],
                                             const char *const expected_envp[]) {
     uint64_t cursor;
@@ -417,7 +419,7 @@ static int expect_materialized_stack_vector(const struct task_struct *task,
     return 0;
 }
 
-static int expect_materialized_auxv_strings(const struct task_struct *task) {
+static int expect_materialized_auxv_strings(const struct task *task) {
     static const unsigned char expected_random[16] = {
         0x49, 0x58, 0x4c, 0x41, 0x4e, 0x44, 0x5f, 0x41,
         0x55, 0x58, 0x56, 0x5f, 0x52, 0x4e, 0x44, 0x00,
@@ -465,7 +467,7 @@ static int expect_segment_image(const void *segment_image,
     return 0;
 }
 
-static int expect_task_vm_bytes(struct task_struct *task, uint64_t addr, const void *expected, size_t len) {
+static int expect_task_vm_bytes(struct task *task, uint64_t addr, const void *expected, size_t len) {
     unsigned char buf[128];
     long nread;
 
@@ -483,7 +485,7 @@ static int expect_task_vm_bytes(struct task_struct *task, uint64_t addr, const v
     return 0;
 }
 
-static int expect_task_vm_zeroes(struct task_struct *task, uint64_t addr, size_t len) {
+static int expect_task_vm_zeroes(struct task *task, uint64_t addr, size_t len) {
     unsigned char buf[32];
     long nread;
 
@@ -507,7 +509,7 @@ static int expect_task_vm_zeroes(struct task_struct *task, uint64_t addr, size_t
     return 0;
 }
 
-static int expect_task_vm_write(struct task_struct *task, uint64_t addr, const void *bytes, size_t len) {
+static int expect_task_vm_write(struct task *task, uint64_t addr, const void *bytes, size_t len) {
     long nwritten;
 
     if (!task || !bytes) {
@@ -527,7 +529,7 @@ static uint64_t make_r_info(uint64_t symbol, uint64_t type) {
     return (symbol << 32) | (type & 0xffffffffULL);
 }
 
-static int expect_vma(const struct task_struct *task, uint32_t index, uint64_t start, uint64_t size,
+static int expect_vma(const struct task *task, uint32_t index, uint64_t start, uint64_t size,
                       uint32_t flags, enum task_vma_kind kind, const void *image) {
     if (!task || !task->mm || index >= task->mm->vma_count || size == 0) {
         errno = EINVAL;
@@ -897,7 +899,7 @@ static void build_exec_elf64_with_interp_and_dynamic_entries(unsigned char *imag
     }
 }
 
-static int verify_state_unchanged(struct task_struct *task,
+static int verify_state_unchanged(struct task *task,
                                   const char *expected_exe,
                                   const char *expected_comm,
                                   bool expected_execed,
@@ -924,7 +926,7 @@ static int verify_state_unchanged(struct task_struct *task,
 }
 
 int exec_syscall_contract_rejects_null_path_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -948,7 +950,7 @@ int exec_syscall_contract_rejects_null_path_without_transition(void) {
 }
 
 int exec_syscall_contract_rejects_empty_path_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -972,7 +974,7 @@ int exec_syscall_contract_rejects_empty_path_without_transition(void) {
 }
 
 int exec_syscall_contract_missing_path_preserves_state_and_cloexec_fds(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     int cloexec_fd = -1;
     int keep_fd = -1;
     int result = -1;
@@ -1018,7 +1020,7 @@ out:
 }
 
 int exec_syscall_contract_native_success_applies_transition_and_returns_entry_status(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"custom-shell", "arg1", NULL};
     char *envp[] = {"A=B", NULL};
     int cloexec_fd = -1;
@@ -1211,7 +1213,7 @@ int exec_syscall_contract_native_execve_setid_marks_secure_and_not_dumpable(void
     const char *path = "/tmp/exec-native-secure-setid";
     int status;
     int result = -1;
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -1349,7 +1351,7 @@ int exec_syscall_contract_native_execve_file_caps_mark_secure_and_clear_ambient(
     uint64_t cap_mask = 1ULL << CAP_NET_BIND_SERVICE;
     int status;
     int result = -1;
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -1665,7 +1667,7 @@ int exec_syscall_contract_native_execve_nosuid_mount_blocks_setid_and_file_caps(
 
     cred_reset_to_defaults();
     native_registry_clear();
-    umount(target_dir);
+    umount_impl(target_dir);
     unlink_impl(source_path);
     rmdir_impl(source_dir);
     rmdir_impl(target_dir);
@@ -1709,7 +1711,7 @@ out:
         native_registry_clear();
         cred_reset_to_defaults();
         if (mounted) {
-            umount(target_dir);
+            umount_impl(target_dir);
         }
         unlink_impl(source_path);
         rmdir_impl(source_dir);
@@ -1720,7 +1722,7 @@ out:
 }
 
 int exec_syscall_contract_oversized_argv_returns_e2big_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *too_many[TASK_MAX_ARGS + 1];
     int result = -1;
 
@@ -1758,7 +1760,7 @@ out:
 }
 
 int exec_syscall_contract_script_uses_virtual_path_and_native_interpreter(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"script-name", "arg1", NULL};
     char *envp[] = {"KEY=VALUE", NULL};
     int status;
@@ -1871,7 +1873,7 @@ out:
 }
 
 int exec_syscall_contract_script_symlink_records_resolved_target(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"script-link", "arg1", NULL};
     char *envp[] = {"LINK=1", NULL};
     int status;
@@ -1934,7 +1936,7 @@ out:
 }
 
 int exec_syscall_contract_nested_script_interpreter_chains_to_native(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"outer-name", "arg1", NULL};
     char *envp[] = {"NESTED=1", NULL};
     const char *const expected_cmdline[] = {
@@ -2024,7 +2026,7 @@ out:
 }
 
 int exec_syscall_contract_recursive_script_loop_returns_eloop_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"loop-name", NULL};
     int result = -1;
 
@@ -2075,7 +2077,7 @@ out:
 }
 
 int exec_syscall_contract_missing_script_interpreter_preserves_state(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"script-name", NULL};
     int result = -1;
 
@@ -2115,7 +2117,7 @@ out:
 }
 
 int exec_syscall_contract_fexecve_uses_fd_path(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"fd-native", NULL};
     char *envp[] = {"FD=1", NULL};
     int fd = -1;
@@ -2141,7 +2143,7 @@ int exec_syscall_contract_fexecve_uses_fd_path(void) {
         goto out;
     }
 
-    status = fexecve(fd, argv, envp);
+    status = fexecve_impl(fd, argv, envp);
     if (status != 37) {
         errno = EPROTO;
         goto out;
@@ -2167,7 +2169,7 @@ out:
 
 int exec_syscall_contract_fexecve_rejects_invalid_fd(void) {
     errno = 0;
-    if (fexecve(240, NULL, NULL) != -1) {
+    if (fexecve_impl(240, NULL, NULL) != -1) {
         errno = EPROTO;
         return -1;
     }
@@ -2175,7 +2177,7 @@ int exec_syscall_contract_fexecve_rejects_invalid_fd(void) {
 }
 
 int exec_syscall_contract_execveat_uses_dirfd_relative_path(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"execveat-rel", NULL};
     char *envp[] = {"EXECVEAT=REL", NULL};
     const char dir[] = "/tmp/execveat-dir";
@@ -2234,7 +2236,7 @@ out:
 }
 
 int exec_syscall_contract_execveat_empty_path_uses_fd(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"execveat-fd", NULL};
     char *envp[] = {"EXECVEAT=FD", NULL};
     const char path[] = "/tmp/execveat-fd";
@@ -2288,7 +2290,7 @@ out:
 }
 
 int exec_syscall_contract_execveat_nofollow_rejects_symlink(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"execveat-link", NULL};
     const char target[] = "/tmp/execveat-target";
     const char linkpath[] = "/tmp/execveat-link";
@@ -2328,7 +2330,7 @@ out:
 }
 
 int exec_syscall_contract_elf64_aarch64_exec_loads_virtual_image(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"elf-prog", "arg1", NULL};
     char *envp[] = {"ELF=1", NULL};
     const char *const expected_cmdline[] = {"elf-prog", "arg1", NULL};
@@ -2403,7 +2405,7 @@ out:
 }
 
 int exec_syscall_contract_elf_program_headers_create_virtual_segments(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     Elf64_Phdr *load;
@@ -2468,7 +2470,7 @@ out:
 }
 
 int exec_syscall_contract_elf_interp_loads_virtual_loader_image(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-elf-loader";
     unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
     unsigned char loader[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
@@ -2537,7 +2539,7 @@ out:
 }
 
 int exec_syscall_contract_elf_static_builds_initial_stack_and_auxv(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"elf-static", "one", NULL};
     char *envp[] = {"A=B", NULL};
     const char *const expected_argv[] = {"elf-static", "one", NULL};
@@ -2586,7 +2588,7 @@ out:
 }
 
 int exec_syscall_contract_elf_dynamic_auxv_points_to_loader_base(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-elf-aux-loader";
     char *argv[] = {"elf-dynamic", NULL};
     const char *const expected_argv[] = {"elf-dynamic", NULL};
@@ -2638,7 +2640,7 @@ out:
 }
 
 int exec_syscall_contract_elf_auxv_records_virtual_credentials(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const struct cred *cred;
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     int result = -1;
@@ -2677,7 +2679,7 @@ out:
 }
 
 int exec_syscall_contract_elf_setid_auxv_sets_at_secure_and_dumpable(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     int result = -1;
 
@@ -2723,7 +2725,7 @@ out:
 }
 
 int exec_syscall_contract_elf_virtual_memory_writes_writable_segment(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     Elf64_Phdr *load;
@@ -2760,7 +2762,7 @@ out:
 }
 
 int exec_syscall_contract_elf_virtual_memory_writes_initial_stack(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"elf-stack-write", NULL};
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     const char replacement[] = "stack-mutated";
@@ -2795,7 +2797,7 @@ out:
 }
 
 int exec_syscall_contract_elf_virtual_memory_fault_policy(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     Elf64_Phdr *load;
@@ -2858,7 +2860,7 @@ out:
 }
 
 int exec_syscall_contract_elf_vma_metadata_covers_exec_loader_and_stack(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-elf-vma-loader";
     unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
     unsigned char loader[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
@@ -2915,7 +2917,7 @@ out:
 }
 
 int exec_syscall_contract_elf_below_stack_guard_faults_with_sigsegv_maperr(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[4096];
     char byte = 'g';
     int result = -1;
@@ -2952,7 +2954,7 @@ out:
 }
 
 int exec_syscall_contract_elf_stack_grows_down_within_rlimit(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[4096];
     char byte = 's';
     uint64_t old_base;
@@ -3024,7 +3026,7 @@ out:
 }
 
 int exec_syscall_contract_elf_stack_growth_respects_rlimit(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[4096];
     char byte = 'l';
     uint64_t old_base;
@@ -3066,7 +3068,7 @@ out:
 }
 
 int exec_syscall_contract_elf_stack_growth_keeps_lower_guard_faulting(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[4096];
     char byte = 'g';
     uint64_t old_base;
@@ -3116,7 +3118,7 @@ out:
 }
 
 int exec_syscall_contract_elf_stack_growth_tracks_smaps_dirty_page(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[4096];
     char byte = 'd';
     char smaps[16384];
@@ -3177,7 +3179,7 @@ out:
 }
 
 int exec_syscall_contract_elf_dynamic_metadata_records_exec_and_loader(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-elf-dynamic-loader";
     unsigned char image[sizeof(Elf64_Ehdr) + (3 * sizeof(Elf64_Phdr)) + 128];
     unsigned char loader[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
@@ -3222,7 +3224,7 @@ out:
 }
 
 int exec_syscall_contract_elf_exec_handoff_exposes_entry_stack_and_memory_access(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-elf-handoff-loader";
     unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
     unsigned char loader[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
@@ -3277,7 +3279,7 @@ out:
 }
 
 int exec_syscall_contract_elf_vma_page_permissions_are_page_granular(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 128];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     Elf64_Phdr *load;
@@ -3355,7 +3357,7 @@ out:
 }
 
 int exec_syscall_contract_elf_dynamic_relocation_metadata_is_discovered(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-elf-reloc-loader";
     unsigned char image[sizeof(Elf64_Ehdr) + (3 * sizeof(Elf64_Phdr)) + 384];
     unsigned char loader[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 384];
@@ -3448,7 +3450,7 @@ out:
 }
 
 int exec_syscall_contract_aarch64_exec_context_uses_exec_handoff(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-elf-aarch64-context-loader";
     unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
     unsigned char loader[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
@@ -3505,7 +3507,7 @@ out:
 }
 
 int exec_syscall_contract_aarch64_relocations_apply_relative_globdat_and_jumpslot(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 768];
     Elf64_Dyn dyn[8];
     Elf64_Rela rela[3];
@@ -3600,7 +3602,7 @@ out:
 }
 
 int exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *addr;
     uint64_t vaddr;
     const unsigned char patch[] = {0xa1, 0xa2};
@@ -3662,7 +3664,7 @@ out:
 }
 
 int exec_syscall_contract_mmap_private_file_write_marks_private_dirty_and_preserves_file(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char *path = "/tmp/exec-mm-private-cow-file";
     unsigned char page[TASK_VMA_PAGE_SIZE];
     unsigned char file_bytes[4] = {0};
@@ -3732,7 +3734,7 @@ out:
 }
 
 int exec_syscall_contract_shared_file_truncate_faults_with_sigbus_bus_adrerr(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char *path = "/tmp/exec-mm-shared-truncate-file";
     unsigned char page[TASK_VMA_PAGE_SIZE];
     unsigned char byte = 0;
@@ -3784,7 +3786,7 @@ out:
 }
 
 int exec_syscall_contract_aarch64_exec_context_runs_nop_until_brk(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 64];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     Elf64_Phdr *load;
@@ -3828,7 +3830,7 @@ out:
 }
 
 int exec_syscall_contract_elf_missing_interp_returns_enoent_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-missing-loader";
     unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
     int result = -1;
@@ -3866,7 +3868,7 @@ out:
 }
 
 int exec_syscall_contract_elf_invalid_interp_returns_enoexec_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char interp_path[] = "/tmp/exec-invalid-loader";
     unsigned char image[sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr)) + 96];
     const char invalid_loader[] = "not an elf";
@@ -3906,7 +3908,7 @@ out:
 }
 
 int exec_syscall_contract_elf_dyn_image_is_accepted(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + 8];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     int result = -1;
@@ -3944,7 +3946,7 @@ out:
 }
 
 int exec_syscall_contract_elf_interp_without_nul_returns_enoexec_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 8];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     Elf64_Phdr *interp;
@@ -3991,7 +3993,7 @@ out:
 }
 
 int exec_syscall_contract_elf_too_many_load_segments_returns_enoexec_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + ((TASK_EXEC_MAX_LOAD_SEGMENTS + 1) * sizeof(Elf64_Phdr)) + 8];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     int result = -1;
@@ -4040,7 +4042,7 @@ out:
 }
 
 int exec_syscall_contract_elf_bad_load_segment_returns_enoexec_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char image[sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) + 8];
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
     Elf64_Phdr *load;
@@ -4088,7 +4090,7 @@ out:
 }
 
 int exec_syscall_contract_elf_wrong_machine_returns_enoexec_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     Elf64_Ehdr ehdr;
     int result = -1;
 
@@ -4125,7 +4127,7 @@ out:
 }
 
 int exec_syscall_contract_truncated_elf_returns_enoexec_without_transition(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     unsigned char magic[4] = {ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3};
     int result = -1;
 

@@ -1,7 +1,6 @@
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/mount.h>
-
 #include <linux/errno.h>
+#include <linux/fcntl.h>
+#include <linux/mount.h>
 #include <linux/string.h>
 
 #include "fdtable.h"
@@ -20,7 +19,7 @@ static int open_alloc_fd(void) {
 }
 
 static bool open_path_is_nodev_blocked(const char *resolved_path) {
-    return (vfs_mount_flags_for_path(resolved_path) & MS_NODEV) != 0;
+    return (vfs_mount_flags_for_path(resolved_path) & MNT_NODEV) != 0;
 }
 
 static synthetic_proc_file_t proc_self_file_for_class(proc_self_path_class_t proc_class) {
@@ -148,7 +147,7 @@ static int try_open_cgroupfs(const char *resolved_path, int flags, mode_t mode, 
     *out_fd = -1;
 
     if (vfs_apply_mounts_to_path(resolved_path, mounted_path, sizeof(mounted_path)) != 0) {
-        __builtin_memcpy(mounted_path, resolved_path, __builtin_strlen(resolved_path) + 1);
+        memcpy(mounted_path, resolved_path, strlen(resolved_path) + 1);
     }
 
     if (strcmp(mounted_path, "/sys/fs") == 0) {
@@ -445,14 +444,14 @@ static int open_resolved_path(const char *resolved_path, int flags, mode_t mode)
 
 int open_impl(const char *pathname, int flags, mode_t mode) {
     char resolved_path[MAX_PATH];
-    struct task_struct *task;
+    struct task *task;
     int ret;
 
     if (!pathname) {
         return -EFAULT;
     }
 
-    task = get_current();
+    task = task_current();
     ret = vfs_resolve_virtual_path_task_follow(pathname, resolved_path, sizeof(resolved_path),
                                                task ? task->fs : NULL, (flags & O_NOFOLLOW) == 0);
     if (ret != 0) {

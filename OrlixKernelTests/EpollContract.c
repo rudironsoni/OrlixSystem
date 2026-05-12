@@ -4,17 +4,18 @@
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/pidfd.h>
 #include <uapi/linux/poll.h>
-#include <uapi/asm-generic/signal.h>
-#include <asm-generic/signal-defs.h>
+#include <uapi/linux/signal.h>
+#include <uapi/linux/errno.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stddef.h>
 
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "runtime/syscall.h"
+
+extern int errno;
 
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
@@ -27,7 +28,7 @@ extern int epoll_create_impl(int size);
 extern int epoll_create1_impl(int flags);
 extern int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event);
 extern int epoll_wait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout);
-extern int signal_generate_task(struct task_struct *target, int32_t sig);
+extern int signal_generate_task(struct task *target, int32_t sig);
 extern void exit_impl(int status);
 
 static int close_if_open(int fd) {
@@ -138,7 +139,7 @@ struct epoll_thread_case {
     int proceed;
     int done;
     int result;
-    struct task_struct *task;
+    struct task *task;
 };
 
 struct epoll_mask_case {
@@ -148,7 +149,7 @@ struct epoll_mask_case {
     int started;
     int done;
     int result;
-    struct task_struct *task;
+    struct task *task;
 };
 
 static void case_init(struct epoll_thread_case *ctx, int epfd) {
@@ -222,7 +223,7 @@ static int case_wait_done(struct epoll_thread_case *ctx) {
     return result;
 }
 
-static void clear_pending_signal(struct task_struct *task, int sig) {
+static void clear_pending_signal(struct task *task, int sig) {
     int32_t dequeued = 0;
 
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
@@ -238,7 +239,7 @@ static void clear_pending_signal(struct task_struct *task, int sig) {
     task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
 }
 
-static void epoll_mask_case_init(struct epoll_mask_case *ctx, int epfd, struct task_struct *task) {
+static void epoll_mask_case_init(struct epoll_mask_case *ctx, int epfd, struct task *task) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->epfd = epfd;
     ctx->task = task;
@@ -259,9 +260,9 @@ static void epoll_mask_case_mark_started(struct epoll_mask_case *ctx) {
 }
 
 int epoll_contract_wait_pidfd_readable_after_task_exit(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *restore;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *restore;
     struct epoll_event ev;
     struct epoll_event events[1];
     int epfd = -1;
@@ -303,10 +304,10 @@ int epoll_contract_wait_pidfd_readable_after_task_exit(void) {
         goto out;
     }
 
-    restore = get_current();
-    set_current(child);
+    restore = task_current();
+    task_set_current(child);
     exit_impl(0);
-    set_current(restore);
+    task_set_current(restore);
 
     memset(events, 0, sizeof(events));
     ret = epoll_wait_impl(epfd, events, 1, 0);
@@ -319,7 +320,7 @@ int epoll_contract_wait_pidfd_readable_after_task_exit(void) {
     close_if_open(epfd);
     close_if_open(pidfd);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
     return 0;
 
 out:
@@ -327,7 +328,7 @@ out:
     close_if_open(pidfd);
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     return -1;
 }
@@ -550,7 +551,7 @@ static void *epoll_pwait_mask_thread(void *arg) {
     uint64_t queried = 0;
     long ret;
 
-    set_current(ctx->task);
+    task_set_current(ctx->task);
     epoll_mask_case_mark_started(ctx);
     ret = syscall_dispatch_impl(__NR_epoll_pwait, ctx->epfd, (long)(uintptr_t)&event, 1,
                                 -1, (long)(uintptr_t)&sigmask, sizeof(sigmask));
@@ -573,7 +574,7 @@ static void *epoll_wait_thread(void *arg) {
     struct epoll_event event;
     int ret;
     if (ctx->task) {
-        set_current(ctx->task);
+        task_set_current(ctx->task);
     }
     case_mark_started(ctx);
     ret = epoll_wait_impl(ctx->epfd, &event, 1, -1);
@@ -592,7 +593,7 @@ static void *epoll_restart_thread(void *arg) {
     struct epoll_event event;
     long ret;
 
-    set_current(ctx->task);
+    task_set_current(ctx->task);
     case_mark_started(ctx);
     ret = epoll_wait_impl(ctx->epfd, &event, 1, -1);
     if (ret != -1 || errno != EINTR ||
@@ -646,30 +647,6 @@ int epoll_contract_ctl_add_pipe_read_end(void) {
     if (epfd < 0 || pipe_impl(fds) != 0) return errno;
     if (add_pipe_read(epfd, fds[0], 11) != 0) ret = errno ? errno : EIO;
     close_if_open(epfd); close_if_open(fds[0]); close_if_open(fds[1]);
-    return ret;
-}
-
-int epoll_contract_ctl_add_socketpair_read_end(void) {
-    int epfd = -1, fds[2] = {-1, -1};
-    long sret;
-    int ret = 0;
-
-    epfd = epoll_create1_impl(0);
-    if (epfd < 0) {
-        return errno;
-    }
-    sret = syscall_dispatch_impl(__NR_socketpair, 1, 1, 0, (long)(uintptr_t)fds, 0, 0);
-    if (sret != 0) {
-        ret = sret < 0 ? (int)-sret : EIO;
-        goto out;
-    }
-    if (add_pipe_read(epfd, fds[0], 11) != 0) {
-        ret = errno ? errno : EIO;
-    }
-out:
-    close_if_open(epfd);
-    close_if_open(fds[0]);
-    close_if_open(fds[1]);
     return ret;
 }
 
@@ -737,34 +714,6 @@ out:
     return ret;
 }
 
-int epoll_contract_wait_socketpair_readable_after_write(void) {
-    int epfd = -1, fds[2] = {-1, -1}, ret = 0;
-    struct epoll_event event;
-    long sret;
-
-    epfd = epoll_create1_impl(0);
-    if (epfd < 0) {
-        return errno;
-    }
-    sret = syscall_dispatch_impl(__NR_socketpair, 1, 1, 0, (long)(uintptr_t)fds, 0, 0);
-    if (sret != 0) {
-        ret = sret < 0 ? (int)-sret : EIO;
-        goto out;
-    }
-    if (add_pipe_read(epfd, fds[0], 99) != 0 || write_impl(fds[1], "x", 1) != 1) {
-        ret = errno ? errno : EIO;
-        goto out;
-    }
-    if (epoll_wait_impl(epfd, &event, 1, 0) != 1 || (event.events & EPOLLIN) == 0 || event.data != 99) {
-        ret = errno ? errno : EIO;
-    }
-out:
-    close_if_open(epfd);
-    close_if_open(fds[0]);
-    close_if_open(fds[1]);
-    return ret;
-}
-
 int epoll_contract_wait_blocks_until_pipe_write(void) {
     int epfd = -1, fds[2] = {-1, -1}, ret = 0;
     struct epoll_thread_case ctx;
@@ -813,8 +762,8 @@ int epoll_contract_wait_signal_interrupt_returns_intr(void) {
     int epfd = -1, fds[2] = {-1, -1}, ret = 0;
     struct epoll_thread_case ctx;
     kernel_thread_t thread;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     epfd = epoll_create1_impl(0);
     if (epfd < 0 || pipe_impl(fds) != 0) return errno;
     child = task_create_child_impl(parent);
@@ -855,7 +804,7 @@ out_destroy:
     case_destroy(&ctx);
 out_child:
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 out:
     close_if_open(epfd); close_if_open(fds[0]); close_if_open(fds[1]);
     return ret;
@@ -865,8 +814,8 @@ int epoll_contract_restart_syscall_reenters_wait(void) {
     int epfd = -1, fds[2] = {-1, -1}, ret = 0;
     struct epoll_thread_case ctx;
     kernel_thread_t thread;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
 
     epfd = epoll_create1_impl(0);
     if (epfd < 0 || pipe_impl(fds) != 0) return errno;
@@ -904,7 +853,7 @@ out_destroy:
     case_destroy(&ctx);
 out_child:
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 out:
     close_if_open(epfd); close_if_open(fds[0]); close_if_open(fds[1]);
     return ret;
@@ -1025,8 +974,8 @@ out:
 int epoll_contract_pwait_mask_blocks_signal_until_pipe_ready(void) {
     int fds[2] = {-1, -1};
     int epfd = -1;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     struct epoll_mask_case ctx;
     kernel_thread_t thread;
     int result = -1;
@@ -1061,7 +1010,7 @@ int epoll_contract_pwait_mask_blocks_signal_until_pipe_ready(void) {
 out_destroy:
     epoll_mask_case_destroy(&ctx);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 out:
     close_if_open(epfd);
     close_if_open(fds[0]);

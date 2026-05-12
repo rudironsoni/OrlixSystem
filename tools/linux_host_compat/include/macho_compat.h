@@ -1,7 +1,7 @@
 #ifndef ORLIX_LINUX_HOST_COMPAT_MACHO_COMPAT_H
 #define ORLIX_LINUX_HOST_COMPAT_MACHO_COMPAT_H
 
-#if defined(__APPLE__) && defined(__MACH__) && (defined(__KERNEL__) || defined(ORLIX_LINT_KERNEL_TEST))
+#if defined(__APPLE__) && defined(__MACH__) && (defined(__KERNEL__) || defined(ORLIX_LINT_KERNEL_TEST) || defined(ORLIX_LINUX_HOST_COMPAT))
 
 /*
  * Xcode drives the OrlixKernel target through an Apple-clang Mach-O frontend.

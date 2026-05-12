@@ -1,17 +1,12 @@
 #include <asm/ioctls.h>
-#include <asm/socket.h>
 #include <asm/unistd.h>
-#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/fcntl.h>
-#include <uapi/linux/net.h>
 #include <uapi/linux/pidfd.h>
 #include <uapi/linux/poll.h>
-#include <uapi/linux/socket.h>
 #include <uapi/linux/time.h>
 #include <uapi/linux/eventfd.h>
-#define __ASSEMBLY__ 1
-#include <uapi/asm-generic/signal.h>
-#undef __ASSEMBLY__
+#include <uapi/linux/signal.h>
 #include <uapi/linux/timerfd.h>
 #include <linux/string.h>
 
@@ -31,15 +26,16 @@ extern int select_impl(int nfds,
                        struct __kernel_old_timeval *timeout);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
-extern int signal_generate_task(struct task_struct *target, int32_t sig);
+extern int signal_generate_task(struct task *target, int32_t sig);
 extern void exit_impl(int status);
 extern int errno;
+extern long socketpair_stream_syscall(int fds[2]);
 
 static int close_if_open(int fd) {
     return fd >= 0 ? close_impl(fd) : 0;
 }
 
-static void clear_pending_signal(struct task_struct *task, int sig) {
+static void clear_pending_signal(struct task *task, int sig) {
     int32_t dequeued = 0;
 
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
@@ -171,7 +167,7 @@ out:
 
 int readiness_contract_timerfd_relative_expiration_read_and_poll(void) {
     struct __kernel_itimerspec spec;
-    struct __kernel_itimerspec current;
+    struct __kernel_itimerspec current_spec;
     struct pollfd pfd;
     uint64_t expirations = 0;
     int fd = -1;
@@ -189,9 +185,9 @@ int readiness_contract_timerfd_relative_expiration_read_and_poll(void) {
         goto out;
     }
 
-    memset(&current, 0, sizeof(current));
-    ret = syscall_dispatch_impl(__NR_timerfd_gettime, fd, (long)(uintptr_t)&current, 0, 0, 0, 0);
-    if (ret != 0 || current.it_value.tv_sec != 0 || current.it_value.tv_nsec != 0) {
+    memset(&current_spec, 0, sizeof(current_spec));
+    ret = syscall_dispatch_impl(__NR_timerfd_gettime, fd, (long)(uintptr_t)&current_spec, 0, 0, 0, 0);
+    if (ret != 0 || current_spec.it_value.tv_sec != 0 || current_spec.it_value.tv_nsec != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
@@ -199,8 +195,8 @@ int readiness_contract_timerfd_relative_expiration_read_and_poll(void) {
     memset(&spec, 0, sizeof(spec));
     spec.it_value.tv_nsec = 1;
     ret = syscall_dispatch_impl(__NR_timerfd_settime, fd, 0, (long)(uintptr_t)&spec,
-                                (long)(uintptr_t)&current, 0, 0);
-    if (ret != 0 || current.it_value.tv_sec != 0 || current.it_value.tv_nsec != 0) {
+                                (long)(uintptr_t)&current_spec, 0, 0);
+    if (ret != 0 || current_spec.it_value.tv_sec != 0 || current_spec.it_value.tv_nsec != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
@@ -221,9 +217,9 @@ int readiness_contract_timerfd_relative_expiration_read_and_poll(void) {
         goto out;
     }
 
-    memset(&current, 0, sizeof(current));
-    ret = syscall_dispatch_impl(__NR_timerfd_gettime, fd, (long)(uintptr_t)&current, 0, 0, 0, 0);
-    if (ret != 0 || current.it_value.tv_sec != 0 || current.it_value.tv_nsec != 0) {
+    memset(&current_spec, 0, sizeof(current_spec));
+    ret = syscall_dispatch_impl(__NR_timerfd_gettime, fd, (long)(uintptr_t)&current_spec, 0, 0, 0, 0);
+    if (ret != 0 || current_spec.it_value.tv_sec != 0 || current_spec.it_value.tv_nsec != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
@@ -303,7 +299,7 @@ struct readiness_thread_case {
     int proceed;
     int done;
     int result;
-    struct task_struct *task;
+    struct task *task;
 };
 
 struct pselect_mask_case {
@@ -313,7 +309,7 @@ struct pselect_mask_case {
     int started;
     int done;
     int result;
-    struct task_struct *task;
+    struct task *task;
 };
 
 static void case_init(struct readiness_thread_case *ctx, int fd, int mode) {
@@ -388,7 +384,7 @@ static int case_wait_done(struct readiness_thread_case *ctx) {
     return result;
 }
 
-static void pselect_case_init(struct pselect_mask_case *ctx, int fd, struct task_struct *task) {
+static void pselect_case_init(struct pselect_mask_case *ctx, int fd, struct task *task) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->fd = fd;
     ctx->task = task;
@@ -446,7 +442,7 @@ static void *pselect_mask_thread(void *arg) {
     uint64_t queried = 0;
     long ret;
 
-    set_current(ctx->task);
+    task_set_current(ctx->task);
     fdset_zero(&readfds);
     fdset_set(ctx->fd, &readfds);
     pselect_case_mark_started(ctx);
@@ -471,7 +467,7 @@ static void *poll_thread(void *arg) {
     struct pollfd pfd = {.fd = ctx->fd, .events = POLLIN, .revents = 0};
     int ret;
     if (ctx->task) {
-        set_current(ctx->task);
+        task_set_current(ctx->task);
     }
     case_mark_started(ctx);
     ret = poll_impl(&pfd, 1, -1);
@@ -490,7 +486,7 @@ static void *select_thread(void *arg) {
     __kernel_fd_set readfds;
     int ret;
     if (ctx->task) {
-        set_current(ctx->task);
+        task_set_current(ctx->task);
     }
     fdset_zero(&readfds);
     fdset_set(ctx->fd, &readfds);
@@ -511,7 +507,7 @@ static void *select_restart_thread(void *arg) {
     __kernel_fd_set readfds;
     long ret;
 
-    set_current(ctx->task);
+    task_set_current(ctx->task);
     fdset_zero(&readfds);
     fdset_set(ctx->fd, &readfds);
     case_mark_started(ctx);
@@ -579,11 +575,11 @@ static int run_socketpair_wake_case(void *(*thread_main)(void *)) {
     int fds[2] = {-1, -1};
     struct readiness_thread_case ctx;
     kernel_thread_t thread;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     long ret = 0;
 
-    ret = syscall_dispatch_impl(__NR_socketpair, AF_UNIX, SOCK_STREAM, 0, (long)(uintptr_t)fds, 0, 0);
+    ret = socketpair_stream_syscall(fds);
     if (ret != 0) {
         return ret < 0 ? (int)-ret : EIO;
     }
@@ -610,7 +606,7 @@ static int run_socketpair_wake_case(void *(*thread_main)(void *)) {
 out_destroy:
     case_destroy(&ctx);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 out:
     close_if_open(fds[0]);
     close_if_open(fds[1]);
@@ -627,7 +623,7 @@ int readiness_contract_poll_socketpair_hup_after_peer_close(void) {
     long ret;
     int out = 0;
 
-    ret = syscall_dispatch_impl(__NR_socketpair, AF_UNIX, SOCK_STREAM, 0, (long)(uintptr_t)fds, 0, 0);
+    ret = socketpair_stream_syscall(fds);
     if (ret != 0) {
         return ret < 0 ? (int)-ret : EIO;
     }
@@ -669,8 +665,8 @@ int readiness_contract_poll_pipe_signal_interrupt_returns_intr(void) {
     int fds[2] = {-1, -1};
     struct readiness_thread_case ctx;
     kernel_thread_t thread;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int ret = 0;
     if (pipe_impl(fds) != 0) return errno;
     child = task_create_child_impl(parent);
@@ -705,7 +701,7 @@ int readiness_contract_poll_pipe_signal_interrupt_returns_intr(void) {
 out_destroy:
     case_destroy(&ctx);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 out:
     close_if_open(fds[0]);
     close_if_open(fds[1]);
@@ -842,8 +838,8 @@ int readiness_contract_select_signal_interrupt_returns_intr(void) {
     int fds[2] = {-1, -1};
     struct readiness_thread_case ctx;
     kernel_thread_t thread;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int ret = 0;
     if (pipe_impl(fds) != 0) return errno;
     child = task_create_child_impl(parent);
@@ -877,7 +873,7 @@ int readiness_contract_select_signal_interrupt_returns_intr(void) {
 out_destroy:
     case_destroy(&ctx);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 out:
     close_if_open(fds[0]);
     close_if_open(fds[1]);
@@ -888,8 +884,8 @@ int readiness_contract_select_restart_syscall_reenters_readiness_wait(void) {
     int fds[2] = {-1, -1};
     struct readiness_thread_case ctx;
     kernel_thread_t thread;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int ret = 0;
 
     if (pipe_impl(fds) != 0) return errno;
@@ -921,7 +917,7 @@ int readiness_contract_select_restart_syscall_reenters_readiness_wait(void) {
 out_destroy:
     case_destroy(&ctx);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 out:
     close_if_open(fds[0]);
     close_if_open(fds[1]);
@@ -965,8 +961,8 @@ out:
 
 int readiness_contract_pselect6_mask_blocks_signal_until_pipe_ready_and_restores(void) {
     int fds[2] = {-1, -1};
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     struct pselect_mask_case ctx;
     kernel_thread_t thread;
     int result = -1;
@@ -995,7 +991,7 @@ int readiness_contract_pselect6_mask_blocks_signal_until_pipe_ready_and_restores
 out_destroy:
     pselect_case_destroy(&ctx);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 out:
     close_if_open(fds[0]);
     close_if_open(fds[1]);
@@ -1074,9 +1070,9 @@ out:
 }
 
 int readiness_contract_poll_pidfd_readable_after_task_exit(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *restore;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *restore;
     struct pollfd pfd;
     struct __kernel_timespec timeout = {0, 0};
     int pidfd = -1;
@@ -1107,10 +1103,10 @@ int readiness_contract_poll_pidfd_readable_after_task_exit(void) {
         goto out;
     }
 
-    restore = get_current();
-    set_current(child);
+    restore = task_current();
+    task_set_current(child);
     exit_impl(0);
-    set_current(restore);
+    task_set_current(restore);
 
     memset(&pfd, 0, sizeof(pfd));
     pfd.fd = pidfd;
@@ -1124,14 +1120,14 @@ int readiness_contract_poll_pidfd_readable_after_task_exit(void) {
     clear_pending_signal(parent, SIGCHLD);
     close_if_open(pidfd);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
     return 0;
 
 out:
     close_if_open(pidfd);
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     return -1;
 }

@@ -1,169 +1,17 @@
 #include "syscall.h"
 
 #include <asm/unistd.h>
-#define sigaction syscall_sigaction_frame
-#define sigset_t syscall_sigset_frame
-#define stack_t syscall_sigaltstack_frame
-#include <asm/signal.h>
-#undef sigaction
-#undef sigset_t
-#undef stack_t
-#ifdef SIGHUP
-#undef SIGHUP
-#endif
-#ifdef SIGINT
-#undef SIGINT
-#endif
-#ifdef SIGQUIT
-#undef SIGQUIT
-#endif
-#ifdef SIGILL
-#undef SIGILL
-#endif
-#ifdef SIGTRAP
-#undef SIGTRAP
-#endif
-#ifdef SIGABRT
-#undef SIGABRT
-#endif
-#ifdef SIGIOT
-#undef SIGIOT
-#endif
-#ifdef SIGBUS
-#undef SIGBUS
-#endif
-#ifdef SIGFPE
-#undef SIGFPE
-#endif
-#ifdef SIGKILL
-#undef SIGKILL
-#endif
-#ifdef SIGUSR1
-#undef SIGUSR1
-#endif
-#ifdef SIGSEGV
-#undef SIGSEGV
-#endif
-#ifdef SIGUSR2
-#undef SIGUSR2
-#endif
-#ifdef SIGPIPE
-#undef SIGPIPE
-#endif
-#ifdef SIGALRM
-#undef SIGALRM
-#endif
-#ifdef SIGTERM
-#undef SIGTERM
-#endif
-#ifdef SIGCHLD
-#undef SIGCHLD
-#endif
-#ifdef SIGCONT
-#undef SIGCONT
-#endif
-#ifdef SIGSTOP
-#undef SIGSTOP
-#endif
-#ifdef SIGTSTP
-#undef SIGTSTP
-#endif
-#ifdef SIGTTIN
-#undef SIGTTIN
-#endif
-#ifdef SIGTTOU
-#undef SIGTTOU
-#endif
-#ifdef SIGURG
-#undef SIGURG
-#endif
-#ifdef SIGXCPU
-#undef SIGXCPU
-#endif
-#ifdef SIGXFSZ
-#undef SIGXFSZ
-#endif
-#ifdef SIGVTALRM
-#undef SIGVTALRM
-#endif
-#ifdef SIGPROF
-#undef SIGPROF
-#endif
-#ifdef SIGWINCH
-#undef SIGWINCH
-#endif
-#ifdef SIGIO
-#undef SIGIO
-#endif
-#ifdef SIGPOLL
-#undef SIGPOLL
-#endif
-#ifdef SIGPWR
-#undef SIGPWR
-#endif
-#ifdef SIGSYS
-#undef SIGSYS
-#endif
-#ifdef SIGUNUSED
-#undef SIGUNUSED
-#endif
-#ifdef SIG_BLOCK
-#undef SIG_BLOCK
-#endif
-#ifdef SIG_UNBLOCK
-#undef SIG_UNBLOCK
-#endif
-#ifdef SIG_SETMASK
-#undef SIG_SETMASK
-#endif
-#ifdef SIG_DFL
-#undef SIG_DFL
-#endif
-#ifdef SIG_IGN
-#undef SIG_IGN
-#endif
-#ifdef SIG_ERR
-#undef SIG_ERR
-#endif
-#ifdef SA_NOCLDSTOP
-#undef SA_NOCLDSTOP
-#endif
-#ifdef SA_NOCLDWAIT
-#undef SA_NOCLDWAIT
-#endif
-#ifdef SA_SIGINFO
-#undef SA_SIGINFO
-#endif
-#ifdef SA_ONSTACK
-#undef SA_ONSTACK
-#endif
-#ifdef SA_RESTART
-#undef SA_RESTART
-#endif
-#ifdef SA_NODEFER
-#undef SA_NODEFER
-#endif
-#ifdef SA_RESETHAND
-#undef SA_RESETHAND
-#endif
-#ifdef SA_NOMASK
-#undef SA_NOMASK
-#endif
-#ifdef SA_ONESHOT
-#undef SA_ONESHOT
-#endif
-#ifdef SA_RESTORER
-#undef SA_RESTORER
-#endif
 #include <linux/errno.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/futex.h>
 #include <uapi/linux/mount.h>
 #include <uapi/linux/openat2.h>
 #include <uapi/linux/sched.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/stat.h>
 #include <uapi/linux/time.h>
 #include <linux/types.h>
+#include <linux/string.h>
 
 #include "../fs/fdtable.h"
 #include "../fs/pipe.h"
@@ -278,8 +126,8 @@ extern int timerfd_settime_impl(int fd, int flags, const struct __kernel_itimers
 extern int timerfd_gettime_impl(int fd, struct __kernel_itimerspec *curr_value);
 extern int memfd_create_impl(const char *name, unsigned int flags);
 extern int pidfd_open_impl(int32_t pid, unsigned int flags);
-extern int pidfd_getfd_impl(struct task_struct *target, int targetfd, unsigned int flags);
-extern int task_pidfd_getfd_access_impl(struct task_struct *target);
+extern int pidfd_getfd_impl(struct task *target, int targetfd, unsigned int flags);
+extern int task_pidfd_getfd_access_impl(struct task *target);
 extern int mkdirat_impl(int dirfd, const char *pathname, uint32_t mode);
 extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
@@ -314,13 +162,6 @@ extern int removexattr_impl(const char *path, const char *name);
 extern int lremovexattr_impl(const char *path, const char *name);
 extern int fremovexattr_impl(int fd, const char *name);
 
-struct syscall_sigaction_frame {
-    __sighandler_t sa_handler;
-    unsigned long sa_flags;
-    __sigrestore_t sa_restorer;
-    syscall_sigset_frame sa_mask;
-};
-
 static long syscall_result(long ret);
 
 static int syscall_copy_sigset_to_mask(const uint64_t *sigset, size_t sigsetsize,
@@ -328,7 +169,7 @@ static int syscall_copy_sigset_to_mask(const uint64_t *sigset, size_t sigsetsize
     if (!mask || sigsetsize != sizeof(uint64_t)) {
         return -EINVAL;
     }
-    __builtin_memset(mask, 0, sizeof(*mask));
+    memset(mask, 0, sizeof(*mask));
     if (sigset) {
         mask->sig[0] = *sigset;
     }
@@ -346,7 +187,7 @@ static int syscall_copy_mask_to_sigset(const struct signal_mask_bits *mask, uint
 
 static long syscall_prlimit64(int32_t pid, int resource, const uint64_t *new_limit,
                               uint64_t *old_limit) {
-    struct task_struct *task;
+    struct task *task;
 
     if (pid != 0 && pid != getpid_impl()) {
         return -ESRCH;
@@ -354,7 +195,7 @@ static long syscall_prlimit64(int32_t pid, int resource, const uint64_t *new_lim
     if (resource < 0 || resource >= 16) {
         return -EINVAL;
     }
-    task = get_current();
+    task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -424,7 +265,7 @@ static long syscall_clock_nanosleep(__kernel_clockid_t clk_id, int flags,
 }
 
 static long syscall_tgkill(int32_t tgid, int32_t tid, int32_t sig) {
-    struct task_struct *target;
+    struct task *target;
     int result;
 
     if (tgid <= 0 || tid <= 0 || sig < 0 || sig > KERNEL_SIG_NUM) {
@@ -436,23 +277,23 @@ static long syscall_tgkill(int32_t tgid, int32_t tid, int32_t sig) {
         return -ESRCH;
     }
     if (target->tgid != tgid) {
-        free_task(target);
+        task_put(target);
         return -ESRCH;
     }
     if (sig == 0) {
-        free_task(target);
+        task_put(target);
         return 0;
     }
 
     result = signal_generate_task(target, sig);
-    free_task(target);
+    task_put(target);
     return result < 0 ? (long)result : 0;
 }
 
 static long syscall_pidfd_send_signal(int pidfd, int32_t sig, const void *info,
                                       unsigned int flags) {
     fd_entry_t *entry;
-    struct task_struct *target;
+    struct task *target;
     int result;
 
     if (flags != 0) {
@@ -478,13 +319,13 @@ static long syscall_pidfd_send_signal(int pidfd, int32_t sig, const void *info,
     }
 
     result = signal_send_process(target, sig);
-    free_task(target);
+    task_put(target);
     return result < 0 ? (long)result : 0;
 }
 
 static long syscall_pidfd_getfd(int pidfd, int targetfd, unsigned int flags) {
     fd_entry_t *entry;
-    struct task_struct *target;
+    struct task *target;
     int dupfd;
 
     if (flags != 0) {
@@ -508,19 +349,19 @@ static long syscall_pidfd_getfd(int pidfd, int targetfd, unsigned int flags) {
     {
         long err = task_pidfd_getfd_access_impl(target);
         if (err != 0) {
-        free_task(target);
+        task_put(target);
         return err < 0 ? err : -EPERM;
         }
     }
 
     dupfd = pidfd_getfd_impl(target, targetfd, flags);
-    free_task(target);
+    task_put(target);
     return syscall_result((long)dupfd);
 }
 
 static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) {
     int32_t child_pid;
-    struct task_struct *child;
+    struct task *child;
 
     if (((flags & CLONE_PARENT_SETTID) != 0 && !parent_tid) ||
         ((flags & CLONE_CHILD_SETTID) != 0 && !child_tid)) {
@@ -545,13 +386,13 @@ static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) 
     if ((flags & CLONE_CHILD_CLEARTID) != 0) {
         child->clear_child_tid = (uint64_t)(uintptr_t)child_tid;
     }
-    free_task(child);
+    task_put(child);
     return child_pid;
 }
 
 static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *linux_act,
                                          struct signal_action_slot *act) {
-    __builtin_memset(act, 0, sizeof(*act));
+    memset(act, 0, sizeof(*act));
     if (!linux_act) {
         return;
     }
@@ -563,7 +404,7 @@ static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *l
 
 static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
                                        struct syscall_sigaction_frame *linux_act) {
-    __builtin_memset(linux_act, 0, sizeof(*linux_act));
+    memset(linux_act, 0, sizeof(*linux_act));
     if (!act) {
         return;
     }
@@ -575,7 +416,7 @@ static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
 
 static void syscall_sigaltstack_from_linux(const syscall_sigaltstack_frame *linux_stack,
                                            struct signal_altstack *stack) {
-    __builtin_memset(stack, 0, sizeof(*stack));
+    memset(stack, 0, sizeof(*stack));
     if (!linux_stack) {
         return;
     }
@@ -586,7 +427,7 @@ static void syscall_sigaltstack_from_linux(const syscall_sigaltstack_frame *linu
 
 static void syscall_sigaltstack_to_linux(const struct signal_altstack *stack,
                                          syscall_sigaltstack_frame *linux_stack) {
-    __builtin_memset(linux_stack, 0, sizeof(*linux_stack));
+    memset(linux_stack, 0, sizeof(*linux_stack));
     if (!stack) {
         return;
     }
@@ -1061,7 +902,7 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_brk:
         return syscall_result((long)(uintptr_t)brk_impl((void *)(uintptr_t)arg0));
     case __NR_set_tid_address: {
-        struct task_struct *task = get_current();
+        struct task *task = task_current();
         if (!task) {
             return -ESRCH;
         }
@@ -1069,7 +910,7 @@ static long syscall_dispatch_inner_impl(long number,
         return (long)task->pid;
     }
     case __NR_gettid: {
-        struct task_struct *task = get_current();
+        struct task *task = task_current();
         return task ? (long)task->pid : -ESRCH;
     }
     case __NR_clone:
@@ -1160,7 +1001,7 @@ static long syscall_dispatch_inner_impl(long number,
         return 0;
     }
     case __NR_rt_sigreturn: {
-        struct task_struct *task = get_current();
+        struct task *task = task_current();
         if (!task || !task->mm) {
             return -ESRCH;
         }
@@ -1171,7 +1012,7 @@ static long syscall_dispatch_inner_impl(long number,
         return (long)task->mm->signal_frame_return_pc;
     }
     case __NR_restart_syscall: {
-        struct task_struct *task = get_current();
+        struct task *task = task_current();
         enum task_restart_kind kind;
         uint64_t arg0;
         uint64_t arg1;
@@ -1379,7 +1220,7 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_getcwd: {
         char *buf = (char *)(uintptr_t)arg0;
         size_t size = (size_t)arg1;
-        struct task_struct *task = get_current();
+        struct task *task = task_current();
         char virtual_path[MAX_PATH];
         int ret;
 
@@ -1396,11 +1237,11 @@ static long syscall_dispatch_inner_impl(long number,
         if (ret != 0) {
             return ret;
         }
-        if (__builtin_strlen(virtual_path) >= size) {
+        if (strlen(virtual_path) >= size) {
             return -ERANGE;
         }
-        __builtin_memcpy(buf, virtual_path, __builtin_strlen(virtual_path) + 1);
-        return (long)__builtin_strlen(virtual_path) + 1;
+        memcpy(buf, virtual_path, strlen(virtual_path) + 1);
+        return (long)strlen(virtual_path) + 1;
     }
     case __NR_chdir:
         return syscall_result((long)chdir_impl((const char *)(uintptr_t)arg0));

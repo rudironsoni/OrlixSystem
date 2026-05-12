@@ -16,11 +16,10 @@
 #ifndef KERNEL_TASK_H
 #define KERNEL_TASK_H
 
+#include <linux/limits.h>
 #include <linux/types.h>
 #include <linux/atomic.h>
 
-#include "../fs/fdtable.h"
-#include "../fs/vfs.h"
 #include "internal/kthread.h"
 #include "internal/mutex.h"
 
@@ -28,7 +27,7 @@
 extern "C" {
 #endif
 
-#define TASK_COMM_LEN 16
+#define TASK_COMM_CAPACITY 16
 #define TASK_MAX_ARGS 256
 #define TASK_MAX_TASKS 1024
 #define TASK_EXEC_MAX_LOAD_SEGMENTS 16
@@ -37,22 +36,29 @@ extern "C" {
 #define TASK_EXEC_MAX_DYNAMIC_NEEDED 16
 #define TASK_VMA_PAGE_SIZE 4096ULL
 
+#ifndef MAX_PATH
+#define MAX_PATH PATH_MAX
+#endif
+
 /* Forward declarations for private subsystem state */
-struct task_struct;
-struct signal_struct;
-struct tty_struct;
-struct mm_struct;
+struct task;
+struct fd_table;
+struct fs_context;
+struct signal_state;
+struct tty_state;
+struct memory_space;
 struct vm_private_page;
 struct vm_shared_mapping;
 struct exec_image;
 struct wait_queue_head;
 struct nsproxy;
-struct uts_namespace;
+struct uts_state;
 struct cgroup;
-struct seccomp;
+struct seccomp_policy;
 struct cred;
 struct task_rlimit;
 struct clone_args;
+struct address_space;
 
 enum task_vma_kind {
     TASK_VMA_EXEC = 1,
@@ -106,18 +112,18 @@ struct task_exec_handoff {
     uint64_t initial_stack_pointer;
     uint64_t aarch64_pc;
     uint64_t aarch64_sp;
-    long (*read_memory)(struct task_struct *task, uint64_t addr, void *buf, size_t count);
-    long (*write_memory)(struct task_struct *task, uint64_t addr, const void *buf, size_t count);
+    long (*read_memory)(struct task *task, uint64_t addr, void *buf, size_t count);
+    long (*write_memory)(struct task *task, uint64_t addr, const void *buf, size_t count);
 };
 
 /* Task lifecycle states - virtual kernel internal */
-enum task_state {
-TASK_RUNNING = 0,
-TASK_INTERRUPTIBLE = 1,
-TASK_UNINTERRUPTIBLE = 2,
-TASK_STOPPED = 4,
-TASK_ZOMBIE = 8,
-TASK_DEAD = 16,
+enum run_state {
+RUN_STATE_RUNNING = 0,
+RUN_STATE_INTERRUPTIBLE = 1,
+RUN_STATE_UNINTERRUPTIBLE = 2,
+RUN_STATE_STOPPED = 4,
+RUN_STATE_ZOMBIE = 8,
+RUN_STATE_DEAD = 16,
 };
 
 /* Resource limits - private internal representation
@@ -128,14 +134,14 @@ struct task_rlimit {
 };
 
 /* TTY structure - virtual kernel internal */
-struct tty_struct {
+struct tty_state {
     int index;
     int32_t foreground_pgrp;
     atomic_t refs;
 };
 
 /* MM structure - virtual kernel internal */
-struct mm_struct {
+struct memory_space {
     atomic_t refs;
     void *exec_image_base;
     size_t exec_image_size;
@@ -246,7 +252,7 @@ enum exec_image_type {
 };
 
 /* Exec image entry - virtual kernel internal */
-typedef int (*native_entry_t)(struct task_struct *task, int argc, char **argv, char **envp);
+typedef int (*native_entry_t)(struct task *task, int argc, char **argv, char **envp);
 
 struct exec_image {
     enum exec_image_type type;
@@ -275,7 +281,7 @@ struct exec_image {
 
 /* Task structure - virtual kernel's internal representation of a Linux task
  * This is PRIVATE internal state, NOT Linux UAPI. */
-struct task_struct {
+struct task {
     /* Virtual PID/TGID/PGID/SID namespace identity */
     int32_t pid;
     int32_t tgid;
@@ -303,7 +309,7 @@ struct task_struct {
 
     /* Host thread backing for this virtual task */
     kernel_thread_t thread;
-    char comm[TASK_COMM_LEN];
+    char comm[TASK_COMM_CAPACITY];
     char exe[MAX_PATH];
     int argc;
     char *argv[TASK_MAX_ARGS];
@@ -311,19 +317,19 @@ struct task_struct {
     char *envp[TASK_MAX_ARGS];
 
     /* Resource ownership - pointers to virtual subsystem state */
-    struct files_struct *files;
-    struct fs_struct *fs;
-    struct signal_struct *signal;
+    struct fd_table *files;
+    struct fs_context *fs;
+    struct signal_state *signal;
     struct cred *cred;
     struct cgroup *cgroup;
     struct cgroup *cgroup_ns_root;
     uint64_t cgroup_ns_id;
     uint64_t cgroup_ns_owner_user_ns_id;
-    struct seccomp *seccomp;
-    struct tty_struct *tty;
-    struct mm_struct *mm;
+    struct seccomp_policy *seccomp;
+    struct tty_state *tty;
+    struct memory_space *mm;
     struct exec_image *exec_image;
-    struct uts_namespace *uts_ns;
+    struct uts_state *uts_ns;
     uint64_t exec_secure;
     uint64_t exec_dumpable;
     int32_t ptracer_pid;
@@ -353,13 +359,13 @@ struct task_struct {
     uint64_t last_fault_addr;
 
     /* Virtual process hierarchy relationships */
-    struct task_struct *parent;
-    struct task_struct *children;
-    struct task_struct *next_sibling;
-    struct task_struct *hash_next;
+    struct task *parent;
+    struct task *children;
+    struct task *next_sibling;
+    struct task *hash_next;
 
     /* Vfork tracking - virtual kernel bookkeeping */
-    struct task_struct *vfork_parent;
+    struct task *vfork_parent;
 
     /* Virtual wait queue / sleep state */
     kernel_cond_t wait_cond;
@@ -382,59 +388,59 @@ struct task_struct {
 
 /* Task global table - virtual PID namespace */
 extern kernel_mutex_t task_table_lock;
-extern struct task_struct *task_table[TASK_MAX_TASKS];
+extern struct task *task_table[TASK_MAX_TASKS];
 
-/* The init_task (pid 1) - set up during kernel boot */
-extern struct task_struct *init_task;
+/* The task_init_process (pid 1) - set up during kernel boot */
+extern struct task *task_init_process;
 
 /* Task allocation - virtual kernel internal */
-struct task_struct *alloc_task(void);
-void free_task(struct task_struct *task);
+struct task *alloc_task(void);
+void task_put(struct task *task);
 
 /* Current task accessors - virtual kernel runtime */
-struct task_struct *get_current(void);
-void set_current(struct task_struct *task);
+struct task *task_current(void);
+void task_set_current(struct task *task);
 
 /* Virtual PID namespace management */
-int32_t alloc_pid(void);
+int32_t task_alloc_pid(void);
 int pid_reserve(int32_t pid);
-void free_pid(int32_t pid);
+void task_free_pid(int32_t pid);
 void pid_init(void);
 
 /* Virtual task table management */
 int task_init(void);
 void task_deinit(void);
-struct task_struct *task_lookup(int32_t pid);
+struct task *task_lookup(int32_t pid);
 int task_hash(int32_t pid);
-int task_reassign_pid_impl(struct task_struct *task, int32_t pid);
-struct task_struct *task_create_child_impl(struct task_struct *parent);
-struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent, uint64_t flags);
-void task_unlink_child_impl(struct task_struct *parent, struct task_struct *child);
-void task_mark_stopped_by_signal(struct task_struct *task, int32_t sig);
-void task_mark_continued_by_signal(struct task_struct *task);
-void task_mark_signaled_exit(struct task_struct *task, int32_t sig);
-void task_mark_exited(struct task_struct *task, int status);
-void task_notify_parent_state_change(struct task_struct *task);
-long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void *buf, size_t count);
-long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, const void *buf, size_t count);
-const struct task_vma *task_find_vma_impl(struct task_struct *task, uint64_t addr);
-struct task_vma *task_find_vma_mutable_impl(struct task_struct *task, uint64_t addr);
+int task_reassign_pid_impl(struct task *task, int32_t pid);
+struct task *task_create_child_impl(struct task *parent);
+struct task *task_create_child_with_flags_impl(struct task *parent, uint64_t flags);
+void task_unlink_child_impl(struct task *parent, struct task *child);
+void task_mark_stopped_by_signal(struct task *task, int32_t sig);
+void task_mark_continued_by_signal(struct task *task);
+void task_mark_signaled_exit(struct task *task, int32_t sig);
+void task_mark_exited(struct task *task, int status);
+void task_notify_parent_state_change(struct task *task);
+long task_read_virtual_memory_impl(struct task *task, uint64_t addr, void *buf, size_t count);
+long task_write_virtual_memory_impl(struct task *task, uint64_t addr, const void *buf, size_t count);
+const struct task_vma *task_find_vma_impl(struct task *task, uint64_t addr);
+struct task_vma *task_find_vma_mutable_impl(struct task *task, uint64_t addr);
 uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
-int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64_t size, uint32_t flags);
+int task_set_vma_page_flags_impl(struct task *task, uint64_t addr, uint64_t size, uint32_t flags);
 void task_rename_vma_backing_path_impl(const char *old_path, const char *new_path);
 void task_exchange_vma_backing_paths_impl(const char *left_path, const char *right_path);
-void task_note_memory_fault_impl(struct task_struct *task, uint64_t addr, int32_t code);
-void task_note_memory_signal_fault_impl(struct task_struct *task, int32_t signo, int32_t code, uint64_t addr);
-const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task);
-void task_restart_clear_impl(struct task_struct *task);
-int task_restart_record_impl(struct task_struct *task, enum task_restart_kind kind,
+void task_note_memory_fault_impl(struct task *task, uint64_t addr, int32_t code);
+void task_note_memory_signal_fault_impl(struct task *task, int32_t signo, int32_t code, uint64_t addr);
+const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task);
+void task_restart_clear_impl(struct task *task);
+int task_restart_record_impl(struct task *task, enum task_restart_kind kind,
                              uint64_t arg0, uint64_t arg1, uint64_t arg2,
                              uint64_t arg3, uint64_t arg4, uint64_t arg5);
-void task_clear_vmas_impl(struct mm_struct *mm);
-struct mm_struct *task_mm_get_impl(struct mm_struct *mm);
-struct mm_struct *task_mm_dup_impl(const struct mm_struct *mm);
-void task_mm_put_impl(struct mm_struct *mm);
-void task_mm_update_high_water_impl(struct mm_struct *mm);
+void task_clear_vmas_impl(struct memory_space *mm);
+struct memory_space *task_mm_get_impl(struct memory_space *mm);
+struct memory_space *task_mm_dup_impl(const struct memory_space *mm);
+void task_mm_put_impl(struct memory_space *mm);
+void task_mm_update_high_water_impl(struct memory_space *mm);
 void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping);
 void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping);
 void mm_private_page_put_impl(struct vm_private_page *page);

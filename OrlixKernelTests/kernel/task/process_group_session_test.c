@@ -1,5 +1,5 @@
 #include <asm/posix_types.h>
-#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/errno.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -14,7 +14,7 @@ extern int setpgid(__kernel_pid_t pid, __kernel_pid_t pgid);
 extern __kernel_pid_t getsid(__kernel_pid_t pid);
 extern __kernel_pid_t setsid(void);
 
-static struct task_struct *create_child_task(struct task_struct *parent) {
+static struct task *create_child_task(struct task *parent) {
     if (!parent) {
         errno = ESRCH;
         return NULL;
@@ -22,41 +22,41 @@ static struct task_struct *create_child_task(struct task_struct *parent) {
     return task_create_child_impl(parent);
 }
 
-static void destroy_child_task(struct task_struct *parent, struct task_struct *child) {
+static void destroy_child_task(struct task *parent, struct task *child) {
     if (!child) {
         return;
     }
     if (parent) {
         task_unlink_child_impl(parent, child);
     }
-    free_task(child);
+    task_put(child);
 }
 
 static void reset_process_group_session_test_kernel_state(void) {
-    struct task_struct *child;
+    struct task *child;
 
     start_kernel();
-    if (!kernel_is_booted() || !init_task) {
+    if (!kernel_is_booted() || !task_init_process) {
         return;
     }
 
-    set_current(init_task);
-    init_task->parent = NULL;
-    init_task->ppid = 0;
-    init_task->pgid = init_task->pid;
-    init_task->sid = init_task->pid;
-    atomic_set(&init_task->execed, 0);
+    task_set_current(task_init_process);
+    task_init_process->parent = NULL;
+    task_init_process->ppid = 0;
+    task_init_process->pgid = task_init_process->pid;
+    task_init_process->sid = task_init_process->pid;
+    atomic_set(&task_init_process->execed, 0);
 
-    while ((child = init_task->children) != NULL) {
-        task_unlink_child_impl(init_task, child);
+    while ((child = task_init_process->children) != NULL) {
+        task_unlink_child_impl(task_init_process, child);
         child->parent = NULL;
         child->ppid = 0;
-        free_task(child);
+        task_put(child);
     }
 }
 
 int process_group_session_contract_public_group_and_session_identity_matches_init_task(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -70,7 +70,7 @@ int process_group_session_contract_public_group_and_session_identity_matches_ini
 }
 
 int process_group_session_contract_public_getpgid_zero_matches_current_group(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -85,8 +85,8 @@ int process_group_session_contract_public_getpgid_zero_matches_current_group(voi
 }
 
 int process_group_session_contract_public_setpgid_moves_child_into_own_group(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int result = -1;
 
     child = create_child_task(parent);
@@ -112,8 +112,8 @@ out:
 }
 
 int process_group_session_contract_public_setpgid_rejects_execed_child(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int result = -1;
 
     child = create_child_task(parent);
@@ -136,9 +136,9 @@ out:
 }
 
 int process_group_session_contract_public_setsid_creates_new_session_for_non_leader(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved_current = parent;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved_current = parent;
     __kernel_pid_t sid;
     int result = -1;
 
@@ -151,9 +151,9 @@ int process_group_session_contract_public_setsid_creates_new_session_for_non_lea
         goto out;
     }
 
-    set_current(child);
+    task_set_current(child);
     sid = setsid();
-    set_current(saved_current);
+    task_set_current(saved_current);
     if (sid != (__kernel_pid_t)child->pid) {
         errno = EPROTO;
         goto out;
@@ -168,15 +168,15 @@ int process_group_session_contract_public_setsid_creates_new_session_for_non_lea
     result = 0;
 
 out:
-    set_current(saved_current);
+    task_set_current(saved_current);
     destroy_child_task(parent, child);
     return result;
 }
 
 int process_group_session_contract_public_setpgid_rejects_session_leader(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved_current = parent;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved_current = parent;
     int result = -1;
 
     child = create_child_task(parent);
@@ -184,12 +184,12 @@ int process_group_session_contract_public_setpgid_rejects_session_leader(void) {
         return -1;
     }
 
-    set_current(child);
+    task_set_current(child);
     if (setsid() != (__kernel_pid_t)child->pid) {
-        set_current(saved_current);
+        task_set_current(saved_current);
         goto out;
     }
-    set_current(saved_current);
+    task_set_current(saved_current);
 
     errno = 0;
     if (setpgid((__kernel_pid_t)child->pid, (__kernel_pid_t)parent->pgid) != -1 || errno != EPERM) {
@@ -200,7 +200,7 @@ int process_group_session_contract_public_setpgid_rejects_session_leader(void) {
     result = 0;
 
 out:
-    set_current(saved_current);
+    task_set_current(saved_current);
     destroy_child_task(parent, child);
     return result;
 }

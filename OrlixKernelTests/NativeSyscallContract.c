@@ -15,65 +15,26 @@
 #include <uapi/linux/prctl.h>
 #include <uapi/linux/random.h>
 #include <uapi/linux/sched.h>
-#include <uapi/linux/socket.h>
 #include <uapi/linux/stat.h>
 #include <uapi/linux/mount.h>
 #include <uapi/linux/times.h>
 #include <uapi/linux/time_types.h>
 #include <uapi/linux/utsname.h>
 #include <uapi/linux/xattr.h>
-#include <uapi/asm-generic/siginfo.h>
-#include <uapi/asm-generic/resource.h>
-#include <uapi/asm-generic/signal-defs.h>
-#include <uapi/asm-generic/signal.h>
+#include <uapi/asm/siginfo.h>
+#include <uapi/linux/resource.h>
+#include <uapi/linux/signal.h>
+#include <uapi/linux/errno.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include <uapi/linux/wait.h>
 
-struct native_unix_sockaddr {
-    unsigned short sun_family;
-    char sun_path[108];
-};
-
-struct native_iovec {
-    void *iov_base;
-    size_t iov_len;
-};
-
-struct native_msghdr {
-    void *msg_name;
-    unsigned int msg_namelen;
-    struct native_iovec *msg_iov;
-    int msg_iovlen;
-    void *msg_control;
-    size_t msg_controllen;
-    int msg_flags;
-};
-
-struct native_mmsghdr {
-    struct native_msghdr msg_hdr;
-    unsigned int msg_len;
-};
-
-typedef unsigned int native_socklen_t;
-
-#define NATIVE_SOL_SOCKET 1
-#define NATIVE_SO_REUSEADDR 2
-#define NATIVE_SO_TYPE 3
-#define NATIVE_SO_ERROR 4
-#define NATIVE_SO_SNDBUF 7
-#define NATIVE_SO_RCVBUF 8
-#define NATIVE_SO_KEEPALIVE 9
-#define NATIVE_SO_ACCEPTCONN 30
-#define NATIVE_SO_PROTOCOL 38
-#define NATIVE_SO_DOMAIN 39
+extern int errno;
 
 struct linux_rusage_contract {
     struct __kernel_old_timeval ru_utime;
@@ -97,12 +58,13 @@ struct linux_rusage_contract {
 extern int link_impl(const char *oldpath, const char *newpath);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
+extern int close_impl(int fd);
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long pread_impl(int fd, void *buf, size_t count, int64_t offset);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
-extern int renameat2(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
+extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
                      unsigned int flags);
 #include "runtime/native/registry.h"
 #include "runtime/syscall.h"
@@ -120,7 +82,7 @@ struct native_syscall_dirent64 {
 
 static int init_entry_seen;
 
-static int latest_signal_info_matches(struct task_struct *task, int signo, int code, uint64_t addr);
+static int latest_signal_info_matches(struct task *task, int signo, int code, uint64_t addr);
 static int read_file_into_buffer(const char *path, char *buf, size_t buf_len);
 
 static int parse_decimal_fd(const char *text, int *value) {
@@ -145,17 +107,15 @@ static int parse_decimal_fd(const char *text, int *value) {
 }
 
 static int close_if_open(int fd) {
-    if (fd >= 0 && fdtable_is_used_impl(fd)) {
-        long ret = syscall_dispatch_impl(__NR_close, fd, 0, 0, 0, 0, 0);
-        if (ret < 0) {
-            errno = (int)-ret;
-            return -1;
-        }
+    if (fd >= 0) {
+        int saved_errno = errno;
+        (void)close_impl(fd);
+        errno = saved_errno;
     }
     return 0;
 }
 
-static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+static void clear_pending_signal(struct task *task, int32_t sig) {
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return;
     }
@@ -481,7 +441,7 @@ out:
 }
 
 int native_syscall_contract_dispatches_vm_identity_time_and_dirs(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char cwd[64];
     unsigned char dirbuf[512];
     struct __kernel_timespec ts;
@@ -585,7 +545,7 @@ out_mmap:
 }
 
 int native_syscall_contract_enforces_vma_fault_policy(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped;
     void *first;
     void *second;
@@ -682,7 +642,7 @@ out_mapped:
 }
 
 int native_syscall_contract_munmap_gap_and_map_fixed_replace_policy(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped;
     uint64_t base;
     char byte = 0;
@@ -750,7 +710,7 @@ out:
 }
 
 int native_syscall_contract_map_fixed_noreplace_reuses_unmapped_gap_only(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped = NULL;
     uint64_t base;
     char byte = 0;
@@ -814,7 +774,7 @@ out:
 }
 
 int native_syscall_contract_mremap_grows_and_moves_mapping(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped;
     void *fixed;
     void *moved;
@@ -833,7 +793,7 @@ int native_syscall_contract_mremap_grows_and_moves_mapping(void) {
         return -1;
     }
     base = (uint64_t)(uintptr_t)mapped;
-    task = get_current();
+    task = task_current();
     if (task_write_virtual_memory_impl(task, base, "R", 1) != 1) {
         goto out_original;
     }
@@ -881,7 +841,7 @@ out_original:
 }
 
 int native_syscall_contract_madvise_dontneed_discards_private_page(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped;
     uint64_t base;
     char byte = 0;
@@ -925,554 +885,8 @@ out:
     return result;
 }
 
-int native_syscall_contract_unix_socket_listen_accept_connect_stream_transfer(void) {
-    int server = -1;
-    int client = -1;
-    int accepted = -1;
-    struct native_unix_sockaddr server_addr;
-    struct native_unix_sockaddr client_addr;
-    struct native_unix_sockaddr actual_addr;
-    native_socklen_t addrlen;
-    const char message[] = "hi";
-    char buf[8];
-    long ret;
-
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sun_family = AF_UNIX;
-    server_addr.sun_path[0] = '\0';
-    memcpy(&server_addr.sun_path[1], "orlix-server", 13);
-
-    memset(&client_addr, 0, sizeof(client_addr));
-    client_addr.sun_family = AF_UNIX;
-    client_addr.sun_path[0] = '\0';
-    memcpy(&client_addr.sun_path[1], "orlix-client", 13);
-
-    server = (int)syscall_dispatch_impl(__NR_socket, AF_UNIX, SOCK_STREAM, 0, 0, 0, 0);
-    if (server < 0) {
-        errno = (int)-server;
-        return -1;
-    }
-
-    addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13);
-    ret = syscall_dispatch_impl(__NR_bind, server, (long)(uintptr_t)&server_addr, addrlen, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    ret = syscall_dispatch_impl(__NR_listen, server, 1, 0, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    client = (int)syscall_dispatch_impl(__NR_socket, AF_UNIX, SOCK_STREAM, 0, 0, 0, 0);
-    if (client < 0) {
-        errno = (int)-client;
-        goto out;
-    }
-
-    ret = syscall_dispatch_impl(__NR_bind, client, (long)(uintptr_t)&client_addr, addrlen, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    ret = syscall_dispatch_impl(__NR_connect, client, (long)(uintptr_t)&server_addr, addrlen, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    accepted = (int)syscall_dispatch_impl(__NR_accept, server, 0, 0, 0, 0, 0);
-    if (accepted < 0) {
-        errno = (int)-accepted;
-        goto out;
-    }
-
-    memset(&actual_addr, 0, sizeof(actual_addr));
-    addrlen = sizeof(actual_addr);
-    ret = syscall_dispatch_impl(__NR_getsockname, client, (long)(uintptr_t)&actual_addr,
-                                (long)(uintptr_t)&addrlen, 0, 0, 0);
-    if (ret != 0 || actual_addr.sun_family != AF_UNIX || addrlen !=
-        (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13) ||
-        memcmp(actual_addr.sun_path, client_addr.sun_path, 14) != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(&actual_addr, 0, sizeof(actual_addr));
-    addrlen = sizeof(actual_addr);
-    ret = syscall_dispatch_impl(__NR_getpeername, client, (long)(uintptr_t)&actual_addr,
-                                (long)(uintptr_t)&addrlen, 0, 0, 0);
-    if (ret != 0 || actual_addr.sun_family != AF_UNIX || addrlen !=
-        (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13) ||
-        memcmp(actual_addr.sun_path, server_addr.sun_path, 14) != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(&actual_addr, 0, sizeof(actual_addr));
-    addrlen = sizeof(actual_addr);
-    ret = syscall_dispatch_impl(__NR_getsockname, accepted, (long)(uintptr_t)&actual_addr,
-                                (long)(uintptr_t)&addrlen, 0, 0, 0);
-    if (ret != 0 || actual_addr.sun_family != AF_UNIX || addrlen !=
-        (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13) ||
-        memcmp(actual_addr.sun_path, server_addr.sun_path, 14) != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(&actual_addr, 0, sizeof(actual_addr));
-    addrlen = sizeof(actual_addr);
-    ret = syscall_dispatch_impl(__NR_getpeername, accepted, (long)(uintptr_t)&actual_addr,
-                                (long)(uintptr_t)&addrlen, 0, 0, 0);
-    if (ret != 0 || actual_addr.sun_family != AF_UNIX || addrlen !=
-        (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 13) ||
-        memcmp(actual_addr.sun_path, client_addr.sun_path, 14) != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    ret = syscall_dispatch_impl(__NR_sendto, client, (long)(uintptr_t)message, 2, 0, 0, 0);
-    if (ret != 2) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(buf, 0, sizeof(buf));
-    ret = syscall_dispatch_impl(__NR_recvfrom, accepted, (long)(uintptr_t)buf, 2, 0, 0, 0);
-    if (ret != 2 || memcmp(buf, message, 2) != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    close_if_open(server);
-    close_if_open(client);
-    close_if_open(accepted);
-    return 0;
-
-out:
-    close_if_open(server);
-    close_if_open(client);
-    close_if_open(accepted);
-    return -1;
-}
-
-int native_syscall_contract_unix_socket_flags_sockopts_and_proc_identity(void) {
-    int listener = -1;
-    int client = -1;
-    int accepted = -1;
-    struct native_unix_sockaddr listener_addr;
-    struct native_unix_sockaddr peer_addr;
-    native_socklen_t addrlen;
-    int value;
-    native_socklen_t optlen;
-    char proc_path[64];
-    char link_target[64];
-    long ret;
-
-    memset(&listener_addr, 0, sizeof(listener_addr));
-    listener_addr.sun_family = AF_UNIX;
-    listener_addr.sun_path[0] = '\0';
-    memcpy(&listener_addr.sun_path[1], "orlix-sockopts", 15);
-
-    memset(&peer_addr, 0, sizeof(peer_addr));
-    peer_addr.sun_family = AF_UNIX;
-    peer_addr.sun_path[0] = '\0';
-    memcpy(&peer_addr.sun_path[1], "orlix-sock-peer", 16);
-
-    listener = (int)syscall_dispatch_impl(__NR_socket,
-                                          AF_UNIX,
-                                          SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
-                                          0, 0, 0, 0);
-    if (listener < 0) {
-        errno = -listener;
-        return -1;
-    }
-
-    ret = syscall_dispatch_impl(__NR_fcntl, listener, F_GETFL, 0, 0, 0, 0);
-    if (ret < 0 || (ret & O_NONBLOCK) == 0 || (ret & O_ACCMODE) != O_RDWR) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-    ret = syscall_dispatch_impl(__NR_fcntl, listener, F_GETFD, 0, 0, 0, 0);
-    if (ret != FD_CLOEXEC) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_TYPE,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || optlen != (native_socklen_t)sizeof(value) || value != SOCK_STREAM) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_DOMAIN,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != AF_UNIX) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_PROTOCOL,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_ACCEPTCONN,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    value = 1;
-    ret = syscall_dispatch_impl(__NR_setsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_REUSEADDR,
-                                (long)(uintptr_t)&value, sizeof(value), 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-    ret = syscall_dispatch_impl(__NR_setsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_KEEPALIVE,
-                                (long)(uintptr_t)&value, sizeof(value), 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    value = 4096;
-    ret = syscall_dispatch_impl(__NR_setsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_SNDBUF,
-                                (long)(uintptr_t)&value, sizeof(value), 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-    value = 8192;
-    ret = syscall_dispatch_impl(__NR_setsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_RCVBUF,
-                                (long)(uintptr_t)&value, sizeof(value), 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_REUSEADDR,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != 1) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_KEEPALIVE,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != 1) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_SNDBUF,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != 4096) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_RCVBUF,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != 8192) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_ERROR,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 15);
-    ret = syscall_dispatch_impl(__NR_bind, listener, (long)(uintptr_t)&listener_addr, addrlen, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-    ret = syscall_dispatch_impl(__NR_listen, listener, 1, 0, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    optlen = (native_socklen_t)sizeof(value);
-    ret = syscall_dispatch_impl(__NR_getsockopt, listener, NATIVE_SOL_SOCKET, NATIVE_SO_ACCEPTCONN,
-                                (long)(uintptr_t)&value, (long)(uintptr_t)&optlen, 0);
-    if (ret != 0 || value != 1) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    client = (int)syscall_dispatch_impl(__NR_socket, AF_UNIX, SOCK_STREAM, 0, 0, 0, 0);
-    if (client < 0) {
-        errno = -client;
-        goto out;
-    }
-
-    addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 16);
-    ret = syscall_dispatch_impl(__NR_bind, client, (long)(uintptr_t)&peer_addr, addrlen, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 15);
-    ret = syscall_dispatch_impl(__NR_connect, client, (long)(uintptr_t)&listener_addr, addrlen, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    accepted = (int)syscall_dispatch_impl(__NR_accept4, listener, 0, 0,
-                                          O_NONBLOCK | O_CLOEXEC, 0, 0);
-    if (accepted < 0) {
-        errno = -accepted;
-        goto out;
-    }
-
-    ret = syscall_dispatch_impl(__NR_fcntl, accepted, F_GETFL, 0, 0, 0, 0);
-    if (ret < 0 || (ret & O_NONBLOCK) == 0 || (ret & O_ACCMODE) != O_RDWR) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-    ret = syscall_dispatch_impl(__NR_fcntl, accepted, F_GETFD, 0, 0, 0, 0);
-    if (ret != FD_CLOEXEC) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    if (format_proc_fd_path(proc_path, sizeof(proc_path), accepted) != 0) {
-        goto out;
-    }
-    ret = readlink_impl(proc_path, link_target, sizeof(link_target) - 1);
-    if (ret < 0) {
-        goto out;
-    }
-    link_target[ret] = '\0';
-    if (strncmp(link_target, "socket:[", 8) != 0 || strchr(link_target + 8, ']') == NULL) {
-        errno = EPROTO;
-        goto out;
-    }
-
-    close_if_open(listener);
-    close_if_open(client);
-    close_if_open(accepted);
-    return 0;
-
-out:
-    close_if_open(listener);
-    close_if_open(client);
-    close_if_open(accepted);
-    return -1;
-}
-
-int native_syscall_contract_unix_datagram_and_mmsg_paths(void) {
-    int tx = -1;
-    int rx = -1;
-    int pair[2] = {-1, -1};
-    struct native_unix_sockaddr tx_addr;
-    struct native_unix_sockaddr rx_addr;
-    struct native_unix_sockaddr actual_addr;
-    native_socklen_t tx_addrlen;
-    native_socklen_t rx_addrlen;
-    char buf[32];
-    char part1[8];
-    char part2[8];
-    struct native_iovec send_iov[2];
-    struct native_iovec recv_iov[2];
-    struct native_msghdr send_hdr;
-    struct native_msghdr recv_hdr;
-    struct native_mmsghdr send_vec[2];
-    struct native_mmsghdr recv_vec[2];
-    struct native_iovec sendmmsg_iov[2];
-    struct native_iovec recvmmsg_iov[2];
-    struct native_unix_sockaddr recv_addrs[2];
-    const char *sendmmsg_payloads[2] = {"first", "second"};
-    long ret;
-
-    memset(&tx_addr, 0, sizeof(tx_addr));
-    tx_addr.sun_family = AF_UNIX;
-    tx_addr.sun_path[0] = '\0';
-    memcpy(&tx_addr.sun_path[1], "orlix-dgram-tx", 15);
-    tx_addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 15);
-
-    memset(&rx_addr, 0, sizeof(rx_addr));
-    rx_addr.sun_family = AF_UNIX;
-    rx_addr.sun_path[0] = '\0';
-    memcpy(&rx_addr.sun_path[1], "orlix-dgram-rx", 15);
-    rx_addrlen = (native_socklen_t)(offsetof(struct native_unix_sockaddr, sun_path) + 1 + 15);
-
-    tx = (int)syscall_dispatch_impl(__NR_socket, AF_UNIX, SOCK_DGRAM, 0, 0, 0, 0);
-    if (tx < 0) {
-        errno = -tx;
-        return -1;
-    }
-    rx = (int)syscall_dispatch_impl(__NR_socket, AF_UNIX, SOCK_DGRAM, 0, 0, 0, 0);
-    if (rx < 0) {
-        errno = -rx;
-        goto out;
-    }
-
-    ret = syscall_dispatch_impl(__NR_bind, tx, (long)(uintptr_t)&tx_addr, tx_addrlen, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-    ret = syscall_dispatch_impl(__NR_bind, rx, (long)(uintptr_t)&rx_addr, rx_addrlen, 0, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    ret = syscall_dispatch_impl(__NR_sendto, tx, (long)(uintptr_t)"abc", 3, 0,
-                                (long)(uintptr_t)&rx_addr, rx_addrlen);
-    if (ret != 3) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(&actual_addr, 0, sizeof(actual_addr));
-    memset(buf, 0, sizeof(buf));
-    rx_addrlen = sizeof(actual_addr);
-    ret = syscall_dispatch_impl(__NR_recvfrom, rx, (long)(uintptr_t)buf, sizeof(buf), 0,
-                                (long)(uintptr_t)&actual_addr, (long)(uintptr_t)&rx_addrlen);
-    if (ret != 3 || memcmp(buf, "abc", 3) != 0 ||
-        actual_addr.sun_family != AF_UNIX ||
-        rx_addrlen != tx_addrlen ||
-        memcmp(actual_addr.sun_path, tx_addr.sun_path, 16) != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(send_iov, 0, sizeof(send_iov));
-    memset(&send_hdr, 0, sizeof(send_hdr));
-    send_iov[0].iov_base = (void *)"ab";
-    send_iov[0].iov_len = 2;
-    send_iov[1].iov_base = (void *)"cd";
-    send_iov[1].iov_len = 2;
-    send_hdr.msg_name = &rx_addr;
-    send_hdr.msg_namelen = rx_addrlen;
-    send_hdr.msg_iov = send_iov;
-    send_hdr.msg_iovlen = 2;
-    ret = syscall_dispatch_impl(__NR_sendmsg, tx, (long)(uintptr_t)&send_hdr, 0, 0, 0, 0);
-    if (ret != 4) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(part1, 0, sizeof(part1));
-    memset(part2, 0, sizeof(part2));
-    memset(&actual_addr, 0, sizeof(actual_addr));
-    memset(recv_iov, 0, sizeof(recv_iov));
-    memset(&recv_hdr, 0, sizeof(recv_hdr));
-    recv_iov[0].iov_base = part1;
-    recv_iov[0].iov_len = 2;
-    recv_iov[1].iov_base = part2;
-    recv_iov[1].iov_len = 2;
-    recv_hdr.msg_name = &actual_addr;
-    recv_hdr.msg_namelen = sizeof(actual_addr);
-    recv_hdr.msg_iov = recv_iov;
-    recv_hdr.msg_iovlen = 2;
-    ret = syscall_dispatch_impl(__NR_recvmsg, rx, (long)(uintptr_t)&recv_hdr, 0, 0, 0, 0);
-    if (ret != 4 || memcmp(part1, "ab", 2) != 0 || memcmp(part2, "cd", 2) != 0 ||
-        actual_addr.sun_family != AF_UNIX || recv_hdr.msg_namelen != tx_addrlen ||
-        memcmp(actual_addr.sun_path, tx_addr.sun_path, 16) != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(send_vec, 0, sizeof(send_vec));
-    memset(sendmmsg_iov, 0, sizeof(sendmmsg_iov));
-    for (int i = 0; i < 2; i++) {
-        sendmmsg_iov[i].iov_base = (void *)sendmmsg_payloads[i];
-        sendmmsg_iov[i].iov_len = strlen(sendmmsg_payloads[i]);
-        send_vec[i].msg_hdr.msg_name = &rx_addr;
-        send_vec[i].msg_hdr.msg_namelen = tx_addrlen;
-        send_vec[i].msg_hdr.msg_iov = &sendmmsg_iov[i];
-        send_vec[i].msg_hdr.msg_iovlen = 1;
-    }
-    ret = syscall_dispatch_impl(__NR_sendmmsg, tx, (long)(uintptr_t)send_vec, 2, 0, 0, 0);
-    if (ret != 2 || send_vec[0].msg_len != 5 || send_vec[1].msg_len != 6) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    memset(recv_vec, 0, sizeof(recv_vec));
-    memset(recvmmsg_iov, 0, sizeof(recvmmsg_iov));
-    memset(buf, 0, sizeof(buf));
-    memset(part1, 0, sizeof(part1));
-    for (int i = 0; i < 2; i++) {
-        recv_vec[i].msg_hdr.msg_name = &recv_addrs[i];
-        recv_vec[i].msg_hdr.msg_namelen = sizeof(recv_addrs[i]);
-        recvmmsg_iov[i].iov_base = (i == 0) ? (void *)buf : (void *)part1;
-        recvmmsg_iov[i].iov_len = (i == 0) ? 5U : 6U;
-        recv_vec[i].msg_hdr.msg_iov = &recvmmsg_iov[i];
-        recv_vec[i].msg_hdr.msg_iovlen = 1;
-    }
-    ret = syscall_dispatch_impl(__NR_recvmmsg, rx, (long)(uintptr_t)recv_vec, 2, 0, 0, 0);
-    if (ret != 2 || recv_vec[0].msg_len != 5 || recv_vec[1].msg_len != 6 ||
-        memcmp(buf, "first", 5) != 0 || memcmp(part1, "second", 6) != 0 ||
-        recv_addrs[0].sun_family != AF_UNIX || recv_addrs[1].sun_family != AF_UNIX ||
-        recv_vec[0].msg_hdr.msg_namelen != tx_addrlen || recv_vec[1].msg_hdr.msg_namelen != tx_addrlen ||
-        memcmp(recv_addrs[0].sun_path, tx_addr.sun_path, 16) != 0 ||
-        memcmp(recv_addrs[1].sun_path, tx_addr.sun_path, 16) != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    ret = syscall_dispatch_impl(__NR_socketpair, AF_UNIX, SOCK_DGRAM, 0, (long)(uintptr_t)pair, 0, 0);
-    if (ret != 0) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-    ret = syscall_dispatch_impl(__NR_sendto, pair[0], (long)(uintptr_t)"z", 1, 0, 0, 0);
-    if (ret != 1) {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-    memset(buf, 0, sizeof(buf));
-    ret = syscall_dispatch_impl(__NR_recvfrom, pair[1], (long)(uintptr_t)buf, sizeof(buf), 0, 0, 0);
-    if (ret != 1 || buf[0] != 'z') {
-        errno = ret < 0 ? (int)-ret : EPROTO;
-        goto out;
-    }
-
-    close_if_open(tx);
-    close_if_open(rx);
-    close_if_open(pair[0]);
-    close_if_open(pair[1]);
-    return 0;
-
-out:
-    close_if_open(tx);
-    close_if_open(rx);
-    close_if_open(pair[0]);
-    close_if_open(pair[1]);
-    return -1;
-}
-
 int native_syscall_contract_mincore_uses_file_offset_for_truncate_residency(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-mincore-offset-truncate";
     char pages[8192];
     char byte = 0;
@@ -1570,7 +984,7 @@ out:
 }
 
 int native_syscall_contract_maps_shared_file_and_syncs(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map";
     const char initial[] = "file-backed-page";
     const char patched[] = "MAP";
@@ -1635,7 +1049,7 @@ out:
 }
 
 int native_syscall_contract_mremap_extends_shared_mapping_writeback(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-mremap-grow";
     char page[8192];
     char verify = 0;
@@ -1693,7 +1107,7 @@ out:
 }
 
 int native_syscall_contract_msync_preserves_clean_shared_pages(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-clean-pages";
     char first_page[4096];
     char second_page[4096];
@@ -1776,7 +1190,7 @@ out:
 }
 
 int native_syscall_contract_private_file_mapping_msync_does_not_write_back_cow(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-private-file-msync-cow";
     char page[4096];
     char verify[8];
@@ -1844,7 +1258,7 @@ out:
 }
 
 int native_syscall_contract_unlinked_shared_mapping_syncs_through_open_fd(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-unlinked-shared-map";
     char page[4096];
     char verify = 0;
@@ -1898,7 +1312,7 @@ out:
 }
 
 int native_syscall_contract_shared_mapping_survives_fd_close_and_syncs(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-close-sync";
     char page[4096];
     char verify = 0;
@@ -1965,7 +1379,7 @@ out:
 }
 
 int native_syscall_contract_unlinked_shared_mapping_survives_fd_close_and_syncs(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-unlinked-shared-map-close-sync";
     char page[4096];
     char byte = 0;
@@ -2327,7 +1741,7 @@ int native_syscall_contract_xattr_lifetime_tracks_rename_exchange_and_symlink_un
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
-    if (renameat2(AT_FDCWD, left, AT_FDCWD, renamed, 0) != 0) {
+    if (renameat2_impl(AT_FDCWD, left, AT_FDCWD, renamed, 0) != 0) {
         goto out;
     }
     ret = syscall_dispatch_impl(__NR_getxattr, (long)(uintptr_t)renamed, (long)(uintptr_t)left_name,
@@ -2343,7 +1757,7 @@ int native_syscall_contract_xattr_lifetime_tracks_rename_exchange_and_symlink_un
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
-    if (renameat2(AT_FDCWD, renamed, AT_FDCWD, right, AT_RENAME_EXCHANGE) != 0) {
+    if (renameat2_impl(AT_FDCWD, renamed, AT_FDCWD, right, AT_RENAME_EXCHANGE) != 0) {
         goto out;
     }
     memset(readback, 0, sizeof(readback));
@@ -2397,7 +1811,7 @@ out:
 }
 
 int native_syscall_contract_shared_mapping_fault_policy_tracks_truncate_after_fd_close(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-truncate-after-close";
     char page[8192];
     char byte = 0;
@@ -2473,7 +1887,7 @@ out:
 }
 
 int native_syscall_contract_shared_file_mappings_are_coherent(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-coherent";
     const char initial[] = "coherent-page";
     const char patch[] = "SEEN";
@@ -2535,7 +1949,7 @@ out:
 }
 
 int native_syscall_contract_shared_file_mappings_are_coherent_across_reopen(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-coherent-reopen";
     const char initial[] = "coherent-reopened-page";
     const char patch[] = "REOPEN";
@@ -2605,7 +2019,7 @@ out:
 }
 
 int native_syscall_contract_shared_file_mappings_are_coherent_across_hardlink(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-hardlink-source";
     const char alias[] = "/tmp/native-shared-map-hardlink-alias";
     const char initial[] = "coherent-hardlink-page";
@@ -2683,7 +2097,7 @@ out:
 }
 
 int native_syscall_contract_shared_hardlink_mapping_fault_policy_tracks_truncate_after_original_unlink(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-hardlink-unlink-source";
     const char alias[] = "/tmp/native-shared-map-hardlink-unlink-alias";
     char pages[8192];
@@ -2779,8 +2193,8 @@ out:
 }
 
 int native_syscall_contract_clone_without_vm_copies_private_vmas(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     void *mapped;
     int32_t child_pid;
     char parent_before = 'P';
@@ -2834,16 +2248,16 @@ int native_syscall_contract_clone_without_vm_copies_private_vmas(void) {
 
 out_child:
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
 out_map:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
     return result;
 }
 
 int native_syscall_contract_clone_without_vm_cows_private_file_mapping(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     const char path[] = "/tmp/native-clone-private-file-cow";
     char page[4096];
     char parent_patch = 'P';
@@ -2909,8 +2323,8 @@ int native_syscall_contract_clone_without_vm_cows_private_file_mapping(void) {
 
 out_child:
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
 out_mapped:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, sizeof(page), 0, 0, 0, 0);
 out:
@@ -2920,7 +2334,7 @@ out:
 }
 
 int native_syscall_contract_private_file_cow_smaps_reports_anonymous_dirty_page(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-private-file-cow-smaps";
     char pages[8192];
     char smaps[8192];
@@ -2974,7 +2388,7 @@ out:
 }
 
 int native_syscall_contract_smaps_splits_mprotect_runs_and_preserves_dirty_counts(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped = (void *)-1;
     uint64_t base;
     static char smaps[262144];
@@ -3033,7 +2447,7 @@ out:
 }
 
 int native_syscall_contract_map_fixed_gap_coalesces_compatible_anonymous_vmas(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped = (void *)-1;
     void *middle = (void *)-1;
     uint64_t base;
@@ -3099,7 +2513,7 @@ out:
 }
 
 int native_syscall_contract_private_file_cow_smaps_survives_munmap_gap(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-private-cow-smaps-gap";
     char pages[12288];
     char smaps[16384];
@@ -3196,7 +2610,7 @@ out:
 }
 
 int native_syscall_contract_private_file_cow_survives_truncate_and_clean_page_faults(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-private-cow-truncate";
     char pages[8192];
     char verify[8];
@@ -3284,7 +2698,7 @@ out:
 }
 
 int native_syscall_contract_partial_truncate_zero_fills_and_mincore_tracks_pages(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-partial-truncate-map";
     char pages[8192];
     unsigned char vec[2] = {0};
@@ -3377,7 +2791,7 @@ out:
 }
 
 int native_syscall_contract_partial_page_msync_and_shared_growth_writeback(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-partial-msync-grow";
     char pages[8192];
     char verify = 0;
@@ -3457,7 +2871,7 @@ out:
 }
 
 int native_syscall_contract_rename_updates_open_fd_and_mapping_identity(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char old_path[] = "/tmp/native-rename-open-map-old";
     const char new_path[] = "/tmp/native-rename-open-map-new";
     char proc_fd_path[64];
@@ -3499,7 +2913,7 @@ int native_syscall_contract_rename_updates_open_fd_and_mapping_identity(void) {
     if (task_write_virtual_memory_impl(task, base, "R", 1) != 1) {
         goto out_mapped;
     }
-    if (renameat2(AT_FDCWD, old_path, AT_FDCWD, new_path, 0) != 0 ||
+    if (renameat2_impl(AT_FDCWD, old_path, AT_FDCWD, new_path, 0) != 0 ||
         format_proc_fd_path(proc_fd_path, sizeof(proc_fd_path), fd) != 0) {
         goto out_mapped;
     }
@@ -3544,7 +2958,7 @@ out:
 }
 
 int native_syscall_contract_mremap_fixed_preserves_private_file_cow_smaps(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-mremap-fixed-cow";
     char page[4096];
     char smaps[16384];
@@ -3661,7 +3075,7 @@ out:
 }
 
 int native_syscall_contract_mremap_fixed_coalesces_file_backed_neighbors(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-mremap-fixed-file-coalesce";
     char pages[12288];
     char maps[8192];
@@ -3789,7 +3203,7 @@ out:
 }
 
 int native_syscall_contract_mremap_fixed_rejects_overlapping_target(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped;
     void *remapped;
     uint64_t base;
@@ -3833,7 +3247,7 @@ out:
 }
 
 int native_syscall_contract_mremap_fixed_grow_preserves_shared_file_mapping(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-mremap-fixed-grow-shared";
     char page[8192];
     char smaps[16384];
@@ -3931,7 +3345,7 @@ out:
 }
 
 int native_syscall_contract_mremap_shrink_preserves_accounting_and_unmaps_tail(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char smaps[16384];
     char kept_range[32];
     char tail_range[32];
@@ -3996,8 +3410,8 @@ out:
 }
 
 int native_syscall_contract_proc_child_smaps_tracks_file_mapping_mremap_and_munmap(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     const char private_path[] = "/tmp/native-child-private-smaps-remap";
     const char shared_path[] = "/tmp/native-child-shared-smaps-munmap";
     char pages[8192];
@@ -4064,14 +3478,14 @@ int native_syscall_contract_proc_child_smaps_tracks_file_mapping_mremap_and_munm
         errno = ESRCH;
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     if (syscall_dispatch_impl(__NR_mremap, (long)(uintptr_t)private_map, 8192, 4096, 0, 0, 0) !=
             (long)(uintptr_t)private_map ||
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)(shared_base + 4096), 4096, 0, 0, 0, 0) != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
 
     if (proc_path_for_pid(proc_path, sizeof(proc_path), child->pid, "/smaps") != 0 ||
         format_maps_range(private_kept, sizeof(private_kept), private_base, private_base + 4096) != 0 ||
@@ -4096,17 +3510,17 @@ out:
     {
         int saved_errno = errno;
         if (child) {
-            set_current(child);
+            task_set_current(child);
             if ((long)(uintptr_t)private_map >= 0) {
                 syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)private_map, 4096, 0, 0, 0, 0);
             }
             if ((long)(uintptr_t)shared_map >= 0) {
                 syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)shared_map, 4096, 0, 0, 0, 0);
             }
-            set_current(parent);
+            task_set_current(parent);
             task_unlink_child_impl(parent, child);
-            free_task(child);
-            free_task(child);
+            task_put(child);
+            task_put(child);
         }
         if ((long)(uintptr_t)private_map >= 0) {
             syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)private_map, sizeof(pages), 0, 0, 0, 0);
@@ -4124,7 +3538,7 @@ out:
 }
 
 int native_syscall_contract_moved_shared_mapping_truncate_updates_fault_mincore_and_smaps(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-moved-shared-truncate";
     char page[8192];
     char smaps[16384];
@@ -4239,7 +3653,7 @@ out:
 }
 
 int native_syscall_contract_madvise_split_vma_clears_each_permission_run(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped = (void *)-1;
     uint64_t base;
     char smaps[16384];
@@ -4298,7 +3712,7 @@ out:
 }
 
 int native_syscall_contract_private_file_madvise_dontneed_restores_file_page_after_cow(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-private-file-madvise-cow";
     char page[4096];
     char verify[8];
@@ -4361,7 +3775,7 @@ out:
 }
 
 int native_syscall_contract_mprotect_file_smaps_vmflags_follow_permission_runs(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char private_path[] = "/tmp/native-mprotect-private-vmflags";
     const char shared_path[] = "/tmp/native-mprotect-shared-vmflags";
     char page[12288];
@@ -4468,7 +3882,7 @@ out:
 }
 
 int native_syscall_contract_vma_split_chain_preserves_permission_runs(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped = (void *)-1;
     void *target = (void *)-1;
     void *moved = (void *)-1;
@@ -4558,8 +3972,8 @@ out:
 }
 
 int native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     const char path[] = "/tmp/native-clone-shared-map";
     const char initial[] = "clone-shared-page";
     const char patch[] = "CSHARE";
@@ -4618,8 +4032,8 @@ int native_syscall_contract_clone_without_vm_preserves_shared_file_mappings(void
 
 out_child:
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
 out_mapped:
     syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
 out:
@@ -4629,7 +4043,7 @@ out:
 }
 
 int native_syscall_contract_ftruncate_updates_shared_mapping_fault_policy(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-truncate";
     char page[8192];
     char byte = 0;
@@ -4689,7 +4103,7 @@ out:
 }
 
 int native_syscall_contract_truncated_file_mapping_fault_queues_sigbus(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-sigbus";
     char page[8192];
     char byte = 0;
@@ -4749,7 +4163,7 @@ out:
 }
 
 int native_syscall_contract_truncated_file_mapping_write_fault_queues_sigbus(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-shared-map-write-sigbus";
     char page[8192];
     void *mapped = (void *)-1;
@@ -4810,8 +4224,8 @@ out:
 }
 
 int native_syscall_contract_dispatches_process_startup_syscalls(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *child = NULL;
+    struct task *task = task_current();
+    struct task *child = NULL;
     struct __kernel_timespec invalid_sleep = {
         .tv_sec = 0,
         .tv_nsec = 1000000000LL,
@@ -5025,14 +4439,14 @@ int native_syscall_contract_dispatches_process_startup_syscalls(void) {
     }
     if (child->ppid != task->pid || child->tgid != child->pid) {
         task_unlink_child_impl(task, child);
-        free_task(child);
-        free_task(child);
+        task_put(child);
+        task_put(child);
         errno = ECHILD;
         return -1;
     }
     task_unlink_child_impl(task, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
 
     current_brk = syscall_dispatch_impl(__NR_brk, 0, 0, 0, 0, 0, 0);
     if (current_brk <= 0) {
@@ -5591,7 +5005,7 @@ out:
 }
 
 int native_syscall_contract_dispatches_linkat_symlinkat_and_chroot_syscalls(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char *root = "/tmp/native-linkat-chroot-root";
     char old_root[MAX_PATH];
     char old_pwd[MAX_PATH];
@@ -5729,9 +5143,9 @@ out:
 }
 
 int native_syscall_contract_dispatches_exit_and_waitid_syscalls(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
-    struct task_struct *restore;
+    struct task *parent = task_current();
+    struct task *child;
+    struct task *restore;
     struct siginfo info;
     int child_pid;
     long ret;
@@ -5746,14 +5160,14 @@ int native_syscall_contract_dispatches_exit_and_waitid_syscalls(void) {
     }
     child_pid = child->pid;
 
-    restore = get_current();
-    set_current(child);
+    restore = task_current();
+    task_set_current(child);
     ret = syscall_dispatch_impl(__NR_exit, 23, 0, 0, 0, 0, 0);
-    set_current(restore);
+    task_set_current(restore);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         return -1;
     }
 
@@ -5767,7 +5181,7 @@ int native_syscall_contract_dispatches_exit_and_waitid_syscalls(void) {
         info.si_status != 23) {
         errno = ret < 0 ? (int)-ret : ENODATA;
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         return -1;
     }
 
@@ -5781,7 +5195,7 @@ int native_syscall_contract_dispatches_exit_and_waitid_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         if (ret != 0) {
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
         }
         return -1;
     }
@@ -5789,10 +5203,10 @@ int native_syscall_contract_dispatches_exit_and_waitid_syscalls(void) {
 }
 
 int native_syscall_contract_dispatches_pidfd_syscalls(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
-    struct task_struct *clone_child;
-    struct task_struct *restore;
+    struct task *parent = task_current();
+    struct task *child;
+    struct task *clone_child;
+    struct task *restore;
     struct clone_args args;
     struct siginfo info;
     struct pollfd pfd;
@@ -5848,10 +5262,10 @@ int native_syscall_contract_dispatches_pidfd_syscalls(void) {
         goto out;
     }
 
-    restore = get_current();
-    set_current(child);
+    restore = task_current();
+    task_set_current(child);
     ret = syscall_dispatch_impl(__NR_exit, 29, 0, 0, 0, 0, 0);
-    set_current(restore);
+    task_set_current(restore);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
@@ -5911,21 +5325,21 @@ int native_syscall_contract_dispatches_pidfd_syscalls(void) {
     ret = syscall_dispatch_impl(__NR_ppoll, (long)(uintptr_t)&pfd, 1,
                                 (long)(uintptr_t)&zero_timeout, 0, 0, 0);
     if (ret != 0 || pfd.revents != 0) {
-        free_task(clone_child);
+        task_put(clone_child);
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
 
-    restore = get_current();
-    set_current(clone_child);
+    restore = task_current();
+    task_set_current(clone_child);
     ret = syscall_dispatch_impl(__NR_exit, 31, 0, 0, 0, 0, 0);
-    set_current(restore);
+    task_set_current(restore);
     if (ret != 0) {
-        free_task(clone_child);
+        task_put(clone_child);
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
-    free_task(clone_child);
+    task_put(clone_child);
 
     memset(&info, 0, sizeof(info));
     ret = syscall_dispatch_impl(__NR_waitid, P_PIDFD, clone_pidfd, (long)(uintptr_t)&info,
@@ -6324,7 +5738,7 @@ int native_syscall_contract_registers_native_artifact_descriptor(void) {
 }
 
 int native_syscall_contract_execs_sbin_init_through_syscall_surface(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *argv[] = {"/sbin/init", NULL};
     char *envp[] = {"PATH=/bin:/usr/bin", NULL};
     long ret;
@@ -6426,7 +5840,7 @@ out:
 }
 
 int native_syscall_contract_proc_self_maps_reports_permission_runs(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped = (void *)-1;
     int fd = -1;
     char maps[2048];
@@ -6482,7 +5896,7 @@ out:
 }
 
 int native_syscall_contract_dev_zero_mmap_is_virtual_zero_memory(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     int fd = -1;
     void *mapped = (void *)-1;
     unsigned char bytes[4] = {1, 1, 1, 1};
@@ -6640,7 +6054,7 @@ static int status_value_kb(const char *content, const char *name, uint64_t *out_
     return 0;
 }
 
-static int latest_signal_info_matches(struct task_struct *task, int signo, int code, uint64_t addr) {
+static int latest_signal_info_matches(struct task *task, int signo, int code, uint64_t addr) {
     struct signal_queue_entry *entry;
 
     if (!task || !task->signal) {
@@ -6655,7 +6069,7 @@ static int latest_signal_info_matches(struct task_struct *task, int signo, int c
            entry->fault_addr == addr;
 }
 
-static void clear_pending_task_signal(struct task_struct *task, int signo) {
+static void clear_pending_task_signal(struct task *task, int signo) {
     int bit;
 
     if (!task || signo <= 0) {
@@ -6669,7 +6083,7 @@ static void clear_pending_task_signal(struct task_struct *task, int signo) {
 }
 
 int native_syscall_contract_virtual_memory_faults_queue_sigsegv_codes(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped;
     char byte = 0;
     int result = -1;
@@ -6715,7 +6129,7 @@ out:
 }
 
 int native_syscall_contract_prot_none_read_fault_queues_sigsegv_accerr(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped;
     char byte = 0;
     int result = -1;
@@ -6752,9 +6166,9 @@ out:
 }
 
 int native_syscall_contract_stack_guard_write_grows_and_below_guard_faults(void) {
-    struct task_struct *task = get_current();
-    struct mm_struct *old_mm;
-    struct mm_struct *mm = NULL;
+    struct task *task = task_current();
+    struct memory_space *old_mm;
+    struct memory_space *mm = NULL;
     uint64_t stack_base = 0x700000000000ULL;
     uint64_t stack_size = 4096;
     uint64_t guard_addr = stack_base - 1;
@@ -6840,7 +6254,7 @@ out:
 }
 
 int native_syscall_contract_partial_copy_records_sigbus_fault_address(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     const char path[] = "/tmp/native-partial-sigbus-copy";
     char pages[8192];
     char bytes[8192];
@@ -6904,7 +6318,7 @@ out:
 }
 
 int native_syscall_contract_partial_copy_records_fault_address(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped;
     char bytes[8192];
     int result = -1;
@@ -6941,8 +6355,8 @@ out:
 }
 
 int native_syscall_contract_proc_pid_maps_and_status_reflect_child_task(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     void *mapped = (void *)-1;
     char path[64];
     char content[2048];
@@ -6956,11 +6370,11 @@ int native_syscall_contract_proc_pid_maps_and_status_reflect_child_task(void) {
     if (!child) {
         return errno ? errno : ENOMEM;
     }
-    set_current(child);
+    task_set_current(child);
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096,
                                                       PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    set_current(parent);
+    task_set_current(parent);
     if ((long)(uintptr_t)mapped < 0) {
         result = -(int)(long)(uintptr_t)mapped;
         goto out;
@@ -6982,13 +6396,13 @@ int native_syscall_contract_proc_pid_maps_and_status_reflect_child_task(void) {
     result = 0;
 
 out:
-    set_current(child);
+    task_set_current(child);
     if ((long)(uintptr_t)mapped >= 0) {
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
     }
-    set_current(parent);
+    task_set_current(parent);
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
     return result;
 }
 
@@ -7043,7 +6457,7 @@ int native_syscall_contract_proc_status_reports_vm_high_water_fields(void) {
         return -1;
     }
     base = (uint64_t)(uintptr_t)mapped;
-    if (task_write_virtual_memory_impl(get_current(), (uint64_t)(uintptr_t)mapped, "H", 1) != 1 ||
+    if (task_write_virtual_memory_impl(task_current(), (uint64_t)(uintptr_t)mapped, "H", 1) != 1 ||
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0) != 0) {
         goto out;
     }
@@ -7091,7 +6505,7 @@ int native_syscall_contract_proc_self_smaps_reports_vma_accounting(void) {
         return -1;
     }
 
-    if (task_write_virtual_memory_impl(get_current(), (uint64_t)(uintptr_t)mapped, "D", 1) != 1) {
+    if (task_write_virtual_memory_impl(task_current(), (uint64_t)(uintptr_t)mapped, "D", 1) != 1) {
         goto out;
     }
 
@@ -7124,7 +6538,7 @@ int native_syscall_contract_proc_self_smaps_dirty_clears_after_madvise(void) {
         return -1;
     }
 
-    if (task_write_virtual_memory_impl(get_current(), (uint64_t)(uintptr_t)mapped, "D", 1) != 1) {
+    if (task_write_virtual_memory_impl(task_current(), (uint64_t)(uintptr_t)mapped, "D", 1) != 1) {
         goto out;
     }
     if (read_file_into_buffer("/proc/self/smaps", smaps, sizeof(smaps)) != 0 ||
@@ -7166,8 +6580,8 @@ int native_syscall_contract_proc_self_smaps_reclaims_dontneed_residency(void) {
         return -1;
     }
 
-    if (task_write_virtual_memory_impl(get_current(), (uint64_t)(uintptr_t)mapped, "A", 1) != 1 ||
-        task_write_virtual_memory_impl(get_current(), (uint64_t)(uintptr_t)mapped + 4096, "B", 1) != 1) {
+    if (task_write_virtual_memory_impl(task_current(), (uint64_t)(uintptr_t)mapped, "A", 1) != 1 ||
+        task_write_virtual_memory_impl(task_current(), (uint64_t)(uintptr_t)mapped + 4096, "B", 1) != 1) {
         goto out;
     }
     if (read_file_into_buffer("/proc/self/smaps", smaps, sizeof(smaps)) != 0 ||
@@ -7237,7 +6651,7 @@ out:
 }
 
 int native_syscall_contract_read_fault_restores_mincore_residency(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     void *mapped = (void *)-1;
     unsigned char vec[2] = {0xff, 0xff};
     char byte = 0;

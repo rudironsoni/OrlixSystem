@@ -51,7 +51,7 @@ int wait_queue_unlock(struct wait_queue_head *queue) {
     return kernel_mutex_unlock(&queue->lock);
 }
 
-static void wait_queue_attach_task(struct wait_queue_head *queue, struct task_struct *task) {
+static void wait_queue_attach_task(struct wait_queue_head *queue, struct task *task) {
     if (!task) {
         return;
     }
@@ -61,7 +61,7 @@ static void wait_queue_attach_task(struct wait_queue_head *queue, struct task_st
     kernel_mutex_unlock(&task->wait_lock);
 }
 
-static void wait_queue_detach_task(struct wait_queue_head *queue, struct task_struct *task) {
+static void wait_queue_detach_task(struct wait_queue_head *queue, struct task *task) {
     if (!task) {
         return;
     }
@@ -76,14 +76,14 @@ static void wait_queue_detach_task(struct wait_queue_head *queue, struct task_st
 }
 
 int wait_queue_wait_locked_interruptible(struct wait_queue_head *queue) {
-    struct task_struct *task;
+    struct task *task;
     int ret;
 
     if (!queue) {
         return -EINVAL;
     }
 
-    task = get_current();
+    task = task_current();
     if (signal_has_unblocked_pending(task)) {
         return -EINTR;
     }
@@ -104,14 +104,14 @@ int wait_queue_wait_locked_interruptible(struct wait_queue_head *queue) {
 }
 
 int wait_queue_wait_locked_interruptible_timeout(struct wait_queue_head *queue, int timeout_ms) {
-    struct task_struct *task;
+    struct task *task;
     int ret;
 
     if (!queue || timeout_ms < 0) {
         return -EINVAL;
     }
 
-    task = get_current();
+    task = task_current();
     if (signal_has_unblocked_pending(task)) {
         return -EINTR;
     }

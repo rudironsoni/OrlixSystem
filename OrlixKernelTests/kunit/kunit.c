@@ -1,8 +1,8 @@
 #include "kunit.h"
 
 #include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
+#include <linux/string.h>
+#include <linux/sprintf.h>
 
 void kunit_init(struct kunit *test, const char *suite_name, const char *case_name) {
     if (!test) {

@@ -24,6 +24,27 @@ settings:
     LINUX_KHEADERS_ROOT: $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
     CLANG_BUILTIN_INCLUDE_ROOT: $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include
     LINUX_HOST_COMPAT_INCLUDE_ROOT: $(SRCROOT)/tools/linux_host_compat/include
+    ORLIX_KERNEL_FREESTANDING_CFLAGS: >-
+      -ffreestanding -fno-builtin -nostdinc
+      -include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
+      -include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
+      -include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
+      -include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
+      -include $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
+      -Wno-shorten-64-to-32
+    ORLIX_KERNEL_TEST_STRICT_CFLAGS: >-
+      $(ORLIX_KERNEL_FREESTANDING_CFLAGS)
+      -D__KERNEL__
+      -isystem $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+      -isystem $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
+    ORLIX_KERNEL_UAPI_FREESTANDING_CFLAGS: >-
+      -ffreestanding -fno-builtin -nostdinc
+      -D__EXPORTED_HEADERS__
+      -Wno-shorten-64-to-32
+    ORLIX_KERNEL_TEST_UAPI_CFLAGS: >-
+      $(ORLIX_KERNEL_UAPI_FREESTANDING_CFLAGS)
+      -isystem $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
+      -isystem $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
 targets:
   OrlixKernel:
     type: library.static
@@ -36,10 +57,10 @@ targets:
         - $(SRCROOT)/OrlixKernel
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
-        - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
-        - $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
       SYSTEM_HEADER_SEARCH_PATHS:
         - $(CLANG_BUILTIN_INCLUDE_ROOT)
+        - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
+        - $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
       GCC_PREPROCESSOR_DEFINITIONS:
       - __KERNEL__
       USE_HEADERMAP: false
@@ -245,6 +266,8 @@ targets:
       - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
       - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
       - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
+    - path: OrlixHostAdapter/kernel/random.c
+      group: OrlixHostAdapter/kernel
     - path: OrlixHostAdapter/fs/sync.c
       group: OrlixHostAdapter/fs
   OrlixMLibC:
@@ -356,205 +379,82 @@ targets:
     - OrlixKernelTests/PtraceTests.m
     - path: OrlixKernelTests/LinuxUAPICompileSmoke.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_UAPI_CFLAGS)
     - path: OrlixKernelTests/MLibCPackageHeadersCompileSmoke.c
       compilerFlags:
+      - -D__EXPORTED_HEADERS__
+      - -D_XOPEN_SOURCE
       - -I$(SRCROOT)/OrlixMLibC/include
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixKernelTests/MLibCStatCompileSmoke.c
       compilerFlags:
+      - -D__EXPORTED_HEADERS__
+      - -D_XOPEN_SOURCE
       - -I$(SRCROOT)/OrlixMLibC/include
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixKernelTests/MLibCConfigureProbeCompileSmoke.c
       compilerFlags:
+      - -D__EXPORTED_HEADERS__
+      - -D_XOPEN_SOURCE
       - -I$(SRCROOT)/OrlixMLibC/include
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixKernelTests/KernelOwnerCompatCompileSmoke.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/LinuxKHeadersCompileSmoke.c
       compilerFlags:
-      - -D__KERNEL__
-      - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
-      - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/KernelBoot.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
-    - OrlixKernelTests/kunit/kunit.c
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
+    - path: OrlixKernelTests/kunit/kunit.c
+      compilerFlags:
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/kernel/signal/signal_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/kernel/task/task_group_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/KernelInitContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/PTYSessionContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/fs/pty/pty_job_control_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/kernel/wait/wait_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/kernel/task/process_group_session_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/fs/pipe/pipe_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/fs/vfs/vfs_path_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/fs/rootfs/rootfs_bootstrap_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/ReadinessContract.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
+    - path: OrlixKernelTests/SocketpairSyscall.c
+      compilerFlags:
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/EpollContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
+    - path: OrlixKernelTests/EpollSocketContract.c
+      compilerFlags:
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/PtraceContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/PTYSessionContract.h
     - OrlixKernelTests/ReadinessContract.h
     - OrlixKernelTests/EpollContract.h
@@ -562,128 +462,88 @@ targets:
     - OrlixKernelTests/CredentialContract.h
     - path: OrlixKernelTests/CgroupContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/CgroupContract.h
     - OrlixKernelTests/PTYSessionIoctlShim.c
     - path: OrlixKernelTests/FutexUAPICompileSmoke.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/kernel/futex/futex_test.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/LinuxUAPITestSupport.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_UAPI_CFLAGS)
     - OrlixKernelTests/LinuxUAPITestSupport.h
     - path: OrlixKernelTests/VFSAtContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/FcntlContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/CredentialContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/ExecFdContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/ExecSyscallContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/NativeSyscallContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
+    - path: OrlixKernelTests/NativeSyscallSocketContract.c
+      compilerFlags:
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/NativeSyscallContract.h
     - path: OrlixKernelTests/SignalSyscallContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/SignalSyscallContract.h
     - path: OrlixKernelTests/SyscallUioContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/SyscallUioContract.h
     - path: OrlixKernelTests/TaskExecContract.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/UTSContract.c
       compilerFlags:
-      - -D__KERNEL__
-      - -ffreestanding
-      - -fno-builtin
-      - -nostdinc
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/types.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/stddef.h
-      - -include
-      - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/bits.h
-      - -include
-      - $(LINUX_HOST_COMPAT_INCLUDE_ROOT)/macho_compat.h
-      - -Wno-shorten-64-to-32
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/UTSContract.h
     - path: OrlixKernelTests/NamespaceContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/NamespaceContract.h
     - path: OrlixKernelTests/ProcfsNamespaceContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/ProcfsNamespaceContract.h
     - path: OrlixKernelTests/DevfsContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/DevfsContract.h
     - path: OrlixKernelTests/SeccompContract.c
       compilerFlags:
-      - -I$(LINUX_UAPI_INCLUDE_ROOT)
+      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - OrlixKernelTests/SeccompContract.h
     dependencies:
     - target: OrlixKernel
+    - target: OrlixHostAdapter
     settings:
       GENERATE_INFOPLIST_FILE: true
+      ALWAYS_SEARCH_USER_PATHS: false
       HEADER_SEARCH_PATHS:
         - $(SRCROOT)/OrlixKernelTests
         - $(SRCROOT)/OrlixKernel
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
-        - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
-        - $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
+      SYSTEM_HEADER_SEARCH_PATHS:
+        - $(CLANG_BUILTIN_INCLUDE_ROOT)
+      USE_HEADERMAP: false
+      CLANG_ENABLE_MODULES: false
       OTHER_CFLAGS:
-        - -include
-        - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
         - -Wno-macro-redefined
       BUNDLE_LOADER: ''
   OrlixHostAdapterTests:
@@ -710,6 +570,8 @@ targets:
         - $(SRCROOT)/OrlixHostAdapterTests
         - $(SRCROOT)/OrlixKernel/include
         - $(SRCROOT)/OrlixKernel/internal
+      SYSTEM_HEADER_SEARCH_PATHS:
+        - $(CLANG_BUILTIN_INCLUDE_ROOT)
         - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
         - $(LINUX_UAPI_INCLUDE_ROOT)
       BUNDLE_LOADER: ''

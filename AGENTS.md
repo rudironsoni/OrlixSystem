@@ -373,6 +373,12 @@ Authoritative proof target is iOS Simulator:
 4. `xcodebuild build-for-testing -project OrlixKernel.xcodeproj -scheme OrlixKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'`
 5. required targeted tests for the current tranche
 
+Simulator proof authority rule:
+- The authoritative simulator proof is the direct `xcodebuild` result itself.
+- If a sandboxed shell, pipeline, formatter, or output wrapper such as `xcsift` loses CoreSimulator visibility, reports placeholder-only destinations, or otherwise disagrees with a direct `xcodebuild` run, do not treat the wrapper failure as product truth.
+- In that case, rerun the exact simulator proof outside the sandbox and use the direct `xcodebuild` result as the source of truth.
+- Do not claim simulator failure, destination mismatch, or build breakage from wrapped output alone when the underlying issue is CoreSimulatorService access in the execution environment.
+
 Catalyst may be secondary smoke only.
 No commit/push before required proof is green.
 

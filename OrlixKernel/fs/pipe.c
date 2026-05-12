@@ -1,15 +1,8 @@
 #include <linux/errno.h>
 #include <linux/atomic.h>
 #include <uapi/linux/fcntl.h>
-#ifdef SIGPIPE
-#undef SIGPIPE
-#endif
-#define __ASSEMBLY__ 1
-#include <asm-generic/signal.h>
-#undef __ASSEMBLY__
-#include <asm-generic/signal-defs.h>
-
 #include <uapi/linux/poll.h>
+#include <uapi/linux/signal.h>
 
 #include "pipe.h"
 
@@ -68,9 +61,9 @@ int pipe_create_endpoint_pair(struct pipe_endpoint **read_end, struct pipe_endpo
         kfree(writer);
         return -ENOMEM;
     }
-    __builtin_memset(pipe, 0, sizeof(*pipe));
-    __builtin_memset(reader, 0, sizeof(*reader));
-    __builtin_memset(writer, 0, sizeof(*writer));
+    memset(pipe, 0, sizeof(*pipe));
+    memset(reader, 0, sizeof(*reader));
+    memset(writer, 0, sizeof(*writer));
 
     pipe->readers = 1;
     pipe->writers = 1;
@@ -168,9 +161,9 @@ ssize_t pipe_read_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
     if (first > PIPE_BUFFER_SIZE - pipe->head) {
         first = PIPE_BUFFER_SIZE - pipe->head;
     }
-    __builtin_memcpy(buf, pipe->buffer + pipe->head, first);
+    memcpy(buf, pipe->buffer + pipe->head, first);
     if (first < to_read) {
-        __builtin_memcpy((unsigned char *)buf + first, pipe->buffer, to_read - first);
+        memcpy((unsigned char *)buf + first, pipe->buffer, to_read - first);
     }
     pipe->head = (pipe->head + to_read) % PIPE_BUFFER_SIZE;
     pipe->len -= to_read;
@@ -201,7 +194,7 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     wait_queue_lock(&pipe->wait);
     if (pipe->readers == 0) {
         wait_queue_unlock(&pipe->wait);
-        signal_generate_task(get_current(), SIGPIPE);
+        signal_generate_task(task_current(), SIGPIPE);
         return -EPIPE;
     }
 
@@ -209,7 +202,7 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     while (space == 0) {
         if (pipe->readers == 0) {
             wait_queue_unlock(&pipe->wait);
-            signal_generate_task(get_current(), SIGPIPE);
+            signal_generate_task(task_current(), SIGPIPE);
             return -EPIPE;
         }
         if (nonblock) {
@@ -229,9 +222,9 @@ ssize_t pipe_write_endpoint_impl(struct pipe_endpoint *endpoint, const void *buf
     if (first > PIPE_BUFFER_SIZE - tail) {
         first = PIPE_BUFFER_SIZE - tail;
     }
-    __builtin_memcpy(pipe->buffer + tail, buf, first);
+    memcpy(pipe->buffer + tail, buf, first);
     if (first < to_write) {
-        __builtin_memcpy(pipe->buffer, (const unsigned char *)buf + first, to_write - first);
+        memcpy(pipe->buffer, (const unsigned char *)buf + first, to_write - first);
     }
     pipe->len += to_write;
     wait_queue_wake_all_locked(&pipe->wait);
@@ -263,9 +256,9 @@ ssize_t pipe_peek_endpoint_impl(struct pipe_endpoint *endpoint, void *buf, size_
         first = PIPE_BUFFER_SIZE - pipe->head;
     }
     if (to_read > 0) {
-        __builtin_memcpy(buf, pipe->buffer + pipe->head, first);
+        memcpy(buf, pipe->buffer + pipe->head, first);
         if (first < to_read) {
-            __builtin_memcpy((unsigned char *)buf + first, pipe->buffer, to_read - first);
+            memcpy((unsigned char *)buf + first, pipe->buffer, to_read - first);
         }
     }
     wait_queue_unlock(&pipe->wait);
@@ -298,9 +291,9 @@ ssize_t pipe_tee_between_endpoints_impl(struct pipe_endpoint *src, struct pipe_e
         src_first = PIPE_BUFFER_SIZE - src_pipe->head;
     }
     if (to_copy > 0) {
-        __builtin_memcpy(buffer, src_pipe->buffer + src_pipe->head, src_first);
+        memcpy(buffer, src_pipe->buffer + src_pipe->head, src_first);
         if (src_first < to_copy) {
-            __builtin_memcpy(buffer + src_first, src_pipe->buffer, to_copy - src_first);
+            memcpy(buffer + src_first, src_pipe->buffer, to_copy - src_first);
         }
     }
     wait_queue_unlock(&src_pipe->wait);
@@ -332,9 +325,9 @@ ssize_t pipe_tee_between_endpoints_impl(struct pipe_endpoint *src, struct pipe_e
     if (dst_first > PIPE_BUFFER_SIZE - dst_tail) {
         dst_first = PIPE_BUFFER_SIZE - dst_tail;
     }
-    __builtin_memcpy(dst_pipe->buffer + dst_tail, buffer, dst_first);
+    memcpy(dst_pipe->buffer + dst_tail, buffer, dst_first);
     if (dst_first < to_copy) {
-        __builtin_memcpy(dst_pipe->buffer, buffer + dst_first, to_copy - dst_first);
+        memcpy(dst_pipe->buffer, buffer + dst_first, to_copy - dst_first);
     }
     dst_pipe->len += to_copy;
     wait_queue_wake_all_locked(&dst_pipe->wait);

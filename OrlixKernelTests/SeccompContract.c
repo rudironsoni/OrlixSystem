@@ -1,17 +1,17 @@
 #include "SeccompContract.h"
 
 #include <asm/unistd.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/sched.h>
-
-#include <errno.h>
-#include <stdatomic.h>
 
 #include "kernel/seccomp.h"
 #include "kernel/task.h"
 #include "runtime/syscall.h"
 
+extern int errno;
+
 int seccomp_contract_task_errno_policy_denies_syscall_dispatch(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     long ret;
 
     if (!task) {
@@ -31,7 +31,7 @@ int seccomp_contract_task_errno_policy_denies_syscall_dispatch(void) {
 }
 
 int seccomp_contract_unmentioned_syscall_remains_allowed(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     long ret;
 
     if (!task) {
@@ -51,9 +51,9 @@ int seccomp_contract_unmentioned_syscall_remains_allowed(void) {
 }
 
 int seccomp_contract_thread_group_policy_applies_to_thread_peer(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
-    struct task_struct *saved;
+    struct task *parent = task_current();
+    struct task *child;
+    struct task *saved;
     long ret;
     int result = -1;
 
@@ -68,10 +68,10 @@ int seccomp_contract_thread_group_policy_applies_to_thread_peer(void) {
     if (seccomp_set_thread_group_errno_policy(parent, __NR_getpid, EACCES) != 0) {
         goto out;
     }
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     ret = syscall_dispatch_impl(__NR_getpid, 0, 0, 0, 0, 0, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (ret != -EACCES) {
         errno = ENODATA;
         goto out;
@@ -84,7 +84,7 @@ out:
         seccomp_clear_task_policy(parent);
         seccomp_clear_task_policy(child);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         errno = saved_errno;
     }
     return result;

@@ -1,15 +1,16 @@
-#include <linux/fcntl.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/asm/stat.h>
 #include <uapi/linux/fs.h>
-#include <linux/mman.h>
-#include <linux/mount.h>
+#include <uapi/linux/mman.h>
+#include <uapi/linux/mount.h>
 #include <uapi/linux/sched.h>
-#include <uapi/asm-generic/signal.h>
-#include <linux/stat.h>
-#include <linux/wait.h>
+#include <uapi/linux/signal.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/wait.h>
+#include <uapi/linux/errno.h>
 #include <linux/dirent.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -23,33 +24,35 @@
 #include "kernel/uts.h"
 #include "kernel/wait.h"
 
+extern int errno;
+
 extern int clone_impl(uint64_t flags);
 extern int unshare_impl(uint64_t flags);
 extern int fcntl_impl(int fd, int cmd, ...);
 extern int mkdir_impl(const char *pathname, uint32_t mode);
 extern int mount(const char *source, const char *target, const char *filesystemtype,
                  unsigned long mountflags, const void *data);
-extern int umount(const char *target);
+extern int umount_impl(const char *target);
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
 extern long long lseek_impl(int fd, long long offset, int whence);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
-extern ssize_t getdents64(int fd, void *dirp, size_t count);
-extern int signal_generate_process(struct task_struct *target, int32_t sig);
+extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
+extern int signal_generate_process(struct task *target, int32_t sig);
 extern void cred_reset_to_defaults(void);
 extern void set_current_cred(struct cred *cred);
 
 static void reset_procfs_namespace_state(void) {
     cred_reset_to_defaults();
     uts_reset_current_namespace();
-    if (get_current()) {
-        atomic_set(&get_current()->new_pid_namespace_pending, 0);
-        get_current()->thread_pending_signals = 0;
-        if (get_current()->signal) {
-            memset(&get_current()->signal->pending, 0, sizeof(get_current()->signal->pending));
-            memset(&get_current()->signal->shared_pending, 0,
-                   sizeof(get_current()->signal->shared_pending));
+    if (task_current()) {
+        atomic_set(&task_current()->new_pid_namespace_pending, 0);
+        task_current()->thread_pending_signals = 0;
+        if (task_current()->signal) {
+            memset(&task_current()->signal->pending, 0, sizeof(task_current()->signal->pending));
+            memset(&task_current()->signal->shared_pending, 0,
+                   sizeof(task_current()->signal->shared_pending));
         }
     }
 }
@@ -385,13 +388,13 @@ static int procfs_read_fdinfo_pos_for_pid(int pid, int fd_num, long long *pos_ou
     return 0;
 }
 
-static void release_lookup_child(struct task_struct *parent, struct task_struct *child) {
+static void release_lookup_child(struct task *parent, struct task *child) {
     if (!child) {
         return;
     }
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
 }
 
 int procfs_namespace_contract_ns_directory_opens(void) {
@@ -474,14 +477,14 @@ int procfs_namespace_contract_unshare_newns_changes_mnt_link(void) {
 }
 
 int procfs_namespace_contract_proc_pid_status_aliases_current_task(void) {
-    struct task_struct *task;
+    struct task *task;
     char path[64] = {0};
     char content[512];
     char expected[32] = "Pid:\t";
 
     reset_procfs_namespace_state();
 
-    task = get_current();
+    task = task_current();
     if (!task) {
         errno = ESRCH;
         return -1;
@@ -499,16 +502,16 @@ int procfs_namespace_contract_proc_pid_status_aliases_current_task(void) {
 }
 
 int procfs_namespace_contract_pid_namespace_status_reports_nspid(void) {
-    struct task_struct *parent;
-    struct task_struct *child;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child;
+    struct task *saved;
     char content[512];
     int pid;
     int ret = -1;
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -524,24 +527,24 @@ int procfs_namespace_contract_pid_namespace_status_reports_nspid(void) {
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (read_file_content("/proc/self/status", content, sizeof(content)) == 0 &&
         contains(content, "NSpid:\t1\n")) {
         ret = 0;
     } else {
         errno = ENODATA;
     }
-    set_current(saved);
+    task_set_current(saved);
     release_lookup_child(parent, child);
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_status_reports_target_credentials(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     struct cred *parent_cred = NULL;
     struct cred *child_cred = NULL;
     char path[64] = {0};
@@ -550,7 +553,7 @@ int procfs_namespace_contract_proc_pid_status_reports_target_credentials(void) {
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -571,22 +574,22 @@ int procfs_namespace_contract_proc_pid_status_reports_target_credentials(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     set_current_cred(child_cred);
     put_cred(child_cred);
     child_cred = NULL;
-    set_current(parent);
+    task_set_current(parent);
     set_current_cred(parent_cred);
     put_cred(parent_cred);
     parent_cred = NULL;
 
     proc_pid_status_path(path, sizeof(path), child->pid);
     if (read_file_content(path, content, sizeof(content)) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     if (!contains(content, "Uid:\t1000\t1000\t1000\t1000\n")) {
         errno = ENODATA;
@@ -604,7 +607,7 @@ out:
     }
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
@@ -662,13 +665,13 @@ int procfs_namespace_contract_proc_status_reports_thread_and_signal_queue_fields
 }
 
 int procfs_namespace_contract_proc_status_reports_thread_group_count(void) {
-    struct task_struct *parent;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *thread = NULL;
     char content[2048];
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -690,15 +693,15 @@ int procfs_namespace_contract_proc_status_reports_thread_group_count(void) {
 out:
     if (thread) {
         task_unlink_child_impl(parent, thread);
-        free_task(thread);
+        task_put(thread);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_task_tid_status_aliases_thread(void) {
-    struct task_struct *parent;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *thread = NULL;
     char task_dir[96] = {0};
     char tid_dir[112] = {0};
     char status_path[128] = {0};
@@ -710,7 +713,7 @@ int procfs_namespace_contract_proc_task_tid_status_aliases_thread(void) {
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -734,7 +737,7 @@ int procfs_namespace_contract_proc_task_tid_status_aliases_thread(void) {
     if (fd < 0) {
         goto out;
     }
-    nread = getdents64(fd, dirents, sizeof(dirents));
+    nread = getdents64_impl(fd, dirents, sizeof(dirents));
     if (nread < 0) {
         goto out;
     }
@@ -780,7 +783,7 @@ out:
         }
         if (thread) {
             task_unlink_child_impl(parent, thread);
-            free_task(thread);
+            task_put(thread);
         }
         reset_procfs_namespace_state();
         errno = saved_errno;
@@ -789,8 +792,8 @@ out:
 }
 
 int procfs_namespace_contract_proc_task_tid_fd_maps_and_stat_are_thread_targeted(void) {
-    struct task_struct *parent;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *thread = NULL;
     void *mapped = (void *)-1;
     uint64_t base;
     int fd = -1;
@@ -803,7 +806,7 @@ int procfs_namespace_contract_proc_task_tid_fd_maps_and_stat_are_thread_targeted
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -819,10 +822,10 @@ int procfs_namespace_contract_proc_task_tid_fd_maps_and_stat_are_thread_targeted
     }
     memset(thread->comm, 0, sizeof(thread->comm));
     memcpy(thread->comm, "tid-deep", 9);
-    set_current(thread);
+    task_set_current(thread);
     mapped = mmap_impl(NULL, 4096, PROT_READ | PROT_WRITE,
                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    set_current(parent);
+    task_set_current(parent);
     if ((long)(uintptr_t)mapped < 0) {
         errno = -(int)(long)(uintptr_t)mapped;
         goto out;
@@ -906,15 +909,15 @@ out:
         close_impl(info_fd);
         close_impl(fd);
         if ((long)(uintptr_t)mapped >= 0) {
-            set_current(thread ? thread : parent);
+            task_set_current(thread ? thread : parent);
             munmap_impl(mapped, 4096);
-            set_current(parent);
+            task_set_current(parent);
         } else {
-            set_current(parent);
+            task_set_current(parent);
         }
         if (thread) {
             task_unlink_child_impl(parent, thread);
-            free_task(thread);
+            task_put(thread);
         }
         reset_procfs_namespace_state();
         errno = saved_errno;
@@ -923,15 +926,15 @@ out:
 }
 
 int procfs_namespace_contract_clone_files_shares_thread_fdtable(void) {
-    struct task_struct *parent;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *thread = NULL;
     int fd = -1;
     char path[160] = {0};
     char link_target[MAX_PATH];
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -959,12 +962,12 @@ int procfs_namespace_contract_clone_files_shares_thread_fdtable(void) {
         goto out;
     }
 
-    set_current(thread);
+    task_set_current(thread);
     if (close_impl(fd) != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (fcntl_impl(fd, F_GETFD) != -1 || errno != EBADF) {
         errno = EBUSY;
         goto out;
@@ -975,11 +978,11 @@ int procfs_namespace_contract_clone_files_shares_thread_fdtable(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         close_impl(fd);
         if (thread) {
             task_unlink_child_impl(parent, thread);
-            free_task(thread);
+            task_put(thread);
         }
         reset_procfs_namespace_state();
         errno = saved_errno;
@@ -988,14 +991,14 @@ out:
 }
 
 int procfs_namespace_contract_proc_task_tid_status_reports_thread_signal_state(void) {
-    struct task_struct *parent;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *thread = NULL;
     char path[160] = {0};
     char content[4096];
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1038,7 +1041,7 @@ out:
         }
         if (thread) {
             task_unlink_child_impl(parent, thread);
-            free_task(thread);
+            task_put(thread);
         }
         reset_procfs_namespace_state();
         errno = saved_errno;
@@ -1047,8 +1050,8 @@ out:
 }
 
 int procfs_namespace_contract_clone_vm_thread_shares_proc_maps(void) {
-    struct task_struct *parent;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *thread = NULL;
     void *mapped = (void *)-1;
     uint64_t base;
     char path[160] = {0};
@@ -1058,7 +1061,7 @@ int procfs_namespace_contract_clone_vm_thread_shares_proc_maps(void) {
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1114,7 +1117,7 @@ out:
         }
         if (thread) {
             task_unlink_child_impl(parent, thread);
-            free_task(thread);
+            task_put(thread);
         }
         reset_procfs_namespace_state();
         errno = saved_errno;
@@ -1123,14 +1126,14 @@ out:
 }
 
 int procfs_namespace_contract_process_signal_reports_shared_pending(void) {
-    struct task_struct *parent;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *thread = NULL;
     char path[160] = {0};
     char content[4096];
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1167,7 +1170,7 @@ out:
         }
         if (thread) {
             task_unlink_child_impl(parent, thread);
-            free_task(thread);
+            task_put(thread);
         }
         reset_procfs_namespace_state();
         errno = saved_errno;
@@ -1176,15 +1179,15 @@ out:
 }
 
 int procfs_namespace_contract_thread_signal_pending_is_per_tid(void) {
-    struct task_struct *parent;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *thread = NULL;
     char thread_path[160] = {0};
     char parent_status[4096];
     char thread_status[4096];
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1223,7 +1226,7 @@ out:
         if (thread) {
             thread->thread_pending_signals &= ~(1ULL << ((SIGUSR1 - 1) & 63));
             task_unlink_child_impl(parent, thread);
-            free_task(thread);
+            task_put(thread);
         }
         reset_procfs_namespace_state();
         errno = saved_errno;
@@ -1232,14 +1235,14 @@ out:
 }
 
 int procfs_namespace_contract_thread_group_stop_continue_reports_once(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *thread = NULL;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *thread = NULL;
     int status = 0;
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1248,9 +1251,9 @@ int procfs_namespace_contract_thread_group_stop_continue_reports_once(void) {
     if (!child) {
         return -1;
     }
-    set_current(child);
+    task_set_current(child);
     thread = task_create_child_with_flags_impl(child, CLONE_THREAD | CLONE_VM | CLONE_SIGHAND);
-    set_current(parent);
+    task_set_current(parent);
     if (!thread) {
         goto out;
     }
@@ -1290,14 +1293,14 @@ int procfs_namespace_contract_thread_group_stop_continue_reports_once(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (thread) {
             task_unlink_child_impl(child, thread);
-            free_task(thread);
+            task_put(thread);
         }
         if (child) {
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
         }
         reset_procfs_namespace_state();
         errno = saved_errno;
@@ -1306,8 +1309,8 @@ out:
 }
 
 int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
+    struct task *parent;
+    struct task *child = NULL;
     char path[96] = {0};
     char content[1024];
     char link_target[MAX_PATH];
@@ -1315,7 +1318,7 @@ int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void)
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1363,15 +1366,15 @@ int procfs_namespace_contract_proc_pid_stat_cwd_and_exe_report_target_task(void)
 out:
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_fd_and_fdinfo_paths_are_target_aware(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
+    struct task *parent;
+    struct task *child = NULL;
     int fd = -1;
     char path[96] = {0};
     char link_target[MAX_PATH];
@@ -1382,7 +1385,7 @@ int procfs_namespace_contract_proc_pid_fd_and_fdinfo_paths_are_target_aware(void
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1435,15 +1438,15 @@ out:
     }
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_fd_dir_lists_target_inherited_fds_after_parent_close(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
+    struct task *parent;
+    struct task *child = NULL;
     int inherited_fd = -1;
     int inherited_fd_num = -1;
     int dir_fd = -1;
@@ -1455,7 +1458,7 @@ int procfs_namespace_contract_proc_pid_fd_dir_lists_target_inherited_fds_after_p
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1492,7 +1495,7 @@ int procfs_namespace_contract_proc_pid_fd_dir_lists_target_inherited_fds_after_p
         goto out;
     }
     memset(dirents, 0, sizeof(dirents));
-    nread = getdents64(dir_fd, dirents, sizeof(dirents));
+    nread = getdents64_impl(dir_fd, dirents, sizeof(dirents));
     if (nread <= 0) {
         goto out;
     }
@@ -1513,16 +1516,16 @@ out:
     }
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_fdinfo_flags_are_per_task_descriptor_state(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     int fd = -1;
     unsigned int parent_flags = 0;
     unsigned int child_flags = 0;
@@ -1530,7 +1533,7 @@ int procfs_namespace_contract_fdinfo_flags_are_per_task_descriptor_state(void) {
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1546,18 +1549,18 @@ int procfs_namespace_contract_fdinfo_flags_are_per_task_descriptor_state(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (fcntl_impl(fd, F_SETFD, FD_CLOEXEC) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
     if (procfs_read_fdinfo_flags_for_pid(child->pid, fd, &child_flags) != 0 ||
         procfs_read_fdinfo_flags_for_pid(parent->pid, fd, &parent_flags) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     if ((child_flags & O_CLOEXEC) == 0 || (parent_flags & O_CLOEXEC) != 0) {
         errno = ENODATA;
@@ -1567,22 +1570,22 @@ int procfs_namespace_contract_fdinfo_flags_are_per_task_descriptor_state(void) {
     ret = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     if (fd >= 0) {
         close_impl(fd);
     }
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_child_close_does_not_close_parent_descriptor(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     int fd = -1;
     char path[96] = {0};
     char link_target[MAX_PATH];
@@ -1591,7 +1594,7 @@ int procfs_namespace_contract_child_close_does_not_close_parent_descriptor(void)
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1607,13 +1610,13 @@ int procfs_namespace_contract_child_close_does_not_close_parent_descriptor(void)
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (close_impl(fd) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     proc_pid_file_path(path, sizeof(path), parent->pid, "/fd/");
     append_positive_decimal(path, sizeof(path), fd);
@@ -1638,28 +1641,28 @@ int procfs_namespace_contract_child_close_does_not_close_parent_descriptor(void)
     ret = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     if (fd >= 0) {
         close_impl(fd);
     }
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_fdinfo_offset_tracks_shared_open_file_description(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
+    struct task *parent;
+    struct task *child = NULL;
     int fd = -1;
     long long child_pos = -1;
     int ret = -1;
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1687,22 +1690,22 @@ int procfs_namespace_contract_fdinfo_offset_tracks_shared_open_file_description(
     ret = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     if (fd >= 0) {
         close_impl(fd);
     }
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_task(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     char *argv[] = {"target-prog", "target-arg", NULL};
     char *envp[] = {"TARGET_ENV=1", NULL};
     char path[96] = {0};
@@ -1712,7 +1715,7 @@ int procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_ta
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1722,15 +1725,15 @@ int procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_ta
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     memset(child->comm, 0, sizeof(child->comm));
     memcpy(child->comm, "target-comm", 12);
     if (task_record_exec_strings_impl(argv, envp) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     proc_pid_file_path(path, sizeof(path), child->pid, "/cmdline");
     nread = read_file_bytes(path, content, sizeof(content));
@@ -1763,16 +1766,16 @@ int procfs_namespace_contract_proc_pid_cmdline_environ_and_comm_report_target_ta
 out:
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_stat_status_and_maps_report_target_task(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     void *mapping = (void *)-1;
     char path[96] = {0};
     char content[1024];
@@ -1780,7 +1783,7 @@ int procfs_namespace_contract_proc_pid_stat_status_and_maps_report_target_task(v
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1790,14 +1793,14 @@ int procfs_namespace_contract_proc_pid_stat_status_and_maps_report_target_task(v
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     memset(child->comm, 0, sizeof(child->comm));
     memcpy(child->comm, "proc-target", 12);
     task_mark_stopped_by_signal(child, SIGSTOP);
     mapping = mmap_impl(NULL, TASK_VMA_PAGE_SIZE, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (mapping == (void *)-1) {
         goto out;
     }
@@ -1832,30 +1835,30 @@ int procfs_namespace_contract_proc_pid_stat_status_and_maps_report_target_task(v
 
 out:
     if (child) {
-        saved = get_current();
-        set_current(child);
+        saved = task_current();
+        task_set_current(child);
         if (mapping != (void *)-1) {
             munmap_impl(mapping, TASK_VMA_PAGE_SIZE);
         }
-        set_current(saved);
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_status_stat_and_fdinfo_have_linux_fields(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     char path[96] = {0};
     char content[2048];
     int child_fd = -1;
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1865,12 +1868,12 @@ int procfs_namespace_contract_proc_pid_status_stat_and_fdinfo_have_linux_fields(
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     memset(child->comm, 0, sizeof(child->comm));
     memcpy(child->comm, "proc-fields", 12);
     child_fd = open_impl("/proc/self/status", O_RDONLY, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (child_fd < 0) {
         goto out;
     }
@@ -1929,23 +1932,23 @@ int procfs_namespace_contract_proc_pid_status_stat_and_fdinfo_have_linux_fields(
 
 out:
     if (child) {
-        saved = get_current();
-        set_current(child);
+        saved = task_current();
+        task_set_current(child);
         if (child_fd >= 0) {
             close_impl(child_fd);
         }
-        set_current(saved);
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_stat_reports_tty_start_rss_and_exit_signal(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     void *mapping = (void *)-1;
     char path[96] = {0};
     char content[2048];
@@ -1958,7 +1961,7 @@ int procfs_namespace_contract_proc_pid_stat_reports_tty_start_rss_and_exit_signa
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1968,13 +1971,13 @@ int procfs_namespace_contract_proc_pid_stat_reports_tty_start_rss_and_exit_signa
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     memset(child->comm, 0, sizeof(child->comm));
     memcpy(child->comm, "proc-stat", 10);
     mapping = mmap_impl(NULL, TASK_VMA_PAGE_SIZE * 2, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (mapping == (void *)-1) {
         goto out;
     }
@@ -2024,23 +2027,23 @@ int procfs_namespace_contract_proc_pid_stat_reports_tty_start_rss_and_exit_signa
 
 out:
     if (child) {
-        saved = get_current();
-        set_current(child);
+        saved = task_current();
+        task_set_current(child);
         if (mapping != (void *)-1) {
             munmap_impl(mapping, TASK_VMA_PAGE_SIZE * 2);
         }
-        set_current(saved);
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_views_remain_consistent_across_lifecycle(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     void *mapping = (void *)-1;
     char path[96] = {0};
     char stat_content[2048];
@@ -2052,7 +2055,7 @@ int procfs_namespace_contract_proc_pid_views_remain_consistent_across_lifecycle(
     int ret = -1;
 
     reset_procfs_namespace_state();
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -2062,13 +2065,13 @@ int procfs_namespace_contract_proc_pid_views_remain_consistent_across_lifecycle(
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     memset(child->comm, 0, sizeof(child->comm));
     memcpy(child->comm, "proc-life", 10);
     mapping = mmap_impl(NULL, TASK_VMA_PAGE_SIZE * 3, PROT_READ | PROT_WRITE,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (mapping == (void *)-1) {
         goto out;
     }
@@ -2111,17 +2114,17 @@ int procfs_namespace_contract_proc_pid_views_remain_consistent_across_lifecycle(
     proc_pid_file_path(path, sizeof(path), child->pid, "/status");
     if (read_file_content(path, status_content, sizeof(status_content)) != 0 ||
         !contains(status_content, "State:\tT (stopped)\n")) {
-        errno = ENOTSUP;
+        errno = EOPNOTSUPP;
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (task_exec_transition_impl("/proc/self/status", "/bin/proc-exec") != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
     proc_pid_file_path(path, sizeof(path), child->pid, "/stat");
     if (read_file_content(path, stat_content, sizeof(stat_content)) != 0 ||
         !contains(stat_content, "(proc-exec)")) {
@@ -2153,30 +2156,30 @@ int procfs_namespace_contract_proc_pid_views_remain_consistent_across_lifecycle(
 
 out:
     if (child) {
-        saved = get_current();
-        set_current(child);
+        saved = task_current();
+        task_set_current(child);
         if (mapping != (void *)-1) {
             munmap_impl(mapping, TASK_VMA_PAGE_SIZE * 3);
         }
-        set_current(saved);
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_proc_pid_mountinfo_uses_target_mount_namespace(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     char path[96] = {0};
     char content[4096];
     int ret = -1;
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -2195,13 +2198,13 @@ int procfs_namespace_contract_proc_pid_mountinfo_uses_target_mount_namespace(voi
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (mount("/tmp/proc-pid-mnt-source", "/tmp/proc-pid-mnt-target", NULL, MS_BIND, NULL) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     proc_pid_file_path(path, sizeof(path), child->pid, "/mountinfo");
     if (read_file_content(path, content, sizeof(content)) != 0 ||
@@ -2235,28 +2238,28 @@ int procfs_namespace_contract_proc_pid_mountinfo_uses_target_mount_namespace(voi
 
 out:
     if (child) {
-        saved = get_current();
-        set_current(child);
-        umount("/tmp/proc-pid-mnt-target");
-        set_current(saved);
+        saved = task_current();
+        task_set_current(child);
+        umount_impl("/tmp/proc-pid-mnt-target");
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_zombie_proc_pid_mounts_keep_target_mount_namespace(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     char path[96] = {0};
     char content[4096];
     int ret = -1;
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -2275,13 +2278,13 @@ int procfs_namespace_contract_zombie_proc_pid_mounts_keep_target_mount_namespace
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (mount("/tmp/proc-zombie-mnt-source", "/tmp/proc-zombie-mnt-target", NULL, MS_BIND, NULL) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     task_mark_exited(child, 0);
     proc_pid_file_path(path, sizeof(path), child->pid, "/mounts");
@@ -2296,28 +2299,28 @@ int procfs_namespace_contract_zombie_proc_pid_mounts_keep_target_mount_namespace
 
 out:
     if (child) {
-        saved = get_current();
-        set_current(child);
-        umount("/tmp/proc-zombie-mnt-target");
-        set_current(saved);
+        saved = task_current();
+        task_set_current(child);
+        umount_impl("/tmp/proc-zombie-mnt-target");
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_reaped_proc_pid_mounts_disappear(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     char path[96] = {0};
     char content[4096];
     int ret = -1;
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -2336,13 +2339,13 @@ int procfs_namespace_contract_reaped_proc_pid_mounts_disappear(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (mount("/tmp/proc-reaped-mnt-source", "/tmp/proc-reaped-mnt-target", NULL, MS_BIND, NULL) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     proc_pid_file_path(path, sizeof(path), child->pid, "/mounts");
     if (read_file_content(path, content, sizeof(content)) != 0 ||
@@ -2352,7 +2355,7 @@ int procfs_namespace_contract_reaped_proc_pid_mounts_disappear(void) {
     }
 
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
     child = NULL;
 
     errno = 0;
@@ -2365,20 +2368,20 @@ int procfs_namespace_contract_reaped_proc_pid_mounts_disappear(void) {
 
 out:
     if (child) {
-        saved = get_current();
-        set_current(child);
-        umount("/tmp/proc-reaped-mnt-target");
-        set_current(saved);
+        saved = task_current();
+        task_set_current(child);
+        umount_impl("/tmp/proc-reaped-mnt-target");
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
 }
 
 int procfs_namespace_contract_reaped_proc_pid_core_views_disappear(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
+    struct task *parent;
+    struct task *child = NULL;
     char path[96] = {0};
     char content[2048];
     int fd = -1;
@@ -2387,7 +2390,7 @@ int procfs_namespace_contract_reaped_proc_pid_core_views_disappear(void) {
 
     reset_procfs_namespace_state();
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -2403,7 +2406,7 @@ int procfs_namespace_contract_reaped_proc_pid_core_views_disappear(void) {
         goto out;
     }
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
     child = NULL;
 
     errno = 0;
@@ -2442,7 +2445,7 @@ out:
     close_impl(fd);
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     reset_procfs_namespace_state();
     return ret;
@@ -2487,7 +2490,7 @@ int procfs_namespace_contract_ns_directory_lists_cgroup(void) {
         return -1;
     }
     memset(dirents, 0, sizeof(dirents));
-    nread = getdents64(fd, dirents, sizeof(dirents));
+    nread = getdents64_impl(fd, dirents, sizeof(dirents));
     close_impl(fd);
     if (nread <= 0 || !procfs_dirents_contain_name(dirents, nread, "cgroup")) {
         errno = ENODATA;

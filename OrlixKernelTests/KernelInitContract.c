@@ -1,12 +1,13 @@
-#include <linux/fcntl.h>
-#include <uapi/asm-generic/signal.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/linux/signal.h>
+#include <uapi/asm/stat.h>
 #include <uapi/linux/fs.h>
-#include <linux/stat.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/errno.h>
 #include <linux/string.h>
-#include <linux/wait.h>
+#include <uapi/linux/wait.h>
 #include <linux/dirent.h>
 
-#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -18,16 +19,27 @@
 #include "kernel/wait.h"
 #include "runtime/native/registry.h"
 
+extern int errno;
+
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
 extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
-extern ssize_t getdents64(int fd, void *dirp, size_t count);
+extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int fstat_impl(int fd, struct stat *statbuf);
 extern int unlink_impl(const char *pathname);
 extern int kernel_exec_init(const char *preferred_path, char *const argv[], char *const envp[]);
 extern void exit_impl(int status);
+
+static int wait_status_exited(int status) {
+    return (status & 0x7f) == 0;
+}
+
+static int wait_status_exit_code(int status) {
+    return (status >> 8) & 0xff;
+}
+
 static int buffer_contains(const char *buf, size_t len, const char *needle) {
     size_t needle_len;
     size_t i;
@@ -137,7 +149,7 @@ static int dir_contains_name(int fd, const char *needle) {
         return -1;
     }
 
-    nread = getdents64(fd, buf, sizeof(buf));
+    nread = getdents64_impl(fd, buf, sizeof(buf));
     if (nread < 0) {
         return -1;
     }
@@ -220,13 +232,13 @@ static int native_capture_init(int argc, char **argv, char **envp) {
 }
 
 int kernel_init_contract_start_kernel_creates_current_init_task(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!kernel_is_booted()) {
         errno = EPROTO;
         return -1;
     }
-    if (!task || task != init_task) {
+    if (!task || task != task_init_process) {
         errno = EPROTO;
         return -1;
     }
@@ -234,7 +246,7 @@ int kernel_init_contract_start_kernel_creates_current_init_task(void) {
 }
 
 int kernel_init_contract_init_task_identity_is_linux_shaped(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -252,7 +264,7 @@ int kernel_init_contract_init_task_identity_is_linux_shaped(void) {
         errno = EPROTO;
         return -1;
     }
-    if (atomic_read(&task->state) != TASK_RUNNING) {
+    if (atomic_read(&task->state) != RUN_STATE_RUNNING) {
         errno = EPROTO;
         return -1;
     }
@@ -268,7 +280,7 @@ int kernel_init_contract_init_task_identity_is_linux_shaped(void) {
 }
 
 int kernel_init_contract_init_task_cwd_and_root_are_slash(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task || !task->fs) {
         errno = ESRCH;
@@ -586,7 +598,7 @@ int kernel_init_contract_kernel_shutdown_and_reboot_restores_init_state(void) {
 }
 
 int kernel_init_contract_exec_preferred_init_launches_pid1(void) {
-    struct task_struct *task;
+    struct task *task;
     char *argv[] = {"synthetic-init", "--boot", NULL};
     char *envp[] = {"INIT=preferred", NULL};
     const char *const expected_cmdline[] = {"synthetic-init", "--boot", NULL};
@@ -607,7 +619,7 @@ int kernel_init_contract_exec_preferred_init_launches_pid1(void) {
         goto out;
     }
 
-    task = get_current();
+    task = task_current();
     if (!task || task->pid != 1 || strcmp(task->exe, "/tmp/preferred-init") != 0 ||
         strcmp(task->comm, "synthetic-init") != 0 || !atomic_read(&task->execed)) {
         errno = EPROTO;
@@ -654,7 +666,7 @@ out:
 }
 
 int kernel_init_contract_exec_init_search_uses_first_existing_candidate(void) {
-    struct task_struct *task;
+    struct task *task;
     int result = -1;
 
     if (reset_boot_state() != 0) {
@@ -669,7 +681,7 @@ int kernel_init_contract_exec_init_search_uses_first_existing_candidate(void) {
         goto out;
     }
 
-    task = get_current();
+    task = task_current();
     if (!task || task->pid != 1 || strcmp(task->exe, "/sbin/init") != 0 ||
         strcmp(task->comm, "init") != 0 || !atomic_read(&task->execed)) {
         errno = EPROTO;
@@ -716,7 +728,7 @@ out:
 }
 
 int kernel_init_contract_exec_init_preserves_pid1_identity(void) {
-    struct task_struct *task;
+    struct task *task;
     int result = -1;
 
     if (reset_boot_state() != 0) {
@@ -728,10 +740,10 @@ int kernel_init_contract_exec_init_preserves_pid1_identity(void) {
         goto out;
     }
 
-    task = get_current();
-    if (!task || task != init_task || task->pid != 1 || task->tgid != 1 ||
+    task = task_current();
+    if (!task || task != task_init_process || task->pid != 1 || task->tgid != 1 ||
         task->ppid != 0 || task->pgid != 1 || task->sid != 1 ||
-        atomic_read(&task->state) != TASK_RUNNING) {
+        atomic_read(&task->state) != RUN_STATE_RUNNING) {
         errno = EPROTO;
         goto out;
     }
@@ -907,22 +919,22 @@ out:
 }
 
 int kernel_init_contract_pid1_adopts_orphaned_children(void) {
-    struct task_struct *parent = NULL;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = NULL;
+    struct task *child = NULL;
+    struct task *saved;
     char status_path[96];
     char buf[1024];
     ssize_t nread;
     int fd = -1;
     int result = -1;
 
-    saved = get_current();
-    if (!init_task || saved != init_task) {
+    saved = task_current();
+    if (!task_init_process || saved != task_init_process) {
         errno = ESRCH;
         return -1;
     }
 
-    parent = task_create_child_impl(init_task);
+    parent = task_create_child_impl(task_init_process);
     if (!parent) {
         return -1;
     }
@@ -931,11 +943,11 @@ int kernel_init_contract_pid1_adopts_orphaned_children(void) {
         goto out;
     }
 
-    set_current(parent);
+    task_set_current(parent);
     exit_impl(0);
-    set_current(init_task);
+    task_set_current(task_init_process);
 
-    if (child->parent != init_task || child->ppid != 1) {
+    if (child->parent != task_init_process || child->ppid != 1) {
         errno = EPROTO;
         goto out;
     }
@@ -961,37 +973,37 @@ out:
     {
         int saved_errno = errno;
         close_impl(fd);
-        set_current(init_task);
+        task_set_current(task_init_process);
         if (child) {
-            task_unlink_child_impl(init_task, child);
+            task_unlink_child_impl(task_init_process, child);
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
         }
         if (parent) {
-            task_unlink_child_impl(init_task, parent);
-            free_task(parent);
+            task_unlink_child_impl(task_init_process, parent);
+            task_put(parent);
         }
-        set_current(saved);
+        task_set_current(saved);
         errno = saved_errno;
     }
     return result;
 }
 
 int kernel_init_contract_pid1_reaps_adopted_child_exit(void) {
-    struct task_struct *parent = NULL;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = NULL;
+    struct task *child = NULL;
+    struct task *saved;
     int status = 0;
     int child_pid;
     int result = -1;
 
-    saved = get_current();
-    if (!init_task || saved != init_task) {
+    saved = task_current();
+    if (!task_init_process || saved != task_init_process) {
         errno = ESRCH;
         return -1;
     }
 
-    parent = task_create_child_impl(init_task);
+    parent = task_create_child_impl(task_init_process);
     if (!parent) {
         return -1;
     }
@@ -1001,28 +1013,28 @@ int kernel_init_contract_pid1_reaps_adopted_child_exit(void) {
     }
     child_pid = child->pid;
 
-    set_current(parent);
+    task_set_current(parent);
     exit_impl(0);
-    set_current(init_task);
+    task_set_current(task_init_process);
 
-    if (child->parent != init_task || child->ppid != 1) {
+    if (child->parent != task_init_process || child->ppid != 1) {
         errno = EPROTO;
         goto out;
     }
 
     child->signal->shared_pending.sig[(SIGCHLD - 1) >> 6] &= ~(1ULL << ((SIGCHLD - 1) & 63));
-    init_task->signal->shared_pending.sig[(SIGCHLD - 1) >> 6] &= ~(1ULL << ((SIGCHLD - 1) & 63));
+    task_init_process->signal->shared_pending.sig[(SIGCHLD - 1) >> 6] &= ~(1ULL << ((SIGCHLD - 1) & 63));
 
-    set_current(child);
+    task_set_current(child);
     exit_impl(37);
-    set_current(init_task);
+    task_set_current(task_init_process);
 
-    if (!signal_is_pending(init_task, SIGCHLD)) {
+    if (!signal_is_pending(task_init_process, SIGCHLD)) {
         errno = ENODATA;
         goto out;
     }
     if (waitpid_impl(child_pid, &status, 0) != child_pid ||
-        !WIFEXITED(status) || WEXITSTATUS(status) != 37) {
+        !wait_status_exited(status) || wait_status_exit_code(status) != 37) {
         errno = EPROTO;
         goto out;
     }
@@ -1033,61 +1045,61 @@ int kernel_init_contract_pid1_reaps_adopted_child_exit(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(init_task);
+        task_set_current(task_init_process);
         if (child) {
-            task_unlink_child_impl(init_task, child);
+            task_unlink_child_impl(task_init_process, child);
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
         }
         if (parent) {
-            task_unlink_child_impl(init_task, parent);
-            free_task(parent);
+            task_unlink_child_impl(task_init_process, parent);
+            task_put(parent);
         }
-        set_current(saved);
+        task_set_current(saved);
         errno = saved_errno;
     }
     return result;
 }
 
 int kernel_init_contract_orphaned_stopped_group_gets_hup_and_cont(void) {
-    struct task_struct *parent = NULL;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = NULL;
+    struct task *child = NULL;
+    struct task *saved;
     int result = -1;
 
-    saved = get_current();
-    if (!init_task || saved != init_task) {
+    saved = task_current();
+    if (!task_init_process || saved != task_init_process) {
         errno = ESRCH;
         return -1;
     }
 
-    parent = task_create_child_impl(init_task);
+    parent = task_create_child_impl(task_init_process);
     if (!parent) {
         return -1;
     }
 
-    set_current(parent);
+    task_set_current(parent);
     if (setsid_impl() != parent->pid) {
-        set_current(init_task);
+        task_set_current(task_init_process);
         goto out;
     }
     child = task_create_child_impl(parent);
     if (!child) {
-        set_current(init_task);
+        task_set_current(task_init_process);
         goto out;
     }
     child->pgid = child->pid;
-    set_current(init_task);
+    task_set_current(task_init_process);
 
     task_mark_stopped_by_signal(child, SIGSTOP);
     child->signal->shared_pending.sig[(SIGHUP - 1) >> 6] &= ~(1ULL << ((SIGHUP - 1) & 63));
     child->signal->shared_pending.sig[(SIGCONT - 1) >> 6] &= ~(1ULL << ((SIGCONT - 1) & 63));
 
-    set_current(parent);
+    task_set_current(parent);
     exit_impl(0);
-    set_current(init_task);
+    task_set_current(task_init_process);
 
-    if (child->parent != init_task || child->ppid != 1) {
+    if (child->parent != task_init_process || child->ppid != 1) {
         errno = EPROTO;
         goto out;
     }
@@ -1109,17 +1121,17 @@ int kernel_init_contract_orphaned_stopped_group_gets_hup_and_cont(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(init_task);
+        task_set_current(task_init_process);
         if (child) {
-            task_unlink_child_impl(init_task, child);
+            task_unlink_child_impl(task_init_process, child);
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
         }
         if (parent) {
-            task_unlink_child_impl(init_task, parent);
-            free_task(parent);
+            task_unlink_child_impl(task_init_process, parent);
+            task_put(parent);
         }
-        set_current(saved);
+        task_set_current(saved);
         errno = saved_errno;
     }
     return result;
@@ -1149,10 +1161,10 @@ int kernel_init_contract_exec_script_init_uses_interpreter(void) {
         errno = EPROTO;
         goto out;
     }
-    if (!get_current() || strcmp(get_current()->exe, "/tmp/init-script") != 0 ||
-        !get_current()->exec_image ||
-        get_current()->exec_image->type != EXEC_IMAGE_SCRIPT ||
-        strcmp(get_current()->exec_image->interpreter, "/usr/bin/init-interp") != 0) {
+    if (!task_current() || strcmp(task_current()->exe, "/tmp/init-script") != 0 ||
+        !task_current()->exec_image ||
+        task_current()->exec_image->type != EXEC_IMAGE_SCRIPT ||
+        strcmp(task_current()->exec_image->interpreter, "/usr/bin/init-interp") != 0) {
         errno = EPROTO;
         goto out;
     }

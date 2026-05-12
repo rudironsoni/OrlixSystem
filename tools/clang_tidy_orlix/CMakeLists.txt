@@ -42,11 +42,6 @@ target_compile_definitions(OrlixTidyModule PRIVATE
 target_link_libraries(OrlixTidyModule PRIVATE
   clangTidy
   clangTidyUtils
-  clangBasic
-  clangAST
-  clangASTMatchers
-  clangFrontend
-  clangLex
   clangTooling
   clang-cpp
   LLVM

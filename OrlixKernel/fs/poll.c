@@ -324,7 +324,7 @@ static int poll_impl_common(struct pollfd *fds, __kernel_ulong_t nfds, int timeo
         int ret = poll_wait_for_readiness_impl(timeout);
         if (ret == -EINTR) {
             if (record_restart) {
-                task_restart_record_impl(get_current(), TASK_RESTART_POLL,
+                task_restart_record_impl(task_current(), TASK_RESTART_POLL,
                                          (uint64_t)(uintptr_t)fds, (uint64_t)nfds,
                                          (uint64_t)(int64_t)timeout, 0, 0, 0);
             }
@@ -360,7 +360,7 @@ static int poll_impl_common(struct pollfd *fds, __kernel_ulong_t nfds, int timeo
             int ret = poll_wait_after_snapshot(observed_generation, wait_ms);
             if (ret < 0) {
                 if (ret == -EINTR && record_restart) {
-                    task_restart_record_impl(get_current(), TASK_RESTART_POLL,
+                    task_restart_record_impl(task_current(), TASK_RESTART_POLL,
                                              (uint64_t)(uintptr_t)fds, (uint64_t)nfds,
                                              (uint64_t)(int64_t)timeout, 0, 0, 0);
                 }
@@ -491,7 +491,7 @@ int select_impl(int nfds,
     if (requested == 0) {
         int ret = poll_impl_common(NULL, 0, timeout_ms, false);
         if (ret < 0 && errno == EINTR) {
-            task_restart_record_impl(get_current(), TASK_RESTART_SELECT,
+            task_restart_record_impl(task_current(), TASK_RESTART_SELECT,
                                      (uint64_t)(int64_t)nfds,
                                      (uint64_t)(uintptr_t)readfds,
                                      (uint64_t)(uintptr_t)writefds,
@@ -541,7 +541,7 @@ int select_impl(int nfds,
             if (errorfds && requested_error_ptr) {
                 *errorfds = requested_error;
             }
-            task_restart_record_impl(get_current(), TASK_RESTART_SELECT,
+            task_restart_record_impl(task_current(), TASK_RESTART_SELECT,
                                      (uint64_t)(int64_t)nfds,
                                      (uint64_t)(uintptr_t)readfds,
                                      (uint64_t)(uintptr_t)writefds,

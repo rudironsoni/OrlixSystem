@@ -240,7 +240,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
 
     if (dir_class == SYNTHETIC_DIR_PROC_SELF_TASK) {
         char dir_path[MAX_PATH];
-        struct task_struct *target = NULL;
+        struct task *target = NULL;
         int target_pid;
         int scan_pid = (cursor >= 2) ? ((int)cursor - 2) : 0;
 
@@ -255,7 +255,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
 
         kernel_mutex_lock(&task_table_lock);
         for (int bucket = 0; bucket < TASK_MAX_TASKS; bucket++) {
-            struct task_struct *task = task_table[bucket];
+            struct task *task = task_table[bucket];
 
             while (task) {
                 if (task->tgid == target->tgid && task->pid >= scan_pid) {
@@ -263,14 +263,14 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
                     int ret = snprintf(name, sizeof(name), "%d", task->pid);
                     if (ret < 0 || (size_t)ret >= sizeof(name)) {
                         kernel_mutex_unlock(&task_table_lock);
-                        free_task(target);
+                        task_put(target);
                         return -ENAMETOOLONG;
                     }
                     rc = append_linux_dirent64(dirp, count, &written, 1,
                                                (int64_t)(task->pid + 2), LINUX_DT_DIR, name);
                     if (rc == 0) {
                         kernel_mutex_unlock(&task_table_lock);
-                        free_task(target);
+                        task_put(target);
                         goto done;
                     }
                     cursor = task->pid + 1;
@@ -280,7 +280,7 @@ static ssize_t synthetic_getdents64(fd_entry_t *entry, void *dirp, size_t count)
             }
         }
         kernel_mutex_unlock(&task_table_lock);
-        free_task(target);
+        task_put(target);
         goto done;
     }
 

@@ -310,12 +310,12 @@ int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd, const char *
 
 static int directory_translate_task_path(const char *path, char *translated_path,
                                          size_t translated_path_len,
-                                         struct task_struct **task_out) {
-    struct task_struct *task;
+                                         struct task **task_out) {
+    struct task *task;
     char resolved_path[MAX_PATH];
     int ret;
 
-    task = get_current();
+    task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -354,7 +354,7 @@ static bool directory_virtual_path_contains(const char *root, const char *path) 
 }
 
 int chdir_impl(const char *path) {
-    struct task_struct *task;
+    struct task *task;
     char translated_path[MAX_PATH];
     char resolved_virtual[MAX_PATH];
     int ret;
@@ -398,7 +398,7 @@ int chdir_impl(const char *path) {
 
 int fchdir_impl(int fd) {
     fd_entry_t *entry;
-    struct task_struct *task;
+    struct task *task;
     char fd_path[MAX_PATH];
     int ret;
 
@@ -406,7 +406,7 @@ int fchdir_impl(int fd) {
         return -EBADF;
     }
 
-    task = get_current();
+    task = task_current();
     if (!task || !task->fs) {
         return -ESRCH;
     }
@@ -434,7 +434,7 @@ int fchdir_impl(int fd) {
 }
 
 int getcwd_impl(char *buf, size_t size) {
-    struct task_struct *task;
+    struct task *task;
     char virtual_path[MAX_PATH];
     int ret;
 
@@ -446,7 +446,7 @@ int getcwd_impl(char *buf, size_t size) {
         return -EINVAL;
     }
 
-    task = get_current();
+    task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -461,7 +461,7 @@ int getcwd_impl(char *buf, size_t size) {
         return -ERANGE;
     }
 
-    __builtin_memcpy(buf, virtual_path, selected_len + 1);
+    memcpy(buf, virtual_path, selected_len + 1);
     return 0;
 }
 
@@ -764,7 +764,7 @@ ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsi
             if (target_len > bufsiz) {
                 target_len = bufsiz;
             }
-            __builtin_memcpy(buf, link_target, target_len);
+            memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
         } else if (proc_class == PROC_SELF_CWD_LINK) {
             char link_target[MAX_PATH];
@@ -777,7 +777,7 @@ ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsi
             if (target_len > bufsiz) {
                 target_len = bufsiz;
             }
-            __builtin_memcpy(buf, link_target, target_len);
+            memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
         } else if (proc_class == PROC_SELF_EXE_LINK) {
             char link_target[MAX_PATH];
@@ -790,7 +790,7 @@ ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsi
             if (target_len > bufsiz) {
                 target_len = bufsiz;
             }
-            __builtin_memcpy(buf, link_target, target_len);
+            memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
         } else if (proc_class == PROC_SELF_NS_LINK) {
             char link_target[MAX_PATH];
@@ -802,7 +802,7 @@ ssize_t readlinkat_impl(int dirfd, const char *pathname, char *buf, size_t bufsi
             if (target_len > bufsiz) {
                 target_len = bufsiz;
             }
-            __builtin_memcpy(buf, link_target, target_len);
+            memcpy(buf, link_target, target_len);
             return (ssize_t)target_len;
         }
     }
@@ -831,7 +831,7 @@ ssize_t readlink_impl(const char *pathname, char *buf, size_t bufsiz) {
 }
 
 int chroot_impl(const char *path) {
-    struct task_struct *task;
+    struct task *task;
     char translated_path[MAX_PATH];
     char resolved_virtual[MAX_PATH];
     char current_pwd[MAX_PATH];
@@ -876,7 +876,7 @@ int chroot_impl(const char *path) {
         return ret;
     }
 
-    __builtin_memcpy(current_pwd, task->fs->pwd_path, sizeof(current_pwd));
+    memcpy(current_pwd, task->fs->pwd_path, sizeof(current_pwd));
     ret = fs_set_root(task->fs, resolved_virtual);
     if (ret != 0) {
         return ret;

@@ -40,8 +40,8 @@
 
 /* Fork context shared between parent and child */
 typedef struct {
-    struct task_struct *parent;
-    struct task_struct *child;
+    struct task *parent;
+    struct task *child;
     fork_frame_t frame;
     volatile __kernel_pid_t result; /* Result from child perspective */
     volatile int child_ready; /* Synchronization flag */
@@ -84,15 +84,15 @@ static int validate_clone_namespace_flags(uint64_t flags) {
 struct unshare_state_snapshot {
     bool had_current;
     bool new_pid_namespace_pending;
-    struct fs_struct *fs;
-    struct uts_namespace *uts_ns;
+    struct fs_context *fs;
+    struct uts_state *uts_ns;
     struct cgroup *cgroup_ns_root;
     uint64_t cgroup_ns_id;
     uint64_t cgroup_ns_owner_user_ns_id;
     struct cred cred;
 };
 
-static void unshare_snapshot_state(struct task_struct *task, struct unshare_state_snapshot *snapshot) {
+static void unshare_snapshot_state(struct task *task, struct unshare_state_snapshot *snapshot) {
     memset(snapshot, 0, sizeof(*snapshot));
     if (!task) {
         return;
@@ -109,7 +109,7 @@ static void unshare_snapshot_state(struct task_struct *task, struct unshare_stat
     }
 }
 
-static void unshare_restore_state(struct task_struct *task, const struct unshare_state_snapshot *snapshot) {
+static void unshare_restore_state(struct task *task, const struct unshare_state_snapshot *snapshot) {
     if (!task || !snapshot || !snapshot->had_current) {
         return;
     }
@@ -147,9 +147,9 @@ static void unshare_release_snapshot(struct unshare_state_snapshot *snapshot) {
     }
 }
 
-static int task_apply_clone_namespace_flags(struct task_struct *task, uint64_t flags) {
+static int task_apply_clone_namespace_flags(struct task *task, uint64_t flags) {
     uint64_t masked = flags & ~0xffULL;
-    struct uts_namespace *new_uts;
+    struct uts_state *new_uts;
 
     if ((masked & CLONE_NEWUSER) != 0) {
         int ret = cred_unshare_user_namespace(task->cred);
@@ -160,24 +160,24 @@ static int task_apply_clone_namespace_flags(struct task_struct *task, uint64_t f
 
     if ((masked & CLONE_NEWNS) != 0) {
         int ret;
-        struct task_struct *saved;
+        struct task *saved;
         if (!task->fs) {
             return -ESRCH;
         }
-        saved = get_current();
-        set_current(task);
+        saved = task_current();
+        task_set_current(task);
         ret = fs_unshare_mount_namespace(task->fs);
-        set_current(saved);
+        task_set_current(saved);
         if (ret < 0) {
             return ret;
         }
     }
 
     if ((masked & CLONE_NEWUTS) != 0) {
-        struct task_struct *saved = get_current();
-        set_current(task);
+        struct task *saved = task_current();
+        task_set_current(task);
         new_uts = uts_dup(task->uts_ns);
-        set_current(saved);
+        task_set_current(saved);
         if (!new_uts) {
             return -ENOMEM;
         }
@@ -238,12 +238,12 @@ static int clone3_resolve_cgroup_target(int fd, char *cgroup_path, size_t cgroup
     return 0;
 }
 
-static void clone3_release_child_failure(struct task_struct *parent, struct task_struct *child) {
+static void clone3_release_child_failure(struct task *parent, struct task *child) {
     if (!parent || !child) {
         return;
     }
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 }
 
 /* Child thread entry point */
@@ -251,7 +251,7 @@ static void *fork_child_trampoline(void *arg) {
     fork_ctx_t *ctx = (fork_ctx_t *)arg;
 
     /* Set child as current task in thread-local storage */
-    set_current(ctx->child);
+    task_set_current(ctx->child);
     ctx->child->thread = kernel_thread_self();
 
     /* Copy parent's state from task structure */
@@ -279,7 +279,7 @@ static void *fork_child_trampoline(void *arg) {
 }
 
 __kernel_pid_t fork_impl(void) {
-    struct task_struct *parent = get_current();
+    struct task *parent = task_current();
     if (!parent) {
         return -ESRCH;
     }
@@ -287,7 +287,7 @@ __kernel_pid_t fork_impl(void) {
     /* Check process limit */
     int child_count = 0;
     kernel_mutex_lock(&parent->lock);
-    struct task_struct *c = parent->children;
+    struct task *c = parent->children;
     while (c) {
         child_count++;
         c = c->next_sibling;
@@ -299,7 +299,7 @@ __kernel_pid_t fork_impl(void) {
     kernel_mutex_unlock(&parent->lock);
 
     /* Allocate child task */
-    struct task_struct *child = alloc_task();
+    struct task *child = alloc_task();
     if (!child) {
         return -ENOMEM;
     }
@@ -323,7 +323,7 @@ __kernel_pid_t fork_impl(void) {
         put_cred(child->cred);
         child->cred = dup_cred(parent->cred);
         if (!child->cred) {
-            free_task(child);
+            task_put(child);
             return -ENOMEM;
         }
     }
@@ -332,7 +332,7 @@ __kernel_pid_t fork_impl(void) {
     if (parent->fs) {
         child->fs = dup_fs_struct(parent->fs);
         if (!child->fs) {
-            free_task(child);
+            task_put(child);
             return -ENOMEM;
         }
     }
@@ -340,7 +340,7 @@ __kernel_pid_t fork_impl(void) {
     /* Copy subsystems with proper semantics */
     child->files = dup_files(parent->files);
     if (!child->files) {
-        free_task(child);
+        task_put(child);
         return -ENOMEM;
     }
 
@@ -371,7 +371,7 @@ __kernel_pid_t fork_impl(void) {
     ctx.result = 0;
     ctx.child_ready = 0;
     if (fork_frame_init(&ctx.frame) != 0) {
-        free_task(child);
+        task_put(child);
         return -ENOMEM;
     }
     kernel_mutex_init(&ctx.lock);
@@ -402,7 +402,7 @@ __kernel_pid_t fork_impl(void) {
             kernel_mutex_lock(&parent->lock);
             parent->children = child->next_sibling;
             kernel_mutex_unlock(&parent->lock);
-            free_task(child);
+            task_put(child);
             active_fork_ctx = NULL;
             fork_frame_destroy(&ctx.frame);
             kernel_mutex_destroy(&ctx.lock);
@@ -448,8 +448,8 @@ __kernel_pid_t fork_impl(void) {
 }
 
 int32_t clone_impl(uint64_t flags) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
 
     if (!parent) {
         return -ESRCH;
@@ -471,7 +471,7 @@ int32_t clone_impl(uint64_t flags) {
         child->fs = get_fs_struct(parent->fs);
         if (!child->fs) {
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
             return -ENOMEM;
         }
     }
@@ -480,7 +480,7 @@ int32_t clone_impl(uint64_t flags) {
         int ret = task_apply_clone_namespace_flags(child, flags & ~(uint64_t)CLONE_NEWPID);
         if (ret != 0) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
             return ret;
         }
     }
@@ -496,8 +496,8 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
     int *pidfd_ptr = NULL;
     int *parent_tid = NULL;
     int *child_tid = NULL;
-    struct task_struct *parent;
-    struct task_struct *child;
+    struct task *parent;
+    struct task *child;
     char cgroup_path[MAX_PATH];
     bool child_creates_new_pidns = false;
     bool use_clone_into_cgroup = false;
@@ -512,7 +512,7 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
     if (args->exit_signal > 0xff) {
         return -EINVAL;
     }
-    parent = get_current();
+    parent = task_current();
     if (!parent || !parent->cred) {
         return -ESRCH;
     }
@@ -620,14 +620,14 @@ int32_t clone3_impl(const struct clone_args *args, size_t size) {
         child->clear_child_tid = args->child_tid;
     }
 
-    free_task(child);
+    task_put(child);
     return child_pid;
 }
 
 int unshare_impl(uint64_t flags) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct unshare_state_snapshot snapshot;
-    struct fs_struct *old_fs = NULL;
+    struct fs_context *old_fs = NULL;
     uint64_t namespace_flags = flags;
     int ret;
 
@@ -697,8 +697,8 @@ int unshare_impl(uint64_t flags) {
 
 /* Vfork context */
 typedef struct {
-    struct task_struct *parent;
-    struct task_struct *child;
+    struct task *parent;
+    struct task *child;
     fork_frame_t parent_frame;
     fork_frame_t child_frame;
     volatile int child_done;   /* Set when child execs or exits */
@@ -716,7 +716,7 @@ static void *vfork_child_trampoline(void *arg) {
     vfork_ctx_t *ctx = (vfork_ctx_t *)arg;
 
     /* Set child as current task */
-    set_current(ctx->child);
+    task_set_current(ctx->child);
     ctx->child->thread = kernel_thread_self();
 
     /* Signal that child is ready */
@@ -732,7 +732,7 @@ static void *vfork_child_trampoline(void *arg) {
 }
 
 int vfork_impl(void) {
-    struct task_struct *parent = get_current();
+    struct task *parent = task_current();
     if (!parent) {
         return -ESRCH;
     }
@@ -740,7 +740,7 @@ int vfork_impl(void) {
     /* Check resource limits */
     kernel_mutex_lock(&parent->lock);
     int child_count = 0;
-    struct task_struct *c = parent->children;
+    struct task *c = parent->children;
     while (c) {
         child_count++;
         c = c->next_sibling;
@@ -752,7 +752,7 @@ int vfork_impl(void) {
     kernel_mutex_unlock(&parent->lock);
 
     /* Allocate child task */
-    struct task_struct *child = alloc_task();
+    struct task *child = alloc_task();
     if (!child) {
         return -ENOMEM;
     }
@@ -777,7 +777,7 @@ int vfork_impl(void) {
         put_cred(child->cred);
         child->cred = dup_cred(parent->cred);
         if (!child->cred) {
-            free_task(child);
+            task_put(child);
             return -ENOMEM;
         }
     }
@@ -789,7 +789,7 @@ int vfork_impl(void) {
             kernel_mutex_lock(&parent->lock);
             parent->children = child->next_sibling;
             kernel_mutex_unlock(&parent->lock);
-            free_task(child);
+            task_put(child);
             return -ENOMEM;
         }
     }
@@ -804,7 +804,7 @@ int vfork_impl(void) {
             kernel_mutex_lock(&parent->lock);
             parent->children = child->next_sibling;
             kernel_mutex_unlock(&parent->lock);
-            free_task(child);
+            task_put(child);
             return -ENOMEM;
         }
     }
@@ -829,7 +829,7 @@ int vfork_impl(void) {
     kernel_mutex_unlock(&parent->lock);
 
     /* Mark parent as suspended (vfork semantics) */
-    atomic_set(&parent->state, TASK_UNINTERRUPTIBLE);
+    atomic_set(&parent->state, RUN_STATE_UNINTERRUPTIBLE);
 
     /* Set up vfork context */
     vfork_ctx_t ctx;
@@ -839,12 +839,12 @@ int vfork_impl(void) {
     ctx.child_execed = 0;
     ctx.child_pid = child->pid;
     if (fork_frame_init(&ctx.parent_frame) != 0) {
-        free_task(child);
+        task_put(child);
         return -ENOMEM;
     }
     if (fork_frame_init(&ctx.child_frame) != 0) {
         fork_frame_destroy(&ctx.parent_frame);
-        free_task(child);
+        task_put(child);
         return -ENOMEM;
     }
     kernel_mutex_init(&ctx.lock);
@@ -874,8 +874,8 @@ int vfork_impl(void) {
                 kernel_mutex_lock(&parent->lock);
                 parent->children = child->next_sibling;
                 kernel_mutex_unlock(&parent->lock);
-                atomic_set(&parent->state, TASK_RUNNING);
-                free_task(child);
+                atomic_set(&parent->state, RUN_STATE_RUNNING);
+                task_put(child);
                 active_vfork_ctx = NULL;
                 fork_frame_destroy(&ctx.child_frame);
                 fork_frame_destroy(&ctx.parent_frame);
@@ -892,7 +892,7 @@ int vfork_impl(void) {
             kernel_mutex_unlock(&ctx.lock);
 
             /* Child has execed or exited - parent can resume */
-            atomic_set(&parent->state, TASK_RUNNING);
+            atomic_set(&parent->state, RUN_STATE_RUNNING);
 
             kernel_thread_detach(child_thread);
 

@@ -10,10 +10,9 @@
 #include "../task.h"
 #include "../wait_queue.h"
 
+#include <uapi/asm/socket.h>
 #include <uapi/linux/poll.h>
-#include <uapi/asm-generic/socket.h>
-#include <asm-generic/signal.h>
-#include <uapi/linux/socket.h>
+#include <uapi/linux/signal.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
@@ -939,7 +938,7 @@ __kernel_ssize_t socket_sendto_impl(struct socket_state *sock,
     peer = sock->peer;
     if (!peer || !sock->peer_writes_open) {
         wait_queue_unlock(&sock->wait);
-        signal_generate_task(get_current(), SIGPIPE);
+        signal_generate_task(task_current(), SIGPIPE);
         return -EPIPE;
     }
     wait_queue_unlock(&sock->wait);
@@ -948,7 +947,7 @@ __kernel_ssize_t socket_sendto_impl(struct socket_state *sock,
     while (socket_space_locked(peer) == 0) {
         if (!peer->peer_writes_open) {
             wait_queue_unlock(&peer->wait);
-            signal_generate_task(get_current(), SIGPIPE);
+            signal_generate_task(task_current(), SIGPIPE);
             return -EPIPE;
         }
         if (nonblock) {

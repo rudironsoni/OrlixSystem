@@ -48,14 +48,14 @@ enum vfs_route_identity {
  * These are defined in standard system headers, no need to redefine */
 
 /* Forward declarations */
-struct inode;
-struct dentry;
-struct file;
+struct vfs_inode;
+struct vfs_dentry;
+struct fd_file;
 struct stat;
 struct timespec;
 struct super_block;
-struct file_system_type;
-struct mount;
+struct vfs_file_system;
+struct vfs_mount;
 struct vfs_mount_namespace;
 struct mount_attr;
 struct mnt_id_req;
@@ -67,57 +67,57 @@ struct address_space;
 struct writeback_control;
 
 /* Linux-compatible VFS operations structure */
-struct file_operations {
-    int64_t (*read)(struct file *file, char *buf, size_t count, int64_t *pos);
-    int64_t (*write)(struct file *file, const char *buf, size_t count, int64_t *pos);
-    int (*open)(struct inode *inode, struct file *file);
-    int (*release)(struct inode *inode, struct file *file);
-    int (*ioctl)(struct file *file, unsigned int cmd, unsigned long arg);
-    int (*mmap)(struct file *file, void *addr, size_t len, int prot, int flags, int64_t offset);
-    unsigned int (*poll)(struct file *file, struct poll_table_struct *table);
+struct vfs_file_ops {
+    int64_t (*read)(struct fd_file *file, char *buf, size_t count, int64_t *pos);
+    int64_t (*write)(struct fd_file *file, const char *buf, size_t count, int64_t *pos);
+    int (*open)(struct vfs_inode *inode, struct fd_file *file);
+    int (*release)(struct vfs_inode *inode, struct fd_file *file);
+    int (*ioctl)(struct fd_file *file, unsigned int cmd, unsigned long arg);
+    int (*mmap)(struct fd_file *file, void *addr, size_t len, int prot, int flags, int64_t offset);
+    unsigned int (*poll)(struct fd_file *file, struct poll_table_struct *table);
 };
 
 /* Linux-compatible inode operations */
-struct inode_operations {
-    struct dentry *(*lookup)(struct inode *dir, struct dentry *dentry);
-    int (*create)(struct inode *dir, struct dentry *dentry, uint32_t mode);
-    int (*link)(struct dentry *old_dentry, struct inode *dir, struct dentry *new_dentry);
-    int (*unlink)(struct inode *dir, struct dentry *dentry);
-    int (*symlink)(struct inode *dir, struct dentry *dentry, const char *oldname);
-    int (*mkdir)(struct inode *dir, struct dentry *dentry, uint32_t mode);
-    int (*rmdir)(struct inode *dir, struct dentry *dentry);
-    int (*rename)(struct inode *old_dir, struct dentry *old_dentry, struct inode *new_dir,
-                  struct dentry *new_dentry);
-    int (*readlink)(struct dentry *dentry, char *buf, int buflen);
-    int (*setattr)(struct dentry *dentry, struct iattr *attr);
-    int (*getattr)(const char *path, struct dentry *dentry, struct stat *statbuf);
+struct vfs_inode_ops {
+    struct vfs_dentry *(*lookup)(struct vfs_inode *dir, struct vfs_dentry *dentry);
+    int (*create)(struct vfs_inode *dir, struct vfs_dentry *dentry, uint32_t mode);
+    int (*link)(struct vfs_dentry *old_dentry, struct vfs_inode *dir, struct vfs_dentry *new_dentry);
+    int (*unlink)(struct vfs_inode *dir, struct vfs_dentry *dentry);
+    int (*symlink)(struct vfs_inode *dir, struct vfs_dentry *dentry, const char *oldname);
+    int (*mkdir)(struct vfs_inode *dir, struct vfs_dentry *dentry, uint32_t mode);
+    int (*rmdir)(struct vfs_inode *dir, struct vfs_dentry *dentry);
+    int (*rename)(struct vfs_inode *old_dir, struct vfs_dentry *old_dentry, struct vfs_inode *new_dir,
+                  struct vfs_dentry *new_dentry);
+    int (*readlink)(struct vfs_dentry *dentry, char *buf, int buflen);
+    int (*setattr)(struct vfs_dentry *dentry, struct iattr *attr);
+    int (*getattr)(const char *path, struct vfs_dentry *dentry, struct stat *statbuf);
 };
 
 /* Linux-compatible address space operations */
-struct address_space_operations {
-    int (*readpage)(struct file *file, struct page *page);
+struct vfs_mapping_ops {
+    int (*readpage)(struct fd_file *file, struct page *page);
     int (*writepage)(struct page *page, struct writeback_control *wbc);
-    int (*write_begin)(struct file *file, struct address_space *mapping, int64_t pos, unsigned len,
+    int (*write_begin)(struct fd_file *file, struct address_space *mapping, int64_t pos, unsigned len,
                        unsigned flags, struct page **pagep, void **fsdata);
-    int (*write_end)(struct file *file, struct address_space *mapping, int64_t pos, unsigned len,
+    int (*write_end)(struct fd_file *file, struct address_space *mapping, int64_t pos, unsigned len,
                      unsigned copied, struct page *page, void *fsdata);
 };
 
 /* Linux-compatible super block operations */
-struct super_operations {
-    struct inode *(*alloc_inode)(struct super_block *sb);
-    void (*destroy_inode)(struct inode *inode);
-    void (*dirty_inode)(struct inode *inode);
-    int (*write_inode)(struct inode *inode, struct writeback_control *wbc);
-    void (*evict_inode)(struct inode *inode);
-    int (*statfs)(struct dentry *dentry, struct statfs *buf);
+struct vfs_super_ops {
+    struct vfs_inode *(*alloc_inode)(struct super_block *sb);
+    void (*destroy_inode)(struct vfs_inode *inode);
+    void (*dirty_inode)(struct vfs_inode *inode);
+    int (*write_inode)(struct vfs_inode *inode, struct writeback_control *wbc);
+    void (*evict_inode)(struct vfs_inode *inode);
+    int (*statfs)(struct vfs_dentry *dentry, struct statfs *buf);
     int (*remount_fs)(struct super_block *sb, int *flags, char *data);
-    void (*clear_inode)(struct inode *inode);
+    void (*clear_inode)(struct vfs_inode *inode);
     void (*umount_begin)(struct super_block *sb);
 };
 
 /* Linux-compatible inode structure */
-struct inode {
+struct vfs_inode {
     uint64_t i_ino;
     unsigned int i_mode;
     uint32_t i_uid;
@@ -129,46 +129,46 @@ struct inode {
     atomic_t i_count;
     void *i_private;
     struct super_block *i_sb;
-    const struct inode_operations *i_op;
-    const struct file_operations *i_fop;
+    const struct vfs_inode_ops *i_op;
+    const struct vfs_file_ops *i_fop;
     void *i_fspriv;
 };
 
 /* Linux-compatible dentry (directory entry) structure */
-struct dentry {
-    struct inode *d_inode;
+struct vfs_dentry {
+    struct vfs_inode *d_inode;
     struct super_block *d_sb;
     const unsigned char *d_name;
     atomic_t d_count;
-    struct dentry *d_parent;
+    struct vfs_dentry *d_parent;
     void *d_fsdata;
 };
 
 /* Linux-compatible file system type */
-struct file_system_type {
+struct vfs_file_system {
     const char *name;
-    int (*mount)(struct file_system_type *fs_type, int flags, const char *dev_name, void *data,
-                  struct dentry *mnt_root);
+    int (*mount)(struct vfs_file_system *fs_type, int flags, const char *dev_name, void *data,
+                  struct vfs_dentry *mnt_root);
     void (*kill_sb)(struct super_block *sb);
     struct module *owner;
 };
 
 /* Linux-compatible mount point */
-struct mount {
-    struct dentry *mnt_root;
+struct vfs_mount {
+    struct vfs_dentry *mnt_root;
     struct super_block *mnt_sb;
     int mnt_flags;
     char mnt_devname[MAX_PATH];
     atomic_t mnt_count;
     atomic_t mnt_ondie;
-    struct mount *mnt_parent;
+    struct vfs_mount *mnt_parent;
 };
 
 /* Linux-compatible fs context (per-task filesystem context)
  * Stores virtual root and pwd as char arrays for task-aware path resolution */
-struct fs_struct {
-    struct dentry *root;
-    struct dentry *pwd;
+struct fs_context {
+    struct vfs_dentry *root;
+    struct vfs_dentry *pwd;
     uint32_t umask;
     atomic_t users;
     fs_mutex_t lock;
@@ -179,18 +179,18 @@ struct fs_struct {
 };
 
 /* VFS context API */
-struct fs_struct *alloc_fs_struct(void);
-struct fs_struct *get_fs_struct(struct fs_struct *fs);
-void free_fs_struct(struct fs_struct *fs);
-struct fs_struct *dup_fs_struct(struct fs_struct *old);
-int fs_init_root(struct fs_struct *fs, const char *root_path);
-int fs_init_pwd(struct fs_struct *fs, const char *pwd_path);
-int fs_set_pwd(struct fs_struct *fs, const char *new_pwd);
-int fs_set_root(struct fs_struct *fs, const char *new_root);
-int fs_unshare_mount_namespace(struct fs_struct *fs);
-uint64_t fs_mount_namespace_id(struct fs_struct *fs);
-unsigned int fs_mount_namespace_refs(struct fs_struct *fs);
-unsigned int fs_mount_namespace_active_mounts(struct fs_struct *fs);
+struct fs_context *alloc_fs_struct(void);
+struct fs_context *get_fs_struct(struct fs_context *fs);
+void free_fs_struct(struct fs_context *fs);
+struct fs_context *dup_fs_struct(struct fs_context *old);
+int fs_init_root(struct fs_context *fs, const char *root_path);
+int fs_init_pwd(struct fs_context *fs, const char *pwd_path);
+int fs_set_pwd(struct fs_context *fs, const char *new_pwd);
+int fs_set_root(struct fs_context *fs, const char *new_root);
+int fs_unshare_mount_namespace(struct fs_context *fs);
+uint64_t fs_mount_namespace_id(struct fs_context *fs);
+unsigned int fs_mount_namespace_refs(struct fs_context *fs);
+unsigned int fs_mount_namespace_active_mounts(struct fs_context *fs);
 int vfs_apply_mounts_to_path(const char *normalized_virtual_path, char *mounted_path,
                              size_t mounted_path_len);
 
@@ -199,7 +199,6 @@ int vfs_init(void);
 void vfs_deinit(void);
 
 /* Mount operations */
-int vfs_kern_mount(struct file_system_type *type, int flags, const char *dev_name, void *data);
 int vfs_mount(const char *source, const char *target, const char *fstype, unsigned long flags,
               const void *data);
 int vfs_umount(const char *target);
@@ -221,24 +220,24 @@ int vfs_statmount(const struct mnt_id_req *req, struct statmount *buf, size_t bu
                   unsigned int flags);
 int vfs_mount_basic(void);
 
-	/* File operations through VFS */
-	int vfs_open(const char *path, int flags, uint32_t mode, int *target_fd);
+/* File operations through VFS */
+int vfs_open(const char *path, int flags, uint32_t mode, int *target_fd);
 
 /* Task-aware path translation between virtual and host paths */
 int vfs_translate_path(const char *vpath, char *backing_path, size_t backing_path_len);
 int vfs_translate_path_task(const char *vpath, char *backing_path, size_t backing_path_len,
-                            struct fs_struct *fs);
+                            struct fs_context *fs);
 int vfs_translate_path_at(int dirfd, const char *vpath, char *backing_path, size_t backing_path_len);
 int vfs_resolve_virtual_path_task(const char *vpath, char *resolved_vpath, size_t resolved_vpath_len,
-                                  struct fs_struct *fs);
+                                  struct fs_context *fs);
 int vfs_resolve_virtual_path_at(int dirfd, const char *vpath, char *resolved_vpath,
                                 size_t resolved_vpath_len);
 int vfs_resolve_virtual_path_task_follow(const char *vpath, char *resolved_vpath,
-                                         size_t resolved_vpath_len, struct fs_struct *fs,
+                                         size_t resolved_vpath_len, struct fs_context *fs,
                                          int follow_final_symlink);
 int vfs_resolve_virtual_path_at_follow(int dirfd, const char *vpath, char *resolved_vpath,
                                        size_t resolved_vpath_len, int follow_final_symlink);
-int vfs_getcwd_path_task(struct fs_struct *fs, char *vpath, size_t vpath_len);
+int vfs_getcwd_path_task(struct fs_context *fs, char *vpath, size_t vpath_len);
 int vfs_normalize_linux_path(const char *input, char *output, size_t output_len);
 int vfs_reverse_translate(const char *backing_path, char *vpath, size_t vpath_len);
 const char *vfs_primary_backing_root(void);

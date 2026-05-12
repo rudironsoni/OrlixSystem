@@ -13,14 +13,10 @@ static NSString *SanitizeCaseName(const char *name) {
     for (NSUInteger index = 0; index < source.length; index++) {
         unichar character = [source characterAtIndex:index];
         BOOL alphanumeric = [[NSCharacterSet alphanumericCharacterSet] characterIsMember:character];
-        [sanitized appendFormat:@"%C", alphanumeric ? character : '_'];
+        unichar output = alphanumeric ? character : (unichar)'_';
+        [sanitized appendFormat:@"%C", output];
     }
     return sanitized;
-}
-
-static void RunDynamicKUnitCase(id self, SEL _cmd) {
-    [(LinuxKernelDynamicTestCase *)self performSelector:@selector(dispatchDynamicCaseForSelector:)
-                                             withObject:NSStringFromSelector(_cmd)];
 }
 
 @interface LinuxKernelDynamicTestCase ()
@@ -28,6 +24,25 @@ static void RunDynamicKUnitCase(id self, SEL _cmd) {
 - (void)dispatchDynamicCaseForSelector:(NSString *)selectorName;
 
 @end
+
+static void RunDynamicKUnitCase(id self, SEL _cmd) {
+    [(LinuxKernelDynamicTestCase *)self dispatchDynamicCaseForSelector:NSStringFromSelector(_cmd)];
+}
+
+static void RecordDynamicFailure(LinuxKernelDynamicTestCase *testCase, NSString *description, NSString *filePath, NSUInteger line) {
+    NSString *compactDescription = description ?: @"dynamic KUnit failure";
+    NSString *resolvedPath = filePath ?: @__FILE__;
+    XCTSourceCodeLocation *location = [[XCTSourceCodeLocation alloc] initWithFilePath:resolvedPath
+                                                                           lineNumber:(NSInteger)line];
+    XCTSourceCodeContext *context = [[XCTSourceCodeContext alloc] initWithLocation:location];
+    XCTIssue *issue = [[XCTIssue alloc] initWithType:XCTIssueTypeAssertionFailure
+                                  compactDescription:compactDescription
+                                 detailedDescription:nil
+                                   sourceCodeContext:context
+                                     associatedError:nil
+                                         attachments:@[]];
+    [testCase recordIssue:issue];
+}
 
 @implementation LinuxKernelDynamicTestCase
 
@@ -73,10 +88,10 @@ static void RunDynamicKUnitCase(id self, SEL _cmd) {
     struct kunit test;
 
     if (!suite || !caseIndex) {
-        [self recordFailureWithDescription:@"dynamic KUnit case mapping was not initialized"
-                                    inFile:@__FILE__
-                                    atLine:__LINE__
-                                  expected:NO];
+        RecordDynamicFailure(self,
+                             @"dynamic KUnit case mapping was not initialized",
+                             @__FILE__,
+                             __LINE__);
         return;
     }
 
@@ -92,10 +107,10 @@ static void RunDynamicKUnitCase(id self, SEL _cmd) {
         return;
     }
 
-    [self recordFailureWithDescription:[NSString stringWithUTF8String:test.failure_message]
-                                inFile:[NSString stringWithUTF8String:test.failure_file]
-                                atLine:test.failure_line
-                              expected:NO];
+    RecordDynamicFailure(self,
+                         [NSString stringWithUTF8String:test.failure_message],
+                         [NSString stringWithUTF8String:test.failure_file],
+                         test.failure_line);
 }
 
 @end

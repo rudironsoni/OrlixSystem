@@ -1,12 +1,13 @@
 #include <asm/ioctls.h>
-#include <linux/fcntl.h>
-#include <uapi/asm-generic/signal.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/fs.h>
-#include <linux/stat.h>
+#include <uapi/linux/stat.h>
+#include <uapi/linux/errno.h>
 #include <linux/dirent.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -14,6 +15,8 @@
 #include "fs/vfs.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
+
+extern int errno;
 
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
@@ -24,7 +27,7 @@ extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int fstat_impl(int fd, struct stat *statbuf);
 extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
-extern ssize_t getdents64(int fd, void *dirp, size_t count);
+extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern int32_t getpgrp_impl(void);
 extern int32_t getsid_impl(int32_t pid);
 extern int32_t setsid_impl(void);
@@ -41,7 +44,7 @@ static int close_if_open(int fd) {
     return 0;
 }
 
-static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+static void clear_pending_signal(struct task *task, int32_t sig) {
     if (!task || !task->signal || sig <= 0 || sig > KERNEL_SIG_NUM) {
         return;
     }
@@ -86,7 +89,7 @@ static int dir_contains_name(int fd, const char *needle) {
         return -1;
     }
 
-    nread = getdents64(fd, buf, sizeof(buf));
+    nread = getdents64_impl(fd, buf, sizeof(buf));
     if (nread < 0) {
         return -1;
     }
@@ -273,7 +276,7 @@ static int alloc_pty_pair(int cloexec, int nonblock, int *master_fd_out, int *sl
 }
 
 int pty_session_contract_boot_init_task_has_linux_session_identity(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task) {
         errno = ESRCH;
         return -1;
@@ -860,10 +863,10 @@ int pty_session_contract_pty_fdinfo_reflects_flags_and_paths(void) {
 }
 
 int pty_session_contract_session_leader_exit_hangs_up_foreground_pgrp(void) {
-    struct task_struct *saved = get_current();
-    struct task_struct *session = NULL;
-    struct task_struct *foreground = NULL;
-    struct task_struct *foreground_parent = NULL;
+    struct task *saved = task_current();
+    struct task *session = NULL;
+    struct task *foreground = NULL;
+    struct task *foreground_parent = NULL;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -880,7 +883,7 @@ int pty_session_contract_session_leader_exit_hangs_up_foreground_pgrp(void) {
         return -1;
     }
 
-    set_current(session);
+    task_set_current(session);
     if (setsid_impl() != session->pid) {
         goto out;
     }
@@ -907,7 +910,7 @@ int pty_session_contract_session_leader_exit_hangs_up_foreground_pgrp(void) {
     clear_pending_signal(foreground, SIGHUP);
     clear_pending_signal(foreground, SIGCONT);
     exit_impl(0);
-    set_current(saved);
+    task_set_current(saved);
 
     if (!signal_is_pending(foreground, SIGHUP) ||
         !signal_is_pending(foreground, SIGCONT) ||
@@ -928,28 +931,28 @@ int pty_session_contract_session_leader_exit_hangs_up_foreground_pgrp(void) {
     ret = 0;
 
 out:
-    if (get_current() != saved) {
-        set_current(saved);
+    if (task_current() != saved) {
+        task_set_current(saved);
     }
     close_if_open(slave_fd);
     close_if_open(master_fd);
     if (foreground) {
         foreground_parent = foreground->parent;
         task_unlink_child_impl(foreground_parent, foreground);
-        free_task(foreground);
+        task_put(foreground);
     }
     if (session) {
         task_unlink_child_impl(saved, session);
-        free_task(session);
+        task_put(session);
     }
     return ret;
 }
 
 int pty_session_contract_session_leader_tiocnotty_hangs_up_foreground_pgrp(void) {
-    struct task_struct *saved = get_current();
-    struct task_struct *session = NULL;
-    struct task_struct *foreground = NULL;
-    struct task_struct *foreground_parent = NULL;
+    struct task *saved = task_current();
+    struct task *session = NULL;
+    struct task *foreground = NULL;
+    struct task *foreground_parent = NULL;
     int master_fd = -1;
     int slave_fd = -1;
     int tty_fd = -1;
@@ -967,7 +970,7 @@ int pty_session_contract_session_leader_tiocnotty_hangs_up_foreground_pgrp(void)
         return -1;
     }
 
-    set_current(session);
+    task_set_current(session);
     if (setsid_impl() != session->pid) {
         goto out;
     }
@@ -1015,8 +1018,8 @@ int pty_session_contract_session_leader_tiocnotty_hangs_up_foreground_pgrp(void)
     ret = 0;
 
 out:
-    if (get_current() != saved) {
-        set_current(saved);
+    if (task_current() != saved) {
+        task_set_current(saved);
     }
     close_if_open(tty_fd);
     close_if_open(slave_fd);
@@ -1024,11 +1027,11 @@ out:
     if (foreground) {
         foreground_parent = foreground->parent;
         task_unlink_child_impl(foreground_parent, foreground);
-        free_task(foreground);
+        task_put(foreground);
     }
     if (session) {
         task_unlink_child_impl(saved, session);
-        free_task(session);
+        task_put(session);
     }
     return ret;
 }

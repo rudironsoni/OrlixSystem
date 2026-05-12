@@ -22,73 +22,20 @@
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/capability.h>
 #include <uapi/linux/elf.h>
-#include <uapi/linux/mount.h>
+#include <linux/mount.h>
 #include <uapi/linux/sched.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/stat.h>
+#include <uapi/asm/siginfo.h>
 #include <uapi/asm/stat.h>
-#ifdef RLIM_NLIMITS
-#undef RLIM_NLIMITS
-#endif
-#include <asm-generic/resource.h>
+#include <linux/resource.h>
 
 extern void poll_notify_readiness_impl(void);
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
 extern char *kstrdup(const char *src, gfp_t flags);
 
-#ifdef SIGCHLD
-#undef SIGCHLD
-#endif
-#ifdef SIGIOT
-#undef SIGIOT
-#endif
-#ifdef SIGBUS
-#undef SIGBUS
-#endif
-#ifdef SIGUSR1
-#undef SIGUSR1
-#endif
-#ifdef SIGUSR2
-#undef SIGUSR2
-#endif
-#ifdef SIGCONT
-#undef SIGCONT
-#endif
-#ifdef SIGSTOP
-#undef SIGSTOP
-#endif
-#ifdef SIGTSTP
-#undef SIGTSTP
-#endif
-#ifdef SIGURG
-#undef SIGURG
-#endif
-#ifdef SIGIO
-#undef SIGIO
-#endif
-#ifdef SIGSYS
-#undef SIGSYS
-#endif
-#define __ASSEMBLY__ 1
-#include <asm-generic/signal.h>
-#undef __ASSEMBLY__
-
-#ifdef SEGV_MAPERR
-#undef SEGV_MAPERR
-#endif
-#ifdef SEGV_ACCERR
-#undef SEGV_ACCERR
-#endif
-#ifdef BUS_ADRERR
-#undef BUS_ADRERR
-#endif
-enum {
-    SEGV_MAPERR = 1,
-    SEGV_ACCERR = 2,
-    BUS_ADRERR = 2,
-};
-
-static struct mm_struct *task_ensure_mm_impl(struct task_struct *task) {
+static struct memory_space *task_ensure_mm_impl(struct task *task) {
     if (!task) {
         return NULL;
     }
@@ -102,13 +49,13 @@ static struct mm_struct *task_ensure_mm_impl(struct task_struct *task) {
     return task->mm;
 }
 
-static __thread struct task_struct *current_task = NULL;
-struct task_struct *init_task = NULL;
+static __thread struct task *current_task = NULL;
+struct task *task_init_process = NULL;
 static atomic64_t task_boot_time_ns = ATOMIC64_INIT(0);
 
 /* Task table - accessible to signal.c for killpg */
 kernel_mutex_t task_table_lock = KERNEL_MUTEX_INITIALIZER;
-struct task_struct *task_table[TASK_MAX_TASKS] = {NULL};
+struct task *task_table[TASK_MAX_TASKS] = {NULL};
 
 static uint64_t task_monotonic_time_ns(void) {
     u64 now_ns;
@@ -133,9 +80,9 @@ static uint64_t task_start_time_since_boot_ns(void) {
     return now - boot;
 }
 
-int task_pidfd_getfd_access_impl(struct task_struct *target) {
-    struct task_struct *caller = get_current();
-    struct task_struct *live_target;
+int task_pidfd_getfd_access_impl(struct task *target) {
+    struct task *caller = task_current();
+    struct task *live_target;
 
     if (!caller || !target || !caller->cred || !target->cred) {
         return -ESRCH;
@@ -153,10 +100,10 @@ int task_pidfd_getfd_access_impl(struct task_struct *target) {
         return -ESRCH;
     }
     if (atomic_read(&live_target->exited)) {
-        free_task(live_target);
+        task_put(live_target);
         return -ESRCH;
     }
-    free_task(live_target);
+    task_put(live_target);
 
     return ptrace_may_access_task_impl(caller, target);
 }
@@ -165,11 +112,11 @@ int task_hash(int32_t pid) {
     return (int)(pid % TASK_MAX_TASKS);
 }
 
-struct task_struct *get_current(void) {
+struct task *task_current(void) {
     return current_task;
 }
 
-void set_current(struct task_struct *task) {
+void task_set_current(struct task *task) {
     if (task == current_task) {
         return;
     }
@@ -184,13 +131,13 @@ void set_current(struct task_struct *task) {
         atomic_inc(&task->refs);
     }
     if (current_task) {
-        free_task(current_task);
+        task_put(current_task);
     }
     current_task = task;
     set_current_cred(task ? task->cred : NULL);
 }
 
-static void task_clear_exec_strings(struct task_struct *task) {
+static void task_clear_exec_strings(struct task *task) {
     if (!task) {
         return;
     }
@@ -244,7 +191,7 @@ static int task_copy_exec_string_vector(char *const input[], char **output, int 
 }
 
 int task_record_exec_strings_impl(char *const argv[], char *const envp[]) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char *new_argv[TASK_MAX_ARGS] = {0};
     char *new_envp[TASK_MAX_ARGS] = {0};
     int new_argc = 0;
@@ -280,7 +227,7 @@ int task_record_exec_strings_impl(char *const argv[], char *const envp[]) {
     return 0;
 }
 
-const struct task_vma *task_find_vma_impl(struct task_struct *task, uint64_t addr) {
+const struct task_vma *task_find_vma_impl(struct task *task, uint64_t addr) {
     if (!task || !task->mm) {
         return NULL;
     }
@@ -292,7 +239,7 @@ const struct task_vma *task_find_vma_impl(struct task_struct *task, uint64_t add
     return NULL;
 }
 
-struct task_vma *task_find_vma_mutable_impl(struct task_struct *task, uint64_t addr) {
+struct task_vma *task_find_vma_mutable_impl(struct task *task, uint64_t addr) {
     if (!task || !task->mm) {
         return NULL;
     }
@@ -320,7 +267,7 @@ uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr) {
     return vma->page_flags[page_index];
 }
 
-int task_set_vma_page_flags_impl(struct task_struct *task, uint64_t addr, uint64_t size, uint32_t flags) {
+int task_set_vma_page_flags_impl(struct task *task, uint64_t addr, uint64_t size, uint32_t flags) {
     const struct task_vma *found;
     uint64_t cursor;
     uint64_t end;
@@ -373,7 +320,7 @@ void task_rename_vma_backing_path_impl(const char *old_path, const char *new_pat
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->mm) {
                 for (uint32_t v = 0; v < task->mm->vma_count; v++) {
@@ -398,7 +345,7 @@ void task_exchange_vma_backing_paths_impl(const char *left_path, const char *rig
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->mm) {
                 for (uint32_t v = 0; v < task->mm->vma_count; v++) {
@@ -421,11 +368,11 @@ void task_exchange_vma_backing_paths_impl(const char *left_path, const char *rig
     kernel_mutex_unlock(&task_table_lock);
 }
 
-void task_note_memory_fault_impl(struct task_struct *task, uint64_t addr, int32_t code) {
+void task_note_memory_fault_impl(struct task *task, uint64_t addr, int32_t code) {
     task_note_memory_signal_fault_impl(task, SIGSEGV, code, addr);
 }
 
-void task_note_memory_signal_fault_impl(struct task_struct *task, int32_t signo, int32_t code, uint64_t addr) {
+void task_note_memory_signal_fault_impl(struct task *task, int32_t signo, int32_t code, uint64_t addr) {
     if (!task) {
         return;
     }
@@ -435,7 +382,7 @@ void task_note_memory_signal_fault_impl(struct task_struct *task, int32_t signo,
     (void)signal_generate_task_info(task, signo, code, addr);
 }
 
-void task_clear_vmas_impl(struct mm_struct *mm) {
+void task_clear_vmas_impl(struct memory_space *mm) {
     if (!mm) {
         return;
     }
@@ -472,7 +419,7 @@ void task_clear_vmas_impl(struct mm_struct *mm) {
     mm->vma_count = 0;
 }
 
-struct mm_struct *task_mm_get_impl(struct mm_struct *mm) {
+struct memory_space *task_mm_get_impl(struct memory_space *mm) {
     if (!mm) {
         return NULL;
     }
@@ -483,7 +430,7 @@ struct mm_struct *task_mm_get_impl(struct mm_struct *mm) {
     return mm;
 }
 
-void task_mm_put_impl(struct mm_struct *mm) {
+void task_mm_put_impl(struct memory_space *mm) {
     if (!mm) {
         return;
     }
@@ -504,7 +451,7 @@ void task_mm_put_impl(struct mm_struct *mm) {
     kfree(mm);
 }
 
-void task_mm_update_high_water_impl(struct mm_struct *mm) {
+void task_mm_update_high_water_impl(struct memory_space *mm) {
     uint64_t size_pages = 0;
     uint64_t resident_pages = 0;
 
@@ -664,8 +611,8 @@ static long task_write_vma(struct task_vma *vma, uint64_t addr, const void *buf,
     return (long)to_copy;
 }
 
-static int task_grow_stack_down_impl(struct task_struct *task, uint64_t fault_addr) {
-    struct mm_struct *mm;
+static int task_grow_stack_down_impl(struct task *task, uint64_t fault_addr) {
+    struct memory_space *mm;
     struct task_vma *stack = NULL;
     struct task_vma *guard = NULL;
     void *new_image = NULL;
@@ -772,8 +719,8 @@ static int task_grow_stack_down_impl(struct task_struct *task, uint64_t fault_ad
     return 1;
 }
 
-static bool task_addr_is_below_stack_guard(const struct task_struct *task, uint64_t addr) {
-    const struct mm_struct *mm;
+static bool task_addr_is_below_stack_guard(const struct task *task, uint64_t addr) {
+    const struct memory_space *mm;
 
     if (!task || !task->mm) {
         return false;
@@ -801,7 +748,7 @@ static bool task_addr_is_below_stack_guard(const struct task_struct *task, uint6
     return false;
 }
 
-static void task_propagate_shared_file_write(struct mm_struct *mm, struct task_vma *source,
+static void task_propagate_shared_file_write(struct memory_space *mm, struct task_vma *source,
                                              uint64_t addr, const void *buf, size_t count) {
     if (!mm || !source || source->shared_pages || source->kind != TASK_VMA_FILE || !source->shared ||
         source->backing_fd < 0 || count == 0) {
@@ -835,8 +782,8 @@ static void task_propagate_shared_file_write(struct mm_struct *mm, struct task_v
     }
 }
 
-long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void *buf, size_t count) {
-    struct mm_struct *mm;
+long task_read_virtual_memory_impl(struct task *task, uint64_t addr, void *buf, size_t count) {
+    struct memory_space *mm;
     long copied;
 
     if (!buf && count > 0) {
@@ -892,8 +839,8 @@ long task_read_virtual_memory_impl(struct task_struct *task, uint64_t addr, void
     return (long)count;
 }
 
-long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, const void *buf, size_t count) {
-    struct mm_struct *mm;
+long task_write_virtual_memory_impl(struct task *task, uint64_t addr, const void *buf, size_t count) {
+    struct memory_space *mm;
     long copied;
 
     if (!buf && count > 0) {
@@ -960,14 +907,14 @@ long task_write_virtual_memory_impl(struct task_struct *task, uint64_t addr, con
     return (long)count;
 }
 
-const struct task_exec_handoff *task_get_exec_handoff_impl(struct task_struct *task) {
+const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task) {
     if (!task || !task->mm) {
         return NULL;
     }
     return &task->mm->handoff;
 }
 
-void task_restart_clear_impl(struct task_struct *task) {
+void task_restart_clear_impl(struct task *task) {
     if (!task || !task->mm) {
         return;
     }
@@ -980,7 +927,7 @@ void task_restart_clear_impl(struct task_struct *task) {
     task->mm->signal_frame_restart_arg5 = 0;
 }
 
-int task_restart_record_impl(struct task_struct *task, enum task_restart_kind kind,
+int task_restart_record_impl(struct task *task, enum task_restart_kind kind,
                              uint64_t arg0, uint64_t arg1, uint64_t arg2,
                              uint64_t arg3, uint64_t arg4, uint64_t arg5) {
     if (!task || kind == TASK_RESTART_NONE) {
@@ -999,12 +946,12 @@ int task_restart_record_impl(struct task_struct *task, enum task_restart_kind ki
     return 0;
 }
 
-struct task_struct *alloc_task(void) {
-    struct task_struct *task = __kmalloc_noprof(sizeof(struct task_struct), GFP_KERNEL | __GFP_ZERO);
+struct task *alloc_task(void) {
+    struct task *task = __kmalloc_noprof(sizeof(struct task), GFP_KERNEL | __GFP_ZERO);
     if (!task)
         return NULL;
 
-    task->pid = alloc_pid();
+    task->pid = task_alloc_pid();
     task->tgid = task->pid;
     /* A new task starts without pgid/sid; fork_impl will inherit from parent */
     task->pgid = 0;
@@ -1025,7 +972,7 @@ struct task_struct *alloc_task(void) {
     task->rlimits[RLIMIT_NOFILE].cur = NR_OPEN_DEFAULT;
     task->rlimits[RLIMIT_NOFILE].max = NR_OPEN_DEFAULT;
 
-    atomic_set(&task->state, TASK_RUNNING);
+    atomic_set(&task->state, RUN_STATE_RUNNING);
     atomic_set(&task->refs, 1);
     atomic_set(&task->exited, 0);
     atomic_set(&task->signaled, 0);
@@ -1073,7 +1020,7 @@ struct task_struct *alloc_task(void) {
             kernel_cond_destroy(&task->wait_cond);
             kernel_mutex_destroy(&task->wait_lock);
             kernel_mutex_destroy(&task->lock);
-            free_pid(task->pid);
+            task_free_pid(task->pid);
             kfree(task);
             return NULL;
         }
@@ -1083,7 +1030,7 @@ struct task_struct *alloc_task(void) {
         kernel_cond_destroy(&task->wait_cond);
         kernel_mutex_destroy(&task->wait_lock);
         kernel_mutex_destroy(&task->lock);
-        free_pid(task->pid);
+        task_free_pid(task->pid);
         kfree(task);
         return NULL;
     }
@@ -1097,7 +1044,7 @@ struct task_struct *alloc_task(void) {
         kernel_cond_destroy(&task->wait_cond);
         kernel_mutex_destroy(&task->wait_lock);
         kernel_mutex_destroy(&task->lock);
-        free_pid(task->pid);
+        task_free_pid(task->pid);
         kfree(task);
         return NULL;
     }
@@ -1113,12 +1060,12 @@ struct task_struct *alloc_task(void) {
     return task;
 }
 
-struct task_struct *task_create_child_impl(struct task_struct *parent) {
+struct task *task_create_child_impl(struct task *parent) {
     return task_create_child_with_flags_impl(parent, 0);
 }
 
-struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent, uint64_t flags) {
-    struct task_struct *child;
+struct task *task_create_child_with_flags_impl(struct task *parent, uint64_t flags) {
+    struct task *child;
 
     if (!parent) {
         return NULL;
@@ -1154,13 +1101,13 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         put_cred(child->cred);
         child->cred = dup_cred(parent->cred);
         if (!child->cred) {
-            free_task(child);
+            task_put(child);
             return NULL;
         }
     }
     if (parent->cgroup) {
         if (task_attach_cgroup(child, parent->cgroup) != 0) {
-            free_task(child);
+            task_put(child);
             return NULL;
         }
     }
@@ -1178,7 +1125,7 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
     if (parent->fs) {
         child->fs = dup_fs_struct(parent->fs);
         if (!child->fs) {
-            free_task(child);
+            task_put(child);
             return NULL;
         }
     }
@@ -1188,13 +1135,13 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
     } else if (parent->files) {
         child->files = dup_files(parent->files);
         if (!child->files) {
-            free_task(child);
+            task_put(child);
             return NULL;
         }
     }
 
     if ((flags & CLONE_VM) != 0 && !task_ensure_mm_impl(parent)) {
-        free_task(child);
+        task_put(child);
         return NULL;
     }
 
@@ -1204,7 +1151,7 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
         task_mm_put_impl(child->mm);
         child->mm = task_mm_dup_impl(parent->mm);
         if (!child->mm) {
-            free_task(child);
+            task_put(child);
             return NULL;
         }
     }
@@ -1215,11 +1162,11 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
     } else if (parent->signal) {
         child->signal = dup_signal_struct(parent->signal);
         if (!child->signal) {
-            free_task(child);
+            task_put(child);
             return NULL;
         }
     } else if (signal_init_task(child) != 0) {
-        free_task(child);
+        task_put(child);
         return NULL;
     }
 
@@ -1239,8 +1186,8 @@ struct task_struct *task_create_child_with_flags_impl(struct task_struct *parent
     return child;
 }
 
-void task_unlink_child_impl(struct task_struct *parent, struct task_struct *child) {
-    struct task_struct **link;
+void task_unlink_child_impl(struct task *parent, struct task *child) {
+    struct task **link;
 
     if (!parent || !child) {
         return;
@@ -1262,18 +1209,18 @@ void task_unlink_child_impl(struct task_struct *parent, struct task_struct *chil
     kernel_mutex_unlock(&parent->lock);
 }
 
-void task_mark_stopped_by_signal(struct task_struct *task, int32_t sig) {
+void task_mark_stopped_by_signal(struct task *task, int32_t sig) {
     if (!task) {
         return;
     }
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *peer = task_table[i];
+        struct task *peer = task_table[i];
         while (peer) {
             if (peer->tgid == task->tgid) {
                 atomic_set(&peer->termsig, 0);
-                atomic_set(&peer->state, TASK_STOPPED);
+                atomic_set(&peer->state, RUN_STATE_STOPPED);
                 atomic_set(&peer->stopped, 1);
                 atomic_set(&peer->stopsig, sig);
                 atomic_set(&peer->continued, 0);
@@ -1286,17 +1233,17 @@ void task_mark_stopped_by_signal(struct task_struct *task, int32_t sig) {
     kernel_mutex_unlock(&task_table_lock);
 }
 
-void task_mark_continued_by_signal(struct task_struct *task) {
+void task_mark_continued_by_signal(struct task *task) {
     if (!task) {
         return;
     }
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *peer = task_table[i];
+        struct task *peer = task_table[i];
         while (peer) {
             if (peer->tgid == task->tgid) {
-                atomic_set(&peer->state, TASK_RUNNING);
+                atomic_set(&peer->state, RUN_STATE_RUNNING);
                 atomic_set(&peer->stopped, 0);
                 atomic_set(&peer->stopsig, 0);
                 atomic_set(&peer->continued, 1);
@@ -1309,7 +1256,7 @@ void task_mark_continued_by_signal(struct task_struct *task) {
     kernel_mutex_unlock(&task_table_lock);
 }
 
-void task_mark_signaled_exit(struct task_struct *task, int32_t sig) {
+void task_mark_signaled_exit(struct task *task, int32_t sig) {
     if (!task) {
         return;
     }
@@ -1317,7 +1264,7 @@ void task_mark_signaled_exit(struct task_struct *task, int32_t sig) {
     atomic_set(&task->signaled, 1);
     atomic_set(&task->termsig, sig);
     atomic_set(&task->exited, 1);
-    atomic_set(&task->state, TASK_ZOMBIE);
+    atomic_set(&task->state, RUN_STATE_ZOMBIE);
     atomic_set(&task->stopped, 0);
     atomic_set(&task->stopsig, 0);
     atomic_set(&task->continued, 0);
@@ -1326,7 +1273,7 @@ void task_mark_signaled_exit(struct task_struct *task, int32_t sig) {
     poll_notify_readiness_impl();
 }
 
-void task_mark_exited(struct task_struct *task, int status) {
+void task_mark_exited(struct task *task, int status) {
     if (!task) {
         return;
     }
@@ -1335,7 +1282,7 @@ void task_mark_exited(struct task_struct *task, int status) {
     atomic_set(&task->signaled, 0);
     atomic_set(&task->termsig, 0);
     atomic_set(&task->exited, 1);
-    atomic_set(&task->state, TASK_ZOMBIE);
+    atomic_set(&task->state, RUN_STATE_ZOMBIE);
     atomic_set(&task->stopped, 0);
     atomic_set(&task->stopsig, 0);
     atomic_set(&task->continued, 0);
@@ -1344,8 +1291,8 @@ void task_mark_exited(struct task_struct *task, int status) {
     poll_notify_readiness_impl();
 }
 
-void task_notify_parent_state_change(struct task_struct *task) {
-    struct task_struct *parent;
+void task_notify_parent_state_change(struct task *task) {
+    struct task *parent;
 
     if (!task || !task->parent) {
         return;
@@ -1365,10 +1312,10 @@ void task_notify_parent_state_change(struct task_struct *task) {
     }
     kernel_mutex_unlock(&parent->lock);
 
-    free_task(parent);
+    task_put(parent);
 }
 
-void free_task(struct task_struct *task) {
+void task_put(struct task *task) {
     if (!task)
         return;
 
@@ -1377,7 +1324,7 @@ void free_task(struct task_struct *task) {
 
     int idx = task_hash(task->pid);
     kernel_mutex_lock(&task_table_lock);
-    struct task_struct **pp = &task_table[idx];
+    struct task **pp = &task_table[idx];
     while (*pp && *pp != task) {
         pp = &(*pp)->hash_next;
     }
@@ -1413,17 +1360,17 @@ void free_task(struct task_struct *task) {
     kernel_mutex_destroy(&task->wait_lock);
     kernel_mutex_destroy(&task->lock);
 
-    free_pid(task->pid);
+    task_free_pid(task->pid);
     kfree(task);
 }
 
-struct task_struct *task_lookup(int32_t pid) {
+struct task *task_lookup(int32_t pid) {
     if (pid <= 0)
         return NULL;
 
     int idx = task_hash(pid);
     kernel_mutex_lock(&task_table_lock);
-    struct task_struct *task = task_table[idx];
+    struct task *task = task_table[idx];
     while (task && task->pid != pid) {
         task = task->hash_next;
     }
@@ -1434,8 +1381,8 @@ struct task_struct *task_lookup(int32_t pid) {
     return task;
 }
 
-int task_reassign_pid_impl(struct task_struct *task, int32_t pid) {
-    struct task_struct **link;
+int task_reassign_pid_impl(struct task *task, int32_t pid) {
+    struct task **link;
     int old_pid;
     int old_idx;
     int new_idx;
@@ -1464,7 +1411,7 @@ int task_reassign_pid_impl(struct task_struct *task, int32_t pid) {
     }
     if (*link != task) {
         kernel_mutex_unlock(&task_table_lock);
-        free_pid(pid);
+        task_free_pid(pid);
         return -ESRCH;
     }
 
@@ -1480,7 +1427,7 @@ int task_reassign_pid_impl(struct task_struct *task, int32_t pid) {
     task_table[new_idx] = task;
     kernel_mutex_unlock(&task_table_lock);
 
-    free_pid(old_pid);
+    task_free_pid(old_pid);
     return 0;
 }
 
@@ -1488,18 +1435,18 @@ static atomic_t task_initialized = ATOMIC_INIT(0);
 
 int task_init(void) {
     /* Fast path: already initialized */
-    if (atomic_read(&task_initialized) && init_task) {
+    if (atomic_read(&task_initialized) && task_init_process) {
         if (!current_task) {
             /* Hold a reference for the thread-local current task binding. */
-            atomic_inc(&init_task->refs);
-            current_task = init_task;
+            atomic_inc(&task_init_process->refs);
+            current_task = task_init_process;
             fdtable_sync_current_task_from_static_impl();
         }
         return 0;
     }
 
     /* Re-initialization path after deinit */
-    if (!init_task) {
+    if (!task_init_process) {
         /* Re-initialize from scratch */
         pid_init();
         atomic64_set(&task_boot_time_ns, (s64)task_monotonic_time_ns());
@@ -1507,44 +1454,44 @@ int task_init(void) {
             return -1;
         }
 
-        init_task = alloc_task();
-        if (!init_task)
+        task_init_process = alloc_task();
+        if (!task_init_process)
             return -1;
 
-        init_task->ppid = 0;
-        init_task->pgid = init_task->pid;
-        init_task->sid = init_task->pid;
-        init_task->ns_pid = 1;
-        init_task->pid_ns_level = 0;
-        strncpy(init_task->comm, "init", sizeof(init_task->comm));
-        init_task->comm[sizeof(init_task->comm) - 1] = '\0';
+        task_init_process->ppid = 0;
+        task_init_process->pgid = task_init_process->pid;
+        task_init_process->sid = task_init_process->pid;
+        task_init_process->ns_pid = 1;
+        task_init_process->pid_ns_level = 0;
+        strncpy(task_init_process->comm, "init", sizeof(task_init_process->comm));
+        task_init_process->comm[sizeof(task_init_process->comm) - 1] = '\0';
 
-        init_task->files = alloc_files(NR_OPEN_DEFAULT);
-        if (!init_task->files) {
-            free_task(init_task);
-            init_task = NULL;
-            return -1;
-        }
-
-        init_task->fs = alloc_fs_struct();
-        if (!init_task->fs) {
-            free_task(init_task);
-            init_task = NULL;
+        task_init_process->files = alloc_files(NR_OPEN_DEFAULT);
+        if (!task_init_process->files) {
+            task_put(task_init_process);
+            task_init_process = NULL;
             return -1;
         }
-        fs_init_root(init_task->fs, "/");
-        fs_init_pwd(init_task->fs, "/");
 
-        init_task->signal = alloc_signal_struct();
-        if (!init_task->signal) {
-            free_task(init_task);
-            init_task = NULL;
+        task_init_process->fs = alloc_fs_struct();
+        if (!task_init_process->fs) {
+            task_put(task_init_process);
+            task_init_process = NULL;
+            return -1;
+        }
+        fs_init_root(task_init_process->fs, "/");
+        fs_init_pwd(task_init_process->fs, "/");
+
+        task_init_process->signal = alloc_signal_struct();
+        if (!task_init_process->signal) {
+            task_put(task_init_process);
+            task_init_process = NULL;
             return -1;
         }
 
         /* Hold a reference for the thread-local current task binding. */
-        atomic_inc(&init_task->refs);
-        current_task = init_task;
+        atomic_inc(&task_init_process->refs);
+        current_task = task_init_process;
         fdtable_sync_current_task_from_static_impl();
         atomic_set(&task_initialized, 1);
         return 0;
@@ -1555,18 +1502,18 @@ int task_init(void) {
 
 void task_deinit(void) {
     /* Drop the thread-local current-task reference (if any) so teardown can
-     * actually free tasks like init_task. current_task is TLS but shutdown runs
+     * actually free tasks like task_init_process. current_task is TLS but shutdown runs
      * on a specific host thread; we must release that thread's reference. */
     if (current_task) {
-        struct task_struct *task = current_task;
+        struct task *task = current_task;
         current_task = NULL;
         set_current_cred(NULL);
-        free_task(task);
+        task_put(task);
     }
-    if (init_task) {
-        struct task_struct *task = init_task;
-        init_task = NULL;
-        free_task(task);
+    if (task_init_process) {
+        struct task *task = task_init_process;
+        task_init_process = NULL;
+        task_put(task);
     }
     cgroup_deinit();
     atomic64_set(&task_boot_time_ns, 0);
@@ -1578,22 +1525,22 @@ void task_deinit(void) {
  * ============================================================================ */
 
 int32_t getpid_impl(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task) {
         /* Try to initialize if not already done */
         if (task_init() == 0) {
-            task = get_current();
+            task = task_current();
         }
     }
     return task ? task->pid : 0;
 }
 
 int32_t getppid_impl(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task) {
         /* Try to initialize if not already done */
         if (task_init() == 0) {
-            task = get_current();
+            task = task_current();
         }
     }
     return task ? task->ppid : 0;
@@ -1604,7 +1551,7 @@ int32_t getppid_impl(void) {
  * ============================================================================ */
 
 int32_t getpgrp_impl(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -1616,18 +1563,18 @@ int32_t getpgid_impl(int32_t pid) {
         return getpgrp_impl();
     }
 
-    struct task_struct *task = task_lookup(pid);
+    struct task *task = task_lookup(pid);
     if (!task) {
         return -ESRCH;
     }
 
     int32_t pgid = task->pgid;
-    free_task(task);
+    task_put(task);
     return pgid;
 }
 
 int setpgid_impl(int32_t pid, int32_t pgid) {
-    struct task_struct *current = get_current();
+    struct task *current = task_current();
     if (!current) {
         return -ESRCH;
     }
@@ -1645,7 +1592,7 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
         pgid = pid;
     }
 
-    struct task_struct *target = task_lookup(pid);
+    struct task *target = task_lookup(pid);
     if (!target) {
         return -ESRCH;
     }
@@ -1655,21 +1602,21 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
     /* Linux: check permissions: caller must be target or target's parent */
     if (target->ppid != current->pid && target->pid != current->pid) {
         kernel_mutex_unlock(&target->lock);
-        free_task(target);
+        task_put(target);
         return -EPERM;
     }
 
     /* Linux: session match - can't move to different session */
     if (target->sid != current->sid) {
         kernel_mutex_unlock(&target->lock);
-        free_task(target);
+        task_put(target);
         return -EPERM;
     }
 
     /* Linux: cannot change PGID of a session leader */
     if (target->pid == target->sid) {
         kernel_mutex_unlock(&target->lock);
-        free_task(target);
+        task_put(target);
         return -EPERM;
     }
 
@@ -1678,7 +1625,7 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
         /* Check if target group exists */
         int found_group = 0;
         for (int i = 0; i < TASK_MAX_TASKS; i++) {
-            struct task_struct *t = task_table[i];
+            struct task *t = task_table[i];
             while (t) {
                 if (t->pgid == pgid && t->sid == target->sid) {
                     found_group = 1;
@@ -1690,7 +1637,7 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
         }
         if (!found_group) {
             kernel_mutex_unlock(&target->lock);
-            free_task(target);
+            task_put(target);
             return -EPERM;
         }
     }
@@ -1698,38 +1645,38 @@ int setpgid_impl(int32_t pid, int32_t pgid) {
     /* Linux: if child already execve'd, reject with EACCES */
     if (target->pid != current->pid && atomic_read(&target->execed)) {
         kernel_mutex_unlock(&target->lock);
-        free_task(target);
+        task_put(target);
         return -EACCES;
     }
 
     target->pgid = pgid;
     kernel_mutex_unlock(&target->lock);
-    free_task(target);
+    task_put(target);
 
     return 0;
 }
 
 int32_t getsid_impl(int32_t pid) {
     if (pid == 0) {
-        struct task_struct *task = get_current();
+        struct task *task = task_current();
         if (!task) {
             return -ESRCH;
         }
         return task->sid;
     }
 
-    struct task_struct *task = task_lookup(pid);
+    struct task *task = task_lookup(pid);
     if (!task) {
         return -ESRCH;
     }
 
     int32_t sid = task->sid;
-    free_task(task);
+    task_put(task);
     return sid;
 }
 
 int32_t setsid_impl(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -1765,7 +1712,7 @@ int task_session_has_pgrp_impl(int32_t sid, int32_t pgid) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->sid == sid && task->pgid == pgid) {
                 found = 1;
@@ -1802,7 +1749,7 @@ static const char *task_exec_basename(const char *name) {
 }
 
 int task_exec_transition_impl(const char *path, const char *argv0) {
-    struct task_struct *task;
+    struct task *task;
     char normalized_path[MAX_PATH];
     struct stat st;
     const char *comm_source;
@@ -1814,7 +1761,7 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
     uint64_t old_cap_effective = 0;
     bool secure_exec = false;
 
-    task = get_current();
+    task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -1827,7 +1774,7 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
     if (closed < 0) {
         return closed;
     }
-    if ((vfs_mount_flags_for_path(normalized_path) & MS_NOEXEC) != 0) {
+    if ((vfs_mount_flags_for_path(normalized_path) & MNT_NOEXEC) != 0) {
         return -EACCES;
     }
 
@@ -1843,11 +1790,11 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
         uint64_t file_cap_permitted = 0;
         uint64_t file_cap_inheritable = 0;
         bool file_cap_effective = false;
-        if ((vfs_mount_flags_for_path(normalized_path) & MS_NOSUID) != 0) {
+        if ((vfs_mount_flags_for_path(normalized_path) & MNT_NOSUID) != 0) {
             exec_mode &= ~(uint32_t)(S_ISUID | S_ISGID);
         }
         cred_apply_exec_metadata(get_current_cred(), st.st_uid, st.st_gid, exec_mode);
-        if ((vfs_mount_flags_for_path(normalized_path) & MS_NOSUID) == 0 &&
+        if ((vfs_mount_flags_for_path(normalized_path) & MNT_NOSUID) == 0 &&
             vfs_get_file_capabilities(normalized_path, &file_cap_permitted,
                                       &file_cap_inheritable, &file_cap_effective) == 0) {
             cred_apply_exec_file_capabilities(get_current_cred(), file_cap_permitted,

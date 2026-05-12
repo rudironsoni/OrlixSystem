@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 /* Forward declaration - avoid circular include with task.h */
-struct task_struct;
+struct task;
 
 int kernel_thread_sigmask(int how, const struct signal_mask_bits *set,
                           struct signal_mask_bits *oldset);
@@ -63,7 +63,7 @@ struct signal_altstack {
 
 /* Signal handler table - per-task signal configuration
  * This is the private internal state, NOT the public ABI struct sigaction */
-struct signal_struct {
+struct signal_state {
     atomic_t refs;
     struct signal_action_slot actions[KERNEL_SIG_NUM];
     struct signal_mask_bits blocked;
@@ -75,48 +75,48 @@ struct signal_struct {
 };
 
 /* Signal pending state for a task */
-struct sigpending {
+struct pending_signals {
     struct signal_mask_bits signal;
     struct signal_queue queue;
 };
 
 /* Initialize signal state for a new task */
-int signal_init_task(struct task_struct *task);
+int signal_init_task(struct task *task);
 
 /* Inherit signal state on fork/clone */
-struct signal_struct *alloc_signal_struct(void);
-void free_signal_struct(struct signal_struct *sig);
-struct signal_struct *dup_signal_struct(struct signal_struct *parent);
+struct signal_state *alloc_signal_struct(void);
+void free_signal_struct(struct signal_state *sig);
+struct signal_state *dup_signal_struct(struct signal_state *parent);
 
 /* Reset signal state on exec */
-void signal_reset_on_exec(struct task_struct *task);
+void signal_reset_on_exec(struct task *task);
 
 /* Virtual signal enqueue helpers */
-int signal_enqueue_task(struct task_struct *task, int32_t sig);
+int signal_enqueue_task(struct task *task, int32_t sig);
 int signal_enqueue_group(int32_t pgid, int32_t sig);
-int signal_dequeue(struct task_struct *task, struct signal_mask_bits *mask, int32_t *sig);
+int signal_dequeue(struct task *task, struct signal_mask_bits *mask, int32_t *sig);
 
 /* Recompute pending state after mask changes */
-void signal_recompute_pending(struct task_struct *task);
+void signal_recompute_pending(struct task *task);
 
 /* Signal wakeup - wake the right task after signal generation */
-void signal_wake_task(struct task_struct *task, bool group_wide);
+void signal_wake_task(struct task *task, bool group_wide);
 
 /* Internal signal generation */
-int signal_generate_task(struct task_struct *target, int32_t sig);
-int signal_generate_task_info(struct task_struct *target, int32_t sig, int32_t code, u64 addr);
-int signal_generate_process(struct task_struct *target, int32_t sig);
-int signal_send_process(struct task_struct *target, int32_t sig);
+int signal_generate_task(struct task *target, int32_t sig);
+int signal_generate_task_info(struct task *target, int32_t sig, int32_t code, u64 addr);
+int signal_generate_process(struct task *target, int32_t sig);
+int signal_send_process(struct task *target, int32_t sig);
 int signal_generate_pgrp(int32_t pgid, int32_t sig);
 int signal_generate_orphaned_pgrp(int32_t pgid);
 
 /* Check if signal is blocked */
-bool signal_is_blocked(const struct task_struct *task, int32_t sig);
-bool signal_is_pending(const struct task_struct *task, int32_t sig);
-bool signal_has_unblocked_pending(const struct task_struct *task);
+bool signal_is_blocked(const struct task *task, int32_t sig);
+bool signal_is_pending(const struct task *task, int32_t sig);
+bool signal_has_unblocked_pending(const struct task *task);
 
 int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altstack *old_stack);
-int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, u64 return_pc,
+int signal_prepare_frame_impl(struct task *task, int32_t sig, u64 return_pc,
                               u64 current_sp, u64 *frame_sp_out);
 
 #ifdef __cplusplus

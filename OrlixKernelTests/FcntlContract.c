@@ -1,10 +1,10 @@
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/fs.h>
-#include <uapi/asm-generic/signal.h>
-#include <asm-generic/unistd.h>
+#include <uapi/linux/signal.h>
+#include <uapi/linux/errno.h>
+#include <asm/unistd.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -13,6 +13,8 @@
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "runtime/syscall.h"
+
+extern int errno;
 
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int dup_impl(int oldfd);
@@ -31,7 +33,7 @@ static int close_if_open(int fd) {
     return 0;
 }
 
-static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+static void clear_pending_signal(struct task *task, int32_t sig) {
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return;
     }
@@ -766,15 +768,15 @@ out:
 }
 
 int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     int parent_fd = -1;
     int child_source = -1;
     int result = -1;
     char byte = 0;
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -790,18 +792,18 @@ int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     child_source = open_impl("/dev/null", O_RDONLY, 0);
     if (child_source < 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
     if (dup2_impl(child_source, parent_fd) != parent_fd) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     if (read_impl(parent_fd, &byte, 1) != 1 || byte != 0) {
         errno = ENODATA;
@@ -811,23 +813,23 @@ int fcntl_contract_child_dup2_does_not_replace_parent_descriptor(void) {
     result = 0;
 
 out:
-    saved = get_current();
+    saved = task_current();
     if (child) {
-        set_current(child);
+        task_set_current(child);
         close_if_open(child_source);
         close_if_open(parent_fd);
-        set_current(saved);
+        task_set_current(saved);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
     close_if_open(parent_fd);
     return result;
 }
 
 int fcntl_contract_pidfd_getfd_duplicates_target_descriptor(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     int child_fd = -1;
     int pidfd = -1;
     int dupfd = -1;
@@ -835,7 +837,7 @@ int fcntl_contract_pidfd_getfd_duplicates_target_descriptor(void) {
     int dup_fd_flags;
     int64_t offset;
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -846,18 +848,18 @@ int fcntl_contract_pidfd_getfd_duplicates_target_descriptor(void) {
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     child_fd = open_impl("/etc/passwd", O_RDONLY, 0);
     if (child_fd < 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
     if (lseek_impl(child_fd, 9, SEEK_SET) != 9) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
     if (pidfd < 0) {
@@ -877,13 +879,13 @@ int fcntl_contract_pidfd_getfd_duplicates_target_descriptor(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (lseek_impl(child_fd, 17, SEEK_SET) != 17) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
     offset = lseek_impl(dupfd, 0, SEEK_CUR);
     if (offset != 17) {
@@ -894,31 +896,31 @@ int fcntl_contract_pidfd_getfd_duplicates_target_descriptor(void) {
     result = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     close_if_open(dupfd);
     close_if_open(pidfd);
     if (child) {
-        set_current(child);
+        task_set_current(child);
         close_if_open(child_fd);
-        set_current(parent);
+        task_set_current(parent);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
-    set_current(parent);
+    task_set_current(parent);
     return result;
 }
 
 int fcntl_contract_pidfd_getfd_rejects_permission_mismatch(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *caller = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *caller = NULL;
+    struct task *saved;
     int child_fd = -1;
     int pidfd = -1;
     int result = -1;
     long ret;
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -933,30 +935,30 @@ int fcntl_contract_pidfd_getfd_rejects_permission_mismatch(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     child_fd = open_impl("/etc/passwd", O_RDONLY, 0);
     if (child_fd < 0 || setresuid_impl(1001, 1001, 1001) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(caller);
+    task_set_current(caller);
     if (setresuid_impl(1000, 1000, 1000) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
-    set_current(caller);
+    task_set_current(caller);
     pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, child->pid, 0, 0, 0, 0, 0);
     if (pidfd < 0) {
-        set_current(saved);
+        task_set_current(saved);
         errno = -pidfd;
         goto out;
     }
 
     ret = syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, child_fd, 0, 0, 0, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (ret != -EPERM) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
@@ -965,39 +967,39 @@ int fcntl_contract_pidfd_getfd_rejects_permission_mismatch(void) {
     result = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     if (caller) {
-        set_current(caller);
+        task_set_current(caller);
         close_if_open(pidfd);
-        set_current(parent);
+        task_set_current(parent);
         task_unlink_child_impl(parent, caller);
-        free_task(caller);
+        task_put(caller);
     } else {
         close_if_open(pidfd);
     }
     if (child) {
-        set_current(child);
+        task_set_current(child);
         close_if_open(child_fd);
-        set_current(parent);
+        task_set_current(parent);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
-    set_current(parent);
+    task_set_current(parent);
     return result;
 }
 
 int fcntl_contract_pidfd_getfd_allows_ptrace_eligible_sibling(void) {
-    struct task_struct *parent;
-    struct task_struct *target = NULL;
-    struct task_struct *caller = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *target = NULL;
+    struct task *caller = NULL;
+    struct task *saved;
     int target_fd = -1;
     int pidfd = -1;
     int dupfd = -1;
     int result = -1;
     int64_t offset;
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1012,51 +1014,51 @@ int fcntl_contract_pidfd_getfd_allows_ptrace_eligible_sibling(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(target);
+    saved = task_current();
+    task_set_current(target);
     if (setresgid_impl(1000, 1000, 1000) != 0 ||
         setresuid_impl(1000, 1000, 1000) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
     target_fd = open_impl("/etc/passwd", O_RDONLY, 0);
     if (target_fd < 0 || lseek_impl(target_fd, 13, SEEK_SET) != 13) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(caller);
+    task_set_current(caller);
     if (setresgid_impl(2000, 1000, 2000) != 0 ||
         setresuid_impl(2000, 1000, 2000) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
-    set_current(caller);
+    task_set_current(caller);
     pidfd = (int)syscall_dispatch_impl(__NR_pidfd_open, target->pid, 0, 0, 0, 0, 0);
     if (pidfd < 0) {
-        set_current(saved);
+        task_set_current(saved);
         errno = -pidfd;
         goto out;
     }
     dupfd = (int)syscall_dispatch_impl(__NR_pidfd_getfd, pidfd, target_fd, 0, 0, 0, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (dupfd < 0) {
         errno = -dupfd;
         goto out;
     }
 
-    saved = get_current();
-    set_current(target);
+    saved = task_current();
+    task_set_current(target);
     if (lseek_impl(target_fd, 21, SEEK_SET) != 21) {
-        set_current(saved);
+        task_set_current(saved);
         goto out;
     }
-    set_current(saved);
+    task_set_current(saved);
 
-    set_current(caller);
+    task_set_current(caller);
     offset = lseek_impl(dupfd, 0, SEEK_CUR);
-    set_current(saved);
+    task_set_current(saved);
     if (offset != 21) {
         errno = EPROTO;
         goto out;
@@ -1065,40 +1067,40 @@ int fcntl_contract_pidfd_getfd_allows_ptrace_eligible_sibling(void) {
     result = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     if (caller) {
-        set_current(caller);
+        task_set_current(caller);
         close_if_open(dupfd);
         close_if_open(pidfd);
-        set_current(parent);
+        task_set_current(parent);
         task_unlink_child_impl(parent, caller);
-        free_task(caller);
+        task_put(caller);
     } else {
         close_if_open(dupfd);
         close_if_open(pidfd);
     }
     if (target) {
-        set_current(target);
+        task_set_current(target);
         close_if_open(target_fd);
-        set_current(parent);
+        task_set_current(parent);
         task_unlink_child_impl(parent, target);
-        free_task(target);
+        task_put(target);
     }
-    set_current(parent);
+    task_set_current(parent);
     return result;
 }
 
 int fcntl_contract_pidfd_getfd_rejects_bad_targets(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     int child_fd = -1;
     int pidfd = -1;
     int nullfd = -1;
     int result = -1;
     long ret;
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1109,10 +1111,10 @@ int fcntl_contract_pidfd_getfd_rejects_bad_targets(void) {
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     child_fd = open_impl("/etc/passwd", O_RDONLY, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (child_fd < 0) {
         goto out;
     }
@@ -1145,10 +1147,10 @@ int fcntl_contract_pidfd_getfd_rejects_bad_targets(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     ret = syscall_dispatch_impl(__NR_exit, 41, 0, 0, 0, 0, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (ret != 0) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
@@ -1164,31 +1166,31 @@ int fcntl_contract_pidfd_getfd_rejects_bad_targets(void) {
     result = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     close_if_open(nullfd);
     close_if_open(pidfd);
     clear_pending_signal(parent, SIGCHLD);
     if (child) {
-        set_current(child);
+        task_set_current(child);
         close_if_open(child_fd);
-        set_current(parent);
+        task_set_current(parent);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
-    set_current(parent);
+    task_set_current(parent);
     return result;
 }
 
 int fcntl_contract_pidfd_getfd_rejects_nonzero_flags(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent;
+    struct task *child = NULL;
+    struct task *saved;
     int child_fd = -1;
     int pidfd = -1;
     int result = -1;
     long ret;
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1199,10 +1201,10 @@ int fcntl_contract_pidfd_getfd_rejects_nonzero_flags(void) {
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     child_fd = open_impl("/etc/passwd", O_RDONLY, 0);
-    set_current(saved);
+    task_set_current(saved);
     if (child_fd < 0) {
         goto out;
     }
@@ -1222,27 +1224,27 @@ int fcntl_contract_pidfd_getfd_rejects_nonzero_flags(void) {
     result = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     close_if_open(pidfd);
     if (child) {
-        set_current(child);
+        task_set_current(child);
         close_if_open(child_fd);
-        set_current(parent);
+        task_set_current(parent);
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
-    set_current(parent);
+    task_set_current(parent);
     return result;
 }
 
 int fcntl_contract_pidfd_getfd_rejects_negative_targetfd(void) {
-    struct task_struct *parent;
-    struct task_struct *child = NULL;
+    struct task *parent;
+    struct task *child = NULL;
     int pidfd = -1;
     int result = -1;
     long ret;
 
-    parent = get_current();
+    parent = task_current();
     if (!parent) {
         errno = ESRCH;
         return -1;
@@ -1268,31 +1270,31 @@ int fcntl_contract_pidfd_getfd_rejects_negative_targetfd(void) {
     result = 0;
 
 out:
-    set_current(parent);
+    task_set_current(parent);
     close_if_open(pidfd);
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
-    set_current(parent);
+    task_set_current(parent);
     return result;
 }
 
 void fcntl_contract_reset_pidfd_test_state(void) {
-    struct task_struct *child;
+    struct task *child;
 
-    if (!init_task) {
+    if (!task_init_process) {
         return;
     }
 
-    set_current(init_task);
-    clear_pending_signal(init_task, SIGCHLD);
+    task_set_current(task_init_process);
+    clear_pending_signal(task_init_process, SIGCHLD);
 
-    while ((child = init_task->children) != NULL) {
-        task_unlink_child_impl(init_task, child);
-        free_task(child);
+    while ((child = task_init_process->children) != NULL) {
+        task_unlink_child_impl(task_init_process, child);
+        task_put(child);
     }
 
-    set_current(init_task);
-    clear_pending_signal(init_task, SIGCHLD);
+    task_set_current(task_init_process);
+    clear_pending_signal(task_init_process, SIGCHLD);
 }

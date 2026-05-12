@@ -8,153 +8,11 @@
 #include <linux/errno.h>
 #include <linux/gfp_types.h>
 #include <linux/string.h>
-
-#ifdef SIGHUP
-#undef SIGHUP
-#endif
-#ifdef SIGINT
-#undef SIGINT
-#endif
-#ifdef SIGQUIT
-#undef SIGQUIT
-#endif
-#ifdef SIGILL
-#undef SIGILL
-#endif
-#ifdef SIGTRAP
-#undef SIGTRAP
-#endif
-#ifdef SIGABRT
-#undef SIGABRT
-#endif
-#ifdef SIGIOT
-#undef SIGIOT
-#endif
-#ifdef SIGBUS
-#undef SIGBUS
-#endif
-#ifdef SIGFPE
-#undef SIGFPE
-#endif
-#ifdef SIGKILL
-#undef SIGKILL
-#endif
-#ifdef SIGUSR1
-#undef SIGUSR1
-#endif
-#ifdef SIGSEGV
-#undef SIGSEGV
-#endif
-#ifdef SIGUSR2
-#undef SIGUSR2
-#endif
-#ifdef SIGPIPE
-#undef SIGPIPE
-#endif
-#ifdef SIGALRM
-#undef SIGALRM
-#endif
-#ifdef SIGTERM
-#undef SIGTERM
-#endif
-#ifdef SIGCHLD
-#undef SIGCHLD
-#endif
-#ifdef SIGCONT
-#undef SIGCONT
-#endif
-#ifdef SIGSTOP
-#undef SIGSTOP
-#endif
-#ifdef SIGTSTP
-#undef SIGTSTP
-#endif
-#ifdef SIGTTIN
-#undef SIGTTIN
-#endif
-#ifdef SIGTTOU
-#undef SIGTTOU
-#endif
-#ifdef SIGURG
-#undef SIGURG
-#endif
-#ifdef SIGXCPU
-#undef SIGXCPU
-#endif
-#ifdef SIGXFSZ
-#undef SIGXFSZ
-#endif
-#ifdef SIGVTALRM
-#undef SIGVTALRM
-#endif
-#ifdef SIGPROF
-#undef SIGPROF
-#endif
-#ifdef SIGWINCH
-#undef SIGWINCH
-#endif
-#ifdef SIGIO
-#undef SIGIO
-#endif
-#ifdef SIGPOLL
-#undef SIGPOLL
-#endif
-#ifdef SIGPWR
-#undef SIGPWR
-#endif
-#ifdef SIGSYS
-#undef SIGSYS
-#endif
-#ifdef SIGUNUSED
-#undef SIGUNUSED
-#endif
-#ifdef SIGRTMIN
-#undef SIGRTMIN
-#endif
-#ifdef SIGRTMAX
-#undef SIGRTMAX
-#endif
-#ifdef SIG_BLOCK
-#undef SIG_BLOCK
-#endif
-#ifdef SIG_UNBLOCK
-#undef SIG_UNBLOCK
-#endif
-#ifdef SIG_SETMASK
-#undef SIG_SETMASK
-#endif
-#ifdef SIG_DFL
-#undef SIG_DFL
-#endif
-#ifdef SIG_IGN
-#undef SIG_IGN
-#endif
-#ifdef SIG_ERR
-#undef SIG_ERR
-#endif
 #include <linux/types.h>
 #include <linux/capability.h>
-#define __ASSEMBLY__ 1
-#include <asm-generic/signal.h>
-#undef __ASSEMBLY__
-#include <asm-generic/signal-defs.h>
-typedef struct {
-    unsigned long sig[1];
-} k_sigset_frame;
-typedef struct {
-    void *ss_sp;
-    int ss_flags;
-    size_t ss_size;
-} k_stack_frame;
-#ifdef __unused
-#undef __unused
-#endif
-#define sigset_t k_sigset_frame
-#define stack_t k_stack_frame
-#include <asm/sigcontext.h>
-#include <asm/ucontext.h>
-#undef stack_t
-#undef sigset_t
+#include <uapi/linux/signal.h>
+#include <uapi/asm/sigcontext.h>
+#include <uapi/asm/ucontext.h>
 
 #include "signal.h"
 #include "cred.h"
@@ -211,8 +69,8 @@ int kernel_sigismember(const struct signal_mask_bits *set, int signo) {
     return (set->sig[signal_word] & (1ULL << (signal_bit % 64U))) != 0;
 }
 
-struct signal_struct *alloc_signal_struct(void) {
-    struct signal_struct *sig = __kmalloc_noprof(sizeof(struct signal_struct), GFP_KERNEL | __GFP_ZERO);
+struct signal_state *alloc_signal_struct(void) {
+    struct signal_state *sig = __kmalloc_noprof(sizeof(struct signal_state), GFP_KERNEL | __GFP_ZERO);
     if (!sig)
         return NULL;
 
@@ -236,7 +94,7 @@ struct signal_struct *alloc_signal_struct(void) {
     return sig;
 }
 
-void free_signal_struct(struct signal_struct *sig) {
+void free_signal_struct(struct signal_state *sig) {
     if (!sig)
         return;
     if (atomic_dec_return(&sig->refs) > 0)
@@ -256,11 +114,11 @@ void free_signal_struct(struct signal_struct *sig) {
     kfree(sig);
 }
 
-struct signal_struct *dup_signal_struct(struct signal_struct *parent) {
+struct signal_state *dup_signal_struct(struct signal_state *parent) {
     if (!parent)
         return NULL;
 
-    struct signal_struct *child = alloc_signal_struct();
+    struct signal_state *child = alloc_signal_struct();
     if (!child)
         return NULL;
 
@@ -277,7 +135,7 @@ struct signal_struct *dup_signal_struct(struct signal_struct *parent) {
     return child;
 }
 
-static int signal_queue_append(struct signal_struct *signal, int32_t sig, int32_t code, uint64_t addr) {
+static int signal_queue_append(struct signal_state *signal, int32_t sig, int32_t code, uint64_t addr) {
     struct signal_queue_entry *entry;
 
     if (!signal) {
@@ -327,7 +185,7 @@ static int signal_queue_append(struct signal_struct *signal, int32_t sig, int32_
     return 0;
 }
 
-static int signal_queue_remove_first(struct signal_struct *signal, int32_t sig) {
+static int signal_queue_remove_first(struct signal_state *signal, int32_t sig) {
     struct signal_queue_entry *prev = NULL;
     struct signal_queue_entry *entry;
     int remains = 0;
@@ -376,7 +234,7 @@ static bool signal_default_action_is_ignore(int32_t sig) {
     }
 }
 
-static bool signal_action_is_ignored(const struct task_struct *task, int32_t sig) {
+static bool signal_action_is_ignored(const struct task *task, int32_t sig) {
     sighandler_t handler;
 
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
@@ -406,14 +264,14 @@ static bool signal_default_action_is_terminate(int32_t sig) {
     }
 }
 
-static bool signal_action_is_default(const struct task_struct *task, int32_t sig) {
+static bool signal_action_is_default(const struct task *task, int32_t sig) {
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return true;
     }
     return task->signal->actions[sig - 1].handler == SIG_DFL;
 }
 
-static int apply_signal_to_task_pending(struct task_struct *task, int32_t sig, int32_t code,
+static int apply_signal_to_task_pending(struct task *task, int32_t sig, int32_t code,
                                         uint64_t addr, bool shared) {
     int queued;
 
@@ -460,12 +318,12 @@ static int apply_signal_to_task_pending(struct task_struct *task, int32_t sig, i
     return 0;
 }
 
-static int apply_signal_to_task(struct task_struct *task, int32_t sig, int32_t code, uint64_t addr) {
+static int apply_signal_to_task(struct task *task, int32_t sig, int32_t code, uint64_t addr) {
     return apply_signal_to_task_pending(task, sig, code, addr, false);
 }
 
-static bool signal_sender_may_target(const struct task_struct *sender,
-                                     const struct task_struct *target) {
+static bool signal_sender_may_target(const struct task *sender,
+                                     const struct task *target) {
     uint64_t target_user_ns_id;
 
     if (!sender || !target || !sender->cred || !target->cred) {
@@ -486,11 +344,11 @@ static bool signal_sender_may_target(const struct task_struct *sender,
            sender->cred->uid == target->cred->suid;
 }
 
-int signal_generate_task(struct task_struct *target, int32_t sig) {
+int signal_generate_task(struct task *target, int32_t sig) {
     return signal_generate_task_info(target, sig, 0, 0);
 }
 
-int signal_generate_task_info(struct task_struct *target, int32_t sig, int32_t code, uint64_t addr) {
+int signal_generate_task_info(struct task *target, int32_t sig, int32_t code, uint64_t addr) {
     int result;
 
     if (!target || sig < 1 || sig > KERNEL_SIG_NUM)
@@ -508,8 +366,8 @@ int signal_generate_task_info(struct task_struct *target, int32_t sig, int32_t c
     return result;
 }
 
-int signal_generate_process(struct task_struct *target, int32_t sig) {
-    struct task_struct *selected;
+int signal_generate_process(struct task *target, int32_t sig) {
+    struct task *selected;
     int result;
 
     if (!target || sig < 1 || sig > KERNEL_SIG_NUM) {
@@ -519,7 +377,7 @@ int signal_generate_process(struct task_struct *target, int32_t sig) {
     selected = target;
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->tgid == target->tgid && !signal_is_blocked(task, sig)) {
                 selected = task;
@@ -537,8 +395,8 @@ int signal_generate_process(struct task_struct *target, int32_t sig) {
     return result;
 }
 
-int signal_send_process(struct task_struct *target, int32_t sig) {
-    struct task_struct *sender = get_current();
+int signal_send_process(struct task *target, int32_t sig) {
+    struct task *sender = task_current();
 
     if (!target || sig < 0 || sig > KERNEL_SIG_NUM) {
         return -EINVAL;
@@ -560,7 +418,7 @@ int signal_send_process(struct task_struct *target, int32_t sig) {
 }
 
 int signal_generate_pgrp(int32_t pgid, int32_t sig) {
-    struct task_struct *targets[TASK_MAX_TASKS];
+    struct task *targets[TASK_MAX_TASKS];
     int target_count = 0;
 
     if (sig < 0 || sig > KERNEL_SIG_NUM)
@@ -576,14 +434,14 @@ int signal_generate_pgrp(int32_t pgid, int32_t sig) {
     kernel_mutex_lock(&task_table_lock);
 
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
         while (task) {
             if (task->pgid == pgid) {
                 atomic_inc(&task->refs);
                 if (target_count < TASK_MAX_TASKS) {
                     targets[target_count++] = task;
                 } else {
-                    free_task(task);
+                    task_put(task);
                 }
             }
             task = task->hash_next;
@@ -601,10 +459,10 @@ int signal_generate_pgrp(int32_t pgid, int32_t sig) {
         kernel_mutex_lock(&targets[i]->lock);
         result = apply_signal_to_task_pending(targets[i], sig, 0, 0, true);
         kernel_mutex_unlock(&targets[i]->lock);
-        free_task(targets[i]);
+        task_put(targets[i]);
         if (result != 0) {
             for (int j = i + 1; j < target_count; j++) {
-                free_task(targets[j]);
+                task_put(targets[j]);
             }
             return result;
         }
@@ -623,7 +481,7 @@ int signal_generate_orphaned_pgrp(int32_t pgid) {
     return signal_generate_pgrp(pgid, SIGCONT);
 }
 
-int signal_enqueue_task(struct task_struct *task, int32_t sig) {
+int signal_enqueue_task(struct task *task, int32_t sig) {
     return signal_generate_task(task, sig);
 }
 
@@ -631,7 +489,7 @@ int signal_enqueue_group(int32_t pgid, int32_t sig) {
     return signal_generate_pgrp(pgid, sig);
 }
 
-int signal_dequeue(struct task_struct *task, struct signal_mask_bits *mask, int32_t *sig) {
+int signal_dequeue(struct task *task, struct signal_mask_bits *mask, int32_t *sig) {
     if (!task || !task->signal || !sig)
         return -EINVAL;
 
@@ -665,7 +523,7 @@ int signal_dequeue(struct task_struct *task, struct signal_mask_bits *mask, int3
     return -EAGAIN;
 }
 
-void signal_recompute_pending(struct task_struct *task) {
+void signal_recompute_pending(struct task *task) {
     /* Recompute whether task has any deliverable pending signals */
     if (!task || !task->signal)
         return;
@@ -674,7 +532,7 @@ void signal_recompute_pending(struct task_struct *task) {
     /* For now, pending signals are checked on demand */
 }
 
-void signal_wake_task(struct task_struct *task, bool group_wide) {
+void signal_wake_task(struct task *task, bool group_wide) {
     struct wait_queue_head *queue;
 
     (void)group_wide;
@@ -695,7 +553,7 @@ void signal_wake_task(struct task_struct *task, bool group_wide) {
     }
 }
 
-bool signal_is_blocked(const struct task_struct *task, int32_t sig) {
+bool signal_is_blocked(const struct task *task, int32_t sig) {
     if (!task || !task->signal)
         return false;
 
@@ -709,7 +567,7 @@ bool signal_is_blocked(const struct task_struct *task, int32_t sig) {
     return (task->signal->blocked.sig[idx] & (1ULL << bit)) != 0;
 }
 
-bool signal_is_pending(const struct task_struct *task, int32_t sig) {
+bool signal_is_pending(const struct task *task, int32_t sig) {
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM)
         return false;
 
@@ -723,7 +581,7 @@ bool signal_is_pending(const struct task_struct *task, int32_t sig) {
             (1ULL << bit)) != 0;
 }
 
-bool signal_has_unblocked_pending(const struct task_struct *task) {
+bool signal_has_unblocked_pending(const struct task *task) {
     if (!task || !task->signal) {
         return false;
     }
@@ -745,7 +603,7 @@ bool signal_has_unblocked_pending(const struct task_struct *task) {
     return false;
 }
 
-void signal_reset_on_exec(struct task_struct *task) {
+void signal_reset_on_exec(struct task *task) {
     if (!task || !task->signal)
         return;
 
@@ -756,7 +614,7 @@ void signal_reset_on_exec(struct task_struct *task) {
     task->thread_pending_signals = 0;
 }
 
-int signal_init_task(struct task_struct *task) {
+int signal_init_task(struct task *task) {
     if (!task)
         return -EINVAL;
 
@@ -783,7 +641,7 @@ int do_sigaction(int32_t sig, const struct signal_action_slot *act,
         return -EINVAL;
     }
 
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task || !task->signal) {
         return -ESRCH;
     }
@@ -801,12 +659,12 @@ int do_sigaction(int32_t sig, const struct signal_action_slot *act,
 
 int do_sigprocmask(int how, const struct signal_mask_bits *set,
 		   struct signal_mask_bits *oldset) {
-	struct task_struct *task = get_current();
+	struct task *task = task_current();
 	if (!task || !task->signal) {
 		return -ESRCH;
 	}
 
-	struct signal_struct *sig = task->signal;
+	struct signal_state *sig = task->signal;
 
 	if (oldset) {
 		*oldset = sig->blocked;
@@ -844,7 +702,7 @@ int do_sigpending(struct signal_mask_bits *set) {
         return -EFAULT;
     }
 
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task || !task->signal) {
         return -ESRCH;
     }
@@ -866,7 +724,7 @@ int do_signal(int32_t signum, sighandler_t handler, sighandler_t *old_handler) {
         return -EINVAL;
     }
 
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task || !task->signal) {
         return -ESRCH;
     }
@@ -882,7 +740,7 @@ int do_signal(int32_t signum, sighandler_t handler, sighandler_t *old_handler) {
 }
 
 int do_raise(int32_t sig) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -898,7 +756,7 @@ static int is_sigset_empty(const struct signal_mask_bits *set) {
 }
 
 int do_pause(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -917,7 +775,7 @@ int do_pause(void) {
 }
 
 int do_sigsuspend(const struct signal_mask_bits *mask) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (!task || !task->signal) {
         return -ESRCH;
     }
@@ -956,7 +814,7 @@ int do_kill(int32_t pid, int32_t sig) {
         /* Process group handling */
         if (pid == 0) {
             /* Current process group */
-            struct task_struct *task = get_current();
+            struct task *task = task_current();
             if (!task) {
                 return -ESRCH;
             }
@@ -971,13 +829,13 @@ int do_kill(int32_t pid, int32_t sig) {
         return result;
     }
 
-    struct task_struct *task = task_lookup(pid);
+    struct task *task = task_lookup(pid);
     if (!task) {
         return -ESRCH;
     }
 
     result = signal_send_process(task, sig);
-    free_task(task);
+    task_put(task);
     return result;
 }
 
@@ -986,7 +844,7 @@ int do_killpg(int32_t pgrp, int32_t sig) {
 }
 
 int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altstack *old_stack) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task || !task->signal) {
         return -ESRCH;
@@ -1006,7 +864,7 @@ int do_sigaltstack(const struct signal_altstack *new_stack, struct signal_altsta
     return 0;
 }
 
-int signal_prepare_frame_impl(struct task_struct *task, int32_t sig, uint64_t return_pc,
+int signal_prepare_frame_impl(struct task *task, int32_t sig, uint64_t return_pc,
                               uint64_t current_sp, uint64_t *frame_sp_out) {
     uint64_t frame_sp;
     uint64_t frame_record[frame_record_words];

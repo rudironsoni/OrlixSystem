@@ -25,6 +25,10 @@ rtk xcodegen generate --project .
 rtk xcodebuild -list -project OrlixKernel.xcodeproj
 rtk xcodebuild build-for-testing -project OrlixKernel.xcodeproj -scheme OrlixKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
 rtk xcodebuild test-without-building -project OrlixKernel.xcodeproj -scheme OrlixKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
+
+Important:
+- direct `xcodebuild` is the authoritative simulator proof
+- if a sandboxed shell or output wrapper loses CoreSimulator visibility, rerun the same `xcodebuild` command outside the sandbox and trust the direct `xcodebuild` result
 ```
 
 Canonical project surface:

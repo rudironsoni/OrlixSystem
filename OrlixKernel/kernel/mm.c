@@ -787,7 +787,7 @@ static long long mm_vma_pwrite(struct task_vma *vma, const void *buf, size_t cou
     return bytes;
 }
 
-static int mm_range_overlaps(struct mm_struct *mm, uint64_t start, uint64_t end) {
+static int mm_range_overlaps(struct memory_space *mm, uint64_t start, uint64_t end) {
     if (!mm) {
         return 0;
     }
@@ -799,7 +799,7 @@ static int mm_range_overlaps(struct mm_struct *mm, uint64_t start, uint64_t end)
     return 0;
 }
 
-static uint64_t mm_alloc_addr(struct mm_struct *mm, uint64_t length) {
+static uint64_t mm_alloc_addr(struct memory_space *mm, uint64_t length) {
     uint64_t candidate = mm_align_up(mm_next_anon_base, TASK_VMA_PAGE_SIZE);
 
     while (candidate != 0 && candidate <= MM_USER_TOP && length <= MM_USER_TOP - candidate) {
@@ -813,7 +813,7 @@ static uint64_t mm_alloc_addr(struct mm_struct *mm, uint64_t length) {
     return 0;
 }
 
-static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint32_t pf_flags,
+static int mm_add_vma(struct memory_space *mm, uint64_t start, uint64_t size, uint32_t pf_flags,
                       enum task_vma_kind kind, void *image) {
     struct task_vma *vma;
     uint64_t page_count;
@@ -870,7 +870,7 @@ static int mm_add_vma(struct mm_struct *mm, uint64_t start, uint64_t size, uint3
     return 0;
 }
 
-static void mm_remove_vma_at(struct mm_struct *mm, uint32_t index) {
+static void mm_remove_vma_at(struct memory_space *mm, uint32_t index) {
     struct task_vma *vma;
 
     if (!mm || index >= mm->vma_count) {
@@ -898,7 +898,7 @@ static void mm_remove_vma_at(struct mm_struct *mm, uint32_t index) {
     memset(&mm->vmas[mm->vma_count], 0, sizeof(mm->vmas[0]));
 }
 
-static int mm_find_brk_vma(struct mm_struct *mm, uint32_t *index_out) {
+static int mm_find_brk_vma(struct memory_space *mm, uint32_t *index_out) {
     if (!mm || mm->brk_start == 0) {
         return 0;
     }
@@ -913,7 +913,7 @@ static int mm_find_brk_vma(struct mm_struct *mm, uint32_t *index_out) {
     return 0;
 }
 
-static int mm_range_overlaps_except(struct mm_struct *mm, uint64_t start, uint64_t end,
+static int mm_range_overlaps_except(struct memory_space *mm, uint64_t start, uint64_t end,
                                     uint32_t except_index) {
     if (!mm) {
         return 0;
@@ -1219,8 +1219,8 @@ static void *mm_dup_bytes(const void *source, size_t size) {
     return copy;
 }
 
-struct mm_struct *task_mm_dup_impl(const struct mm_struct *source) {
-    struct mm_struct *copy;
+struct memory_space *task_mm_dup_impl(const struct memory_space *source) {
+    struct memory_space *copy;
 
     if (!source) {
         return NULL;
@@ -1361,7 +1361,7 @@ static void mm_free_vma_contents(struct task_vma *vma) {
     memset(vma, 0, sizeof(*vma));
 }
 
-static int mm_replace_vma_with_slices(struct mm_struct *mm, uint32_t index,
+static int mm_replace_vma_with_slices(struct memory_space *mm, uint32_t index,
                                       const struct task_vma *left,
                                       const struct task_vma *right) {
     int has_left = left && left->start < left->end;
@@ -1399,7 +1399,7 @@ static int mm_replace_vma_with_slices(struct mm_struct *mm, uint32_t index,
     return 0;
 }
 
-static int mm_insert_vma_sorted(struct mm_struct *mm, const struct task_vma *vma) {
+static int mm_insert_vma_sorted(struct memory_space *mm, const struct task_vma *vma) {
     uint32_t index = 0;
 
     if (!mm || !vma || vma->start >= vma->end) {
@@ -1419,7 +1419,7 @@ static int mm_insert_vma_sorted(struct mm_struct *mm, const struct task_vma *vma
     return 0;
 }
 
-static void mm_sort_vmas_by_start(struct mm_struct *mm) {
+static void mm_sort_vmas_by_start(struct memory_space *mm) {
     if (!mm) {
         return;
     }
@@ -1473,7 +1473,7 @@ static int mm_vmas_can_merge(const struct task_vma *left, const struct task_vma 
     return 1;
 }
 
-static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
+static int mm_merge_vma_pair(struct memory_space *mm, uint32_t index) {
     struct task_vma *left;
     struct task_vma *right;
     uint64_t left_pages;
@@ -1600,7 +1600,7 @@ static int mm_merge_vma_pair(struct mm_struct *mm, uint32_t index) {
     return 1;
 }
 
-static int mm_merge_adjacent_vmas(struct mm_struct *mm) {
+static int mm_merge_adjacent_vmas(struct memory_space *mm) {
     if (!mm) {
         return -EINVAL;
     }
@@ -1617,7 +1617,7 @@ static int mm_merge_adjacent_vmas(struct mm_struct *mm) {
     return 0;
 }
 
-static int mm_remove_exact_vma(struct mm_struct *mm, uint64_t start, uint64_t end) {
+static int mm_remove_exact_vma(struct memory_space *mm, uint64_t start, uint64_t end) {
     if (!mm) {
         return -EINVAL;
     }
@@ -1630,7 +1630,7 @@ static int mm_remove_exact_vma(struct mm_struct *mm, uint64_t start, uint64_t en
     return -ENOENT;
 }
 
-static int mm_unmap_vma_range(struct mm_struct *mm, uint32_t index,
+static int mm_unmap_vma_range(struct memory_space *mm, uint32_t index,
                               uint64_t start, uint64_t end) {
     struct task_vma source;
     struct task_vma left;
@@ -1673,7 +1673,7 @@ static int mm_unmap_vma_range(struct mm_struct *mm, uint32_t index,
 }
 
 void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t offset) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint64_t map_len;
     uint64_t map_addr;
     enum task_vma_kind kind;
@@ -1792,7 +1792,7 @@ void *mmap_impl(void *addr, size_t length, int prot, int flags, int fd, int64_t 
 }
 
 int mprotect_impl(void *addr, size_t len, int prot) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
 
@@ -1810,7 +1810,7 @@ int mprotect_impl(void *addr, size_t len, int prot) {
 }
 
 int munmap_impl(void *addr, size_t len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
     uint64_t end;
@@ -1977,7 +1977,7 @@ static int mm_zero_vma_range(struct task_vma *vma, uint64_t start, uint64_t end)
 }
 
 int madvise_impl(void *addr, size_t length, int advice) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
     uint64_t end;
@@ -2017,7 +2017,7 @@ int madvise_impl(void *addr, size_t length, int advice) {
 }
 
 int mincore_impl(void *addr, size_t length, unsigned char *vec) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
     uint64_t page_count;
@@ -2072,7 +2072,7 @@ int mincore_impl(void *addr, size_t length, unsigned char *vec) {
 }
 
 void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags, void *new_address) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint64_t old_start = (uint64_t)(unsigned long)old_address;
     uint64_t new_start = (uint64_t)(unsigned long)new_address;
     uint64_t old_len;
@@ -2340,7 +2340,7 @@ void *mremap_impl(void *old_address, size_t old_size, size_t new_size, int flags
 }
 
 int msync_impl(void *addr, size_t len, int flags) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint64_t start = (uint64_t)(unsigned long)addr;
     uint64_t size;
     uint64_t end;
@@ -2438,7 +2438,7 @@ int msync_impl(void *addr, size_t len, int flags) {
 }
 
 void *brk_impl(void *addr) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint64_t requested = (uint64_t)(unsigned long)addr;
     uint64_t aligned;
     uint32_t brk_index = 0;

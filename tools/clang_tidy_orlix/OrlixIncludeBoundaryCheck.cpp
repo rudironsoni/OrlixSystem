@@ -3,8 +3,10 @@
 #include "clang/Lex/PPCallbacks.h"
 #include "clang/Lex/Preprocessor.h"
 
+#include <filesystem>
 #include <regex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace clang::tidy::orlix {
@@ -35,6 +37,93 @@ bool fileNameMatchesLinuxRename(llvm::StringRef FileName) {
 
 bool isForbiddenStdHeader(llvm::StringRef FileName) {
   return FileName.starts_with("std") && FileName.ends_with(".h");
+}
+
+bool isRuntimeUserspaceAbiSurface(llvm::StringRef MainFilePath) {
+  return MainFilePath.contains("/OrlixKernel/runtime/");
+}
+
+bool isHeaderPath(llvm::StringRef MainFilePath) {
+  return MainFilePath.ends_with(".h") || MainFilePath.ends_with(".hpp") ||
+         MainFilePath.ends_with(".hh");
+}
+
+std::string repoRootFromMainFile(llvm::StringRef MainFilePath) {
+  size_t KernelPos = MainFilePath.find("/OrlixKernel/");
+  if (KernelPos != llvm::StringRef::npos) {
+    return MainFilePath.substr(0, KernelPos).str();
+  }
+
+  size_t HostPos = MainFilePath.find("/OrlixHostAdapter/");
+  if (HostPos != llvm::StringRef::npos) {
+    return MainFilePath.substr(0, HostPos).str();
+  }
+
+  size_t MLibCPos = MainFilePath.find("/OrlixMLibC/");
+  if (MLibCPos != llvm::StringRef::npos) {
+    return MainFilePath.substr(0, MLibCPos).str();
+  }
+
+  return {};
+}
+
+std::string siblingKernelHeaderForUapi(llvm::StringRef FileName) {
+  if (!FileName.starts_with("uapi/")) {
+    return {};
+  }
+  return FileName.drop_front(5).str();
+}
+
+bool vendoredKernelHeaderExists(llvm::StringRef MainFilePath,
+                                llvm::StringRef CandidateHeader) {
+  static std::unordered_map<std::string, bool> Cache;
+
+  if (CandidateHeader.empty()) {
+    return false;
+  }
+
+  std::string RepoRoot = repoRootFromMainFile(MainFilePath);
+  if (RepoRoot.empty()) {
+    return false;
+  }
+
+  std::string CacheKey = RepoRoot + "|" + CandidateHeader.str();
+  auto It = Cache.find(CacheKey);
+  if (It != Cache.end()) {
+    return It->second;
+  }
+
+  std::filesystem::path VendorRoot =
+      std::filesystem::path(RepoRoot) / "OrlixKernel" / "vendor" / "linux";
+  bool Found = false;
+
+  std::error_code EC;
+  if (std::filesystem::exists(VendorRoot, EC)) {
+    for (const auto &VersionDir :
+         std::filesystem::directory_iterator(VendorRoot, EC)) {
+      if (EC || !VersionDir.is_directory()) {
+        continue;
+      }
+      for (const auto &ArchDir :
+           std::filesystem::directory_iterator(VersionDir.path(), EC)) {
+        if (EC || !ArchDir.is_directory()) {
+          continue;
+        }
+        std::filesystem::path CandidatePath =
+            ArchDir.path() / "kheaders" / "include" / CandidateHeader.str();
+        if (std::filesystem::exists(CandidatePath, EC)) {
+          Found = true;
+          break;
+        }
+      }
+      if (Found) {
+        break;
+      }
+    }
+  }
+
+  Cache.emplace(CacheKey, Found);
+  return Found;
 }
 
 class IncludeBoundaryPPCallbacks : public PPCallbacks {
@@ -105,9 +194,14 @@ public:
                    "temporary vendored alias include surfaces are forbidden; include the real upstream Linux path instead");
       }
 
-      if (FileName.starts_with("uapi/")) {
+      if (Check.isKernelPublicHeaderPath(MainFilePath) &&
+          isHeaderPath(MainFilePath) &&
+          !isRuntimeUserspaceAbiSurface(MainFilePath) &&
+          FileName.starts_with("uapi/") &&
+          vendoredKernelHeaderExists(MainFilePath,
+                                     siblingKernelHeaderForUapi(FileName))) {
         Check.diag(HashLoc,
-                   "direct UAPI includes are forbidden in Linux-owner code; consume full upstream Linux kernel headers unless the file is an explicit userspace-ABI proof surface outside OrlixKernel");
+                   "direct UAPI includes are forbidden in public Linux-owner headers; use full upstream Linux kernel headers there and keep UAPI consumption in implementation files or kernel-private subsystem headers that translate Linux userspace ABI");
       }
 
       if (FileName.starts_with("third_party/linux/") ||

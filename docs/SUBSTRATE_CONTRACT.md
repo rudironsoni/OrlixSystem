@@ -79,6 +79,10 @@ rtk xcodebuild test-without-building -project OrlixKernel.xcodeproj -scheme Orli
 rtk xcodebuild test-without-building -project OrlixKernel.xcodeproj -scheme OrlixKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:OrlixHostAdapterTests
 ```
 
+Proof environment rule:
+- the direct `xcodebuild` result is authoritative
+- if a sandboxed shell, formatter, or wrapper loses CoreSimulator visibility and falls back to placeholder-only destinations, rerun the same simulator proof outside the sandbox and use the direct `xcodebuild` result as source of truth
+
 The split target invocations above are the authoritative proof commands for this repo.
 The unsplit umbrella `test-without-building` invocation may still run the same simulator tests, but it is not the required closeout command because Xcode can hang afterward on unrelated locked-device notification traffic outside the simulator target.
 

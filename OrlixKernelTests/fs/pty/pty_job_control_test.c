@@ -1,11 +1,8 @@
 #include <asm/ioctls.h>
-#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/fcntl.h>
+#include <uapi/linux/signal.h>
 #include <linux/string.h>
-#define __ASSEMBLY__ 1
-#include <asm-generic/signal.h>
-#undef __ASSEMBLY__
-#include <asm-generic/signal-defs.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -122,8 +119,8 @@ static int detach_controlling_tty_if_present(void) {
     return close_impl(tty_fd);
 }
 
-static struct task_struct *alloc_session_peer(int32_t sid, int32_t pgid, int32_t ppid) {
-    struct task_struct *task = alloc_task();
+static struct task *alloc_session_peer(int32_t sid, int32_t pgid, int32_t ppid) {
+    struct task *task = alloc_task();
     if (!task) {
         errno = ENOMEM;
         return NULL;
@@ -134,7 +131,7 @@ static struct task_struct *alloc_session_peer(int32_t sid, int32_t pgid, int32_t
     task->pgid = pgid;
     task->signal = alloc_signal_struct();
     if (!task->signal) {
-        free_task(task);
+        task_put(task);
         errno = ENOMEM;
         return NULL;
     }
@@ -142,7 +139,7 @@ static struct task_struct *alloc_session_peer(int32_t sid, int32_t pgid, int32_t
     return task;
 }
 
-static void clear_pending_signal(struct task_struct *task, int32_t sig) {
+static void clear_pending_signal(struct task *task, int32_t sig) {
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
         return;
     }
@@ -152,42 +149,42 @@ static void clear_pending_signal(struct task_struct *task, int32_t sig) {
 }
 
 static void reset_pty_job_control_test_kernel_state(void) {
-    struct task_struct *child;
+    struct task *child;
 
     start_kernel();
-    if (!kernel_is_booted() || !init_task) {
+    if (!kernel_is_booted() || !task_init_process) {
         return;
     }
 
-    set_current(init_task);
-    init_task->parent = NULL;
-    init_task->ppid = 0;
-    init_task->pgid = init_task->pid;
-    init_task->sid = init_task->pid;
-    init_task->exit_status = 0;
-    init_task->thread_pending_signals = 0;
-    atomic_set(&init_task->exited, 0);
-    atomic_set(&init_task->signaled, 0);
-    atomic_set(&init_task->termsig, 0);
-    atomic_set(&init_task->stopped, 0);
-    atomic_set(&init_task->state, TASK_RUNNING);
-    atomic_set(&init_task->continued, 0);
-    atomic_set(&init_task->stop_report_pending, 0);
-    atomic_set(&init_task->continue_report_pending, 0);
-    if (init_task->signal) {
-        memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
-        memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));
+    task_set_current(task_init_process);
+    task_init_process->parent = NULL;
+    task_init_process->ppid = 0;
+    task_init_process->pgid = task_init_process->pid;
+    task_init_process->sid = task_init_process->pid;
+    task_init_process->exit_status = 0;
+    task_init_process->thread_pending_signals = 0;
+    atomic_set(&task_init_process->exited, 0);
+    atomic_set(&task_init_process->signaled, 0);
+    atomic_set(&task_init_process->termsig, 0);
+    atomic_set(&task_init_process->stopped, 0);
+    atomic_set(&task_init_process->state, RUN_STATE_RUNNING);
+    atomic_set(&task_init_process->continued, 0);
+    atomic_set(&task_init_process->stop_report_pending, 0);
+    atomic_set(&task_init_process->continue_report_pending, 0);
+    if (task_init_process->signal) {
+        memset(&task_init_process->signal->pending, 0, sizeof(task_init_process->signal->pending));
+        memset(&task_init_process->signal->shared_pending, 0, sizeof(task_init_process->signal->shared_pending));
     }
 
-    while ((child = init_task->children) != NULL) {
-        task_unlink_child_impl(init_task, child);
-        free_task(child);
+    while ((child = task_init_process->children) != NULL) {
+        task_unlink_child_impl(task_init_process, child);
+        task_put(child);
     }
 }
 
 int pty_job_control_contract_tiocspgrp_round_trip(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *peer = NULL;
+    struct task *task = task_current();
+    struct task *peer = NULL;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -231,15 +228,15 @@ out:
     close_if_open(master_fd);
     close_if_open(slave_fd);
     if (peer) {
-        free_task(peer);
+        task_put(peer);
     }
     task->pgid = task->pid;
     return result;
 }
 
 int pty_job_control_contract_tcsetpgrp_round_trip(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *peer = NULL;
+    struct task *task = task_current();
+    struct task *peer = NULL;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -281,16 +278,16 @@ out:
     close_if_open(master_fd);
     close_if_open(slave_fd);
     if (peer) {
-        free_task(peer);
+        task_put(peer);
     }
     task->pgid = task->pid;
     return result;
 }
 
 int pty_job_control_contract_background_tiocspgrp_delivers_sigttou(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *foreground_peer = NULL;
-    struct task_struct *target_peer = NULL;
+    struct task *task = task_current();
+    struct task *foreground_peer = NULL;
+    struct task *target_peer = NULL;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -345,18 +342,18 @@ out:
     close_if_open(master_fd);
     close_if_open(slave_fd);
     if (foreground_peer) {
-        free_task(foreground_peer);
+        task_put(foreground_peer);
     }
     if (target_peer) {
-        free_task(target_peer);
+        task_put(target_peer);
     }
     return result;
 }
 
 int pty_job_control_contract_background_tcsetpgrp_delivers_sigttou(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *foreground_peer = NULL;
-    struct task_struct *target_peer = NULL;
+    struct task *task = task_current();
+    struct task *foreground_peer = NULL;
+    struct task *target_peer = NULL;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -409,18 +406,18 @@ out:
     close_if_open(master_fd);
     close_if_open(slave_fd);
     if (foreground_peer) {
-        free_task(foreground_peer);
+        task_put(foreground_peer);
     }
     if (target_peer) {
-        free_task(target_peer);
+        task_put(target_peer);
     }
     return result;
 }
 
 int pty_job_control_contract_background_read_delivers_sigttin(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *foreground_peer = NULL;
-    struct task_struct *background_peer = NULL;
+    struct task *task = task_current();
+    struct task *foreground_peer = NULL;
+    struct task *background_peer = NULL;
     int master_fd = -1;
     int slave_fd = -1;
     unsigned int pty_index = 0;
@@ -480,18 +477,18 @@ out:
     close_if_open(master_fd);
     close_if_open(slave_fd);
     if (foreground_peer) {
-        free_task(foreground_peer);
+        task_put(foreground_peer);
     }
     if (background_peer) {
-        free_task(background_peer);
+        task_put(background_peer);
     }
     return result;
 }
 
 int pty_job_control_contract_background_write_delivers_sigttou(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *foreground_peer = NULL;
-    struct task_struct *background_peer = NULL;
+    struct task *task = task_current();
+    struct task *foreground_peer = NULL;
+    struct task *background_peer = NULL;
     sighandler_t saved_sigttou_handler;
     int master_fd = -1;
     int slave_fd = -1;
@@ -501,7 +498,7 @@ int pty_job_control_contract_background_write_delivers_sigttou(void) {
     int32_t background_pgid;
     int saved_pgid;
     int saved_ppid;
-    struct task_struct *saved_parent;
+    struct task *saved_parent;
     int result = -1;
 
     if (!task) {
@@ -574,19 +571,19 @@ out:
     close_if_open(master_fd);
     close_if_open(slave_fd);
     if (foreground_peer) {
-        free_task(foreground_peer);
+        task_put(foreground_peer);
     }
     if (background_peer) {
-        free_task(background_peer);
+        task_put(background_peer);
     }
     return result;
 }
 
 int pty_job_control_contract_signal_chars_target_foreground_pgrp(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *sigint_peer = NULL;
-    struct task_struct *sigquit_peer = NULL;
-    struct task_struct *sigtstp_peer = NULL;
+    struct task *task = task_current();
+    struct task *sigint_peer = NULL;
+    struct task *sigquit_peer = NULL;
+    struct task *sigtstp_peer = NULL;
     sighandler_t saved_sigttou_handler;
     int master_fd = -1;
     int slave_fd = -1;
@@ -652,7 +649,7 @@ int pty_job_control_contract_signal_chars_target_foreground_pgrp(void) {
         goto out;
     }
     if (!signal_is_pending(sigtstp_peer, SIGTSTP) ||
-        atomic_read(&sigtstp_peer->state) != TASK_STOPPED) {
+        atomic_read(&sigtstp_peer->state) != RUN_STATE_STOPPED) {
         errno = EPROTO;
         goto out;
     }
@@ -666,13 +663,13 @@ out:
     close_if_open(master_fd);
     close_if_open(slave_fd);
     if (sigint_peer) {
-        free_task(sigint_peer);
+        task_put(sigint_peer);
     }
     if (sigquit_peer) {
-        free_task(sigquit_peer);
+        task_put(sigquit_peer);
     }
     if (sigtstp_peer) {
-        free_task(sigtstp_peer);
+        task_put(sigtstp_peer);
     }
     return result;
 }
@@ -733,8 +730,8 @@ out:
 }
 
 int pty_job_control_contract_killpg_targets_process_group(void) {
-    struct task_struct *task = get_current();
-    struct task_struct *peer = NULL;
+    struct task *task = task_current();
+    struct task *peer = NULL;
     int32_t original_pgid;
     int result = -1;
 
@@ -769,7 +766,7 @@ int pty_job_control_contract_killpg_targets_process_group(void) {
 out:
     task->pgid = original_pgid;
     if (peer) {
-        free_task(peer);
+        task_put(peer);
     }
     return result;
 }

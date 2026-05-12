@@ -8,28 +8,28 @@
 #include <uapi/linux/sched.h>
 #include <uapi/linux/signal.h>
 #include <uapi/linux/time_types.h>
-#include <linux/string.h>
+#include <uapi/linux/errno.h>
 
-#include <errno.h>
 #include <stdint.h>
 
+#include "fs/fdtable.h"
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
 #include "kernel/cred.h"
 #include "kernel/task.h"
 
+extern int errno;
+
 extern void free(void *);
 extern int nanosleep_impl(const struct __kernel_timespec *req, struct __kernel_timespec *rem);
 
 static void signal_contract_disable_altstack(void) {
-    stack_t disabled;
-
-    memset(&disabled, 0, sizeof(disabled));
+    stack_t disabled = {0};
     disabled.ss_flags = SS_DISABLE;
     syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&disabled, 0, 0, 0, 0, 0);
 }
 
-static void signal_contract_clear_pending(struct task_struct *task, int signo) {
+static void signal_contract_clear_pending(struct task *task, int signo) {
     int32_t dequeued = 0;
 
     if (!task || !task->signal || signo < 1 || signo > KERNEL_SIG_NUM) {
@@ -45,7 +45,7 @@ static void signal_contract_clear_pending(struct task_struct *task, int signo) {
     task->signal->shared_pending.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
 }
 
-static void signal_contract_clear_queued_signal(struct task_struct *task, int signo) {
+static void signal_contract_clear_queued_signal(struct task *task, int signo) {
     struct signal_queue_entry *prev = NULL;
     struct signal_queue_entry *entry;
 
@@ -77,7 +77,7 @@ static void signal_contract_clear_queued_signal(struct task_struct *task, int si
     signal_contract_clear_pending(task, signo);
 }
 
-static int signal_contract_queued_count(struct task_struct *task, int signo) {
+static int signal_contract_queued_count(struct task *task, int signo) {
     struct signal_queue_entry *entry;
     int count = 0;
 
@@ -96,16 +96,18 @@ static int signal_contract_queued_count(struct task_struct *task, int signo) {
 }
 
 static struct signal_mask_bits signal_contract_mask_all_except(int signo) {
-    struct signal_mask_bits mask;
+    struct signal_mask_bits mask = {0};
 
-    memset(&mask, 0xff, sizeof(mask));
+    for (unsigned int i = 0; i < (sizeof(mask.sig) / sizeof(mask.sig[0])); i++) {
+        mask.sig[i] = ~0ULL;
+    }
     if (signo >= 1 && signo <= KERNEL_SIG_NUM) {
         mask.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
     }
     return mask;
 }
 
-static void signal_contract_set_task_identity(struct task_struct *task, uint32_t uid) {
+static void signal_contract_set_task_identity(struct task *task, uint32_t uid) {
     if (!task || !task->cred) {
         return;
     }
@@ -128,9 +130,9 @@ static void signal_contract_set_task_identity(struct task_struct *task, uint32_t
 }
 
 int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *thread = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *thread = NULL;
     struct signal_mask_bits saved_parent_blocked;
     long ret;
     int32_t thread_pid;
@@ -225,8 +227,8 @@ int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void) 
     signal_contract_clear_queued_signal(child, signo);
     signal_contract_clear_queued_signal(parent, signo);
     parent->signal->blocked = saved_parent_blocked;
-    free_task(thread);
-    free_task(child);
+    task_put(thread);
+    task_put(child);
     cred_reset_to_defaults();
     return 0;
 
@@ -239,11 +241,11 @@ fail:
     }
     if (thread) {
         signal_contract_clear_queued_signal(thread, signo);
-        free_task(thread);
+        task_put(thread);
     }
     if (child) {
         signal_contract_clear_queued_signal(child, signo);
-        free_task(child);
+        task_put(child);
     }
     signal_contract_clear_queued_signal(parent, signo);
     parent->signal->blocked = saved_parent_blocked;
@@ -252,8 +254,8 @@ fail:
 }
 
 int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     struct signal_mask_bits saved_parent_blocked;
     long ret;
     int pidfd = -1;
@@ -328,7 +330,7 @@ int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
     signal_contract_clear_queued_signal(child, signo);
     signal_contract_clear_queued_signal(parent, signo);
     parent->signal->blocked = saved_parent_blocked;
-    free_task(child);
+    task_put(child);
     cred_reset_to_defaults();
     return 0;
 
@@ -338,7 +340,7 @@ fail:
     }
     if (child) {
         signal_contract_clear_queued_signal(child, signo);
-        free_task(child);
+        task_put(child);
     }
     signal_contract_clear_queued_signal(parent, signo);
     parent->signal->blocked = saved_parent_blocked;
@@ -347,14 +349,10 @@ fail:
 }
 
 int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void) {
-    struct sigaction act;
-    struct sigaction oldact;
-    struct sigaction queried;
+    struct syscall_sigaction_frame act = {0};
+    struct syscall_sigaction_frame oldact = {0};
+    struct syscall_sigaction_frame queried = {0};
     long ret;
-
-    memset(&act, 0, sizeof(act));
-    memset(&oldact, 0, sizeof(oldact));
-    memset(&queried, 0, sizeof(queried));
     act.sa_handler = (__sighandler_t)(uintptr_t)0x1000;
     act.sa_flags = SA_RESTART | SA_ONSTACK;
     act.sa_mask.sig[0] = 1ULL << (2 - 1);
@@ -387,7 +385,7 @@ int signal_syscall_contract_rt_sigaction_uses_linux_uapi_layout(void) {
 }
 
 int signal_syscall_contract_sigaltstack_and_frame_policy(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     stack_t stack;
     stack_t old_stack;
     uint64_t frame_sp = 0;
@@ -406,8 +404,8 @@ int signal_syscall_contract_sigaltstack_and_frame_policy(void) {
         return -1;
     }
 
-    memset(&stack, 0, sizeof(stack));
-    memset(&old_stack, 0, sizeof(old_stack));
+    stack = (stack_t){0};
+    old_stack = (stack_t){0};
     stack.ss_sp = mapped;
     stack.ss_size = 16384;
     stack.ss_flags = 0;
@@ -442,7 +440,7 @@ int signal_syscall_contract_sigaltstack_and_frame_policy(void) {
 }
 
 int signal_syscall_contract_frame_writes_virtual_record(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     stack_t stack;
     struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
@@ -462,7 +460,7 @@ int signal_syscall_contract_frame_writes_virtual_record(void) {
         return -1;
     }
 
-    memset(&stack, 0, sizeof(stack));
+    stack = (stack_t){0};
     stack.ss_sp = mapped;
     stack.ss_size = 16384;
     if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
@@ -485,9 +483,9 @@ int signal_syscall_contract_frame_writes_virtual_record(void) {
 }
 
 int signal_syscall_contract_frame_records_handler_handoff(void) {
-    struct task_struct *task = get_current();
-    struct sigaction act;
-    struct sigaction old_act;
+    struct task *task = task_current();
+    struct syscall_sigaction_frame act;
+    struct syscall_sigaction_frame old_act;
     stack_t stack;
     struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
@@ -500,8 +498,8 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
     }
     old_blocked = task->signal->blocked;
     signal_contract_disable_altstack();
-    memset(&act, 0, sizeof(act));
-    memset(&old_act, 0, sizeof(old_act));
+    act = (struct syscall_sigaction_frame){0};
+    old_act = (struct syscall_sigaction_frame){0};
     act.sa_handler = (__sighandler_t)(uintptr_t)0x9000;
     act.sa_flags = SA_RESTART | SA_ONSTACK;
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&act,
@@ -520,7 +518,7 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
                               0, sizeof(old_act.sa_mask), 0, 0);
         return -1;
     }
-    memset(&stack, 0, sizeof(stack));
+    stack = (stack_t){0};
     stack.ss_sp = mapped;
     stack.ss_size = 16384;
     if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
@@ -545,9 +543,9 @@ int signal_syscall_contract_frame_records_handler_handoff(void) {
 }
 
 int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
-    struct task_struct *task = get_current();
-    struct sigaction act;
-    struct sigaction old_act;
+    struct task *task = task_current();
+    struct syscall_sigaction_frame act;
+    struct syscall_sigaction_frame old_act;
     stack_t stack;
     struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
@@ -562,8 +560,8 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
     }
     old_blocked = task->signal->blocked;
     signal_contract_disable_altstack();
-    memset(&act, 0, sizeof(act));
-    memset(&old_act, 0, sizeof(old_act));
+    act = (struct syscall_sigaction_frame){0};
+    old_act = (struct syscall_sigaction_frame){0};
     act.sa_handler = (__sighandler_t)(uintptr_t)0x9100;
     act.sa_restorer = (__sigrestore_t)(uintptr_t)0x9200;
     act.sa_flags = SA_RESTART | SA_ONSTACK | SA_RESTORER;
@@ -593,7 +591,7 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
                               0, sizeof(old_act.sa_mask), 0, 0);
         return -1;
     }
-    memset(&stack, 0, sizeof(stack));
+    stack = (stack_t){0};
     stack.ss_sp = mapped;
     stack.ss_size = 16384;
     if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
@@ -628,7 +626,7 @@ int signal_syscall_contract_frame_records_mask_restorer_and_context(void) {
 }
 
 int signal_syscall_contract_rt_sigreturn_restores_mask_and_altstack(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     stack_t stack;
     uint64_t frame_sp = 0;
     uint64_t block_set = 1ULL << (SIGTERM - 1);
@@ -648,7 +646,7 @@ int signal_syscall_contract_rt_sigreturn_restores_mask_and_altstack(void) {
         errno = -(int)(long)(uintptr_t)mapped;
         return -1;
     }
-    memset(&stack, 0, sizeof(stack));
+    stack = (stack_t){0};
     stack.ss_sp = mapped;
     stack.ss_size = 16384;
     if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
@@ -693,7 +691,7 @@ int signal_syscall_contract_rt_sigreturn_restores_mask_and_altstack(void) {
 }
 
 int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     stack_t stack;
     uint64_t frame_sp = 0;
     uint64_t frame_words[12] = {0};
@@ -713,7 +711,7 @@ int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
         errno = -(int)(long)(uintptr_t)mapped;
         return -1;
     }
-    memset(&stack, 0, sizeof(stack));
+    stack = (stack_t){0};
     stack.ss_sp = mapped;
     stack.ss_size = 16384;
     if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
@@ -781,7 +779,7 @@ int signal_syscall_contract_rt_sigreturn_restores_frame_context_record(void) {
 }
 
 int signal_syscall_contract_frame_contains_linux_ucontext(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     stack_t stack;
     struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
@@ -801,7 +799,7 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
         errno = -(int)(long)(uintptr_t)mapped;
         return -1;
     }
-    memset(&stack, 0, sizeof(stack));
+    stack = (stack_t){0};
     stack.ss_sp = mapped;
     stack.ss_size = 16384;
     if (syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&stack, 0, 0, 0, 0, 0) != 0 ||
@@ -839,10 +837,10 @@ int signal_syscall_contract_frame_contains_linux_ucontext(void) {
 }
 
 int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void) {
-    struct task_struct *task = get_current();
-    struct sigaction act;
-    struct sigaction dfl;
-    struct sigaction old_term;
+    struct task *task = task_current();
+    struct syscall_sigaction_frame act;
+    struct syscall_sigaction_frame dfl;
+    struct syscall_sigaction_frame old_term;
     long ret;
 
     if (!task || !task->signal) {
@@ -850,9 +848,9 @@ int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void)
         return -1;
     }
 
-    memset(&act, 0, sizeof(act));
-    memset(&dfl, 0, sizeof(dfl));
-    memset(&old_term, 0, sizeof(old_term));
+    act = (struct syscall_sigaction_frame){0};
+    dfl = (struct syscall_sigaction_frame){0};
+    old_term = (struct syscall_sigaction_frame){0};
     dfl.sa_handler = SIG_DFL;
 
     signal_contract_clear_pending(task, SIGWINCH);
@@ -904,7 +902,7 @@ int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void)
 }
 
 int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct signal_mask_bits old_blocked;
     struct signal_mask_bits only_realtime;
     int signo = SIGRTMIN;
@@ -916,7 +914,7 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
     }
     old_blocked = task->signal->blocked;
     only_realtime = signal_contract_mask_all_except(signo);
-    memset(&task->signal->blocked, 0, sizeof(task->signal->blocked));
+    task->signal->blocked = (struct signal_mask_bits){0};
     signal_contract_clear_queued_signal(task, signo);
     signal_contract_clear_queued_signal(task, SIGUSR1);
 
@@ -951,10 +949,10 @@ int signal_syscall_contract_realtime_queue_preserves_multiplicity_and_order(void
 }
 
 int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(void) {
-    struct task_struct *task = get_current();
-    struct sigaction act;
-    struct sigaction old_usr1;
-    struct sigaction old_usr2;
+    struct task *task = task_current();
+    struct syscall_sigaction_frame act;
+    struct syscall_sigaction_frame old_usr1;
+    struct syscall_sigaction_frame old_usr2;
     struct signal_mask_bits old_blocked;
     uint64_t frame_sp = 0;
     uint64_t block_term = 1ULL << (SIGTERM - 1);
@@ -967,9 +965,9 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
         errno = ESRCH;
         return -1;
     }
-    memset(&act, 0, sizeof(act));
-    memset(&old_usr1, 0, sizeof(old_usr1));
-    memset(&old_usr2, 0, sizeof(old_usr2));
+    act = (struct syscall_sigaction_frame){0};
+    old_usr1 = (struct syscall_sigaction_frame){0};
+    old_usr2 = (struct syscall_sigaction_frame){0};
     old_blocked = task->signal->blocked;
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -997,7 +995,7 @@ int signal_syscall_contract_frame_applies_handler_mask_nodefer_and_resethand(voi
     }
 
     task->signal->blocked.sig[0] = 0;
-    memset(&act, 0, sizeof(act));
+    act = (struct syscall_sigaction_frame){0};
     act.sa_handler = (__sighandler_t)(uintptr_t)0x7200;
     act.sa_flags = SA_NODEFER;
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR2, (long)(uintptr_t)&act,
@@ -1027,9 +1025,9 @@ out:
 }
 
 int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
-    struct task_struct *task = get_current();
-    struct sigaction act;
-    struct sigaction old_usr1;
+    struct task *task = task_current();
+    struct syscall_sigaction_frame act;
+    struct syscall_sigaction_frame old_usr1;
     struct signal_mask_bits old_blocked;
     void *mapped;
     uint64_t frame_sp = 0;
@@ -1040,8 +1038,8 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
         return -1;
     }
 
-    memset(&act, 0, sizeof(act));
-    memset(&old_usr1, 0, sizeof(old_usr1));
+    act = (struct syscall_sigaction_frame){0};
+    old_usr1 = (struct syscall_sigaction_frame){0};
     old_blocked = task->signal->blocked;
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 16384, PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -1072,7 +1070,7 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
         goto out;
     }
 
-    memset(&act, 0, sizeof(act));
+    act = (struct syscall_sigaction_frame){0};
     act.sa_handler = (__sighandler_t)(uintptr_t)0x7400;
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&act,
                                 0, sizeof(act.sa_mask), 0, 0);

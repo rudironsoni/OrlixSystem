@@ -11,15 +11,15 @@
  */
 
 #include <linux/atomic.h>
+#include <linux/capability.h>
 #include <linux/errno.h>
 #include <linux/gfp_types.h>
+#include <linux/securebits.h>
+#include <linux/stat.h>
 #include <linux/string.h>
 
 #include <linux/limits.h>
-#include <uapi/linux/capability.h>
 #include <uapi/linux/prctl.h>
-#include <uapi/linux/securebits.h>
-#include <uapi/linux/stat.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
@@ -240,7 +240,7 @@ int cred_init(void) {
 
 /* Reset global credentials to Orlix defaults - for testing */
 void cred_reset_to_defaults(void) {
-    struct task_struct *task;
+    struct task *task;
 
     /* Reset global init cred to defaults */
     global_init_cred.uid = KERNEL_DEFAULT_UID;
@@ -269,7 +269,7 @@ void cred_reset_to_defaults(void) {
     
     /* Reset current_cred pointer to point to global_init_cred */
     current_cred = &global_init_cred;
-    task = get_current();
+    task = task_current();
     if (task && task->cred != &global_init_cred) {
         put_cred(task->cred);
         get_cred(&global_init_cred);
@@ -278,7 +278,7 @@ void cred_reset_to_defaults(void) {
 }
 
 struct cred *get_current_cred(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (task && task->cred) {
         current_cred = task->cred;
         return task->cred;
@@ -291,7 +291,7 @@ struct cred *get_current_cred(void) {
 }
 
 void set_current_cred(struct cred *cred) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     if (task && task->cred != cred) {
         if (cred) {
             get_cred(cred);

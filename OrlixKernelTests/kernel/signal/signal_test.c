@@ -1,11 +1,10 @@
-#include <uapi/asm-generic/errno.h>
-#define __ASSEMBLY__ 1
-#include <uapi/asm-generic/signal.h>
-#undef __ASSEMBLY__
+#include <uapi/linux/errno.h>
+#include <uapi/linux/signal.h>
 #include <linux/string.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
+#include "fs/fdtable.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 
@@ -57,7 +56,7 @@ static void test_library_initialization(struct kunit *test) {
 }
 
 static void test_do_sigprocmask_basic_operations(struct kunit *test) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct signal_mask_bits mask = {0};
     struct signal_mask_bits oldmask = {0};
     struct signal_mask_bits queried = {0};
@@ -103,7 +102,7 @@ static void test_do_sigprocmask_invalid_how(struct kunit *test) {
 }
 
 static void test_do_raise_signal_to_self(struct kunit *test) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct signal_mask_bits mask = {0};
     struct signal_mask_bits oldmask = {0};
     struct signal_mask_bits pending = {0};
@@ -139,7 +138,7 @@ static void test_do_raise_signal_to_self(struct kunit *test) {
 }
 
 static void test_do_kill_signal_to_current_task(struct kunit *test) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct signal_mask_bits mask = {0};
     struct signal_mask_bits oldmask = {0};
     struct signal_mask_bits pending = {0};
@@ -175,7 +174,7 @@ static void test_do_kill_signal_to_current_task(struct kunit *test) {
 }
 
 static void test_do_sigaction_basic_operations(struct kunit *test) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct signal_action_slot new_act = {0};
     struct signal_action_slot old_act = {0};
     int result;
@@ -218,7 +217,7 @@ static void test_do_sigaction_ignores_unblockable_signals(struct kunit *test) {
 }
 
 static void test_do_sigpending_basic_operations(struct kunit *test) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct signal_mask_bits mask = {0};
     struct signal_mask_bits oldmask = {0};
     struct signal_mask_bits pending = {0};
@@ -295,7 +294,7 @@ static void test_signal_set_operations(struct kunit *test) {
 }
 
 static void test_signal_is_blocked(struct kunit *test) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct signal_mask_bits mask = {0};
     struct signal_mask_bits oldmask = {0};
     int result;

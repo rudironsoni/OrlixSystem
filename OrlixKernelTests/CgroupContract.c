@@ -4,17 +4,19 @@
 #include <uapi/linux/capability.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/sched.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/wait.h>
-#include <uapi/asm-generic/signal.h>
+#include <uapi/linux/errno.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stdint.h>
 
 #include "kernel/cgroup.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "runtime/syscall.h"
+
+extern int errno;
 
 extern int open_impl(const char *pathname, int flags, unsigned int mode);
 extern long read_impl(int fd, void *buf, unsigned long count);
@@ -26,8 +28,8 @@ extern int unshare_impl(uint64_t flags);
 extern int clone_impl(uint64_t flags);
 extern int mount_impl(const char *source, const char *target, const char *filesystemtype,
                       unsigned long mountflags, const void *data);
-extern int capget(cap_user_header_t header, cap_user_data_t data);
-extern int capset(cap_user_header_t header, const cap_user_data_t data);
+extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
+extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 extern void exit_impl(int status);
 extern __kernel_pid_t waitpid_impl(__kernel_pid_t pid, int *wstatus, int options);
 
@@ -81,7 +83,7 @@ static int cgroup_contract_write_file(const char *path, const char *content) {
 }
 
 static int cgroup_contract_write_current_pid(const char *path) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char pidbuf[32];
 
     if (!task) {
@@ -92,7 +94,7 @@ static int cgroup_contract_write_current_pid(const char *path) {
     return cgroup_contract_write_file(path, pidbuf);
 }
 
-static void cgroup_contract_clear_pending_signal(struct task_struct *task, int sig) {
+static void cgroup_contract_clear_pending_signal(struct task *task, int sig) {
     struct signal_mask_bits mask;
     int delivered;
 
@@ -131,7 +133,7 @@ static void cgroup_contract_format_pid(int32_t pid, char *buf, unsigned long siz
 }
 
 static int cgroup_contract_restore_root(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -152,7 +154,7 @@ static int cgroup_contract_ignore_exists(int result) {
 }
 
 int cgroup_contract_current_task_starts_in_root(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task) {
         errno = ESRCH;
@@ -170,8 +172,8 @@ int cgroup_contract_current_task_starts_in_root(void) {
 }
 
 int cgroup_contract_child_inherits_parent_cgroup(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     unsigned int before;
     int ret = -1;
 
@@ -200,7 +202,7 @@ out:
     {
         int saved_errno = errno;
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         if (task_cgroup_member_count(parent) != before) {
             ret = -1;
             saved_errno = EBUSY;
@@ -269,8 +271,8 @@ out:
 }
 
 int cgroup_contract_cgroupfs_moves_child_and_proc_pid_reports_membership(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     char path[64];
     char buf[128];
     int ret = -1;
@@ -308,7 +310,7 @@ out:
     {
         int saved_errno = errno;
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         errno = saved_errno;
     }
 out_no_child:
@@ -398,8 +400,8 @@ out:
 }
 
 int cgroup_contract_pids_max_rejects_extra_migration(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     char pidbuf[32];
     int ret = -1;
 
@@ -429,7 +431,7 @@ out:
     {
         int saved_errno = errno;
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         errno = saved_errno;
     }
 out_no_child:
@@ -442,8 +444,8 @@ out_no_child:
 }
 
 int cgroup_contract_freezer_blocks_and_releases_migration(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     char pidbuf[32];
     int ret = -1;
 
@@ -474,7 +476,7 @@ out:
     {
         int saved_errno = errno;
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
         errno = saved_errno;
     }
 out_no_child:
@@ -539,7 +541,7 @@ int cgroup_contract_cgroup_namespace_open_fd_survives_reset_until_closed(void) {
     if (fd < 0) {
         goto out;
     }
-    if (task_reset_cgroup_namespace(get_current()) != 0) {
+    if (task_reset_cgroup_namespace(task_current()) != 0) {
         errno = ENOMEM;
         goto out_fd;
     }
@@ -692,9 +694,9 @@ int cgroup_contract_newuser_caps_are_scoped_to_cgroup_namespace_owner(void) {
         .pid = 0,
     };
     struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
-    struct task_struct *parent = get_current();
-    struct task_struct *user_child = NULL;
-    struct task_struct *user_cgroup_child = NULL;
+    struct task *parent = task_current();
+    struct task *user_child = NULL;
+    struct task *user_cgroup_child = NULL;
     int pid;
     int ret = -1;
 
@@ -702,11 +704,11 @@ int cgroup_contract_newuser_caps_are_scoped_to_cgroup_namespace_owner(void) {
         errno = ESRCH;
         return -1;
     }
-    if (cgroup_contract_restore_root() != 0 || capget(&header, data) != 0) {
+    if (cgroup_contract_restore_root() != 0 || capget_impl(&header, data) != 0) {
         return -1;
     }
     data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         return -1;
     }
     errno = 0;
@@ -725,15 +727,15 @@ int cgroup_contract_newuser_caps_are_scoped_to_cgroup_namespace_owner(void) {
         errno = ESRCH;
         goto out;
     }
-    set_current(user_child);
+    task_set_current(user_child);
     errno = 0;
     if (cgroup_contract_write_file("/sys/fs/cgroup/pids.max", "16\n") != -1 ||
         errno != EPERM) {
-        set_current(parent);
+        task_set_current(parent);
         errno = ENODATA;
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
 
     pid = clone_impl(CLONE_NEWUSER | CLONE_NEWCGROUP);
     if (pid < 0) {
@@ -744,27 +746,27 @@ int cgroup_contract_newuser_caps_are_scoped_to_cgroup_namespace_owner(void) {
         errno = ESRCH;
         goto out;
     }
-    set_current(user_cgroup_child);
+    task_set_current(user_cgroup_child);
     if (cgroup_contract_write_file("/sys/fs/cgroup/pids.max", "16\n") != 0 ||
         cgroup_contract_write_file("/sys/fs/cgroup/cgroup.freeze", "1\n") != 0 ||
         cgroup_contract_write_file("/sys/fs/cgroup/cgroup.freeze", "0\n") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     ret = 0;
 
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (user_child) {
             task_unlink_child_impl(parent, user_child);
-            free_task(user_child);
+            task_put(user_child);
         }
         if (user_cgroup_child) {
             task_unlink_child_impl(parent, user_cgroup_child);
-            free_task(user_cgroup_child);
+            task_put(user_cgroup_child);
         }
         cgroup_contract_restore_root();
         errno = saved_errno;
@@ -773,8 +775,8 @@ out:
 }
 
 int cgroup_contract_cgroup_namespace_rejects_migration_of_hidden_task(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     char pidbuf[32];
     int ret = -1;
 
@@ -809,9 +811,9 @@ out:
         int saved_errno = errno;
         if (child) {
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
         }
-        set_current(parent);
+        task_set_current(parent);
         cgroup_contract_restore_root();
         errno = saved_errno;
     }
@@ -819,8 +821,8 @@ out:
 }
 
 int cgroup_contract_proc_pid_cgroup_hides_tasks_outside_reader_namespace(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     char pidbuf[32];
     char path[64];
     char buf[128];
@@ -863,9 +865,9 @@ out:
         int saved_errno = errno;
         if (child) {
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
         }
-        set_current(parent);
+        task_set_current(parent);
         cgroup_contract_restore_root();
         errno = saved_errno;
     }
@@ -917,8 +919,8 @@ out:
 }
 
 int cgroup_contract_reaped_task_releases_cgroup_membership(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     char pidbuf[32];
     char buf[128];
     int status = 0;
@@ -940,9 +942,9 @@ int cgroup_contract_reaped_task_releases_cgroup_membership(void) {
         strcmp(buf, "1\n") != 0) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     exit_impl(7);
-    set_current(parent);
+    task_set_current(parent);
     if (waitpid_impl(child->pid, &status, 0) != child->pid) {
         goto out;
     }
@@ -959,10 +961,10 @@ int cgroup_contract_reaped_task_releases_cgroup_membership(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (child) {
             task_unlink_child_impl(parent, child);
-            free_task(child);
+            task_put(child);
         }
         cgroup_contract_clear_pending_signal(parent, SIGCHLD);
         cgroup_contract_restore_root();
@@ -972,8 +974,8 @@ out:
 }
 
 int cgroup_contract_clone3_into_cgroup_moves_child(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     struct clone_args args;
     const char *group_path = "/sys/fs/cgroup/clone3-workers";
     int cgroup_fd = -1;
@@ -1019,8 +1021,8 @@ out:
         int saved_errno = errno;
         if (child) {
             task_unlink_child_impl(parent, child);
-            free_task(child);
-            free_task(child);
+            task_put(child);
+            task_put(child);
         }
         if (cgroup_fd >= 0) {
             close_impl(cgroup_fd);

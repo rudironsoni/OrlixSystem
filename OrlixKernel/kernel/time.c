@@ -119,11 +119,11 @@ int nanosleep_impl(const struct __kernel_timespec *req, struct __kernel_timespec
         total_ms = (u64)S32_MAX;
     }
 
-    if (signal_has_unblocked_pending(get_current())) {
+    if (signal_has_unblocked_pending(task_current())) {
         if (rem) {
             *rem = *req;
         }
-        task_restart_record_impl(get_current(), TASK_RESTART_NANOSLEEP,
+        task_restart_record_impl(task_current(), TASK_RESTART_NANOSLEEP,
                                  (uint64_t)(uintptr_t)req, (uint64_t)(uintptr_t)rem,
                                  0, 0, 0, 0);
         return -EINTR;
@@ -134,7 +134,7 @@ int nanosleep_impl(const struct __kernel_timespec *req, struct __kernel_timespec
         if (rem) {
             *rem = *req;
         }
-        task_restart_record_impl(get_current(), TASK_RESTART_NANOSLEEP,
+        task_restart_record_impl(task_current(), TASK_RESTART_NANOSLEEP,
                                  (uint64_t)(uintptr_t)req, (uint64_t)(uintptr_t)rem,
                                  0, 0, 0, 0);
         return -EINTR;

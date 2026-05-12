@@ -21,14 +21,14 @@ struct seccomp_rule {
     int err;
 };
 
-struct seccomp {
+struct seccomp_policy {
     atomic_t refs;
     kernel_mutex_t lock;
     struct seccomp_rule rules[SECCOMP_RULE_MAX];
 };
 
-struct seccomp *seccomp_alloc(void) {
-    struct seccomp *policy = __kmalloc_noprof(sizeof(*policy), GFP_KERNEL | __GFP_ZERO);
+struct seccomp_policy *seccomp_alloc(void) {
+    struct seccomp_policy *policy = __kmalloc_noprof(sizeof(*policy), GFP_KERNEL | __GFP_ZERO);
 
     if (!policy) {
         return NULL;
@@ -38,14 +38,14 @@ struct seccomp *seccomp_alloc(void) {
     return policy;
 }
 
-struct seccomp *seccomp_get(struct seccomp *policy) {
+struct seccomp_policy *seccomp_get(struct seccomp_policy *policy) {
     if (policy) {
         atomic_inc(&policy->refs);
     }
     return policy;
 }
 
-void seccomp_put(struct seccomp *policy) {
+void seccomp_put(struct seccomp_policy *policy) {
     if (!policy) {
         return;
     }
@@ -55,7 +55,7 @@ void seccomp_put(struct seccomp *policy) {
     }
 }
 
-static int seccomp_set_errno_rule(struct seccomp *policy, int64_t syscall_nr, int err) {
+static int seccomp_set_errno_rule(struct seccomp_policy *policy, int64_t syscall_nr, int err) {
     int free_slot = -1;
 
     if (!policy || syscall_nr < 0 || err <= 0) {
@@ -84,8 +84,8 @@ static int seccomp_set_errno_rule(struct seccomp *policy, int64_t syscall_nr, in
     return 0;
 }
 
-static int seccomp_attach_policy(struct task_struct *task, struct seccomp *policy) {
-    struct seccomp *old;
+static int seccomp_attach_policy(struct task *task, struct seccomp_policy *policy) {
+    struct seccomp_policy *old;
 
     if (!task || !policy) {
         return -EINVAL;
@@ -96,8 +96,8 @@ static int seccomp_attach_policy(struct task_struct *task, struct seccomp *polic
     return 0;
 }
 
-int seccomp_set_task_errno_policy(struct task_struct *task, int64_t syscall_nr, int err) {
-    struct seccomp *policy;
+int seccomp_set_task_errno_policy(struct task *task, int64_t syscall_nr, int err) {
+    struct seccomp_policy *policy;
     int ret;
 
     if (!task) {
@@ -115,8 +115,8 @@ int seccomp_set_task_errno_policy(struct task_struct *task, int64_t syscall_nr, 
     return ret;
 }
 
-int seccomp_set_thread_group_errno_policy(struct task_struct *task, int64_t syscall_nr, int err) {
-    struct seccomp *policy;
+int seccomp_set_thread_group_errno_policy(struct task *task, int64_t syscall_nr, int err) {
+    struct seccomp_policy *policy;
     int ret;
 
     if (!task) {
@@ -136,7 +136,7 @@ int seccomp_set_thread_group_errno_policy(struct task_struct *task, int64_t sysc
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        for (struct task_struct *candidate = task_table[i]; candidate; candidate = candidate->hash_next) {
+        for (struct task *candidate = task_table[i]; candidate; candidate = candidate->hash_next) {
             if (candidate->tgid == task->tgid) {
                 seccomp_attach_policy(candidate, policy);
             }
@@ -146,8 +146,8 @@ int seccomp_set_thread_group_errno_policy(struct task_struct *task, int64_t sysc
     return 0;
 }
 
-void seccomp_clear_task_policy(struct task_struct *task) {
-    struct seccomp *old;
+void seccomp_clear_task_policy(struct task *task) {
+    struct seccomp_policy *old;
 
     if (!task) {
         return;
@@ -158,8 +158,8 @@ void seccomp_clear_task_policy(struct task_struct *task) {
 }
 
 long seccomp_check_current_syscall(int64_t syscall_nr) {
-    struct task_struct *task = get_current();
-    struct seccomp *policy;
+    struct task *task = task_current();
+    struct seccomp_policy *policy;
     long ret = 0;
 
     if (!task || !task->seccomp) {

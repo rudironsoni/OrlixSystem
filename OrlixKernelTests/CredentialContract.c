@@ -1,8 +1,10 @@
-#include <errno.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/securebits.h>
 
 #include "CredentialContract.h"
 #include "kernel/cred.h"
+
+extern int errno;
 
 int credential_contract_alloc_cred_with_defaults(void) {
     struct cred *cred = alloc_cred();

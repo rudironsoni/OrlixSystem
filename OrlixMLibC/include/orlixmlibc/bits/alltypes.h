@@ -53,7 +53,7 @@ typedef __INT64_TYPE__ off_t;
 
 #ifndef _SUSECONDS_T
 #define _SUSECONDS_T
-typedef __INT32_TYPE__ suseconds_t;
+typedef __INTPTR_TYPE__ suseconds_t;
 #endif
 
 #ifndef _DEV_T

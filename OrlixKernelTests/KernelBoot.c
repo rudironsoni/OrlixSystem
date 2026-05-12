@@ -6,16 +6,18 @@
  * Uses canonical Linux names directly.
  */
 
-#include <errno.h>
-
-#include <linux/fcntl.h>
-#include <linux/stat.h>
+#include <uapi/linux/errno.h>
+#include <uapi/linux/fcntl.h>
+#include <uapi/asm/stat.h>
+#include <uapi/linux/stat.h>
 #include <linux/string.h>
 
 #include "fs/vfs.h"
 #include "fs/fdtable.h"
 #include "kernel/task.h"
 #include "kernel/init.h"
+
+extern int errno;
 
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
@@ -146,9 +148,9 @@ int kernel_boot_test_synthetic_roots(void) {
 
 /* Test 5: Task system is initialized */
 int kernel_boot_test_task_init(void) {
-    struct task_struct *init;
+    struct task *init;
 
-    init = init_task;
+    init = task_init_process;
     if (!init) {
         return -1;
     }
@@ -168,7 +170,7 @@ int kernel_boot_test_task_init(void) {
 }
 
 int kernel_boot_test_init_identity_is_pid_namespace_root(void) {
-    struct task_struct *init = init_task;
+    struct task *init = task_init_process;
 
     if (!init) {
         return -1;
@@ -234,8 +236,8 @@ static int kernel_boot_parse_proc_stat_starttime(const char *buf,
 }
 
 int kernel_boot_test_task_start_time_is_kernel_owned(void) {
-    struct task_struct *init = init_task;
-    struct task_struct *child = NULL;
+    struct task *init = task_init_process;
+    struct task *child = NULL;
     int ret = -1;
 
     if (!init) {
@@ -257,7 +259,7 @@ int kernel_boot_test_task_start_time_is_kernel_owned(void) {
 
 out:
     task_unlink_child_impl(init, child);
-    free_task(child);
+    task_put(child);
     return ret;
 }
 

@@ -240,7 +240,7 @@ int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timesp
 }
 
 uint32_t umask_impl(uint32_t mask) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     uint32_t old;
 
     if (!task || !task->fs) {

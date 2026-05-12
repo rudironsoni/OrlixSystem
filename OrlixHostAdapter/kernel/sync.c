@@ -306,7 +306,7 @@ static void *kernel_thread_trampoline(void *arg) {
     free(arg);
     void *ret = start_routine(real_arg);
     /* Drop the per-thread "current task" reference if one was installed. */
-    set_current(NULL);
+    task_set_current(NULL);
     return ret;
 }
 

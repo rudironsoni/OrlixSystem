@@ -1,11 +1,11 @@
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/capability.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/mount.h>
 #include <uapi/linux/sched.h>
 #include <uapi/linux/utsname.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -15,11 +15,13 @@
 #include "kernel/task.h"
 #include "kernel/uts.h"
 
+extern int errno;
+
 extern int clone_impl(uint64_t flags);
 extern int unshare_impl(uint64_t flags);
 extern int mount(const char *source, const char *target, const char *filesystemtype,
                  unsigned long mountflags, const void *data);
-extern int umount(const char *target);
+extern int umount_impl(const char *target);
 extern int mkdir_impl(const char *pathname, uint32_t mode);
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
@@ -28,8 +30,8 @@ extern long write_impl(int fd, const void *buf, size_t count);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
 extern void cred_reset_to_defaults(void);
-extern int capget(cap_user_header_t header, cap_user_data_t data);
-extern int capset(cap_user_header_t header, const cap_user_data_t data);
+extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
+extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 
 static int expect_errno(int expected) {
     if (errno != expected) {
@@ -116,7 +118,7 @@ static int read_file_contains(const char *path, const char *needle) {
 }
 
 static void cleanup_mount_paths(void) {
-    umount("/tmp/ns-target");
+    umount_impl("/tmp/ns-target");
     unlink_impl("/tmp/ns-parent-source/file");
     unlink_impl("/tmp/ns-child-source/file");
     unlink_impl("/tmp/ns-target/file");
@@ -143,33 +145,33 @@ static int prepare_mount_paths(void) {
 static void reset_namespace_contract_state(void) {
     cred_reset_to_defaults();
     uts_reset_current_namespace();
-    if (get_current()) {
-        atomic_set(&get_current()->new_pid_namespace_pending, 0);
+    if (task_current()) {
+        atomic_set(&task_current()->new_pid_namespace_pending, 0);
     }
     cleanup_mount_paths();
 }
 
-static struct task_struct *lookup_child_from_pid(int pid) {
-    struct task_struct *child = task_lookup(pid);
+static struct task *lookup_child_from_pid(int pid) {
+    struct task *child = task_lookup(pid);
     if (!child) {
         errno = ESRCH;
     }
     return child;
 }
 
-static void release_lookup_child(struct task_struct *parent, struct task_struct *child) {
+static void release_lookup_child(struct task *parent, struct task *child) {
     if (!child) {
         return;
     }
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
 }
 
 int namespace_contract_clone_newuts_isolates_child_hostname(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved;
     struct new_utsname uts;
     int pid;
     int ret = -1;
@@ -192,29 +194,29 @@ int namespace_contract_clone_newuts_isolates_child_hostname(void) {
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (sethostname_impl("child-node", 10) != 0 || uname_impl(&uts) != 0 ||
         strcmp(uts.nodename, "child-node") != 0) {
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (uname_impl(&uts) != 0 || strcmp(uts.nodename, "parent-node") != 0) {
         goto out;
     }
     ret = 0;
 
 out:
-    set_current(saved);
+    task_set_current(saved);
     release_lookup_child(parent, child);
     reset_namespace_contract_state();
     return ret;
 }
 
 int namespace_contract_clone_without_newuts_shares_hostname(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved;
     struct new_utsname uts;
     int pid;
     int ret = -1;
@@ -237,28 +239,28 @@ int namespace_contract_clone_without_newuts_shares_hostname(void) {
         return -1;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (sethostname_impl("child-node", 10) != 0) {
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (uname_impl(&uts) != 0 || strcmp(uts.nodename, "child-node") != 0) {
         goto out;
     }
     ret = 0;
 
 out:
-    set_current(saved);
+    task_set_current(saved);
     release_lookup_child(parent, child);
     reset_namespace_contract_state();
     return ret;
 }
 
 int namespace_contract_unshare_newuts_isolates_current_task(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved;
     struct new_utsname uts;
     int pid;
     int ret = -1;
@@ -281,19 +283,19 @@ int namespace_contract_unshare_newuts_isolates_current_task(void) {
         goto out;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (uname_impl(&uts) != 0 || strcmp(uts.nodename, "orlix") != 0) {
         goto out_restore;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (uname_impl(&uts) != 0 || strcmp(uts.nodename, "parent-node") != 0) {
         goto out_restore;
     }
     ret = 0;
 
 out_restore:
-    set_current(parent);
+    task_set_current(parent);
 out:
     release_lookup_child(parent, child);
     reset_namespace_contract_state();
@@ -301,9 +303,9 @@ out:
 }
 
 int namespace_contract_clone_newns_isolates_child_mounts(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved;
     int pid;
     int ret = -1;
 
@@ -321,23 +323,23 @@ int namespace_contract_clone_newns_isolates_child_mounts(void) {
         goto out_cleanup;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (mount("/tmp/ns-child-source", "/tmp/ns-target", NULL, MS_BIND, NULL) != 0 ||
         read_file_exact("/tmp/ns-target/file", "child") != 0) {
         goto out_restore;
     }
 
-    set_current(parent);
+    task_set_current(parent);
     if (read_file_exact("/tmp/ns-target/file", "target") != 0) {
         goto out_restore;
     }
     ret = 0;
 
 out_restore:
-    set_current(child);
-    umount("/tmp/ns-target");
-    set_current(saved);
+    task_set_current(child);
+    umount_impl("/tmp/ns-target");
+    task_set_current(saved);
     release_lookup_child(parent, child);
 out_cleanup:
     cleanup_mount_paths();
@@ -346,9 +348,9 @@ out_cleanup:
 }
 
 int namespace_contract_clone_without_newns_shares_mounts(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved;
     int pid;
     int ret = -1;
 
@@ -366,21 +368,21 @@ int namespace_contract_clone_without_newns_shares_mounts(void) {
         goto out_cleanup;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (mount("/tmp/ns-child-source", "/tmp/ns-target", NULL, MS_BIND, NULL) != 0) {
         goto out_restore;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (read_file_exact("/tmp/ns-target/file", "child") != 0) {
         goto out_restore;
     }
     ret = 0;
 
 out_restore:
-    set_current(parent);
-    umount("/tmp/ns-target");
-    set_current(saved);
+    task_set_current(parent);
+    umount_impl("/tmp/ns-target");
+    task_set_current(saved);
     release_lookup_child(parent, child);
 out_cleanup:
     cleanup_mount_paths();
@@ -389,9 +391,9 @@ out_cleanup:
 }
 
 int namespace_contract_unshare_newns_isolates_current_mounts(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved;
     int pid;
     int ret = -1;
 
@@ -414,18 +416,18 @@ int namespace_contract_unshare_newns_isolates_current_mounts(void) {
         goto out_release;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (read_file_exact("/tmp/ns-target/file", "target") != 0) {
         goto out_restore;
     }
     ret = 0;
 
 out_restore:
-    set_current(saved);
+    task_set_current(saved);
 out_release:
-    set_current(parent);
-    umount("/tmp/ns-target");
+    task_set_current(parent);
+    umount_impl("/tmp/ns-target");
     release_lookup_child(parent, child);
 out_cleanup:
     cleanup_mount_paths();
@@ -434,10 +436,10 @@ out_cleanup:
 }
 
 int namespace_contract_unshare_clone_fs_splits_shared_fs_state(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
-    struct task_struct *saved;
-    struct fs_struct *original_shared_fs;
+    struct task *parent = task_current();
+    struct task *child = NULL;
+    struct task *saved;
+    struct fs_context *original_shared_fs;
     int original_umask;
     int pid;
     int ret = -1;
@@ -466,23 +468,23 @@ int namespace_contract_unshare_clone_fs_splits_shared_fs_state(void) {
     }
     original_shared_fs = parent->fs;
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (unshare_impl(CLONE_FS) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out_release;
     }
     if (child->fs == original_shared_fs) {
-        set_current(saved);
+        task_set_current(saved);
         errno = EPROTO;
         goto out_release;
     }
     if (fs_set_root(child->fs, "/tmp") != 0 || fs_set_pwd(child->fs, "/tmp") != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out_release;
     }
     child->fs->umask = 0077;
-    set_current(saved);
+    task_set_current(saved);
 
     if (strcmp(child->fs->root_path, "/tmp") != 0 ||
         strcmp(child->fs->pwd_path, "/tmp") != 0 ||
@@ -498,24 +500,24 @@ int namespace_contract_unshare_clone_fs_splits_shared_fs_state(void) {
         goto out_release;
     }
 
-    saved = get_current();
-    set_current(child);
+    saved = task_current();
+    task_set_current(child);
     if (unshare_impl(CLONE_NEWNS) != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out_release;
     }
     if (child->fs == original_shared_fs ||
         fs_mount_namespace_id(child->fs) == fs_mount_namespace_id(parent->fs)) {
-        set_current(saved);
+        task_set_current(saved);
         errno = EPROTO;
         goto out_release;
     }
     if (fs_set_pwd(child->fs, "/var") != 0) {
-        set_current(saved);
+        task_set_current(saved);
         goto out_release;
     }
     child->fs->umask = 0022;
-    set_current(saved);
+    task_set_current(saved);
 
     if (strcmp(child->fs->pwd_path, "/var") != 0 ||
         strcmp(parent->fs->pwd_path, "/") != 0 ||
@@ -543,8 +545,8 @@ int namespace_contract_clone_newns_with_clone_fs_rejected(void) {
 }
 
 int namespace_contract_clone_newpid_records_child_namespace_metadata(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int pid;
     int ret = -1;
 
@@ -572,8 +574,8 @@ int namespace_contract_clone_newpid_records_child_namespace_metadata(void) {
 }
 
 int namespace_contract_unshare_newpid_applies_to_next_child_metadata(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int pid;
     int ret = -1;
 
@@ -610,9 +612,9 @@ int namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(void) {
         .pid = 0,
     };
     struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
-    struct task_struct *parent = get_current();
-    struct task_struct *user_child = NULL;
-    struct task_struct *user_mnt_child = NULL;
+    struct task *parent = task_current();
+    struct task *user_child = NULL;
+    struct task *user_mnt_child = NULL;
     int pid;
     int ret = -1;
 
@@ -625,11 +627,11 @@ int namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(void) {
         errno = ENOMSG;
         goto out;
     }
-    if (capget(&header, data) != 0) {
+    if (capget_impl(&header, data) != 0) {
         goto out;
     }
     data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         goto out;
     }
     errno = 0;
@@ -649,15 +651,15 @@ int namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(void) {
         errno = ESRCH;
         goto out;
     }
-    set_current(user_child);
+    task_set_current(user_child);
     errno = 0;
     if (mount("/tmp/ns-parent-source", "/tmp/ns-target", NULL, MS_BIND, NULL) != -1 ||
         errno != EPERM) {
-        set_current(parent);
+        task_set_current(parent);
         errno = ENODATA;
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
 
     pid = clone_impl(CLONE_NEWUSER | CLONE_NEWNS);
     if (pid < 0) {
@@ -669,17 +671,17 @@ int namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(void) {
         errno = ESRCH;
         goto out;
     }
-    set_current(user_mnt_child);
+    task_set_current(user_mnt_child);
     if (mount("/tmp/ns-parent-source", "/tmp/ns-target", NULL, MS_BIND, NULL) != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
     if (read_file_exact("/tmp/ns-target/file", "parent") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         errno = ENOMSG;
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (read_file_exact("/tmp/ns-target/file", "target") != 0) {
         errno = ESRCH;
         goto out;
@@ -690,7 +692,7 @@ int namespace_contract_newuser_caps_are_scoped_to_mount_namespace_owner(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (user_child) {
             release_lookup_child(parent, user_child);
         }
@@ -705,8 +707,8 @@ out:
 }
 
 int namespace_contract_proc_uid_gid_maps_are_visible(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int pid;
     int ret = -1;
 
@@ -728,19 +730,19 @@ int namespace_contract_proc_uid_gid_maps_are_visible(void) {
     if (!child) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     if (read_file_contains("/proc/self/uid_map", "         0          0          1") != 0 ||
         read_file_contains("/proc/self/gid_map", "         0          0          1") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     ret = 0;
 
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (child) {
             release_lookup_child(parent, child);
         }
@@ -751,8 +753,8 @@ out:
 }
 
 int namespace_contract_proc_uid_gid_maps_are_writable_with_setgroups_policy(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     __kernel_gid32_t groups[1] = {7};
     int pid;
     int ret = -1;
@@ -770,25 +772,25 @@ int namespace_contract_proc_uid_gid_maps_are_writable_with_setgroups_policy(void
     if (!child) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     if (read_file_contains("/proc/self/setgroups", "allow") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
     errno = 0;
     if (write_existing_file("/proc/self/gid_map", "0 2000 1\n") != -1 ||
         errno != EPERM) {
-        set_current(parent);
+        task_set_current(parent);
         errno = EPROTO;
         goto out;
     }
     if (write_existing_file("/proc/self/setgroups", "deny\n") != 0 ||
         read_file_contains("/proc/self/setgroups", "deny") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
     if (setgroups_impl(1, groups) != -EPERM) {
-        set_current(parent);
+        task_set_current(parent);
         errno = ENODATA;
         goto out;
     }
@@ -796,16 +798,16 @@ int namespace_contract_proc_uid_gid_maps_are_writable_with_setgroups_policy(void
         write_existing_file("/proc/self/gid_map", "0 2000 1\n") != 0 ||
         read_file_contains("/proc/self/uid_map", "         0       1000          1") != 0 ||
         read_file_contains("/proc/self/gid_map", "         0       2000          1") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     ret = 0;
 
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (child) {
             release_lookup_child(parent, child);
         }
@@ -822,9 +824,9 @@ int namespace_contract_newuser_caps_are_scoped_to_uts_namespace_owner(void) {
     };
     struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
     struct new_utsname uts;
-    struct task_struct *parent = get_current();
-    struct task_struct *user_child = NULL;
-    struct task_struct *user_uts_child = NULL;
+    struct task *parent = task_current();
+    struct task *user_child = NULL;
+    struct task *user_uts_child = NULL;
     int pid;
     int ret = -1;
 
@@ -833,11 +835,11 @@ int namespace_contract_newuser_caps_are_scoped_to_uts_namespace_owner(void) {
         errno = ESRCH;
         return -1;
     }
-    if (sethostname_impl("parent-node", 11) != 0 || capget(&header, data) != 0) {
+    if (sethostname_impl("parent-node", 11) != 0 || capget_impl(&header, data) != 0) {
         goto out;
     }
     data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
-    if (capset(&header, data) != 0) {
+    if (capset_impl(&header, data) != 0) {
         goto out;
     }
     errno = 0;
@@ -854,14 +856,14 @@ int namespace_contract_newuser_caps_are_scoped_to_uts_namespace_owner(void) {
     if (!user_child) {
         goto out;
     }
-    set_current(user_child);
+    task_set_current(user_child);
     errno = 0;
     if (sethostname_impl("denied-child", 12) != -1 || errno != EPERM) {
-        set_current(parent);
+        task_set_current(parent);
         errno = ENODATA;
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
 
     pid = clone_impl(CLONE_NEWUSER | CLONE_NEWUTS);
     if (pid < 0) {
@@ -871,13 +873,13 @@ int namespace_contract_newuser_caps_are_scoped_to_uts_namespace_owner(void) {
     if (!user_uts_child) {
         goto out;
     }
-    set_current(user_uts_child);
+    task_set_current(user_uts_child);
     if (sethostname_impl("child-node", 10) != 0 || uname_impl(&uts) != 0 ||
         strcmp(uts.nodename, "child-node") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (uname_impl(&uts) != 0 || strcmp(uts.nodename, "parent-node") != 0) {
         goto out;
     }
@@ -886,7 +888,7 @@ int namespace_contract_newuser_caps_are_scoped_to_uts_namespace_owner(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (user_child) {
             release_lookup_child(parent, user_child);
         }

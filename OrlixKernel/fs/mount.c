@@ -140,3 +140,21 @@ int umount2_impl(const char *target, int flags) {
     }
     return ret;
 }
+
+int mount_setattr(int dirfd, const char *pathname, unsigned int flags,
+                  const struct mount_attr *attr, size_t size) {
+    return vfs_mount_setattr(dirfd, pathname, flags, attr, size);
+}
+
+int open_tree(int dirfd, const char *pathname, unsigned int flags) {
+    return vfs_open_tree(dirfd, pathname, flags);
+}
+
+int move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
+               const char *to_pathname, unsigned int flags) {
+    return vfs_move_mount(from_dirfd, from_pathname, to_dirfd, to_pathname, flags);
+}
+
+int pivot_root(const char *new_root, const char *put_old) {
+    return vfs_pivot_root(new_root, put_old);
+}

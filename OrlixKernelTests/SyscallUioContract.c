@@ -3,13 +3,15 @@
 #include <asm/unistd.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/fs.h>
+#include <uapi/linux/errno.h>
 #include <uapi/linux/uio.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stdint.h>
 
 #include "runtime/syscall.h"
+
+extern int errno;
 
 extern int close_impl(int fd);
 extern int unlink_impl(const char *pathname);

@@ -244,7 +244,7 @@ bool path_is_safe(const char *path) {
  * ============================================================================ */
 
 int path_resolve(const char *path, char *resolved, size_t resolved_len) {
-    struct task_struct *task;
+    struct task *task;
     int ret;
 
     if (!path || !resolved || resolved_len == 0) {
@@ -264,7 +264,7 @@ int path_resolve(const char *path, char *resolved, size_t resolved_len) {
         return 0;
 
     case PATH_VIRTUAL_LINUX:
-        task = get_current();
+        task = task_current();
         ret = vfs_translate_path_task(path, resolved, resolved_len, task ? task->fs : NULL);
         if (ret != 0) {
             return ret;

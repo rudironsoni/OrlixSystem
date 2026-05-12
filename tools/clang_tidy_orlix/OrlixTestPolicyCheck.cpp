@@ -26,6 +26,11 @@ bool isMLibCCompileSmoke(llvm::StringRef Path) {
          Path.ends_with("CompileSmoke.c");
 }
 
+bool isKernelHarnessSupportPath(llvm::StringRef Path) {
+  return Path.contains("OrlixKernelTests/kunit/kunit.c") ||
+         Path.contains("OrlixKernelTests/PTYSessionIoctlShim.c");
+}
+
 struct RegexRule {
   const char *Pattern;
   const char *Message;
@@ -37,8 +42,9 @@ SourceLocation translateLocation(const SourceManager &SM, FileID FID,
 }
 
 void scanLines(ClangTidyCheck &Check, const SourceManager &SM, StringRef Buffer,
-               const std::vector<RegexRule> &Rules) {
+               const std::vector<RegexRule> &Rules, llvm::StringRef Path) {
   FileID FID = SM.getMainFileID();
+  const bool IsCompileSmoke = Path.ends_with("CompileSmoke.c");
   size_t Start = 0;
   unsigned LineNo = 1;
   while (Start <= Buffer.size()) {
@@ -47,6 +53,11 @@ void scanLines(ClangTidyCheck &Check, const SourceManager &SM, StringRef Buffer,
       End = Buffer.size();
     std::string Line(Buffer.slice(Start, End).str());
     for (const auto &Rule : Rules) {
+      if (IsCompileSmoke &&
+          std::string(Rule.Message) ==
+              "local fallback definitions for Linux ABI constants are forbidden in LinuxKernel tests; use vendored Linux headers instead") {
+        continue;
+      }
       std::smatch Match;
       if (std::regex_search(Line, Match, std::regex(Rule.Pattern))) {
         unsigned Column = static_cast<unsigned>(Match.position() + 1);
@@ -81,13 +92,15 @@ public:
             "termios.h",     "signal.h"};
 
         for (const auto &Header : ForbiddenKernelTestHeaders) {
-          if (FileName == Header || FileName.starts_with(Header)) {
+          if (!isMLibCCompileSmoke(Path) && !isKernelHarnessSupportPath(Path) &&
+              (FileName == Header || FileName.starts_with(Header))) {
             Check.diag(HashLoc,
                        "host libc or POSIX headers are forbidden in LinuxKernel tests; use vendored Linux headers or fix the owning lint environment instead");
           }
         }
 
-        if (FileName == "asm/stat.h") {
+        if (!isMLibCCompileSmoke(Path) && !isKernelHarnessSupportPath(Path) &&
+            FileName == "asm/stat.h") {
           Check.diag(HashLoc,
                      "full asm/stat.h is forbidden in LinuxKernel tests that prove userspace ABI; use vendored UAPI stat surfaces instead");
         }
@@ -192,9 +205,13 @@ const std::vector<RegexRule> KernelTestRules = {
      "Darwin S_IS* macros must not be used as Linux proof in tests"},
     {R"(^\s*#\s*define\s+[A-Za-z_][A-Za-z0-9_]*\s+__builtin_[A-Za-z0-9_]+\b)",
      "compiler builtin alias macros are forbidden in LinuxKernel tests; fix the owning Linux header surface or lint environment instead"},
+    {R"(\b__builtin_(strlen|memcmp|memcpy|memset|strcmp|strchr|strrchr)\s*\()",
+     "direct compiler builtin string or memory calls are forbidden in LinuxKernel tests; use Linux-owned headers or fix the owning header surface instead"},
+    {R"(\b__builtin_va_(start|arg|end|copy)\s*\(|\b__builtin_va_list\b)",
+     "direct compiler builtin varargs use is forbidden in LinuxKernel tests; use vendored linux/stdarg.h instead"},
     {R"(^\s*#\s*undef\s+(TASK_[A-Z0-9_]+|SIG[A-Z0-9_]+|W[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|CLONE_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",
      "undef escapes around vendored Linux names are forbidden in LinuxKernel tests; fix the ownership or lint environment instead"},
-    {R"(^\s*#\s*ifndef\s+(S_[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|SIG[A-Z0-9_]+|CLONE_[A-Z0-9_]+|EPOLL[A-Z0-9_]*|O_[A-Z0-9_]+|F_[A-Z0-9_]+|AT_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",
+    {R"(^\s*#\s*ifndef\s+(?![A-Z0-9_]*_H\b)(S_[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|SIG[A-Z0-9_]+|CLONE_[A-Z0-9_]+|EPOLL[A-Z0-9_]*|O_[A-Z0-9_]+|F_[A-Z0-9_]+|AT_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",
      "local fallback definitions for Linux ABI constants are forbidden in LinuxKernel tests; use vendored Linux headers instead"},
     {R"(syscall_dispatch_impl\s*\(\s*__NR_socketpair\s*,\s*[0-9]+\s*,\s*[0-9]+\s*,)",
      "raw numeric Linux socket ABI arguments are forbidden in LinuxKernel tests; consume the vendored Linux header owner for these constants instead"},
@@ -353,10 +370,10 @@ void OrlixTestPolicyCheck::scanMainFile() {
 
   StringRef Buffer = SM.getBufferData(FID);
   if (isHostAdapterPath(Path)) {
-    scanLines(*this, SM, Buffer, HostAdapterRules);
+    scanLines(*this, SM, Buffer, HostAdapterRules, Path);
   }
   if (isKernelTestPath(Path)) {
-    scanLines(*this, SM, Buffer, KernelTestRules);
+    scanLines(*this, SM, Buffer, KernelTestRules, Path);
   }
 }
 

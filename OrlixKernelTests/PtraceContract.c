@@ -3,19 +3,21 @@
 #include <asm/ptrace.h>
 #include <asm/unistd.h>
 #include <uapi/linux/mman.h>
-#include <uapi/asm-generic/signal.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/elf.h>
 #include <uapi/linux/ptrace.h>
 #include <uapi/linux/sched.h>
 #include <uapi/linux/uio.h>
 #include <uapi/linux/wait.h>
+#include <uapi/linux/errno.h>
 #include <linux/string.h>
 
-#include <errno.h>
 #include <stdint.h>
 
 #include "kernel/signal.h"
 #include "kernel/task.h"
+
+extern int errno;
 
 extern int clone_impl(uint64_t flags);
 extern void exit_impl(int status);
@@ -33,24 +35,24 @@ static int wait_status_stop_signal(int status) {
     return (status >> 8) & 0xff;
 }
 
-static void ptrace_release_child(struct task_struct *parent, struct task_struct *child) {
+static void ptrace_release_child(struct task *parent, struct task *child) {
     if (!parent || !child) {
         return;
     }
     task_unlink_child_impl(parent, child);
-    free_task(child);
+    task_put(child);
 }
 
-static void ptrace_release_lookup_child(struct task_struct *parent, struct task_struct *child) {
+static void ptrace_release_lookup_child(struct task *parent, struct task *child) {
     if (!parent || !child) {
         return;
     }
     task_unlink_child_impl(parent, child);
-    free_task(child);
-    free_task(child);
+    task_put(child);
+    task_put(child);
 }
 
-static void ptrace_clear_pending_signal(struct task_struct *task, int sig) {
+static void ptrace_clear_pending_signal(struct task *task, int sig) {
     int32_t dequeued = 0;
 
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
@@ -67,8 +69,8 @@ static void ptrace_clear_pending_signal(struct task_struct *task, int sig) {
 }
 
 int ptrace_contract_attach_detach_child_same_user_namespace(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
 
     if (!parent) {
         errno = ESRCH;
@@ -92,8 +94,8 @@ int ptrace_contract_attach_detach_child_same_user_namespace(void) {
 }
 
 int ptrace_contract_newuser_child_cannot_attach_parent_namespace_task(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int pid;
     int ret = -1;
 
@@ -110,22 +112,22 @@ int ptrace_contract_newuser_child_cannot_attach_parent_namespace_task(void) {
         errno = ESRCH;
         return -1;
     }
-    set_current(child);
+    task_set_current(child);
     errno = 0;
     if (ptrace_impl(PTRACE_ATTACH, parent->pid, NULL, NULL) == -1 && errno == EPERM) {
         ret = 0;
     } else {
         errno = EPROTO;
     }
-    set_current(parent);
+    task_set_current(parent);
     ptrace_release_lookup_child(parent, child);
     return ret;
 }
 
 int ptrace_contract_newuser_child_can_attach_same_namespace_task(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *tracer;
-    struct task_struct *target;
+    struct task *parent = task_current();
+    struct task *tracer;
+    struct task *target;
     int tracer_pid;
     int target_pid;
     int ret = -1;
@@ -143,11 +145,11 @@ int ptrace_contract_newuser_child_can_attach_same_namespace_task(void) {
         errno = ESRCH;
         return -1;
     }
-    set_current(tracer);
+    task_set_current(tracer);
     target_pid = clone_impl(0);
     target = target_pid < 0 ? NULL : task_lookup(target_pid);
     if (!target) {
-        set_current(parent);
+        task_set_current(parent);
         ptrace_release_lookup_child(parent, tracer);
         errno = ESRCH;
         return -1;
@@ -156,15 +158,15 @@ int ptrace_contract_newuser_child_can_attach_same_namespace_task(void) {
         ptrace_impl(PTRACE_DETACH, target->pid, NULL, NULL) == 0) {
         ret = 0;
     }
-    set_current(parent);
+    task_set_current(parent);
     ptrace_release_lookup_child(tracer, target);
     ptrace_release_lookup_child(parent, tracer);
     return ret;
 }
 
 int ptrace_contract_regset_round_trips_general_registers(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     struct user_pt_regs in_regs;
     struct user_pt_regs out_regs;
     struct iovec iov;
@@ -216,8 +218,8 @@ out:
 }
 
 int ptrace_contract_syscall_trace_records_entry_and_exit(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     struct ptrace_syscall_info info;
     int ret = -1;
 
@@ -237,13 +239,13 @@ int ptrace_contract_syscall_trace_records_entry_and_exit(void) {
         errno = ENODATA;
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     if (syscall_dispatch_impl(__NR_getpid, 0, 0, 0, 0, 0, 0) != -EINTR) {
-        set_current(parent);
+        task_set_current(parent);
         errno = ENODATA;
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     memset(&info, 0, sizeof(info));
     if (ptrace_impl(PTRACE_GET_SYSCALL_INFO, child->pid, (void *)(uintptr_t)sizeof(info), &info) <= 0 ||
         info.op != PTRACE_SYSCALL_INFO_ENTRY ||
@@ -254,13 +256,13 @@ int ptrace_contract_syscall_trace_records_entry_and_exit(void) {
     if (ptrace_impl(PTRACE_SYSCALL, child->pid, NULL, NULL) != 0) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     if (syscall_dispatch_impl(__NR_getpid, 0, 0, 0, 0, 0, 0) != child->pid) {
-        set_current(parent);
+        task_set_current(parent);
         errno = ENOMSG;
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     memset(&info, 0, sizeof(info));
     if (ptrace_impl(PTRACE_GET_SYSCALL_INFO, child->pid, (void *)(uintptr_t)sizeof(info), &info) <= 0 ||
         info.op != PTRACE_SYSCALL_INFO_EXIT ||
@@ -274,7 +276,7 @@ int ptrace_contract_syscall_trace_records_entry_and_exit(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
         ptrace_clear_pending_signal(parent, SIGCHLD);
@@ -284,8 +286,8 @@ out:
 }
 
 int ptrace_contract_cont_injects_pending_signal(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int ret = -1;
 
     if (!parent) {
@@ -318,8 +320,8 @@ out:
 }
 
 int ptrace_contract_attach_stop_is_waitpid_visible(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int status = 0;
     int ret = -1;
 
@@ -353,8 +355,8 @@ out:
 }
 
 int ptrace_contract_syscall_stop_is_waitpid_visible(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int status = 0;
     int ret = -1;
 
@@ -371,9 +373,9 @@ int ptrace_contract_syscall_stop_is_waitpid_visible(void) {
         ptrace_impl(PTRACE_SYSCALL, child->pid, NULL, NULL) != 0) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     syscall_dispatch_impl(__NR_getpid, 0, 0, 0, 0, 0, 0);
-    set_current(parent);
+    task_set_current(parent);
     status = 0;
     if (waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
         !wait_status_is_stopped(status) || wait_status_stop_signal(status) != SIGTRAP) {
@@ -385,7 +387,7 @@ int ptrace_contract_syscall_stop_is_waitpid_visible(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
         ptrace_clear_pending_signal(parent, SIGCHLD);
@@ -395,8 +397,8 @@ out:
 }
 
 int ptrace_contract_peek_poke_data_uses_virtual_memory(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     void *mapped;
     long value = 0x1122334455667788L;
     long readback;
@@ -410,12 +412,12 @@ int ptrace_contract_peek_poke_data_uses_virtual_memory(void) {
     if (!child) {
         return -1;
     }
-    set_current(child);
+    task_set_current(child);
     mapped = (void *)(uintptr_t)syscall_dispatch_impl(__NR_mmap, 0, 4096,
                                                       PROT_READ | PROT_WRITE,
                                                       MAP_PRIVATE | MAP_ANONYMOUS,
                                                       -1, 0);
-    set_current(parent);
+    task_set_current(parent);
     if ((long)(uintptr_t)mapped < 0) {
         errno = EFAULT;
         goto out;
@@ -435,11 +437,11 @@ out:
     {
         int saved_errno = errno;
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
-        set_current(child);
+        task_set_current(child);
         if ((long)(uintptr_t)mapped >= 0) {
             syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 4096, 0, 0, 0, 0);
         }
-        set_current(parent);
+        task_set_current(parent);
         ptrace_release_child(parent, child);
         ptrace_clear_pending_signal(parent, SIGCHLD);
         errno = saved_errno;
@@ -448,9 +450,9 @@ out:
 }
 
 int ptrace_contract_traceclone_records_event_message(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
-    struct task_struct *grandchild = NULL;
+    struct task *parent = task_current();
+    struct task *child;
+    struct task *grandchild = NULL;
     unsigned long message = 0;
     int grandchild_pid;
     int status = 0;
@@ -469,9 +471,9 @@ int ptrace_contract_traceclone_records_event_message(void) {
         ptrace_impl(PTRACE_SETOPTIONS, child->pid, NULL, (void *)(uintptr_t)PTRACE_O_TRACEFORK) != 0) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     grandchild_pid = clone_impl(0);
-    set_current(parent);
+    task_set_current(parent);
     if (grandchild_pid < 0) {
         goto out;
     }
@@ -488,11 +490,11 @@ int ptrace_contract_traceclone_records_event_message(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (grandchild) {
             task_unlink_child_impl(child, grandchild);
-            free_task(grandchild);
-            free_task(grandchild);
+            task_put(grandchild);
+            task_put(grandchild);
         }
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
@@ -503,9 +505,9 @@ out:
 }
 
 int ptrace_contract_clone3_set_tid_traceclone_records_requested_pid(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
-    struct task_struct *grandchild = NULL;
+    struct task *parent = task_current();
+    struct task *child;
+    struct task *grandchild = NULL;
     struct clone_args args;
     unsigned long message = 0;
     int requested_pid = 0;
@@ -528,12 +530,12 @@ int ptrace_contract_clone3_set_tid_traceclone_records_requested_pid(void) {
     }
 
     for (int candidate = 64; candidate < 512; candidate++) {
-        struct task_struct *existing = task_lookup(candidate);
+        struct task *existing = task_lookup(candidate);
         if (!existing) {
             requested_pid = candidate;
             break;
         }
-        free_task(existing);
+        task_put(existing);
     }
     if (requested_pid == 0) {
         errno = EAGAIN;
@@ -544,9 +546,9 @@ int ptrace_contract_clone3_set_tid_traceclone_records_requested_pid(void) {
     args.set_tid = (uint64_t)(uintptr_t)&requested_pid;
     args.set_tid_size = 1;
 
-    set_current(child);
+    task_set_current(child);
     ret = syscall_dispatch_impl(__NR_clone3, (long)(uintptr_t)&args, sizeof(args), 0, 0, 0, 0);
-    set_current(parent);
+    task_set_current(parent);
     if (ret != requested_pid) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
@@ -564,11 +566,11 @@ int ptrace_contract_clone3_set_tid_traceclone_records_requested_pid(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         if (grandchild) {
             task_unlink_child_impl(child, grandchild);
-            free_task(grandchild);
-            free_task(grandchild);
+            task_put(grandchild);
+            task_put(grandchild);
         }
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
@@ -579,8 +581,8 @@ out:
 }
 
 int ptrace_contract_traceexec_records_event_message(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     unsigned long message = 0;
     int status = 0;
     int ret = -1;
@@ -598,12 +600,12 @@ int ptrace_contract_traceexec_records_event_message(void) {
         ptrace_impl(PTRACE_SETOPTIONS, child->pid, NULL, (void *)(uintptr_t)PTRACE_O_TRACEEXEC) != 0) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     if (task_exec_transition_impl("/proc/self/status", "/proc/self/status") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
         !wait_status_is_stopped(status) || wait_status_stop_signal(status) != SIGTRAP ||
         ptrace_impl(PTRACE_GETEVENTMSG, child->pid, NULL, &message) != 0 ||
@@ -616,7 +618,7 @@ int ptrace_contract_traceexec_records_event_message(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
         ptrace_clear_pending_signal(parent, SIGCHLD);
@@ -626,8 +628,8 @@ out:
 }
 
 int ptrace_contract_traceexit_records_event_message(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     unsigned long message = 0;
     int status = 0;
     int ret = -1;
@@ -645,9 +647,9 @@ int ptrace_contract_traceexit_records_event_message(void) {
         ptrace_impl(PTRACE_SETOPTIONS, child->pid, NULL, (void *)(uintptr_t)PTRACE_O_TRACEEXIT) != 0) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     exit_impl(42);
-    set_current(parent);
+    task_set_current(parent);
     if (waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid) {
         errno = EBUSY;
         goto out;
@@ -668,7 +670,7 @@ int ptrace_contract_traceexit_records_event_message(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
         ptrace_clear_pending_signal(parent, SIGCHLD);
@@ -678,8 +680,8 @@ out:
 }
 
 int ptrace_contract_signal_delivery_stop_can_be_suppressed(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int status = 0;
     int ret = -1;
 
@@ -723,8 +725,8 @@ out:
 }
 
 int ptrace_contract_signal_delivery_stop_can_inject_signal(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int status = 0;
     int ret = -1;
 
@@ -765,8 +767,8 @@ out:
 }
 
 int ptrace_contract_event_stop_status_encodes_event(void) {
-    struct task_struct *parent = get_current();
-    struct task_struct *child;
+    struct task *parent = task_current();
+    struct task *child;
     int status = 0;
     int ret = -1;
 
@@ -783,12 +785,12 @@ int ptrace_contract_event_stop_status_encodes_event(void) {
         ptrace_impl(PTRACE_SETOPTIONS, child->pid, NULL, (void *)(uintptr_t)PTRACE_O_TRACEEXEC) != 0) {
         goto out;
     }
-    set_current(child);
+    task_set_current(child);
     if (task_exec_transition_impl("/proc/self/status", "/proc/self/status") != 0) {
-        set_current(parent);
+        task_set_current(parent);
         goto out;
     }
-    set_current(parent);
+    task_set_current(parent);
     if (waitpid_impl(child->pid, &status, WUNTRACED | WNOHANG) != child->pid ||
         !wait_status_is_stopped(status) || wait_status_stop_signal(status) != SIGTRAP ||
         (status >> 16) != PTRACE_EVENT_EXEC) {
@@ -800,7 +802,7 @@ int ptrace_contract_event_stop_status_encodes_event(void) {
 out:
     {
         int saved_errno = errno;
-        set_current(parent);
+        task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
         ptrace_clear_pending_signal(parent, SIGCHLD);

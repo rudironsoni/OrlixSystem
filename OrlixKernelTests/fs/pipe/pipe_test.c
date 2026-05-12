@@ -1,11 +1,11 @@
-#include <uapi/asm-generic/errno.h>
+#include <uapi/linux/errno.h>
 #include <uapi/asm/stat.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/fs.h>
 #include <uapi/linux/poll.h>
+#include <uapi/linux/signal.h>
 #include <uapi/linux/stat.h>
 #include <linux/string.h>
-#include <uapi/asm-generic/signal.h>
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
@@ -26,10 +26,10 @@ extern int64_t lseek_impl(int fd, int64_t offset, int whence);
 extern ssize_t pread_impl(int fd, void *buf, size_t count, int64_t offset);
 extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, int64_t offset);
 extern int fstat_impl(int fd, struct stat *statbuf);
-extern ssize_t getdents64(int fd, void *dirp, size_t count);
+extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern int poll_impl(struct pollfd *fds, __kernel_ulong_t nfds, int timeout);
 extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
-extern int signal_generate_task(struct task_struct *target, int32_t sig);
+extern int signal_generate_task(struct task *target, int32_t sig);
 extern int errno;
 
 static int close_if_open(int fd) {
@@ -40,44 +40,44 @@ static int close_if_open(int fd) {
 }
 
 void pipe_contract_reset_test_state(void) {
-    struct task_struct *child;
+    struct task *child;
 
     start_kernel();
 
-    if (!kernel_is_booted() || !init_task) {
+    if (!kernel_is_booted() || !task_init_process) {
         return;
     }
 
-    set_current(init_task);
-    init_task->parent = NULL;
-    init_task->ppid = 0;
-    init_task->pgid = init_task->pid;
-    init_task->sid = init_task->pid;
-    init_task->exit_status = 0;
-    init_task->thread_pending_signals = 0;
-    atomic_set(&init_task->exited, 0);
-    atomic_set(&init_task->signaled, 0);
-    atomic_set(&init_task->termsig, 0);
-    atomic_set(&init_task->stopped, 0);
-    atomic_set(&init_task->state, TASK_RUNNING);
-    atomic_set(&init_task->continued, 0);
-    atomic_set(&init_task->stop_report_pending, 0);
-    atomic_set(&init_task->continue_report_pending, 0);
-    if (init_task->signal) {
-        memset(&init_task->signal->pending, 0, sizeof(init_task->signal->pending));
-        memset(&init_task->signal->shared_pending, 0, sizeof(init_task->signal->shared_pending));
+    task_set_current(task_init_process);
+    task_init_process->parent = NULL;
+    task_init_process->ppid = 0;
+    task_init_process->pgid = task_init_process->pid;
+    task_init_process->sid = task_init_process->pid;
+    task_init_process->exit_status = 0;
+    task_init_process->thread_pending_signals = 0;
+    atomic_set(&task_init_process->exited, 0);
+    atomic_set(&task_init_process->signaled, 0);
+    atomic_set(&task_init_process->termsig, 0);
+    atomic_set(&task_init_process->stopped, 0);
+    atomic_set(&task_init_process->state, RUN_STATE_RUNNING);
+    atomic_set(&task_init_process->continued, 0);
+    atomic_set(&task_init_process->stop_report_pending, 0);
+    atomic_set(&task_init_process->continue_report_pending, 0);
+    if (task_init_process->signal) {
+        memset(&task_init_process->signal->pending, 0, sizeof(task_init_process->signal->pending));
+        memset(&task_init_process->signal->shared_pending, 0, sizeof(task_init_process->signal->shared_pending));
     }
 
-    while ((child = init_task->children) != NULL) {
-        task_unlink_child_impl(init_task, child);
-        free_task(child);
+    while ((child = task_init_process->children) != NULL) {
+        task_unlink_child_impl(task_init_process, child);
+        task_put(child);
     }
 
     for (int fd = 3; fd < 256; fd++) {
         close_impl(fd);
     }
 
-    set_current(init_task);
+    task_set_current(task_init_process);
 }
 
 static int append_decimal(char *buf, size_t buf_size, int value) {
@@ -159,7 +159,7 @@ static int read_fdinfo_flags(int fd_num, unsigned int *flags_out) {
     return 0;
 }
 
-static void clear_pending_signal(struct task_struct *task, int sig) {
+static void clear_pending_signal(struct task *task, int sig) {
     int32_t dequeued = 0;
 
     if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
@@ -182,7 +182,7 @@ struct pipe_thread_case {
     int started;
     int done;
     int result;
-    struct task_struct *task;
+    struct task *task;
 };
 
 struct pipe_poll_thread_case {
@@ -248,7 +248,7 @@ static void *blocking_read_thread(void *arg) {
     long nread;
 
     if (ctx->task) {
-        set_current(ctx->task);
+        task_set_current(ctx->task);
     }
 
     case_mark_started(ctx);
@@ -269,7 +269,7 @@ static void *blocking_write_thread(void *arg) {
     long nwritten;
 
     if (ctx->task) {
-        set_current(ctx->task);
+        task_set_current(ctx->task);
     }
 
     case_mark_started(ctx);
@@ -639,7 +639,7 @@ int pipe_contract_getdents_returns_notdir(void) {
     char buf[128];
     int ret = 0;
     if (pipe_impl(fds) != 0) return errno;
-    if (getdents64(fds[0], buf, sizeof(buf)) != -1 || errno != ENOTDIR) ret = errno ? errno : EIO;
+    if (getdents64_impl(fds[0], buf, sizeof(buf)) != -1 || errno != ENOTDIR) ret = errno ? errno : EIO;
     close_if_open(fds[0]);
     close_if_open(fds[1]);
     return ret;
@@ -790,8 +790,8 @@ int pipe_contract_blocking_read_interrupted_by_signal(void) {
     int fds[2] = {-1, -1};
     struct pipe_thread_case ctx;
     kernel_thread_t thread;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     int ret = 0;
 
     if (pipe_impl(fds) != 0) {
@@ -838,7 +838,7 @@ out_destroy:
     case_destroy(&ctx);
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
 out_close:
     close_if_open(fds[0]);
@@ -896,8 +896,8 @@ int pipe_contract_blocking_write_interrupted_by_signal(void) {
     int fds[2] = {-1, -1};
     struct pipe_thread_case ctx;
     kernel_thread_t thread;
-    struct task_struct *parent = get_current();
-    struct task_struct *child = NULL;
+    struct task *parent = task_current();
+    struct task *child = NULL;
     char fill[4096];
     int ret = 0;
 
@@ -956,7 +956,7 @@ out_destroy:
 out_child:
     if (child) {
         task_unlink_child_impl(parent, child);
-        free_task(child);
+        task_put(child);
     }
 out_close:
     close_if_open(fds[0]);
@@ -966,7 +966,7 @@ out_close:
 
 int pipe_contract_write_no_readers_queues_sigpipe(void) {
     int fds[2] = {-1, -1};
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     char byte = 'x';
     int ret = 0;
 

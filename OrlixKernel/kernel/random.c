@@ -11,7 +11,7 @@
 #include <linux/random.h>
 #include <linux/types.h>
 
-extern void get_random_bytes(void *buf, size_t len);
+#include "internal/random.h"
 
 /* ============================================================================
  * GETRANDOM - Linux-compatible random bytes

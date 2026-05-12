@@ -4,16 +4,15 @@
  * KERNEL HEADER COMPILE TEST
  *
  * This file proves that vendored Linux kernel headers resolve correctly
- * through Linux kheaders/source and kheaders/generated include paths. It is a pure C
+ * through the vendored Linux kheaders include path. It is a pure C
  * compile-smoke test and does not prove runtime behavior.
  */
 
-#include <generated/autoconf.h>
 #include <linux/kconfig.h>
 #include <asm/unistd.h>
 
 #ifndef CONFIG_ARM64
-#error "CONFIG_ARM64 not defined from generated/autoconf.h"
+#error "CONFIG_ARM64 not defined from linux/kconfig.h"
 #endif
 
 #ifndef __ARCH_WANT_SYS_CLONE

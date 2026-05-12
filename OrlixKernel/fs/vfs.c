@@ -5,132 +5,16 @@
 #include <linux/errno.h>
 #include <uapi/linux/elf.h>
 #include <uapi/linux/fcntl.h>
+#include <linux/mount.h>
 #include <uapi/linux/mount.h>
+#include <uapi/linux/signal.h>
 #include <uapi/asm/stat.h>
 #include <uapi/linux/stat.h>
 #include <linux/limits.h>
 #include <linux/stdarg.h>
 #include <linux/string.h>
 #include <uapi/linux/xattr.h>
-#ifdef SIGHUP
-#undef SIGHUP
-#endif
-#ifdef SIGINT
-#undef SIGINT
-#endif
-#ifdef SIGQUIT
-#undef SIGQUIT
-#endif
-#ifdef SIGILL
-#undef SIGILL
-#endif
-#ifdef SIGTRAP
-#undef SIGTRAP
-#endif
-#ifdef SIGABRT
-#undef SIGABRT
-#endif
-#ifdef SIGIOT
-#undef SIGIOT
-#endif
-#ifdef SIGBUS
-#undef SIGBUS
-#endif
-#ifdef SIGFPE
-#undef SIGFPE
-#endif
-#ifdef SIGKILL
-#undef SIGKILL
-#endif
-#ifdef SIGUSR1
-#undef SIGUSR1
-#endif
-#ifdef SIGSEGV
-#undef SIGSEGV
-#endif
-#ifdef SIGUSR2
-#undef SIGUSR2
-#endif
-#ifdef SIGPIPE
-#undef SIGPIPE
-#endif
-#ifdef SIGALRM
-#undef SIGALRM
-#endif
-#ifdef SIGTERM
-#undef SIGTERM
-#endif
-#ifdef SIGSTKFLT
-#undef SIGSTKFLT
-#endif
-#ifdef SIGCHLD
-#undef SIGCHLD
-#endif
-#ifdef SIGCONT
-#undef SIGCONT
-#endif
-#ifdef SIGSTOP
-#undef SIGSTOP
-#endif
-#ifdef SIGTSTP
-#undef SIGTSTP
-#endif
-#ifdef SIGTTIN
-#undef SIGTTIN
-#endif
-#ifdef SIGTTOU
-#undef SIGTTOU
-#endif
-#ifdef SIGURG
-#undef SIGURG
-#endif
-#ifdef SIGXCPU
-#undef SIGXCPU
-#endif
-#ifdef SIGXFSZ
-#undef SIGXFSZ
-#endif
-#ifdef SIGVTALRM
-#undef SIGVTALRM
-#endif
-#ifdef SIGPROF
-#undef SIGPROF
-#endif
-#ifdef SIGWINCH
-#undef SIGWINCH
-#endif
-#ifdef SIGIO
-#undef SIGIO
-#endif
-#ifdef SIGPOLL
-#undef SIGPOLL
-#endif
-#ifdef SIGPWR
-#undef SIGPWR
-#endif
-#ifdef SIGSYS
-#undef SIGSYS
-#endif
-#ifdef SIGUNUSED
-#undef SIGUNUSED
-#endif
-#ifdef SIGRTMIN
-#undef SIGRTMIN
-#endif
-
 #include "internal/slab.h"
-#ifdef SIGRTMAX
-#undef SIGRTMAX
-#endif
-#ifdef MINSIGSTKSZ
-#undef MINSIGSTKSZ
-#endif
-#ifdef SIGSTKSZ
-#undef SIGSTKSZ
-#endif
-#define __ASSEMBLY__ 1
-#include <asm-generic/signal.h>
-#undef __ASSEMBLY__
 
 /* Narrow seam headers for host operations */
 #include "internal/fs/file.h"
@@ -384,7 +268,7 @@ static struct vfs_mount_namespace *vfs_dup_mount_namespace(struct vfs_mount_name
 }
 
 static struct vfs_mount_namespace *vfs_task_mount_namespace(void) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
 
     if (!task || !task->fs) {
         return NULL;
@@ -410,10 +294,33 @@ static unsigned long vfs_mount_attribute_flags(void) {
     return MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC;
 }
 
+static unsigned long vfs_mount_attribute_flags_internal(void) {
+    return MNT_READONLY | MNT_NOSUID | MNT_NODEV | MNT_NOEXEC;
+}
+
+static unsigned long vfs_mount_internal_flags_from_uapi(unsigned long flags) {
+    unsigned long internal_flags = 0;
+
+    if ((flags & MS_RDONLY) != 0) {
+        internal_flags |= MNT_READONLY;
+    }
+    if ((flags & MS_NOSUID) != 0) {
+        internal_flags |= MNT_NOSUID;
+    }
+    if ((flags & MS_NODEV) != 0) {
+        internal_flags |= MNT_NODEV;
+    }
+    if ((flags & MS_NOEXEC) != 0) {
+        internal_flags |= MNT_NOEXEC;
+    }
+
+    return internal_flags;
+}
+
 static void vfs_mount_apply_remount_attributes(struct vfs_mount_entry *entry,
                                                unsigned long flags) {
-    entry->flags = (entry->flags & ~vfs_mount_attribute_flags()) |
-                   (flags & vfs_mount_attribute_flags()) | MS_BIND;
+    entry->flags = (entry->flags & ~vfs_mount_attribute_flags_internal()) |
+                   vfs_mount_internal_flags_from_uapi(flags);
 }
 
 static unsigned long vfs_mount_selected_propagation(unsigned long flags) {
@@ -453,7 +360,7 @@ static int vfs_mount_copy_entry(struct vfs_mount_entry *entry, const char *sourc
     } else {
         memcpy(entry->fstype, "none", sizeof("none"));
     }
-    entry->flags = flags;
+    entry->flags = vfs_mount_internal_flags_from_uapi(flags);
     entry->propagation = propagation;
     entry->peer_group_id = 0;
     entry->master_group_id = 0;
@@ -849,7 +756,7 @@ static void vfs_umount_propagate_tree_locked(struct vfs_mount_namespace *mnt_ns,
     }
 }
 
-static bool vfs_task_fs_path_pins_mount(const struct task_struct *task, const char *target) {
+static bool vfs_task_fs_path_pins_mount(const struct task *task, const char *target) {
     bool pins = false;
 
     if (!task || !task->fs || !target) {
@@ -870,7 +777,7 @@ static bool vfs_any_task_fs_pins_mount_tree(uint64_t mount_ns_id, const char *ta
     }
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS && !pins; i++) {
-        struct task_struct *task = task_table[i];
+        struct task *task = task_table[i];
 
         while (task) {
             if (task->fs && fs_mount_namespace_id(task->fs) == mount_ns_id &&
@@ -885,7 +792,7 @@ static bool vfs_any_task_fs_pins_mount_tree(uint64_t mount_ns_id, const char *ta
     return pins;
 }
 
-static unsigned int vfs_proc_task_thread_count(const struct task_struct *task) {
+static unsigned int vfs_proc_task_thread_count(const struct task *task) {
     unsigned int count = 0;
 
     if (!task) {
@@ -894,7 +801,7 @@ static unsigned int vfs_proc_task_thread_count(const struct task_struct *task) {
 
     kernel_mutex_lock(&task_table_lock);
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
-        struct task_struct *cursor = task_table[i];
+        struct task *cursor = task_table[i];
 
         while (cursor) {
             if (cursor->tgid == task->tgid) {
@@ -2694,7 +2601,7 @@ static bool vfs_path_is_on_readonly_mount(const char *resolved_vpath) {
 
     fs_mutex_lock(&mnt_ns->lock);
     entry = vfs_find_mount_for_path_locked(resolved_vpath, mnt_ns);
-    readonly = entry && ((entry->flags & MS_RDONLY) != 0);
+    readonly = entry && ((entry->flags & MNT_READONLY) != 0);
     fs_mutex_unlock(&mnt_ns->lock);
 
     return readonly;
@@ -2842,28 +2749,28 @@ int vfs_mount_setattr(int dirfd, const char *pathname, unsigned int flags,
             continue;
         }
         if ((attr->attr_set & MOUNT_ATTR_RDONLY) != 0) {
-            entry->flags |= MS_RDONLY;
+            entry->flags |= MNT_READONLY;
         }
         if ((attr->attr_clr & MOUNT_ATTR_RDONLY) != 0) {
-            entry->flags &= ~MS_RDONLY;
+            entry->flags &= ~MNT_READONLY;
         }
         if ((attr->attr_set & MOUNT_ATTR_NOSUID) != 0) {
-            entry->flags |= MS_NOSUID;
+            entry->flags |= MNT_NOSUID;
         }
         if ((attr->attr_clr & MOUNT_ATTR_NOSUID) != 0) {
-            entry->flags &= ~MS_NOSUID;
+            entry->flags &= ~MNT_NOSUID;
         }
         if ((attr->attr_set & MOUNT_ATTR_NODEV) != 0) {
-            entry->flags |= MS_NODEV;
+            entry->flags |= MNT_NODEV;
         }
         if ((attr->attr_clr & MOUNT_ATTR_NODEV) != 0) {
-            entry->flags &= ~MS_NODEV;
+            entry->flags &= ~MNT_NODEV;
         }
         if ((attr->attr_set & MOUNT_ATTR_NOEXEC) != 0) {
-            entry->flags |= MS_NOEXEC;
+            entry->flags |= MNT_NOEXEC;
         }
         if ((attr->attr_clr & MOUNT_ATTR_NOEXEC) != 0) {
-            entry->flags &= ~MS_NOEXEC;
+            entry->flags &= ~MNT_NOEXEC;
         }
         if (attr->propagation != 0) {
             vfs_mount_set_propagation_locked(mnt_ns, entry, (unsigned long)attr->propagation);
@@ -3085,7 +2992,7 @@ int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
 }
 
 int vfs_pivot_root(const char *new_root, const char *put_old) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     struct vfs_mount_namespace *mnt_ns = NULL;
     char resolved_new_root[MAX_PATH];
     char resolved_put_old[MAX_PATH];
@@ -3264,16 +3171,16 @@ int vfs_statmount(const struct mnt_id_req *req, struct statmount *buf, size_t bu
     buf->mnt_parent_id = vfs_mount_parent_id_locked(mnt_ns, index);
     buf->mnt_parent_id_old = (__u32)buf->mnt_parent_id;
     buf->mnt_attr = 0;
-    if ((entry->flags & MS_RDONLY) != 0) {
+    if ((entry->flags & MNT_READONLY) != 0) {
         buf->mnt_attr |= MOUNT_ATTR_RDONLY;
     }
-    if ((entry->flags & MS_NOSUID) != 0) {
+    if ((entry->flags & MNT_NOSUID) != 0) {
         buf->mnt_attr |= MOUNT_ATTR_NOSUID;
     }
-    if ((entry->flags & MS_NODEV) != 0) {
+    if ((entry->flags & MNT_NODEV) != 0) {
         buf->mnt_attr |= MOUNT_ATTR_NODEV;
     }
-    if ((entry->flags & MS_NOEXEC) != 0) {
+    if ((entry->flags & MNT_NOEXEC) != 0) {
         buf->mnt_attr |= MOUNT_ATTR_NOEXEC;
     }
     buf->mnt_propagation = entry->propagation;
@@ -3482,8 +3389,8 @@ const char *vfs_virtual_root(void) {
     return vfs_virtual_root_path;
 }
 
-struct fs_struct *alloc_fs_struct(void) {
-    struct fs_struct *fs = __kmalloc_noprof(sizeof(struct fs_struct), GFP_KERNEL | __GFP_ZERO);
+struct fs_context *alloc_fs_struct(void) {
+    struct fs_context *fs = __kmalloc_noprof(sizeof(struct fs_context), GFP_KERNEL | __GFP_ZERO);
     if (!fs)
         return NULL;
 
@@ -3500,7 +3407,7 @@ struct fs_struct *alloc_fs_struct(void) {
     return fs;
 }
 
-struct fs_struct *get_fs_struct(struct fs_struct *fs) {
+struct fs_context *get_fs_struct(struct fs_context *fs) {
     if (!fs) {
         return NULL;
     }
@@ -3508,7 +3415,7 @@ struct fs_struct *get_fs_struct(struct fs_struct *fs) {
     return fs;
 }
 
-void free_fs_struct(struct fs_struct *fs) {
+void free_fs_struct(struct fs_context *fs) {
     if (!fs)
         return;
     if (atomic_dec_return(&fs->users) > 0)
@@ -3519,11 +3426,11 @@ void free_fs_struct(struct fs_struct *fs) {
     kfree(fs);
 }
 
-struct fs_struct *dup_fs_struct(struct fs_struct *old) {
+struct fs_context *dup_fs_struct(struct fs_context *old) {
     if (!old)
         return NULL;
 
-    struct fs_struct *new = alloc_fs_struct();
+    struct fs_context *new = alloc_fs_struct();
     if (!new)
         return NULL;
 
@@ -3547,7 +3454,7 @@ struct fs_struct *dup_fs_struct(struct fs_struct *old) {
     return new;
 }
 
-int fs_unshare_mount_namespace(struct fs_struct *fs) {
+int fs_unshare_mount_namespace(struct fs_context *fs) {
     struct vfs_mount_namespace *new_ns;
     struct vfs_mount_namespace *old_ns;
 
@@ -3569,7 +3476,7 @@ int fs_unshare_mount_namespace(struct fs_struct *fs) {
     return 0;
 }
 
-uint64_t fs_mount_namespace_id(struct fs_struct *fs) {
+uint64_t fs_mount_namespace_id(struct fs_context *fs) {
     uint64_t id;
 
     if (!fs || !fs->mnt_ns) {
@@ -3582,7 +3489,7 @@ uint64_t fs_mount_namespace_id(struct fs_struct *fs) {
     return id;
 }
 
-unsigned int fs_mount_namespace_refs(struct fs_struct *fs) {
+unsigned int fs_mount_namespace_refs(struct fs_context *fs) {
     unsigned int refs;
 
     if (!fs || !fs->mnt_ns) {
@@ -3595,7 +3502,7 @@ unsigned int fs_mount_namespace_refs(struct fs_struct *fs) {
     return refs;
 }
 
-unsigned int fs_mount_namespace_active_mounts(struct fs_struct *fs) {
+unsigned int fs_mount_namespace_active_mounts(struct fs_context *fs) {
     struct vfs_mount_namespace *mnt_ns;
     unsigned int count = 0;
 
@@ -3619,7 +3526,7 @@ unsigned int fs_mount_namespace_active_mounts(struct fs_struct *fs) {
 }
 
 /* Initialize fs_struct with virtual root path */
-int fs_init_root(struct fs_struct *fs, const char *root_path) {
+int fs_init_root(struct fs_context *fs, const char *root_path) {
     if (!fs || !root_path)
         return -EINVAL;
 
@@ -3638,7 +3545,7 @@ int fs_init_root(struct fs_struct *fs, const char *root_path) {
 }
 
 /* Initialize fs_struct with virtual pwd path */
-int fs_init_pwd(struct fs_struct *fs, const char *pwd_path) {
+int fs_init_pwd(struct fs_context *fs, const char *pwd_path) {
     if (!fs || !pwd_path)
         return -EINVAL;
 
@@ -3657,12 +3564,12 @@ int fs_init_pwd(struct fs_struct *fs, const char *pwd_path) {
 }
 
 /* Set new pwd - task-aware path change */
-int fs_set_pwd(struct fs_struct *fs, const char *new_pwd) {
+int fs_set_pwd(struct fs_context *fs, const char *new_pwd) {
     return fs_init_pwd(fs, new_pwd);
 }
 
 /* Set new root - task-aware root change */
-int fs_set_root(struct fs_struct *fs, const char *new_root) {
+int fs_set_root(struct fs_context *fs, const char *new_root) {
     return fs_init_root(fs, new_root);
 }
 
@@ -3979,7 +3886,7 @@ static int vfs_umount_with_operation(const char *target, enum vfs_umount_operati
     }
 
     if (strcmp(target, ".") == 0) {
-        struct task_struct *task = get_current();
+        struct task *task = task_current();
 
         if (!task || !task->fs) {
             return -ESRCH;
@@ -4329,7 +4236,7 @@ static int vfs_resolve_symlink_path(const char *normalized_path, const char *roo
 }
 
 int vfs_resolve_virtual_path_task(const char *vpath, char *resolved_vpath, size_t resolved_vpath_len,
-                                  struct fs_struct *fs) {
+                                  struct fs_context *fs) {
     char work_buffer[MAX_PATH];
     const char *root_path;
     const char *pwd_path;
@@ -4355,7 +4262,7 @@ int vfs_resolve_virtual_path_task(const char *vpath, char *resolved_vpath, size_
 }
 
 int vfs_resolve_virtual_path_task_follow(const char *vpath, char *resolved_vpath,
-                                         size_t resolved_vpath_len, struct fs_struct *fs,
+                                         size_t resolved_vpath_len, struct fs_context *fs,
                                          int follow_final_symlink) {
     char normalized_path[MAX_PATH];
     const char *root_path;
@@ -4375,7 +4282,7 @@ int vfs_resolve_virtual_path_task_follow(const char *vpath, char *resolved_vpath
                                     resolved_vpath, resolved_vpath_len);
 }
 
-int vfs_getcwd_path_task(struct fs_struct *fs, char *vpath, size_t vpath_len) {
+int vfs_getcwd_path_task(struct fs_context *fs, char *vpath, size_t vpath_len) {
     const char *pwd_path;
     const char *root_path;
     size_t root_len;
@@ -4405,8 +4312,8 @@ int vfs_getcwd_path_task(struct fs_struct *fs, char *vpath, size_t vpath_len) {
 
 int vfs_resolve_virtual_path_at(int dirfd, const char *vpath, char *resolved_vpath,
                                 size_t resolved_vpath_len) {
-    struct task_struct *task;
-    struct fs_struct *fs = NULL;
+    struct task *task;
+    struct fs_context *fs = NULL;
     char dir_virtual_path[MAX_PATH];
     char joined_virtual_path[MAX_PATH];
     void *entry;
@@ -4417,7 +4324,7 @@ int vfs_resolve_virtual_path_at(int dirfd, const char *vpath, char *resolved_vpa
     }
 
     if (vpath[0] == '/' || dirfd == AT_FDCWD) {
-        task = get_current();
+        task = task_current();
         if (task) {
             fs = task->fs;
         }
@@ -4450,8 +4357,8 @@ int vfs_resolve_virtual_path_at(int dirfd, const char *vpath, char *resolved_vpa
 
 int vfs_resolve_virtual_path_at_follow(int dirfd, const char *vpath, char *resolved_vpath,
                                        size_t resolved_vpath_len, int follow_final_symlink) {
-    struct task_struct *task;
-    struct fs_struct *fs = NULL;
+    struct task *task;
+    struct fs_context *fs = NULL;
     char normalized_path[MAX_PATH];
     const char *root_path;
     int ret;
@@ -4460,7 +4367,7 @@ int vfs_resolve_virtual_path_at_follow(int dirfd, const char *vpath, char *resol
         return -EINVAL;
     }
 
-    task = get_current();
+    task = task_current();
     if (task) {
         fs = task->fs;
     }
@@ -4476,7 +4383,7 @@ int vfs_resolve_virtual_path_at_follow(int dirfd, const char *vpath, char *resol
 }
 
 int vfs_translate_path_task(const char *vpath, char *backing_path, size_t backing_path_len,
-                            struct fs_struct *fs) {
+                            struct fs_context *fs) {
     char resolved_virtual[MAX_PATH];
     char mounted_virtual[MAX_PATH];
     int ret;
@@ -4677,7 +4584,7 @@ int vfs_lstat(const char *pathname, struct stat *statbuf) {
 }
 
 static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_path, size_t self_path_len) {
-    struct task_struct *task;
+    struct task *task;
     char prefix[32];
     int ret;
     size_t prefix_len;
@@ -4695,15 +4602,15 @@ static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_pa
         const char *endptr;
         if (vfs_parse_decimal_i32(vpath + 6, 0, &pid, &endptr) == 0 &&
             (*endptr == '\0' || *endptr == '/')) {
-            struct task_struct *target = task_lookup(pid);
+            struct task *target = task_lookup(pid);
             if (target) {
-                free_task(target);
+                task_put(target);
                 return endptr;
             }
         }
     }
 
-    task = get_current();
+    task = task_current();
     if (!task) {
         return NULL;
     }
@@ -4727,8 +4634,8 @@ static const char *vfs_proc_current_task_suffix(const char *vpath, char *self_pa
 
 static int vfs_proc_task_tid_for_path(const char *vpath, int32_t *tid_out,
                                       const char **suffix_out) {
-    struct task_struct *group_task = NULL;
-    struct task_struct *thread = NULL;
+    struct task *group_task = NULL;
+    struct task *thread = NULL;
     const char *cursor;
     int32_t group_pid = -1;
     int32_t tid;
@@ -4742,7 +4649,7 @@ static int vfs_proc_task_tid_for_path(const char *vpath, int32_t *tid_out,
 
     if (strncmp(vpath, "/proc/self", 10) == 0 &&
         (vpath[10] == '\0' || vpath[10] == '/')) {
-        struct task_struct *current = get_current();
+        struct task *current = task_current();
         if (!current) {
             return -ENOENT;
         }
@@ -4770,22 +4677,22 @@ static int vfs_proc_task_tid_for_path(const char *vpath, int32_t *tid_out,
     thread = task_lookup((int32_t)tid);
     if (!group_task || !thread || group_task->tgid != thread->tgid) {
         if (group_task) {
-            free_task(group_task);
+            task_put(group_task);
         }
         if (thread) {
-            free_task(thread);
+            task_put(thread);
         }
         return -ENOENT;
     }
     *tid_out = thread->pid;
     *suffix_out = endptr;
-    free_task(group_task);
-    free_task(thread);
+    task_put(group_task);
+    task_put(thread);
     return 0;
 }
 
 int vfs_proc_target_pid_for_path(const char *vpath) {
-    struct task_struct *task;
+    struct task *task;
     int32_t tid;
     const char *suffix;
 
@@ -4798,7 +4705,7 @@ int vfs_proc_target_pid_for_path(const char *vpath) {
     }
     if (strncmp(vpath, "/proc/self", 10) == 0 &&
         (vpath[10] == '\0' || vpath[10] == '/')) {
-        task = get_current();
+        task = task_current();
         return task ? task->pid : -1;
     }
     if (strncmp(vpath, "/proc/", 6) == 0 && vpath[6] >= '0' && vpath[6] <= '9') {
@@ -4806,10 +4713,10 @@ int vfs_proc_target_pid_for_path(const char *vpath) {
         const char *endptr;
         if (vfs_parse_decimal_i32(vpath + 6, 0, &pid, &endptr) == 0 &&
             (*endptr == '\0' || *endptr == '/')) {
-            struct task_struct *target = task_lookup(pid);
+            struct task *target = task_lookup(pid);
             if (target) {
                 int target_pid = target->pid;
-                free_task(target);
+                task_put(target);
                 return target_pid;
             }
         }
@@ -4966,11 +4873,11 @@ proc_self_path_class_t vfs_classify_proc_self_path(const char *vpath) {
     return PROC_SELF_NONE;
 }
 
-static struct task_struct *vfs_task_for_proc_pid(int32_t pid);
-static void vfs_put_proc_task(struct task_struct *task);
+static struct task *vfs_task_for_proc_pid(int32_t pid);
+static void vfs_put_proc_task(struct task *task);
 
 bool vfs_proc_fd_exists_for_path(const char *vpath, int fd_num) {
-    struct task_struct *task;
+    struct task *task;
     bool exists;
 
     if (fd_num < 0 || fd_num >= NR_OPEN_DEFAULT) {
@@ -4982,7 +4889,7 @@ bool vfs_proc_fd_exists_for_path(const char *vpath, int fd_num) {
         return false;
     }
     exists = fdtable_task_is_used_impl(task, fd_num);
-    if (!exists && task == get_current()) {
+    if (!exists && task == task_current()) {
         exists = fdtable_is_used_impl(fd_num);
     }
     vfs_put_proc_task(task);
@@ -5000,7 +4907,7 @@ int vfs_proc_self_fd_link_target(const char *vpath, char *target, size_t target_
 }
 
 int vfs_proc_task_fd_link_target(int32_t pid, int fd_num, char *target, size_t target_len) {
-    struct task_struct *task;
+    struct task *task;
     void *entry;
     int ret;
     bool is_current_task;
@@ -5018,7 +4925,7 @@ int vfs_proc_task_fd_link_target(int32_t pid, int fd_num, char *target, size_t t
         return -ESRCH;
     }
 
-    is_current_task = task == get_current();
+    is_current_task = task == task_current();
     ret = fdtable_task_fd_path_impl(task, fd_num, target, target_len);
     vfs_put_proc_task(task);
     if (ret == 0) {
@@ -5058,13 +4965,13 @@ int vfs_proc_task_fd_link_target(int32_t pid, int fd_num, char *target, size_t t
 }
 
 int vfs_proc_self_cwd_target(char *target, size_t target_len) {
-    struct task_struct *task;
+    struct task *task;
 
     if (!target || target_len == 0) {
         return -EINVAL;
     }
 
-    task = get_current();
+    task = task_current();
     if (!task || !task->fs) {
         return -ESRCH;
     }
@@ -5073,7 +4980,7 @@ int vfs_proc_self_cwd_target(char *target, size_t target_len) {
 }
 
 int vfs_proc_task_cwd_target(int32_t pid, char *target, size_t target_len) {
-    struct task_struct *task;
+    struct task *task;
     int ret;
 
     if (!target || target_len == 0) {
@@ -5094,14 +5001,14 @@ int vfs_proc_task_cwd_target(int32_t pid, char *target, size_t target_len) {
 }
 
 int vfs_proc_self_exe_target(char *target, size_t target_len) {
-    struct task_struct *task;
+    struct task *task;
     size_t exe_len;
 
     if (!target || target_len == 0) {
         return -EINVAL;
     }
 
-    task = get_current();
+    task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -5120,7 +5027,7 @@ int vfs_proc_self_exe_target(char *target, size_t target_len) {
 }
 
 int vfs_proc_task_exe_target(int32_t pid, char *target, size_t target_len) {
-    struct task_struct *task;
+    struct task *task;
     size_t exe_len;
 
     if (!target || target_len == 0) {
@@ -5160,7 +5067,7 @@ static const char *vfs_proc_self_ns_name(const char *vpath) {
 }
 
 int vfs_proc_self_ns_link_target(const char *vpath, char *target, size_t target_len) {
-    struct task_struct *task;
+    struct task *task;
     const char *name;
     uint64_t id;
     int ret;
@@ -5169,7 +5076,7 @@ int vfs_proc_self_ns_link_target(const char *vpath, char *target, size_t target_
         return -EINVAL;
     }
 
-    task = get_current();
+    task = task_current();
     if (!task) {
         return -ESRCH;
     }
@@ -5205,7 +5112,7 @@ int vfs_proc_self_ns_link_target(const char *vpath, char *target, size_t target_
     return 0;
 }
 
-static int vfs_proc_cmdline_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
+static int vfs_proc_cmdline_content_for_task(struct task *task, char *buf, size_t buf_len) {
     size_t pos = 0;
     int i;
 
@@ -5267,7 +5174,7 @@ static int vfs_proc_cmdline_content_for_task(struct task_struct *task, char *buf
 }
 
 int vfs_proc_task_cmdline_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    struct task *task = vfs_task_for_proc_pid(pid);
     int ret;
 
     if (!task) {
@@ -5279,11 +5186,11 @@ int vfs_proc_task_cmdline_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_cmdline_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_cmdline_content(task ? task->pid : -1, buf, buf_len);
 }
 
-static int vfs_proc_environ_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
+static int vfs_proc_environ_content_for_task(struct task *task, char *buf, size_t buf_len) {
     size_t pos = 0;
 
     if (!buf || buf_len == 0) {
@@ -5319,7 +5226,7 @@ static int vfs_proc_environ_content_for_task(struct task_struct *task, char *buf
 }
 
 int vfs_proc_task_environ_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    struct task *task = vfs_task_for_proc_pid(pid);
     int ret;
 
     if (!task) {
@@ -5331,11 +5238,11 @@ int vfs_proc_task_environ_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_environ_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_environ_content(task ? task->pid : -1, buf, buf_len);
 }
 
-static int vfs_proc_comm_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
+static int vfs_proc_comm_content_for_task(struct task *task, char *buf, size_t buf_len) {
     size_t comm_len;
 
     if (!buf || buf_len == 0) {
@@ -5345,7 +5252,7 @@ static int vfs_proc_comm_content_for_task(struct task_struct *task, char *buf, s
         return -ESRCH;
     }
 
-    comm_len = strnlen(task->comm, TASK_COMM_LEN);
+    comm_len = strnlen(task->comm, TASK_COMM_CAPACITY);
     if (comm_len + 1 >= buf_len) {
         if (buf_len > 1) {
             memcpy(buf, task->comm, buf_len - 2);
@@ -5362,7 +5269,7 @@ static int vfs_proc_comm_content_for_task(struct task_struct *task, char *buf, s
 }
 
 int vfs_proc_task_comm_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    struct task *task = vfs_task_for_proc_pid(pid);
     int ret;
 
     if (!task) {
@@ -5374,7 +5281,7 @@ int vfs_proc_task_comm_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_comm_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_comm_content(task ? task->pid : -1, buf, buf_len);
 }
 
@@ -5388,7 +5295,7 @@ struct vfs_vm_accounting {
     uint64_t dirty_pages;
 };
 
-static void vfs_vm_account_task(const struct task_struct *task, struct vfs_vm_accounting *acct) {
+static void vfs_vm_account_task(const struct task *task, struct vfs_vm_accounting *acct) {
     memset(acct, 0, sizeof(*acct));
     if (!task || !task->mm) {
         return;
@@ -5421,7 +5328,7 @@ static void vfs_vm_account_task(const struct task_struct *task, struct vfs_vm_ac
 }
 
 int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task;
+    struct task *task;
     struct vfs_vm_accounting acct;
     int ret;
     char state_char;
@@ -5441,19 +5348,19 @@ int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
     }
 
     switch (atomic_read(&task->state)) {
-        case TASK_RUNNING:
+        case RUN_STATE_RUNNING:
             state_char = 'R';
             break;
-        case TASK_INTERRUPTIBLE:
+        case RUN_STATE_INTERRUPTIBLE:
             state_char = 'S';
             break;
-        case TASK_UNINTERRUPTIBLE:
+        case RUN_STATE_UNINTERRUPTIBLE:
             state_char = 'D';
             break;
-        case TASK_STOPPED:
+        case RUN_STATE_STOPPED:
             state_char = 'T';
             break;
-        case TASK_ZOMBIE:
+        case RUN_STATE_ZOMBIE:
             state_char = 'Z';
             break;
         default:
@@ -5500,30 +5407,30 @@ int vfs_proc_task_stat_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_stat_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_stat_content(task ? task->pid : -1, buf, buf_len);
 }
 
-static const char *vfs_proc_task_state_name(enum task_state state) {
+static const char *vfs_proc_task_state_name(enum run_state state) {
     switch (state) {
-    case TASK_RUNNING:
+    case RUN_STATE_RUNNING:
         return "running";
-    case TASK_INTERRUPTIBLE:
+    case RUN_STATE_INTERRUPTIBLE:
         return "sleeping";
-    case TASK_UNINTERRUPTIBLE:
+    case RUN_STATE_UNINTERRUPTIBLE:
         return "disk sleep";
-    case TASK_STOPPED:
+    case RUN_STATE_STOPPED:
         return "stopped";
-    case TASK_ZOMBIE:
+    case RUN_STATE_ZOMBIE:
         return "zombie";
-    case TASK_DEAD:
+    case RUN_STATE_DEAD:
         return "dead";
     default:
         return "running";
     }
 }
 
-static void vfs_proc_task_signal_status(const struct task_struct *task,
+static void vfs_proc_task_signal_status(const struct task *task,
                                         unsigned int *queued_out,
                                         uint64_t *private_pending_out,
                                         uint64_t *shared_pending_out,
@@ -5579,17 +5486,17 @@ static void vfs_proc_task_signal_status(const struct task_struct *task,
     }
 }
 
-static struct task_struct *vfs_task_for_proc_pid(int32_t pid) {
-    struct task_struct *current;
+static struct task *vfs_task_for_proc_pid(int32_t pid) {
+    struct task *current;
 
-    current = get_current();
+    current = task_current();
     if (pid <= 0 || (current && current->pid == pid)) {
         return current;
     }
     return task_lookup(pid);
 }
 
-static unsigned long long vfs_proc_fdinfo_mount_id_for_path(struct fs_struct *fs, const char *path) {
+static unsigned long long vfs_proc_fdinfo_mount_id_for_path(struct fs_context *fs, const char *path) {
     struct vfs_mount_namespace *mnt_ns;
     const struct vfs_mount_entry *entry;
     uint64_t id = 1;
@@ -5617,14 +5524,14 @@ static unsigned long long vfs_proc_fdinfo_mount_id_for_path(struct fs_struct *fs
     return id == 0 ? 1 : id;
 }
 
-static void vfs_put_proc_task(struct task_struct *task) {
-    if (task && task != get_current()) {
-        free_task(task);
+static void vfs_put_proc_task(struct task *task) {
+    if (task && task != task_current()) {
+        task_put(task);
     }
 }
 
 int vfs_proc_task_statm_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task;
+    struct task *task;
     struct vfs_vm_accounting acct;
     int ret;
 
@@ -5655,7 +5562,7 @@ int vfs_proc_task_statm_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_statm_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_statm_content(task ? task->pid : -1, buf, buf_len);
 }
 
@@ -5704,7 +5611,7 @@ static int vfs_maps_path_for_vma(const struct task_vma *vma, char *path, size_t 
     return ret == 0 ? 0 : -ENOENT;
 }
 
-static int vfs_proc_task_maps_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
+static int vfs_proc_task_maps_content_for_task(struct task *task, char *buf, size_t buf_len) {
     size_t pos = 0;
 
     if (!buf || buf_len == 0) {
@@ -5769,7 +5676,7 @@ static int vfs_proc_task_maps_content_for_task(struct task_struct *task, char *b
 }
 
 int vfs_proc_task_maps_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    struct task *task = vfs_task_for_proc_pid(pid);
     int ret;
 
     if (!task) {
@@ -5781,7 +5688,7 @@ int vfs_proc_task_maps_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_maps_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_maps_content(task ? task->pid : -1, buf, buf_len);
 }
 
@@ -5891,7 +5798,7 @@ static int vfs_vma_vmflags(const struct task_vma *vma, char *buf, size_t buf_len
                                           buf, buf_len);
 }
 
-static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *buf, size_t buf_len) {
+static int vfs_proc_task_smaps_content_for_task(struct task *task, char *buf, size_t buf_len) {
     size_t pos = 0;
 
     if (!buf || buf_len == 0) {
@@ -5992,7 +5899,7 @@ static int vfs_proc_task_smaps_content_for_task(struct task_struct *task, char *
 }
 
 int vfs_proc_task_smaps_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    struct task *task = vfs_task_for_proc_pid(pid);
     int ret;
 
     if (!task) {
@@ -6004,17 +5911,17 @@ int vfs_proc_task_smaps_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_smaps_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_smaps_content(task ? task->pid : -1, buf, buf_len);
 }
 
 int vfs_proc_self_fdinfo_content(int fd_num, char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_fdinfo_content(task ? task->pid : -1, fd_num, buf, buf_len);
 }
 
 int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_len) {
-    struct task_struct *task;
+    struct task *task;
     void *entry;
     char path[MAX_PATH];
     __kernel_off_t offset;
@@ -6036,7 +5943,7 @@ int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_
     if (!task) {
         return -ESRCH;
     }
-    is_current_task = task == get_current();
+    is_current_task = task == task_current();
     if (!is_current_task) {
         unsigned long long mnt_id = 1;
 
@@ -6073,7 +5980,7 @@ int vfs_proc_task_fdinfo_content(int32_t pid, int fd_num, char *buf, size_t buf_
 
     ret = snprintf(buf, buf_len, "pos:\t%lld\nflags:\t0%o\nmnt_id:\t%llu\n",
                    (long long)offset, flags,
-                   vfs_proc_fdinfo_mount_id_for_path(get_current() ? get_current()->fs : NULL, path));
+                   vfs_proc_fdinfo_mount_id_for_path(task_current() ? task_current()->fs : NULL, path));
 
     if (ret < 0) {
         return -EINVAL;
@@ -6166,7 +6073,7 @@ static int vfs_proc_mountinfo_content_for_namespace(struct vfs_mount_namespace *
 
         parent_id = vfs_mount_parent_id_locked(mnt_ns, i);
 
-        const char *mode = (entry->flags & MS_RDONLY) ? "ro" : "rw";
+        const char *mode = (entry->flags & MNT_READONLY) ? "ro" : "rw";
         const char *fstype = entry->fstype[0] ? entry->fstype : "none";
         if (vfs_proc_append(buf, buf_len, &pos, "%llu %llu 0:%llu / %s %s,relatime",
                             (unsigned long long)entry->mount_id,
@@ -6185,7 +6092,7 @@ static int vfs_proc_mountinfo_content_for_namespace(struct vfs_mount_namespace *
 }
 
 int vfs_proc_task_mountinfo_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    struct task *task = vfs_task_for_proc_pid(pid);
     int ret;
 
     if (!task) {
@@ -6197,7 +6104,7 @@ int vfs_proc_task_mountinfo_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_mountinfo_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_mountinfo_content(task ? task->pid : -1, buf, buf_len);
 }
 
@@ -6224,7 +6131,7 @@ static int vfs_proc_mounts_content_for_namespace(struct vfs_mount_namespace *mnt
             continue;
         }
 
-        const char *mode = (entry->flags & MS_RDONLY) ? "ro" : "rw";
+        const char *mode = (entry->flags & MNT_READONLY) ? "ro" : "rw";
         const char *fstype = entry->fstype[0] ? entry->fstype : "none";
         if (vfs_proc_append(buf, buf_len, &pos, "%s %s %s %s,bind 0 0\n",
                             entry->source, entry->target, fstype, mode) != 0) {
@@ -6237,7 +6144,7 @@ static int vfs_proc_mounts_content_for_namespace(struct vfs_mount_namespace *mnt
 }
 
 int vfs_proc_task_mounts_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task = vfs_task_for_proc_pid(pid);
+    struct task *task = vfs_task_for_proc_pid(pid);
     int ret;
 
     if (!task) {
@@ -6249,7 +6156,7 @@ int vfs_proc_task_mounts_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_mounts_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_mounts_content(task ? task->pid : -1, buf, buf_len);
 }
 
@@ -6322,7 +6229,7 @@ int vfs_proc_cpuinfo_content(char *buf, size_t buf_len) {
 }
 
 int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task;
+    struct task *task;
     struct cred *cred;
     struct vfs_vm_accounting acct;
     size_t pos = 0;
@@ -6351,19 +6258,19 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
     }
 
     switch (atomic_read(&task->state)) {
-        case TASK_RUNNING:
+        case RUN_STATE_RUNNING:
             state_char = 'R';
             break;
-        case TASK_INTERRUPTIBLE:
+        case RUN_STATE_INTERRUPTIBLE:
             state_char = 'S';
             break;
-        case TASK_UNINTERRUPTIBLE:
+        case RUN_STATE_UNINTERRUPTIBLE:
             state_char = 'D';
             break;
-        case TASK_STOPPED:
+        case RUN_STATE_STOPPED:
             state_char = 'T';
             break;
-        case TASK_ZOMBIE:
+        case RUN_STATE_ZOMBIE:
             state_char = 'Z';
             break;
         default:
@@ -6473,12 +6380,12 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_self_status_content(char *buf, size_t buf_len) {
-    struct task_struct *task = get_current();
+    struct task *task = task_current();
     return vfs_proc_task_status_content(task ? task->pid : -1, buf, buf_len);
 }
 
 static int vfs_proc_task_id_map_content(int32_t pid, char *buf, size_t buf_len, bool group_map) {
-    struct task_struct *task;
+    struct task *task;
     struct cred *cred;
     int ret;
 
@@ -6519,7 +6426,7 @@ int vfs_proc_task_gid_map_content(int32_t pid, char *buf, size_t buf_len) {
 }
 
 int vfs_proc_task_setgroups_content(int32_t pid, char *buf, size_t buf_len) {
-    struct task_struct *task;
+    struct task *task;
     struct cred *cred;
     int ret;
 
@@ -6548,8 +6455,8 @@ int vfs_proc_task_setgroups_content(int32_t pid, char *buf, size_t buf_len) {
 
 long vfs_proc_task_write_id_map_content(synthetic_proc_file_t proc_file, int32_t pid,
                                         const char *buf, size_t count) {
-    struct task_struct *current = get_current();
-    struct task_struct *task;
+    struct task *current = task_current();
+    struct task *task;
     int ret;
 
     if (!buf && count > 0) {

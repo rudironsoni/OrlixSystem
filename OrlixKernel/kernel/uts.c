@@ -14,7 +14,7 @@
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
 
-struct uts_namespace {
+struct uts_state {
     atomic_t refs;
     uint64_t ns_id;
     uint64_t owner_user_ns_id;
@@ -28,7 +28,7 @@ struct uts_namespace {
     char domainname[__NEW_UTS_LEN + 1];
 };
 
-static struct uts_namespace initial_uts_ns;
+static struct uts_state initial_uts_ns;
 static atomic_t initial_uts_ns_ready = ATOMIC_INIT(0);
 static kernel_mutex_t initial_uts_ns_lock = KERNEL_MUTEX_INITIALIZER;
 static atomic_t next_uts_ns_id = ATOMIC_INIT(1);
@@ -42,7 +42,7 @@ static void uts_copy_literal(char dst[__NEW_UTS_LEN + 1], const char *src) {
     dst[len] = '\0';
 }
 
-static void uts_set_defaults_locked(struct uts_namespace *ns) {
+static void uts_set_defaults_locked(struct uts_state *ns) {
     uts_copy_literal(ns->sysname, "Linux");
     uts_copy_literal(ns->nodename, "orlix");
     uts_copy_literal(ns->release, "6.12.0-orlix");
@@ -67,12 +67,12 @@ static void uts_init_initial_namespace(void) {
     kernel_mutex_unlock(&initial_uts_ns_lock);
 }
 
-struct uts_namespace *uts_get_initial_namespace(void) {
+struct uts_state *uts_get_initial_namespace(void) {
     uts_init_initial_namespace();
     return uts_get(&initial_uts_ns);
 }
 
-struct uts_namespace *uts_get(struct uts_namespace *ns) {
+struct uts_state *uts_get(struct uts_state *ns) {
     if (!ns) {
         return NULL;
     }
@@ -80,7 +80,7 @@ struct uts_namespace *uts_get(struct uts_namespace *ns) {
     return ns;
 }
 
-void uts_put(struct uts_namespace *ns) {
+void uts_put(struct uts_state *ns) {
     if (!ns) {
         return;
     }
@@ -95,8 +95,8 @@ void uts_put(struct uts_namespace *ns) {
     kfree(ns);
 }
 
-struct uts_namespace *uts_dup(struct uts_namespace *ns) {
-    struct uts_namespace *copy;
+struct uts_state *uts_dup(struct uts_state *ns) {
+    struct uts_state *copy;
 
     if (!ns) {
         ns = uts_get_initial_namespace();
@@ -132,7 +132,7 @@ struct uts_namespace *uts_dup(struct uts_namespace *ns) {
     return copy;
 }
 
-uint64_t uts_namespace_id(struct uts_namespace *ns) {
+uint64_t uts_namespace_id(struct uts_state *ns) {
     if (!ns) {
         uts_init_initial_namespace();
         ns = &initial_uts_ns;
@@ -140,7 +140,7 @@ uint64_t uts_namespace_id(struct uts_namespace *ns) {
     return ns->ns_id;
 }
 
-uint64_t uts_namespace_owner_user_ns_id(struct uts_namespace *ns) {
+uint64_t uts_namespace_owner_user_ns_id(struct uts_state *ns) {
     if (!ns) {
         uts_init_initial_namespace();
         ns = &initial_uts_ns;
@@ -156,11 +156,11 @@ void uts_reset_initial_namespace(void) {
 }
 
 void uts_reset_current_namespace(void) {
-    struct task_struct *task;
+    struct task *task;
 
     uts_reset_initial_namespace();
 
-    task = get_current();
+    task = task_current();
     if (!task) {
         return;
     }
@@ -171,8 +171,8 @@ void uts_reset_current_namespace(void) {
     task->uts_ns = uts_get_initial_namespace();
 }
 
-static struct uts_namespace *current_uts_namespace(void) {
-    struct task_struct *task = get_current();
+static struct uts_state *current_uts_namespace(void) {
+    struct task *task = task_current();
     if (task && task->uts_ns) {
         return task->uts_ns;
     }
@@ -199,7 +199,7 @@ static int uts_copy_from_namespace(char *dst, size_t len, const char *src) {
     return 0;
 }
 
-static int uts_set_name(struct uts_namespace *ns, char dst[__NEW_UTS_LEN + 1],
+static int uts_set_name(struct uts_state *ns, char dst[__NEW_UTS_LEN + 1],
                         const char *src, size_t len) {
     struct cred *cred;
 
@@ -223,7 +223,7 @@ static int uts_set_name(struct uts_namespace *ns, char dst[__NEW_UTS_LEN + 1],
 }
 
 int uname_impl(struct new_utsname *buf) {
-    struct uts_namespace *ns;
+    struct uts_state *ns;
 
     if (!buf) {
         return -EFAULT;
@@ -244,7 +244,7 @@ int uname_impl(struct new_utsname *buf) {
 }
 
 int gethostname_impl(char *name, size_t len) {
-    struct uts_namespace *ns;
+    struct uts_state *ns;
     int result;
 
     uts_init_initial_namespace();
@@ -257,7 +257,7 @@ int gethostname_impl(char *name, size_t len) {
 }
 
 int sethostname_impl(const char *name, size_t len) {
-    struct uts_namespace *ns;
+    struct uts_state *ns;
     int result;
 
     uts_init_initial_namespace();
@@ -270,7 +270,7 @@ int sethostname_impl(const char *name, size_t len) {
 }
 
 int getdomainname_impl(char *name, size_t len) {
-    struct uts_namespace *ns;
+    struct uts_state *ns;
     int result;
 
     uts_init_initial_namespace();
@@ -283,7 +283,7 @@ int getdomainname_impl(char *name, size_t len) {
 }
 
 int setdomainname_impl(const char *name, size_t len) {
-    struct uts_namespace *ns;
+    struct uts_state *ns;
     int result;
 
     uts_init_initial_namespace();
@@ -296,8 +296,8 @@ int setdomainname_impl(const char *name, size_t len) {
 }
 
 int uts_unshare_current(void) {
-    struct task_struct *task = get_current();
-    struct uts_namespace *copy;
+    struct task *task = task_current();
+    struct uts_state *copy;
 
     if (!task) {
         return -ESRCH;
