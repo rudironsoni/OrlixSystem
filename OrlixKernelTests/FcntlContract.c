@@ -35,15 +35,6 @@ static int close_if_open(int fd) {
     return 0;
 }
 
-static void clear_pending_signal(struct task *task, int32_t sig) {
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 static int append_decimal(char *buf, size_t buf_size, int value) {
     char digits[16];
     size_t count = 0;
@@ -1163,7 +1154,7 @@ int fcntl_contract_pidfd_getfd_rejects_bad_targets(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
 
     result = 0;
 
@@ -1171,7 +1162,7 @@ out:
     task_set_current(parent);
     close_if_open(nullfd);
     close_if_open(pidfd);
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     if (child) {
         task_set_current(child);
         close_if_open(child_fd);
@@ -1290,7 +1281,7 @@ void fcntl_contract_reset_pidfd_test_state(void) {
     }
 
     task_set_current(task_init_process);
-    clear_pending_signal(task_init_process, SIGCHLD);
+    signal_clear_pending_markers_task(task_init_process, SIGCHLD);
 
     while ((child = task_init_process->children) != NULL) {
         task_unlink_child_impl(task_init_process, child);
@@ -1298,5 +1289,5 @@ void fcntl_contract_reset_pidfd_test_state(void) {
     }
 
     task_set_current(task_init_process);
-    clear_pending_signal(task_init_process, SIGCHLD);
+    signal_clear_pending_markers_task(task_init_process, SIGCHLD);
 }

@@ -118,14 +118,6 @@ static int close_if_open(int fd) {
     return 0;
 }
 
-static void clear_pending_signal(struct task *task, int32_t sig) {
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 static int expect_raw_errno(long ret, int expected) {
     if (ret != -(long)expected) {
         errno = EPROTO;
@@ -5246,7 +5238,7 @@ int native_syscall_contract_dispatches_pidfd_syscalls(void) {
         goto out;
     }
 
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     sigaddset(&block_sigchld, SIGCHLD);
     ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_BLOCK,
                                 (long)(uintptr_t)&block_sigchld,
@@ -5307,7 +5299,7 @@ int native_syscall_contract_dispatches_pidfd_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
 
     memset(&args, 0, sizeof(args));
     args.flags = CLONE_PIDFD;
@@ -5357,7 +5349,7 @@ int native_syscall_contract_dispatches_pidfd_syscalls(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto out;
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
 
     ret = syscall_dispatch_impl(__NR_rt_sigprocmask, SIG_SETMASK,
                                 (long)(uintptr_t)&old_sigmask, 0,
@@ -5379,7 +5371,7 @@ out:
                               (long)(uintptr_t)&block_sigchld, 0,
                               sizeof(block_sigchld), 0, 0);
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     close_if_open(pidfd);
     close_if_open(clone_pidfd);
     return -1;
@@ -6075,16 +6067,7 @@ static int latest_signal_info_matches(struct task *task, int signo, int code, ui
 }
 
 static void clear_pending_task_signal(struct task *task, int signo) {
-    int bit;
-
-    if (!task || signo <= 0) {
-        return;
-    }
-    bit = (signo - 1) & 63;
-    task->thread_pending_signals &= ~(1ULL << bit);
-    if (task->signal) {
-        task->signal->shared_pending.sig[0] &= ~(1ULL << bit);
-    }
+    signal_clear_pending_markers_task(task, signo);
 }
 
 int native_syscall_contract_virtual_memory_faults_queue_sigsegv_codes(void) {

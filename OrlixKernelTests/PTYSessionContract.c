@@ -46,14 +46,6 @@ static int close_if_open(int fd) {
     return 0;
 }
 
-static void clear_pending_signal(struct task *task, int32_t sig) {
-    if (!task || !task->signal || sig <= 0 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 static int append_decimal(char *buf, size_t buf_size, int value) {
     char digits[16];
     size_t count = 0;
@@ -909,8 +901,8 @@ int pty_session_contract_session_leader_exit_hangs_up_foreground_pgrp(void) {
         goto out;
     }
 
-    clear_pending_signal(foreground, SIGHUP);
-    clear_pending_signal(foreground, SIGCONT);
+    signal_clear_pending_markers_task(foreground, SIGHUP);
+    signal_clear_pending_markers_task(foreground, SIGCONT);
     exit_impl(0);
     task_set_current(saved);
 
@@ -995,8 +987,8 @@ int pty_session_contract_session_leader_tiocnotty_hangs_up_foreground_pgrp(void)
         goto out;
     }
 
-    clear_pending_signal(foreground, SIGHUP);
-    clear_pending_signal(foreground, SIGCONT);
+    signal_clear_pending_markers_task(foreground, SIGHUP);
+    signal_clear_pending_markers_task(foreground, SIGCONT);
     if (pty_contract_ioctl(tty_fd, TIOCNOTTY, 0) != 0) {
         goto out;
     }

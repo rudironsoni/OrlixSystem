@@ -1025,8 +1025,8 @@ int kernel_init_contract_pid1_reaps_adopted_child_exit(void) {
         goto out;
     }
 
-    child->signal->shared_pending.sig[(SIGCHLD - 1) >> 6] &= ~(1ULL << ((SIGCHLD - 1) & 63));
-    task_init_process->signal->shared_pending.sig[(SIGCHLD - 1) >> 6] &= ~(1ULL << ((SIGCHLD - 1) & 63));
+    signal_clear_pending_markers_task(child, SIGCHLD);
+    signal_clear_pending_markers_task(task_init_process, SIGCHLD);
 
     task_set_current(child);
     exit_impl(37);
@@ -1095,8 +1095,8 @@ int kernel_init_contract_orphaned_stopped_group_gets_hup_and_cont(void) {
     task_set_current(task_init_process);
 
     task_mark_stopped_by_signal(child, SIGSTOP);
-    child->signal->shared_pending.sig[(SIGHUP - 1) >> 6] &= ~(1ULL << ((SIGHUP - 1) & 63));
-    child->signal->shared_pending.sig[(SIGCONT - 1) >> 6] &= ~(1ULL << ((SIGCONT - 1) & 63));
+    signal_clear_pending_markers_task(child, SIGHUP);
+    signal_clear_pending_markers_task(child, SIGCONT);
 
     task_set_current(parent);
     exit_impl(0);

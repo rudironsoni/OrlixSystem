@@ -61,14 +61,6 @@ static int close_if_open(int fd) {
     return 0;
 }
 
-static void clear_pending_signal(struct task *task, int32_t sig) {
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 static void reset_wait_job_control_test_kernel_state(void) {
     struct task *child;
 
@@ -291,7 +283,7 @@ static int stop_and_wait_status(struct task *parent, struct task *child, int32_t
     int status = 0;
     int32_t waited;
 
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     if (signal_generate_task(child, sig) != 0) {
         errno = ESRCH;
         return -1;
@@ -330,7 +322,7 @@ static int stop_and_wait_status(struct task *parent, struct task *child, int32_t
 static int exit_child_with_status(struct task *parent, struct task *child, int exit_status) {
     struct task *saved_current = task_current();
     struct task *cursor;
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     task_set_current(child);
     exit_impl(exit_status);
     task_set_current(saved_current);
@@ -527,7 +519,7 @@ int wait_job_control_contract_stopped_child_without_wuntraced_wnohang_returns_ze
     if (!child) {
         return -1;
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     if (signal_generate_task(child, SIGSTOP) != 0) {
         errno = EPROTO;
         goto out;
@@ -579,7 +571,7 @@ int wait_job_control_contract_reports_continued_child_with_wcontinued(void) {
         destroy_child_task(parent, child);
         return -1;
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     if (signal_generate_task(child, SIGCONT) != 0) {
         destroy_child_task(parent, child);
         errno = EPROTO;
@@ -722,7 +714,7 @@ int wait_job_control_contract_child_continue_generates_sigchld_for_parent(void) 
         destroy_child_task(parent, child);
         return -1;
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     if (signal_generate_task(child, SIGCONT) != 0) {
         destroy_child_task(parent, child);
         errno = ESRCH;
@@ -842,7 +834,7 @@ int wait_job_control_contract_public_waitpid_reports_stopped_child_with_wuntrace
     if (!child) {
         return -1;
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     if (signal_generate_task(child, SIGSTOP) != 0) {
         destroy_child_task(parent, child);
         return -1;
@@ -881,7 +873,7 @@ int wait_job_control_contract_public_waitpid_reports_continued_child_with_wconti
         destroy_child_task(parent, child);
         return -1;
     }
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     if (signal_generate_task(child, SIGCONT) != 0) {
         destroy_child_task(parent, child);
         return -1;
@@ -1028,7 +1020,7 @@ int wait_job_control_contract_pty_background_read_stop_is_waitpid_visible(void) 
         goto out;
     }
 
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     task_set_current(child);
     errno = 0;
     if (expect_child_io_stop(read_impl(slave_fd, &byte, 1), EINTR) != 0) {
@@ -1082,7 +1074,7 @@ int wait_job_control_contract_pty_background_write_tostop_stop_is_waitpid_visibl
         goto out;
     }
 
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     task_set_current(child);
     errno = 0;
     if (expect_child_io_stop(write_impl(slave_fd, &byte, 1), EINTR) != 0) {
@@ -1131,7 +1123,7 @@ int wait_job_control_contract_pty_vsusp_stop_is_waitpid_visible(void) {
         goto out;
     }
 
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_markers_task(parent, SIGCHLD);
     if (pty_write_master_impl(pty_index, &vsusp, 1, false) != 1) {
         goto out;
     }
@@ -1226,8 +1218,8 @@ int wait_job_control_contract_waitpid_signal_interrupt_records_restart(void) {
         return -1;
     }
 
-    clear_pending_signal(waiter, SIGUSR1);
-    clear_pending_signal(waiter, SIGCHLD);
+    signal_clear_pending_markers_task(waiter, SIGUSR1);
+    signal_clear_pending_markers_task(waiter, SIGCHLD);
     task_mark_exited(child, 7);
     task_notify_parent_state_change(child);
 

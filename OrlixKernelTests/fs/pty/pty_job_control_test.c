@@ -141,15 +141,6 @@ static struct task *alloc_session_peer(int32_t sid, int32_t pgid, int32_t ppid) 
     return task;
 }
 
-static void clear_pending_signal(struct task *task, int32_t sig) {
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 static void reset_pty_job_control_test_kernel_state(void) {
     struct task *child;
 
@@ -326,7 +317,7 @@ int pty_job_control_contract_background_tiocspgrp_delivers_sigttou(void) {
 
     task->pgid = target_peer->pgid;
     requested_pgrp = target_peer->pgid;
-    clear_pending_signal(task, SIGTTOU);
+    signal_clear_pending_markers_task(task, SIGTTOU);
     errno = 0;
     if (pty_contract_ioctl(slave_fd, TIOCSPGRP, &requested_pgrp) == 0 || errno != EINTR) {
         errno = EPROTO;
@@ -390,7 +381,7 @@ int pty_job_control_contract_background_tcsetpgrp_delivers_sigttou(void) {
     }
 
     task->pgid = target_peer->pgid;
-    clear_pending_signal(task, SIGTTOU);
+    signal_clear_pending_markers_task(task, SIGTTOU);
     errno = 0;
     if (tcsetpgrp(slave_fd, (__kernel_pid_t)target_peer->pgid) == 0 || errno != EINTR) {
         errno = EPROTO;
@@ -461,7 +452,7 @@ int pty_job_control_contract_background_read_delivers_sigttin(void) {
     }
 
     task->pgid = background_pgid;
-    clear_pending_signal(task, SIGTTIN);
+    signal_clear_pending_markers_task(task, SIGTTIN);
     errno = 0;
     if (read_impl(slave_fd, &byte, 1) >= 0 || errno != EINTR) {
         errno = EPROTO;
@@ -550,7 +541,7 @@ int pty_job_control_contract_background_write_delivers_sigttou(void) {
     }
 
     task->pgid = background_pgid;
-    clear_pending_signal(task, SIGTTOU);
+    signal_clear_pending_markers_task(task, SIGTTOU);
     errno = 0;
     if (write_impl(slave_fd, &byte, 1) >= 0 || errno != EINTR) {
         errno = EPROTO;
@@ -749,8 +740,8 @@ int pty_job_control_contract_killpg_targets_process_group(void) {
     }
 
     task->pgid = peer->pgid;
-    clear_pending_signal(task, SIGCONT);
-    clear_pending_signal(peer, SIGCONT);
+    signal_clear_pending_markers_task(task, SIGCONT);
+    signal_clear_pending_markers_task(peer, SIGCONT);
     atomic_set(&task->signaled, 0);
     atomic_set(&peer->signaled, 0);
 

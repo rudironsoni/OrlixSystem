@@ -1038,9 +1038,7 @@ int procfs_namespace_contract_proc_task_tid_status_reports_thread_signal_state(v
 out:
     {
         int saved_errno = errno;
-        if (thread && thread->signal) {
-            thread->thread_pending_signals &= ~(1ULL << ((SIGUSR1 - 1) & 63));
-        }
+        signal_clear_pending_markers_task(thread, SIGUSR1);
         if (thread) {
             task_unlink_child_impl(parent, thread);
             task_put(thread);
@@ -1167,9 +1165,7 @@ int procfs_namespace_contract_process_signal_reports_shared_pending(void) {
 out:
     {
         int saved_errno = errno;
-        if (parent->signal) {
-            parent->signal->shared_pending.sig[(SIGUSR2 - 1) >> 6] &= ~(1ULL << ((SIGUSR2 - 1) & 63));
-        }
+        signal_clear_pending_markers_task(parent, SIGUSR2);
         if (thread) {
             task_unlink_child_impl(parent, thread);
             task_put(thread);
@@ -1226,7 +1222,7 @@ out:
     {
         int saved_errno = errno;
         if (thread) {
-            thread->thread_pending_signals &= ~(1ULL << ((SIGUSR1 - 1) & 63));
+            signal_clear_pending_markers_task(thread, SIGUSR1);
             task_unlink_child_impl(parent, thread);
             task_put(thread);
         }
