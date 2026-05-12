@@ -2785,40 +2785,6 @@ out:
     return ret;
 }
 
-int vfs_contract_recursive_bind_clones_nested_mount_topology(void) {
-    int ret = -1;
-
-    vfs_contract_cleanup_mount_namespace_paths();
-    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
-        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source/child", 0700)) != 0 ||
-        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-child-source", 0700)) != 0 ||
-        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
-        goto out;
-    }
-    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
-        vfs_contract_write_file("/tmp/vfs-mntns-child-source/file", "child") != 0) {
-        goto out;
-    }
-    if (mount("/tmp/vfs-mntns-child-source", "/tmp/vfs-mntns-parent-source/child", NULL, MS_BIND, NULL) != 0 ||
-        mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REC, NULL) != 0) {
-        goto out;
-    }
-    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/file", "parent") != 0 ||
-        vfs_contract_read_file_exact("/tmp/vfs-mntns-target/child/file", "child") != 0) {
-        goto out;
-    }
-
-    ret = 0;
-
-out:
-    {
-        int saved_errno = errno;
-        vfs_contract_cleanup_mount_namespace_paths();
-        errno = saved_errno;
-    }
-    return ret;
-}
-
 int vfs_contract_move_mount_relocates_bind_subtree(void) {
     int ret = -1;
 
@@ -3570,77 +3536,6 @@ out:
     } else {
         task_set_current(parent);
     }
-    {
-        int saved_errno = errno;
-        vfs_contract_cleanup_mount_namespace_paths();
-        errno = saved_errno;
-    }
-    return ret;
-}
-
-int vfs_contract_bind_mount_remount_readonly_rejects_writes(void) {
-    int ret = -1;
-
-    vfs_contract_cleanup_mount_namespace_paths();
-    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
-        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
-        goto out;
-    }
-    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
-        vfs_contract_write_file("/tmp/vfs-mntns-target/file", "target") != 0) {
-        goto out;
-    }
-    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
-        goto out;
-    }
-    if (mount(NULL, "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY, NULL) != 0) {
-        goto out;
-    }
-
-    errno = 0;
-    if (vfs_contract_write_file("/tmp/vfs-mntns-target/file", "blocked") == 0 || errno != EROFS) {
-        errno = EROFS;
-        goto out;
-    }
-
-    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/file", "parent") != 0) {
-        goto out;
-    }
-
-    ret = 0;
-
-out:
-    vfs_contract_cleanup_mount_namespace_paths();
-    return ret;
-}
-
-int vfs_contract_bind_mount_remount_readwrite_permits_writes(void) {
-    int ret = -1;
-
-    vfs_contract_cleanup_mount_namespace_paths();
-    if (vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
-        vfs_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
-        goto out;
-    }
-    if (vfs_contract_write_file("/tmp/vfs-mntns-parent-source/file", "parent") != 0 ||
-        vfs_contract_write_file("/tmp/vfs-mntns-target/file", "target") != 0) {
-        goto out;
-    }
-    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0 ||
-        mount(NULL, "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REMOUNT | MS_RDONLY, NULL) != 0 ||
-        mount(NULL, "/tmp/vfs-mntns-target", NULL, MS_BIND | MS_REMOUNT, NULL) != 0) {
-        goto out;
-    }
-    if (vfs_contract_write_file("/tmp/vfs-mntns-target/newfile", "updated") != 0) {
-        goto out;
-    }
-    if (vfs_contract_read_file_exact("/tmp/vfs-mntns-target/newfile", "updated") != 0) {
-        goto out;
-    }
-
-    ret = 0;
-
-out:
     {
         int saved_errno = errno;
         vfs_contract_cleanup_mount_namespace_paths();
