@@ -9,6 +9,7 @@
 #include <linux/string.h>
 
 #include "../../kernel/task.h"
+#include "../../private/kernel/task_state.h"
 
 static int read_exact(struct task *task, uint64_t addr, void *buf, size_t size) {
     long nread = task_read_virtual_memory_impl(task, addr, buf, size);

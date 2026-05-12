@@ -11,6 +11,7 @@
 #include "internal/fs/namei.h"
 #include "vfs.h"
 #include "../kernel/task.h"
+#include "../private/kernel/task_state.h"
 
 /* ============================================================================
  * PATH CLASSIFICATION

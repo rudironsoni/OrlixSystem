@@ -15,7 +15,9 @@
 #include "fs/pty.h"
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_state.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 #include "kernel/wait.h"
 
 extern int open_impl(const char *pathname, int flags, uint32_t mode);

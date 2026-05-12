@@ -4,7 +4,9 @@
 #include "../../kunit/suite_registry.h"
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_state.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 
 extern int library_init(const void *config);
 extern int library_is_initialized(void);

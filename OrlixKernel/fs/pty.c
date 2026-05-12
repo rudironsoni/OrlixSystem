@@ -7,7 +7,9 @@
 #include <linux/string.h>
 
 #include "../kernel/signal.h"
+#include "../private/kernel/signal_state.h"
 #include "../kernel/task.h"
+#include "../private/kernel/task_state.h"
 #include "../kernel/wait_queue.h"
 #include "internal/fs/lock.h"
 #include "internal/slab.h"

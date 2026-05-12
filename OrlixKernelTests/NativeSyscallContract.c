@@ -30,8 +30,11 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "fs/vfs.h"
+#include "private/fs/vfs_state.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_state.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 #include <uapi/linux/wait.h>
 
 extern int errno;

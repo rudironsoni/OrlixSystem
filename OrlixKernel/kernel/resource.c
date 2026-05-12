@@ -1,4 +1,4 @@
-/* iXland - Resource Limits and Usage
+/* OrlixKernel - Resource Limits and Usage
  *
  * Canonical owner for resource syscalls:
  * - getrlimit(), setrlimit(), getrlimit64(), setrlimit64()
@@ -10,6 +10,7 @@
 
 #include "resource.h"
 #include "task.h"
+#include "../private/kernel/task_state.h"
 
 #include <linux/errno.h>
 #include <linux/string.h>

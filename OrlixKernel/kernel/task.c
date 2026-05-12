@@ -2,6 +2,8 @@
  * Virtual task/process subsystem implementation
  */
 
+#include "../private/kernel/task_state.h"
+#include "../private/kernel/signal_state.h"
 #include "task.h"
 #include "signal.h"
 #include "cgroup.h"

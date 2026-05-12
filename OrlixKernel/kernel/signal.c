@@ -14,6 +14,8 @@
 #include <uapi/asm/sigcontext.h>
 #include <uapi/asm/ucontext.h>
 
+#include "../private/kernel/signal_state.h"
+#include "../private/kernel/task_state.h"
 #include "signal.h"
 #include "cred.h"
 #include "ptrace.h"

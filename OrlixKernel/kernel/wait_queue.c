@@ -3,7 +3,9 @@
 #include <linux/errno.h>
 
 #include "signal.h"
+#include "../private/kernel/signal_state.h"
 #include "task.h"
+#include "../private/kernel/task_state.h"
 #include "internal/timekeeping.h"
 
 int wait_queue_init(struct wait_queue_head *queue) {

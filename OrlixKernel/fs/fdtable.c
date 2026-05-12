@@ -23,6 +23,7 @@
 
 #include "internal/slab.h"
 #include "internal/timekeeping.h"
+#include "../private/kernel/task_state.h"
 #include "internal/fs/lock.h"
 
 /* Standard file descriptors - local definitions to avoid Darwin <unistd.h> */

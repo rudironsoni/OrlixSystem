@@ -9,8 +9,10 @@
 #include <uapi/linux/wait.h>
 
 #include "signal.h"
+#include "../private/kernel/signal_state.h"
 #include "../fs/fdtable.h"
 #include "task.h"
+#include "../private/kernel/task_state.h"
 #include "wait.h"
 
 #include <linux/string.h>

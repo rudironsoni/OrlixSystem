@@ -14,7 +14,9 @@
 #include "kernel/cred.h"
 #include "kernel/futex.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_state.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 #include "runtime/syscall.h"
 
 extern void exit_impl(int status);

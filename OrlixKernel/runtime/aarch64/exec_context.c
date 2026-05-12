@@ -5,6 +5,7 @@
 #include "exec_context.h"
 
 #include "../../kernel/task.h"
+#include "../../private/kernel/task_state.h"
 #include <linux/errno.h>
 
 #define AARCH64_INSN_NOP 0xd503201fU

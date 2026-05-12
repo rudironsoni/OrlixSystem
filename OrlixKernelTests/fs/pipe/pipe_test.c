@@ -13,7 +13,9 @@
 #include "fs/fdtable.h"
 #include "fs/vfs.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_state.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 
 extern int pipe_impl(int pipefd[2]);
 extern int pipe2_impl(int pipefd[2], int flags);

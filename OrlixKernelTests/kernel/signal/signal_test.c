@@ -6,7 +6,9 @@
 #include "../../kunit/suite_registry.h"
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
+#include "private/kernel/signal_state.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 
 extern int signal_syscall_contract_pidfd_send_signal_obeys_linux_targeting_rules(void);
 extern int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void);

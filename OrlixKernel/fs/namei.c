@@ -25,7 +25,9 @@
 #endif
 
 #include "vfs.h"
+#include "private/fs/vfs_state.h"
 #include "fdtable.h"
+#include "../private/kernel/task_state.h"
 #include "../kernel/task.h"
 #include "../kernel/cred.h"
 

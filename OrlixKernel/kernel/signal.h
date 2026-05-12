@@ -29,56 +29,14 @@ extern "C" {
 
 /* Forward declaration - avoid circular include with task.h */
 struct task;
+struct signal_state;
+struct signal_altstack;
 
 int kernel_thread_sigmask(int how, const struct signal_mask_bits *set,
                           struct signal_mask_bits *oldset);
 int kernel_sigemptyset(struct signal_mask_bits *set);
 int kernel_sigaddset(struct signal_mask_bits *set, int signo);
 int kernel_sigismember(const struct signal_mask_bits *set, int signo);
-
-/* Signal queue entry - private internal */
-struct signal_queue_entry {
-    int32_t sig;
-    int32_t si_signo;
-    int32_t si_errno;
-    int32_t si_code;
-    u64 fault_addr;
-    struct signal_queue_entry *next;
-};
-
-/* Signal queue - private internal */
-struct signal_queue {
-    struct signal_queue_entry *head;
-    struct signal_queue_entry *tail;
-    int count;
-    kernel_mutex_t lock;
-};
-
-/* Signal stack state - private internal */
-struct signal_altstack {
-    void *ss_sp;
-    size_t ss_size;
-    int32_t ss_flags;
-};
-
-/* Signal handler table - per-task signal configuration
- * This is the private internal state, NOT the public ABI struct sigaction */
-struct signal_state {
-    atomic_t refs;
-    struct signal_action_slot actions[KERNEL_SIG_NUM];
-    struct signal_mask_bits blocked;
-    struct signal_mask_bits pending;
-    struct signal_mask_bits shared_pending;
-    struct signal_queue queue;
-    struct signal_altstack altstack;
-    kernel_mutex_t lock;
-};
-
-/* Signal pending state for a task */
-struct pending_signals {
-    struct signal_mask_bits signal;
-    struct signal_queue queue;
-};
 
 /* Initialize signal state for a new task */
 int signal_init_task(struct task *task);

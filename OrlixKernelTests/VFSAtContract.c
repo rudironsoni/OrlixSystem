@@ -19,9 +19,11 @@
 #include <linux/string.h>
 
 #include "fs/vfs.h"
+#include "private/fs/vfs_state.h"
 #include "linux_umount2_flags.h"
 #include "kernel/cred.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 #include "runtime/syscall.h"
 
 extern int errno;

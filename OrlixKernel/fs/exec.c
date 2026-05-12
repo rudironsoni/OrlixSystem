@@ -1,4 +1,4 @@
-/* iXland - File Execution
+/* OrlixKernel - File Execution
  *
  * Canonical owner for exec syscalls:
  * - execve(), execv(), execvp(), execvpe()
@@ -18,8 +18,9 @@
 #include <uapi/asm/stat.h>
 #include <uapi/linux/signal.h>
 
+#include "../private/kernel/task_state.h"
+#include "../private/kernel/signal_state.h"
 #include "../kernel/task.h"
-
 #include "../kernel/signal.h"
 #include "../kernel/cred.h"
 #include "../runtime/native/registry.h"

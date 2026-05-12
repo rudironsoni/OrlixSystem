@@ -1,6 +1,7 @@
 #include "futex.h"
 
 #include "task.h"
+#include "../private/kernel/task_state.h"
 #include "wait_queue.h"
 
 #include <linux/atomic.h>

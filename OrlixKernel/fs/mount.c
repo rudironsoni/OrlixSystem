@@ -1,4 +1,4 @@
-/* iXland - Mount Operations
+/* OrlixKernel - Mount Operations
  *
  * Canonical owner for mount syscalls:
  * - mount(), umount(), umount2() - virtual mount operations

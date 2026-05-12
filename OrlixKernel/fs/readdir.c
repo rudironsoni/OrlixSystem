@@ -17,6 +17,7 @@
 #include "vfs.h"
 #include "kernel/cgroup.h"
 #include "kernel/task.h"
+#include "../private/kernel/task_state.h"
 
 #define LINUX_DT_UNKNOWN 0
 #define LINUX_DT_FIFO 1

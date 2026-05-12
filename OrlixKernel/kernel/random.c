@@ -1,4 +1,4 @@
-/* iXland - Random Number Generator
+/* OrlixKernel - Random Number Generator
  *
  * Canonical owner for random syscalls:
  * - getrandom()

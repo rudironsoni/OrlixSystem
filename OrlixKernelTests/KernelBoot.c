@@ -14,7 +14,9 @@
 
 #include "fs/vfs.h"
 #include "fs/fdtable.h"
+#include "private/fs/vfs_state.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 #include "kernel/init.h"
 
 extern int errno;

@@ -5,6 +5,7 @@
 #include "../../kunit/suite_registry.h"
 #include "kernel/init.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 
 extern int errno;
 

@@ -13,6 +13,8 @@
 #include "fs/fdtable.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
+#include "private/kernel/signal_state.h"
+#include "private/kernel/task_state.h"
 #include "runtime/syscall.h"
 
 extern int errno;

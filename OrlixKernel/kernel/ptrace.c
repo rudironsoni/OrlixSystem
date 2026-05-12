@@ -2,7 +2,9 @@
 
 #include "cred.h"
 #include "signal.h"
+#include "../private/kernel/signal_state.h"
 #include "task.h"
+#include "../private/kernel/task_state.h"
 
 #include <linux/errno.h>
 #include <linux/types.h>

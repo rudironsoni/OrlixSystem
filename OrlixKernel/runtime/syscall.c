@@ -24,7 +24,9 @@
 #include "../kernel/resource.h"
 #include "../kernel/seccomp.h"
 #include "../kernel/signal.h"
+#include "../private/kernel/signal_state.h"
 #include "../kernel/task.h"
+#include "../private/kernel/task_state.h"
 #include "../kernel/uts.h"
 #include "../kernel/wait.h"
 

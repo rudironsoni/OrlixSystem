@@ -4,6 +4,7 @@
 
 #include "mm.h"
 #include "task.h"
+#include "../private/kernel/task_state.h"
 
 #include "../fs/fdtable.h"
 

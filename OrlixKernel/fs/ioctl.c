@@ -1,4 +1,4 @@
-/* iXland - IOCTL Operations
+/* OrlixKernel - IOCTL Operations
  *
  * Canonical owner for ioctl:
  * - ioctl()

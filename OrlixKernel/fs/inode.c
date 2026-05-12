@@ -13,7 +13,9 @@
 
 #include "fdtable.h"
 #include "vfs.h"
+#include "private/fs/vfs_state.h"
 #include "internal/fs/file.h"
+#include "../private/kernel/task_state.h"
 #include "../kernel/mm.h"
 #include "../kernel/task.h"
 

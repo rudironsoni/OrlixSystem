@@ -24,6 +24,7 @@
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
 
+#include "../private/kernel/task_state.h"
 #include "cred.h"
 #include "task.h"
 

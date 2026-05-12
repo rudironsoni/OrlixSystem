@@ -1,4 +1,5 @@
 #include "vfs.h"
+#include "private/fs/vfs_state.h"
 
 /* Linux UAPI headers for ABI constants */
 #include <uapi/linux/capability.h>
@@ -23,6 +24,8 @@
 
 #include "fdtable.h"
 #include "pty.h"
+#include "../private/kernel/task_state.h"
+#include "../private/kernel/signal_state.h"
 #include "../kernel/cgroup.h"
 #include "../kernel/task.h"
 #include "../kernel/cred.h"

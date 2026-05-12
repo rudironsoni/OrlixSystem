@@ -5,6 +5,7 @@
 #include "UTSContract.h"
 #include "kernel/cred.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 #include "kernel/uts.h"
 
 extern void cred_reset_to_defaults(void);

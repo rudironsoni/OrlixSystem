@@ -9,6 +9,7 @@
 #include "vfs.h"
 #include "kernel/cgroup.h"
 #include "kernel/task.h"
+#include "../private/kernel/task_state.h"
 
 static int open_alloc_fd(void) {
     int fd = alloc_fd_impl();
