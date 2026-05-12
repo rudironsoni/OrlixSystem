@@ -44,7 +44,7 @@ Examples of forbidden repo-local renames:
 If a concept is not Linux-visible and is truly host mechanism, it belongs under
 `OrlixHostAdapter/**` behind a narrow kernel-owned declaration.
 
-If a concept is Linux-visible but libc-owned, it belongs to `OrlixMLibC`.
+If a concept is Linux-visible but libc-owned, it belongs to the userspace libc layer.
 
 If a concept is Linux-visible and kernel-owned, it belongs to `OrlixKernel`
 under Linux naming.
@@ -88,11 +88,11 @@ Use for:
 
 Not package-facing ABI.
 
-### 3. OrlixMLibC Package-Facing ABI
+### 3. Package-Facing Libc ABI
 
 Owner:
 
-- `OrlixMLibC/include/**`
+- package-facing libc headers
 
 Use for:
 
@@ -175,7 +175,7 @@ Required Linux contract surfaces:
 Required owners:
 
 - vendored Linux UAPI for ABI shape
-- `OrlixMLibC` for package-facing `time.h` and `sys/time.h`
+- userspace libc layer for package-facing `time.h` and `sys/time.h`
 - `OrlixKernel` for Linux semantics only
 
 Current violating repo-local surfaces:
@@ -201,7 +201,7 @@ Required Linux contract surfaces:
 Required owners:
 
 - vendored UAPI for signal numbers and ABI payload truth
-- `OrlixMLibC` for libc-facing signal headers
+- userspace libc layer for libc-facing signal headers
 - `OrlixKernel` for signal semantics and internal state
 
 Current violating repo-local surfaces:
@@ -232,7 +232,7 @@ Required Linux contract surfaces:
 Required owners:
 
 - vendored UAPI for Linux ABI shape
-- `OrlixMLibC` for package-facing `sys/socket.h`, `poll.h`, `sys/select.h`
+- userspace libc layer for package-facing `sys/socket.h`, `poll.h`, `sys/select.h`
 - `OrlixKernel` for socket, poll, and select semantics
 
 Current violating repo-local surfaces:
@@ -258,7 +258,7 @@ Required Linux contract surfaces:
 Required owners:
 
 - vendored UAPI for ioctl numbers and ABI payloads
-- `OrlixMLibC` for package-facing `termios.h` and ioctl-facing libc headers
+- userspace libc layer for package-facing `termios.h` and ioctl-facing libc headers
 - `OrlixKernel` for PTY, controlling TTY, and job-control semantics
 
 Current violating repo-local surfaces:
@@ -284,7 +284,7 @@ Required Linux contract surfaces:
 Required owners:
 
 - vendored UAPI where Linux provides the userspace contract
-- `OrlixMLibC` for package-facing stat-related libc headers
+- userspace libc layer for package-facing stat-related libc headers
 - `OrlixKernel` for VFS and path semantics
 
 Current violating repo-local surfaces:
@@ -312,7 +312,7 @@ Required Linux contract surfaces:
 Required owners:
 
 - `OrlixKernel` for semantics
-- `OrlixMLibC` for package-facing wait/resource headers
+- userspace libc layer for package-facing wait/resource headers
 
 Current violating contract-adjacent surfaces:
 
@@ -374,7 +374,7 @@ The replacement work for contract/header cleanup is:
 1. classify each existing header as:
    - vendored UAPI truth
    - vendored kheaders reference only
-   - `OrlixMLibC` package-facing ownership
+   - userspace libc package-facing ownership
    - `OrlixKernel` Linux-owner contract
    - `OrlixHostAdapter` host mechanism contract
 2. delete repo-local renamed Linux concept headers

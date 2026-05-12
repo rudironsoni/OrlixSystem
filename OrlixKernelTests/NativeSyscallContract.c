@@ -5435,7 +5435,7 @@ int native_syscall_contract_classifies_milestone_01_process_surface(void) {
     return 0;
 }
 
-int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void) {
+int native_syscall_contract_linux_sysdeps_inventory_is_kernel_owned(void) {
     struct required_syscall_class {
         long number;
         enum syscall_capability_class capability_class;

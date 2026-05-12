@@ -102,8 +102,8 @@ Host mediation paths (host mechanics live here only):
 OrlixHostAdapter ownership rule:
 - `OrlixHostAdapter/**` serves `OrlixKernel` only.
 - `OrlixHostAdapter/**` must not become a public libc surface, syscall interposition layer, or package-facing ABI provider.
-- `OrlixMLibC` must rely on `OrlixKernel` only. It must not rely on `OrlixHostAdapter` directly.
-- If a Linux-facing public function such as `open`, `close`, `read`, `write`, `ioctl`, `sigaction`, `waitpid`, `clock_gettime`, `futex`, `getuid`, `epoll_wait`, or similar must exist for userspace, that ownership belongs to `OrlixMLibC`, not to `OrlixHostAdapter`.
+- The userspace libc layer must rely on `OrlixKernel` only. It must not rely on `OrlixHostAdapter` directly.
+- If a Linux-facing public function such as `open`, `close`, `read`, `write`, `ioctl`, `sigaction`, `waitpid`, `clock_gettime`, `futex`, `getuid`, `epoll_wait`, or similar must exist for userspace, that ownership belongs to the userspace libc layer, not to `OrlixHostAdapter`.
 - `OrlixHostAdapter/**` may implement only private host seam entry points for `OrlixKernel`, for example narrow subsystem-owned `*_impl()` functions or equivalent kernel-owned private contracts.
 - Public/default-visible symbols in `OrlixHostAdapter/**` are forbidden unless the thing being exported is itself a kernel-private seam declared by `OrlixKernel` rather than a libc/public API surface.
 - Bootstrap convenience is not an excuse to keep public libc-shaped wrappers in `OrlixHostAdapter/**`. Delete the wrong layer instead of preserving it.
@@ -147,7 +147,7 @@ Forbidden seam shape:
 Linux naming rule:
 - If the concept already has a Linux name, use the Linux name.
 - If the concept already exists in `third_party/linux/<version>/<arch>/uapi/include` or `third_party/linux/<version>/<arch>/kheaders/**`, do not recreate it in `OrlixKernel/**` under any repo-local spelling.
-- If the concept is libc-owned and already belongs in `OrlixMLibC`, do not recreate it in `OrlixKernel/**` under any repo-local spelling.
+- If the concept is libc-owned and already belongs in the userspace libc layer, do not recreate it in `OrlixKernel/**` under any repo-local spelling.
 - Do not invent repo-local spellings for Linux-shaped concepts such as `orlix_*`, `kernel_*`, or `*_compat`.
 - Do not invent repo-local `linux_*` stand-ins for common Linux concepts when the real contract name is just `timespec`, `timeval`, `itimerval`, `fd_set`, `sockaddr`, `msghdr`, `termios`, `winsize`, `statfs`, or similar.
 - This applies to filenames, header names, structs, typedefs, enums, macros, helper functions, and local private state when the thing being modeled is still a Linux concept.
@@ -286,14 +286,9 @@ OrlixHostAdapterTests  -> OrlixHostAdapter seam proof
 
 HostBridge failures can block a full repo-green milestone, but they do not replace LinuxKernel proof.
 
-## 7) mlibc Reference Boundary
+## 7) Libc Reference Boundary
 
-mlibc is a design reference for Linux source compatibility, not code to paste into OrlixKernel.
-
-Use these mlibc surfaces deliberately:
-- `mlibc/abis/linux` is a Linux libc ABI surface checklist.
-- `mlibc/sysdeps/linux` is a libc syscall backend design reference.
-- `mlibc/options` is a libc feature/API organization reference.
+The upstream libc source is the Linux userspace compatibility reference, not code to paste into OrlixKernel.
 
 OrlixKernel ownership:
 - virtual kernel behavior that libc sysdeps call into
@@ -306,7 +301,7 @@ OrlixKernel ownership:
     - kheaders/source: `third_party/linux/<version>/<arch>/kheaders/source/**`
     - kheaders/generated: `third_party/linux/<version>/<arch>/kheaders/generated/**`
 
-OrlixMLibC ownership:
+Userspace libc ownership:
 - libc ABI headers and typedef surfaces
 - libc `options` APIs
 - native iOS arm64/aarch64 sysdeps for recompiled Linux-oriented packages
@@ -323,21 +318,21 @@ OrlixMLibC ownership:
   - `struct mmsghdr` when needed by Linux userspace ABI
 
 Hard direction rule:
-- `OrlixKernel/**` must not include `OrlixMLibC/**`.
-- The only allowed consumers of `OrlixMLibC/**` inside this repo are package-facing compile probes, sysroot/bootstrap plumbing, and non-kernel targets that explicitly model native userspace.
-- If Linux-owner code needs a type or struct that is not appropriate to take from Darwin and not appropriate to take from `OrlixMLibC`, define or use a kernel-private/Linux-owned surface instead of crossing into libc ownership.
-- Do not "fix" Darwin leakage in `OrlixKernel` by replacing it with `OrlixMLibC` includes. That is still a wrong-direction dependency.
-- `OrlixKernel` must not own libc specifics. Libc-facing typedefs, structs, and APIs belong either to vendored Linux UAPI/kernel headers or to `OrlixMLibC`, never to repo-local kernel headers.
+- `OrlixKernel/**` must not include repo-local libc headers.
+- The only allowed consumers of repo-local libc surfaces inside this repo are package-facing compile probes, sysroot/bootstrap plumbing, and non-kernel targets that explicitly model native userspace.
+- If Linux-owner code needs a type or struct that is not appropriate to take from Darwin and not appropriate to take from the userspace libc layer, define or use a kernel-private/Linux-owned surface instead of crossing into libc ownership.
+- Do not "fix" Darwin leakage in `OrlixKernel` by replacing it with libc includes. That is still a wrong-direction dependency.
+- `OrlixKernel` must not own libc specifics. Libc-facing typedefs, structs, and APIs belong either to vendored Linux UAPI/kernel headers or to the userspace libc layer, never to repo-local kernel headers.
 - Treat libc-owned spellings such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `nlink_t`, `socklen_t`, `sa_family_t`, `suseconds_t`, `sigval`, `sigevent`, `statvfs`, `termios`, `winsize`, `iovec`, `msghdr`, `cmsghdr`, and `mmsghdr` as non-kernel ownership unless they come from the correct vendored Linux source of truth.
 - `OrlixKernel/**` must not include libc-facing headers such as `sys/socket.h`, `sys/types.h`, `sys/uio.h`, `sys/ioctl.h`, `sys/select.h`, `sys/resource.h`, `sys/statvfs.h`, `sys/wait.h`, `poll.h`, `termios.h`, or `signal.h`. Use vendored Linux UAPI/kheaders or a kernel-owned private state model instead.
-- Do not recreate public socket ABI structs or typedefs inside `OrlixKernel`. Socket runtime behavior is kernel-owned; userspace socket ABI types are `OrlixMLibC`-owned.
+- Do not recreate public socket ABI structs or typedefs inside `OrlixKernel`. Socket runtime behavior is kernel-owned; userspace socket ABI types are libc-owned.
 
 Correct native userspace path:
 
 ```text
 native iOS arm64/aarch64 package code
         ↓
-OrlixMLibC Linux ABI headers + Orlix sysdeps
+userspace libc Linux ABI headers + syscall/sysdeps layer
         ↓
 OrlixKernel syscall/runtime ABI
         ↓
@@ -346,13 +341,13 @@ OrlixKernel virtual kernel subsystems
 OrlixHostAdapter host mediation
 ```
 
-Do not vendor mlibc `abis`, `sysdeps`, or `options` into OrlixKernel.
+Do not vendor upstream libc `abis`, `sysdeps`, or `options` into OrlixKernel.
 Do not implement libc sysdeps inside OrlixKernel.
 Do not create kernel-owned replacements for libc typedef headers such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `sigevent`, `sigval`, `socklen_t`, `statvfs`, or `suseconds_t`.
 
-The Linux header vendoring pipeline must treat mlibc `abis/linux` as a coverage reference:
+The Linux header vendoring pipeline must treat the upstream Linux libc ABI inventory as a coverage reference:
 - map headers already present in vendored generated Linux headers to the correct surface (UAPI vs kernel-internal)
-- classify libc-owned surfaces as OrlixMLibC-owned
+- classify libc-owned surfaces as userspace-libc-owned
 - fail on unclassified surfaces instead of silently inventing kernel headers
 
 ## 8) Proof Discipline (Required)
@@ -409,11 +404,11 @@ Forbidden implementation behavior:
 
 Required implementation behavior:
 - use vendored generated Linux headers for kernel/userspace contract truth
-- keep libc-owned typedef/API surfaces out of OrlixKernel and in OrlixMLibC
+- keep libc-owned typedef/API surfaces out of OrlixKernel and in the userspace libc layer
 - model the real virtual-kernel behavior in the owning subsystem
 - keep host mediation inside `OrlixHostAdapter/**` only
 - declare any cross-target contract from `OrlixKernel`, not from `OrlixHostAdapter`
-- keep `OrlixKernel` independent from `OrlixMLibC` includes and package-facing header ownership
+- keep `OrlixKernel` independent from libc includes and package-facing header ownership
 - prefer deleting a bad shortcut over preserving compatibility with it
 - verify the subsystem through syscall-facing LinuxKernel tests, not internal struct peeking
 - raise the implementation to the product contract before claiming completion

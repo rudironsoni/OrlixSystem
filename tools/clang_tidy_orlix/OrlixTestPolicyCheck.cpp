@@ -21,11 +21,6 @@ bool isObjectiveCKernelTest(llvm::StringRef Path) {
   return Path.ends_with(".m") || Path.ends_with(".mm");
 }
 
-bool isMLibCCompileSmoke(llvm::StringRef Path) {
-  return Path.contains("OrlixKernelTests/MLibC") &&
-         Path.ends_with("CompileSmoke.c");
-}
-
 bool isKernelHarnessSupportPath(llvm::StringRef Path) {
   return Path.contains("OrlixKernelTests/kunit/kunit.c") ||
          Path.contains("OrlixKernelTests/PTYSessionIoctlShim.c");
@@ -97,28 +92,18 @@ public:
             "termios.h",     "signal.h"};
 
         for (const auto &Header : ForbiddenKernelTestHeaders) {
-          if (!isMLibCCompileSmoke(Path) && !isKernelHarnessSupportPath(Path) &&
+          if (!isKernelHarnessSupportPath(Path) &&
               (FileName == Header || FileName.starts_with(Header))) {
             Check.diag(HashLoc,
                        "host libc or POSIX headers are forbidden in LinuxKernel tests; use vendored Linux headers or fix the owning lint environment instead");
           }
         }
 
-        if (!isMLibCCompileSmoke(Path) && !isKernelHarnessSupportPath(Path) &&
+        if (!isKernelHarnessSupportPath(Path) &&
             FileName == "asm/stat.h") {
           Check.diag(HashLoc,
                      "full asm/stat.h is forbidden in LinuxKernel tests that prove userspace ABI; use vendored UAPI stat surfaces instead");
         }
-      }
-
-      if (!isMLibCCompileSmoke(Path) &&
-          (FileName.starts_with("OrlixMLibC/") ||
-           FileName.starts_with("orlixmlibc/") ||
-           FileName.contains("OrlixMLibC/include/") ||
-           FileName.contains("../OrlixMLibC/") ||
-           FileName.contains("/OrlixMLibC/"))) {
-        Check.diag(HashLoc,
-                   "LinuxKernel tests must not include OrlixMLibC headers; keep libc/package ABI proof in explicit MLibC compile-smoke files only");
       }
 
       if (FileName.starts_with("linux/") || FileName.starts_with("asm/") ||
@@ -216,6 +201,8 @@ const std::vector<RegexRule> KernelTestRules = {
      "direct compiler builtin varargs use is forbidden in LinuxKernel tests; use vendored linux/stdarg.h instead"},
     {R"(^\s*#\s*define\s+MAX_PATH\b)",
      "MAX_PATH ownership belongs to OrlixKernel/fs/path.h; duplicate repo-local definitions are forbidden in LinuxKernel tests"},
+    {R"(^\s*#\s*include\s*<asm/unistd\.h>)",
+     "direct asm/unistd.h intake is forbidden in LinuxKernel tests; use vendored uapi/asm/unistd.h for syscall ABI numbers instead"},
     {R"(^\s*#\s*undef\s+(TASK_[A-Z0-9_]+|SIG[A-Z0-9_]+|W[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|CLONE_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",
      "undef escapes around vendored Linux names are forbidden in LinuxKernel tests; fix the ownership or lint environment instead"},
     {R"(^\s*#\s*ifndef\s+(?![A-Z0-9_]*_H\b)(S_[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|SIG[A-Z0-9_]+|CLONE_[A-Z0-9_]+|EPOLL[A-Z0-9_]*|O_[A-Z0-9_]+|F_[A-Z0-9_]+|AT_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",
@@ -343,7 +330,7 @@ void OrlixTestPolicyCheck::check(const MatchFinder::MatchResult &Result) {
   diag(Loc,
        "OrlixHostAdapter serves OrlixKernel only and must not define public "
        "libc/syscall-facing function '%0'; move the public wrapper to "
-       "OrlixMLibC and keep only private kernel seam entry points here")
+       "the userspace libc layer and keep only private kernel seam entry points here")
       << Name;
 }
 

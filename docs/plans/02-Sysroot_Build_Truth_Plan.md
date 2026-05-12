@@ -23,13 +23,13 @@ Without this milestone, the repo can still compile selected internal code while 
 
 ## Product Goal For This Milestone
 
-Make package-facing build truth deterministic enough that `OrlixMLibC` can present a Linux-oriented sysroot without `OrlixKernel` silently re-owning libc or Linux ABI surface area.
+Make package-facing build truth deterministic enough that the userspace libc layer can present a Linux-oriented sysroot without `OrlixKernel` silently re-owning libc or Linux ABI surface area.
 
 This milestone is about source-compatibility truth, not runtime completion.
 
 ## Goals
 
-1. Make `OrlixMLibC` the sole owner of package-facing libc and sysroot surfaces.
+1. Make the userspace libc layer the sole owner of package-facing libc and sysroot surfaces.
 2. Keep vendored Linux UAPI as the kernel-userspace contract truth.
 3. Keep vendored `kheaders/source` and `kheaders/generated` as classified private kernel reference only.
 4. Eliminate local Linux-like typedef reinvention inside `OrlixKernel` and kernel-private backing contracts where vendored Linux truth or libc ownership should apply instead.
@@ -60,7 +60,6 @@ Relevant current facts in this repo:
   - `third_party/linux/6.12/arm64/kheaders/source`
   - `third_party/linux/6.12/arm64/kheaders/generated`
 - `OrlixKernelTests/LinuxUAPICompileSmoke.c` already proves canonical UAPI include-path resolution.
-- `OrlixKernelTests/LinuxKHeadersCompileSmoke.c` already proves isolated kheaders include-path resolution.
 - `project.yml` already separates UAPI include paths from kheaders compile-smoke include paths.
 - The repo still contains local Linux-like scalar type recreation in Linux-owner and kernel-private contract-adjacent headers, including examples such as:
   - `OrlixKernel/fs/vfs.h`
@@ -74,7 +73,7 @@ This means the foundation for M1 exists, but the ownership cleanup and package-f
 
 Milestone 1 is no longer theoretical in this repo. The following slices are already delivered and simulator-proofed:
 
-- `OrlixMLibC` bootstrap headers now exist for:
+- package-facing libc bootstrap headers now exist for:
   - `fcntl.h`
   - `poll.h`
   - `signal.h`
@@ -123,12 +122,12 @@ That follow-on work is now delivered green:
 - `OrlixKernel` must not invent Linux ABI items already available in vendored Linux truth.
 - `OrlixKernel` must not own libc-owned typedefs or APIs.
 - Kernel-owned private backing contracts must not reintroduce Linux ABI ownership drift.
-- The end-state is kernel-owned private contracts plus `OrlixMLibC` sysroot truth, not convenience leakage through host-private declarations.
+- The end-state is kernel-owned private contracts plus userspace-libc sysroot truth, not convenience leakage through host-private declarations.
 
 ### Ownership model
 
-- `OrlixMLibC` owns package-facing libc ABI headers, typedef surfaces, and sysroot installation shape.
-- `OrlixMLibC` owns libc-facing types such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `socklen_t`, `sigval`, `sigevent`, `statvfs`, and related libc-facing API surface.
+- The userspace libc layer owns package-facing libc ABI headers, typedef surfaces, and sysroot installation shape.
+- The userspace libc layer owns libc-facing types such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `socklen_t`, `sigval`, `sigevent`, `statvfs`, and related libc-facing API surface.
 - `OrlixKernel` owns syscall/runtime semantics and private virtual-kernel state only.
 - `OrlixHostAdapter` owns private mechanism implementation only and must not become a second place where Linux or libc-facing type truth is recreated.
 
@@ -137,7 +136,7 @@ That follow-on work is now delivered green:
 - XcodeGen and the generated Xcode project remain the only authoritative build truth for this repo.
 - UAPI headers may be visible to Linux-owner compile units as Linux contract truth.
 - Kheaders must be visible only to explicitly classified compile-smoke or private kernel-reference use, never as blanket production include roots.
-- Package-facing sysroot assembly belongs to `OrlixMLibC`, not to ad hoc repo-local header search path convenience.
+- Package-facing sysroot assembly belongs to the userspace libc layer, not to ad hoc repo-local header search path convenience.
 
 ## Non-Negotiable Rules
 
@@ -155,7 +154,7 @@ Milestone 1 should be implemented as a build-truth and ownership tranche, not as
 
 In scope:
 
-- classify every Linux-facing header surface as UAPI truth, kheaders reference, `OrlixMLibC` ownership, or private kernel-only state
+- classify every Linux-facing header surface as UAPI truth, kheaders reference, userspace-libc ownership, or private kernel-only state
 - remove or narrow repo-local Linux-like typedef recreation where ownership is already known
 - keep production include roots narrow and explicit
 - add proof that real configure-style compile checks resolve against the intended owners
@@ -212,8 +211,6 @@ Milestone direction:
 
 ### 4. kheaders visibility drift
 
-Current project state already keeps kheaders isolated in `LinuxKHeadersCompileSmoke.c` compiler flags.
-
 Milestone direction:
 
 - preserve that isolation
@@ -249,7 +246,7 @@ Milestone direction:
 2. Produce an ownership inventory for Linux-facing headers and typedef surfaces that distinguishes:
    - vendored UAPI truth
    - vendored kheaders reference only
-   - `OrlixMLibC` ownership
+   - userspace libc ownership
    - `OrlixKernel` private-only state
    - `OrlixHostAdapter` private mechanism-only implementation
 3. Remove or replace risky local typedef recreation in `OrlixKernel` and keep kernel-private backing contracts narrow and ownership-correct.
@@ -285,7 +282,7 @@ Milestone 1 is not complete until all are true:
 
 1. UAPI include truth is documented and enforced as the only production Linux ABI source.
 2. Kheaders remain isolated to explicit classified use and compile-smoke proof.
-3. The repo no longer contains known local Linux-like typedef recreation for surfaces already owned by vendored Linux truth or `OrlixMLibC`.
+3. The repo no longer contains known local Linux-like typedef recreation for surfaces already owned by vendored Linux truth or the userspace libc layer.
 4. Adapter-owned seam headers are removed from the accepted contract surface.
 5. Configure-style compile probes for representative `zsh` and `curl` prerequisites pass through the intended owners.
 6. Project build settings do not grant blanket kheaders visibility to production targets.
@@ -299,11 +296,10 @@ Milestone 1 is not complete until all are true:
 Required proof for this milestone:
 
 1. `OrlixKernelTests/LinuxUAPICompileSmoke.c` remains green.
-2. `OrlixKernelTests/LinuxKHeadersCompileSmoke.c` remains isolated and green.
-3. New configure-style compile probes cover representative package prerequisites for `zsh` and `curl`.
-4. The authoritative simulator build remains green through the canonical XcodeGen plus Xcodebuild flow.
-5. Lint and repo checks fail if kheaders or local typedef ownership drift reappears.
-6. Lint fails if Linux-owner code reintroduces ambient host directory-iteration APIs instead of using the private backing contract.
+2. New configure-style compile probes cover representative package prerequisites for `zsh` and `curl`.
+3. The authoritative simulator build remains green through the canonical XcodeGen plus Xcodebuild flow.
+4. Lint and repo checks fail if kheaders or local typedef ownership drift reappears.
+5. Lint fails if Linux-owner code reintroduces ambient host directory-iteration APIs instead of using the private backing contract.
 
 ## Definition Of Success
 
@@ -311,7 +307,7 @@ Milestone 1 succeeds when the repo stops improvising Linux-facing header ownersh
 
 - Linux UAPI truth comes from vendored `uapi/include`
 - private kernel reference comes from classified `kheaders/source` and `kheaders/generated`
-- libc-facing sysroot truth belongs to `OrlixMLibC`
+- libc-facing sysroot truth belongs to the userspace libc layer
 - `OrlixKernel` keeps only private runtime state and syscall semantics
 - `OrlixHostAdapter` remains mechanism-only implementation
 

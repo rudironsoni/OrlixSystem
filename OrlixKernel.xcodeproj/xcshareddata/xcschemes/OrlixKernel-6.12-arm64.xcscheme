@@ -63,20 +63,6 @@
                ReferencedContainer = "container:OrlixKernel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
-         <BuildActionEntry
-            buildForTesting = "YES"
-            buildForRunning = "YES"
-            buildForProfiling = "YES"
-            buildForArchiving = "YES"
-            buildForAnalyzing = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "84534929EC2BC921DA348F55"
-               BuildableName = "libOrlixMLibC.a"
-               BlueprintName = "OrlixMLibC"
-               ReferencedContainer = "container:OrlixKernel.xcodeproj">
-            </BuildableReference>
-         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

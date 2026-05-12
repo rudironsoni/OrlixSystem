@@ -5,7 +5,6 @@ LINUX_ARCH ?= arm64
 LINUX_KERNEL_SERIES ?=
 LINUX_TARBALL_URL ?=
 LINUX_KERNEL_VENDOR_ROOT ?= OrlixKernel/vendor/linux
-LINUX_MLIBC_VENDOR_ROOT ?= OrlixMLibC/vendor/linux
 KEEP_LINUX_TMP ?= 0
 LINUX_MAKE ?=
 LINUX_LLVM_BIN ?=
@@ -23,8 +22,6 @@ LINUX_KERNEL_TUPLE_ROOT := $(CURDIR)/$(LINUX_KERNEL_VENDOR_ROOT)/$(LINUX_VERSION
 LINUX_KERNEL_KHEADERS_INCLUDE_ROOT := $(LINUX_KERNEL_TUPLE_ROOT)/include
 LINUX_KERNEL_UAPI_INCLUDE_ROOT := $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi
 LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
-LINUX_MLIBC_TUPLE_ROOT := $(CURDIR)/$(LINUX_MLIBC_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)
-LINUX_MLIBC_INCLUDE_ROOT := $(LINUX_MLIBC_TUPLE_ROOT)/include
 ORLIX_LINT_HOST_COMMON_FLAGS := \
 	-target arm64-apple-ios26.4-simulator \
 	-isysroot $(IPHONESIM_SDK) \
@@ -39,8 +36,6 @@ ORLIX_LINT_LINUX_COMMON_FLAGS := \
 ORLIX_LINT_KERNEL_VENDOR_FLAGS := \
 	-I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) \
 	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-ORLIX_LINT_MLIBC_VENDOR_FLAGS := \
-	-I$(LINUX_MLIBC_INCLUDE_ROOT)
 ORLIX_LINT_C_FLAGS := \
 	$(ORLIX_LINT_LINUX_COMMON_FLAGS) \
 	-nostdinc \
@@ -88,12 +83,6 @@ ORLIX_LINT_KERNEL_TEST_C_FLAGS := \
 	-isystem $(LLVM_PREFIX)/lib/clang/22/include \
 	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT) \
 	-I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
-ORLIX_LINT_MLIBC_C_FLAGS := \
-	$(ORLIX_LINT_HOST_C_FLAGS) \
-	$(ORLIX_LINT_MLIBC_VENDOR_FLAGS) \
-	-I$(CURDIR)/OrlixMLibC/include
-ORLIX_LINT_MLIBC_HEADER_FLAGS := \
-	$(ORLIX_LINT_MLIBC_C_FLAGS)
 ORLIX_LINT_OBJC_FLAGS := \
 	$(ORLIX_LINT_HOST_COMMON_FLAGS) \
 	-fobjc-arc \
@@ -131,13 +120,13 @@ lint: build-orlix-clang-tidy-module
 		echo "clang-tidy plugin not found" >&2; \
 		exit 1; \
 	fi; \
-	c_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.(c|cc|cpp|cxx)$$' | rg -v '^Orlix(Kernel|MLibC)/vendor/' || true)"; \
-	header_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.h$$' | rg -v '^Orlix(Kernel|MLibC)/vendor/' || true)"; \
-	objc_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixMLibC OrlixKernelTests OrlixHostAdapterTests | rg '\.(m|mm)$$' | rg -v '^Orlix(Kernel|MLibC)/vendor/' || true)"; \
+	c_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixKernelTests OrlixHostAdapterTests | rg '\.(c|cc|cpp|cxx)$$' | rg -v '^OrlixKernel/vendor/' || true)"; \
+	header_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixKernelTests OrlixHostAdapterTests | rg '\.h$$' | rg -v '^OrlixKernel/vendor/' || true)"; \
+	objc_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixKernelTests OrlixHostAdapterTests | rg '\.(m|mm)$$' | rg -v '^OrlixKernel/vendor/' || true)"; \
 	if [ -n "$$c_files" ]; then \
 		while IFS= read -r file; do \
 			flags="$(ORLIX_LINT_C_FLAGS)"; \
-			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* || "$$file" == OrlixMLibC/* ]]; then \
+			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
 				if [[ "$$file" == OrlixHostAdapter/fs/open_flags.c || "$$file" == OrlixHostAdapter/fs/backing_stat_translate.c ]]; then \
 					flags="$$flags $(ORLIX_LINT_KERNEL_VENDOR_FLAGS)"; \
@@ -145,14 +134,9 @@ lint: build-orlix-clang-tidy-module
 				if [[ "$$file" == OrlixHostAdapter/kernel/* ]]; then \
 					flags="$(ORLIX_LINT_HOST_KERNEL_C_FLAGS)"; \
 				fi; \
-				if [[ "$$file" == OrlixMLibC/* ]]; then \
-					flags="$(ORLIX_LINT_MLIBC_C_FLAGS)"; \
-				fi; \
 			elif [[ "$$file" == OrlixKernelTests/* ]]; then \
 				flags="$(ORLIX_LINT_KERNEL_TEST_STRICT_C_FLAGS)"; \
-				if [[ "$$file" == OrlixKernelTests/MLibC*CompileSmoke.c ]]; then \
-					flags="$(ORLIX_LINT_MLIBC_C_FLAGS)"; \
-				elif [[ "$$file" == OrlixKernelTests/LinuxUAPICompileSmoke.c || "$$file" == OrlixKernelTests/LinuxUAPITestSupport.c ]]; then \
+				if [[ "$$file" == OrlixKernelTests/LinuxUAPICompileSmoke.c || "$$file" == OrlixKernelTests/LinuxUAPITestSupport.c ]]; then \
 					flags="$(ORLIX_LINT_KERNEL_TEST_C_FLAGS)"; \
 				elif [[ "$$file" == OrlixKernelTests/PTYSessionIoctlShim.c ]]; then \
 					flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
@@ -164,13 +148,10 @@ lint: build-orlix-clang-tidy-module
 	if [ -n "$$header_files" ]; then \
 		while IFS= read -r file; do \
 			flags="$(ORLIX_LINT_C_FLAGS)"; \
-			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* || "$$file" == OrlixMLibC/* ]]; then \
+			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
 				if [[ "$$file" == OrlixHostAdapter/fs/open_flags.c || "$$file" == OrlixHostAdapter/fs/backing_stat_translate.c ]]; then \
 					flags="$$flags $(ORLIX_LINT_KERNEL_VENDOR_FLAGS)"; \
-				fi; \
-				if [[ "$$file" == OrlixMLibC/* ]]; then \
-					flags="$(ORLIX_LINT_MLIBC_HEADER_FLAGS)"; \
 				fi; \
 				if [[ "$$file" == OrlixHostAdapter/kernel/* ]]; then \
 					flags="$(ORLIX_LINT_HOST_KERNEL_C_FLAGS)"; \
@@ -191,13 +172,10 @@ lint: build-orlix-clang-tidy-module
 
 lint-linux-surface: lint
 
-.PHONY: vendor-orlixkernel-linux-headers vendor-orlixmlibc-linux-headers _vendor-linux-tree
+.PHONY: vendor-orlixkernel-linux-headers _vendor-linux-tree
 
 vendor-orlixkernel-linux-headers:
 	@$(MAKE) _vendor-linux-tree LINUX_VENDOR_MODE=kernel
-
-vendor-orlixmlibc-linux-headers:
-	@$(MAKE) _vendor-linux-tree LINUX_VENDOR_MODE=mlibc
 
 _vendor-linux-tree:
 	@set -euo pipefail; \
@@ -212,7 +190,6 @@ _vendor-linux-tree:
 	linux_sed="$(LINUX_SED)"; \
 	case "$$linux_vendor_mode" in \
 		kernel) vendor_root="$(LINUX_KERNEL_VENDOR_ROOT)" ;; \
-		mlibc) vendor_root="$(LINUX_MLIBC_VENDOR_ROOT)" ;; \
 		*) echo "unsupported Linux vendor mode: $$linux_vendor_mode" >&2; exit 1 ;; \
 	esac; \
 	case "$$linux_arch" in \
@@ -393,22 +370,6 @@ _vendor-linux-tree:
 				exit 1; \
 			fi; \
 		}; \
-		validate_mlibc_vendor_tree() { \
-			local tuple_root="$$1"; \
-			local include_root="$$tuple_root/include"; \
-			if [ -z "$$(find "$$tuple_root" -type f -print -quit)" ]; then \
-				echo "empty tuple root: $$tuple_root" >&2; \
-				exit 1; \
-			fi; \
-			require_file "$$include_root/linux/wait.h"; \
-			require_file "$$include_root/linux/futex.h"; \
-			require_file "$$include_root/linux/seccomp.h"; \
-			require_dir "$$include_root/asm"; \
-			require_file "$$include_root/asm/signal.h"; \
-			require_file "$$include_root/asm/ucontext.h"; \
-			require_file "$$include_root/asm/unistd.h"; \
-			require_file "$$include_root/asm-generic/errno-base.h"; \
-		}; \
 	tarball="$$tmp/linux-$$linux_version.tar.xz"; \
 	src="$$tmp/linux-$$linux_version"; \
 	obj="$$tmp/obj-$$linux_version-$$linux_arch"; \
@@ -462,14 +423,6 @@ _vendor-linux-tree:
 			rewrite_flat_kernel_generated_includes "$$include_root"; \
 			write_readme "$$tuple_stage/README.md" "include" "\`include\`: flattened Linux kernel header root for OrlixKernel, including the upstream \`uapi/\` subtree required by the full Linux header graph; generated staging namespaces are excluded."; \
 			validate_kernel_vendor_tree "$$tuple_stage"; \
-		else \
-			copy_tree "$$src/include/uapi" "$$include_root"; \
-			copy_tree "$$src/arch/$$linux_arch/include/uapi" "$$include_root"; \
-			copy_tree "$$obj/include/generated/uapi" "$$include_root"; \
-			copy_tree "$$obj/arch/$$linux_arch/include/generated/uapi" "$$include_root"; \
-			copy_file "$$src/include/linux/compiler_types.h" "$$include_root/linux/compiler_types.h"; \
-			write_readme "$$tuple_stage/README.md" "include" "\`include\`: flattened Linux UAPI header root for OrlixMLibC, merged from source and generated UAPI headers."; \
-			validate_mlibc_vendor_tree "$$tuple_stage"; \
 		fi; \
 		write_source_json "$$tuple_stage" "$$tarball_sha"; \
 		write_manifest "$$tuple_stage" "$$tuple_stage/manifest.sha256"; \

@@ -74,6 +74,8 @@ const std::vector<RegexRule> SourceRules = {
      "direct compiler builtin varargs use is forbidden in Linux-owner code; use vendored linux/stdarg.h instead"},
     {R"(^\s*#\s*define\s+MAX_PATH\b)",
      "MAX_PATH ownership belongs to OrlixKernel/fs/path.h; duplicate repo-local definitions are forbidden"},
+    {R"(^\s*#\s*include\s*<asm/unistd\.h>)",
+     "direct asm/unistd.h intake is forbidden in Linux-owner code; use vendored uapi/asm/unistd.h for syscall ABI numbers instead"},
     {R"(^\s*#\s*undef\s+(TASK_[A-Z0-9_]+|SIG[A-Z0-9_]+|W[A-Z0-9_]+|AF_[A-Z0-9_]+|SOCK_[A-Z0-9_]+|SOL_[A-Z0-9_]+|CLONE_[A-Z0-9_]+|RLIM_[A-Z0-9_]+)\b)",
      "undef escapes around vendored Linux names are forbidden in Linux-owner code; fix the ownership or lint environment instead"},
     {R"(\b(dlsym|RTLD_NEXT|RTLD_DEFAULT|dlopen|pthread_[a-z_]+|objc_[a-z_]+|mach_[a-z_]+|os_log)\b)",

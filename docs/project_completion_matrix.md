@@ -31,7 +31,7 @@ It complements:
 | milestone | group | artifact | required by | status | observation |
 | --- | --- | --- | --- | --- | --- |
 | `M0` | roadmap | `OrlixHostAdapter` split and boundary lockdown | all later milestones | `implemented` | The active kernel-facing seam is kernel-owned, `OrlixHostAdapter/include` is gone, and the full simulator suite was green after the cutover. |
-| `M1` | roadmap | sysroot and build truth | package configure and build transparency | `partial` | `OrlixMLibC` bootstrap headers and package-facing compile smoke now exist, but broader libc/sysroot ownership and drift cleanup remain. |
+| `M1` | roadmap | sysroot and build truth | package configure and build transparency | `partial` | Package-facing libc compile proof existed in prior tranches, but broader libc/sysroot ownership and drift cleanup remain. |
 | `M2` | roadmap | native exec plus shebang execution | `zsh`, scripts, Version 1 runtime | `blocked` | Version 1 is native-only, but execution-image plumbing must stay future-extensible. |
 | `M3` | roadmap | shell-critical process, signal, and PTY runtime | `zsh` primary proof | `blocked` | High-value Linux semantics cluster for shells and interactive use. |
 | `M4` | roadmap | VFS and runtime environment | shell startup, package runtime, `/proc`, `/dev` | `blocked` | Linux environment shape must be stable enough for package workflows. |
@@ -46,9 +46,9 @@ It complements:
 | boundary | no Darwin, Foundation, UIKit, pthread, or dispatch headers in Linux-owner code | M0 | `partial` | The active seam cutover landed, but Linux-owner cleanup still remains in older subsystem files outside the backing-contract tranche. |
 | boundary | no arbitrary host implementation header visibility | M0 | `partial` | `OrlixKernel` no longer includes `OrlixHostAdapter/**`, but `OrlixHostAdapter` still sees broader kernel roots than the long-term narrow-contract end-state. |
 | boundary | curated exported seam imports only | M0 | `implemented` | The old adapter-owned exported seam was removed; active cross-target declarations are kernel-owned private `backing_*` contracts. |
-| header discipline | Linux UAPI as production ABI truth | M1 | `partial` | Main target already uses vendored UAPI include root, and `OrlixMLibC` bootstrap headers now resolve Linux constants and structs through that vendored truth. |
+| header discipline | Linux UAPI as production ABI truth | M1 | `partial` | Main target already uses vendored UAPI include root, and package-facing libc headers must resolve Linux constants and structs through that vendored truth. |
 | header discipline | kheaders as classified private reference only | M1 | `partial` | Current project has kheaders smoke, but the project-wide classification discipline is not yet complete. |
-| type ownership | no libc-owned typedef reinvention in kernel | M1 | `partial` | The first audited leaks now route through `OrlixMLibC` bootstrap types or kernel-owned narrow type headers, but broader drift still exists. |
+| type ownership | no libc-owned typedef reinvention in kernel | M1 | `partial` | The first audited leaks now route through libc-owned types or kernel-owned narrow type headers, but broader drift still exists. |
 | architecture | backend-neutral execution architecture | M2 | `planned` | Needed now so Version 1 native execution does not block future ELF or WASM. |
 
 ## OrlixKernel: Process And Execution Runtime
@@ -136,16 +136,6 @@ It complements:
 | runtime host mechanics | runtime synchronization helper ownership | M0 | `implemented` | `OrlixKernel/runtime/native/registry.c` no longer imports host runtime sync directly. |
 | future host mechanics | security-scoped file access lifecycle | future external mounts | `planned` | Explicitly planned but not yet completed. |
 
-## OrlixMLibC
-
-| subgroup | artifact | required by | status | observation |
-| --- | --- | --- | --- | --- |
-| ownership | package-facing Linux libc headers | M1, all packages | `partial` | An in-repo bootstrap header surface now exists under `OrlixMLibC/include/**`, but it is not yet a complete package sysroot. |
-| ownership | libc-owned typedefs and APIs | M1, all packages | `partial` | The bootstrap now owns the first audited package-facing types, but broad libc surface migration remains ahead. |
-| sysroot | sysroot ownership discipline | M1, configure and build | `partial` | The repo now has package-facing compile smoke through `OrlixMLibC`, but full sysroot assembly is still future work. |
-| sysdeps | Linux-oriented sysdeps for native iOS builds | M1, Version 1 runtime | `planned` | Required for package transparency and native execution path. |
-| integration | no kernel reinvention of libc-owned surfaces | M1 | `partial` | The tranche introduced `OrlixMLibC` bootstrap ownership and removed the first audited direct leaks, but more kernel drift remains. |
-
 ## OrlixKernel Integration And Proof Harness
 
 | subgroup | artifact | required by | status | observation |
@@ -154,7 +144,7 @@ It complements:
 | proof split | LinuxKernel tests as Linux behavior proof | M0 onward | `partial` | Test target exists today and must remain host-implementation-free. |
 | proof split | HostBridge tests as host-adapter proof | M0 onward | `partial` | Test target exists today and already matches the intended split conceptually. |
 | proof policy | package-driven proof over unit-test-only proof | M6 | `planned` | Explicitly defined in the package proof milestone. |
-| proof artifacts | compile-smoke and contract files | M1 onward | `partial` | Current repo now uses both vendored UAPI compile smoke and `OrlixMLibC` bootstrap compile smoke in addition to the contract tests. |
+| proof artifacts | compile-smoke and contract files | M1 onward | `partial` | Current repo uses vendored UAPI compile smoke in addition to the contract tests. |
 
 ## Package Proof Targets
 

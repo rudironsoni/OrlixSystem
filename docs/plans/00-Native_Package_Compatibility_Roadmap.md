@@ -25,7 +25,7 @@ The roadmap is not starting from zero:
 - Milestone 2 is delivered and simulator-proofed.
 - Milestone 3 is now the active milestone.
 - The current repo already has:
-  - `OrlixMLibC` bootstrap ownership for the first package-facing libc header set
+  - bootstrap ownership for the first package-facing libc header set
   - compile-smoke proof for vendored UAPI, kheaders classification, package-facing libc headers, and configure-style bootstrap probes
   - the `fs/readdir.c` host-directory iteration cut over to a kernel-owned private backing seam
 
@@ -44,7 +44,7 @@ The package should:
 - compile unchanged
 - install unchanged into the Orlix virtual filesystem
 - run as native iOS code
-- observe Linux behavior through `OrlixMLibC` plus `OrlixKernel`
+- observe Linux behavior through the userspace libc layer plus `OrlixKernel`
 
 Primary proof target:
 
@@ -73,7 +73,7 @@ These future backends must be planned for now in the execution architecture, but
 
 ## Product Contract
 
-### OrlixMLibC owns
+### Userspace libc owns
 
 - package-facing Linux libc headers
 - libc-owned typedefs and APIs
@@ -181,7 +181,7 @@ Goals:
 
 Current delivered learning:
 
-- `OrlixMLibC` bootstrap ownership is now real enough to host package-facing `fcntl`, `poll`, `signal`, `sys/stat`, `sys/types`, `sys/uio`, `unistd`, `time`, `sys/time`, `sys/socket`, and `sys/select` surfaces
+- bootstrap ownership is now real enough to host package-facing `fcntl`, `poll`, `signal`, `sys/stat`, `sys/types`, `sys/uio`, `unistd`, `time`, `sys/time`, `sys/socket`, and `sys/select` surfaces
 - package-facing compile smoke now includes both direct libc header proof and a configure-style probe file
 - host-backed directory iteration for `fs/readdir.c` is now behind a kernel-owned private backing contract instead of ambient `dirent.h` usage in Linux-owner code
 
@@ -343,7 +343,7 @@ Minimum proof ladder:
 
 Version 1 is successful only when all are true:
 
-1. Native Linux-oriented package builds work through `OrlixMLibC` without package source changes.
+1. Native Linux-oriented package builds work through the userspace libc layer without package source changes.
 2. `zsh` behaves like a Linux shell on the surface.
 3. `curl` behaves like a Linux client on the surface.
 4. Shebang-driven scripts work.

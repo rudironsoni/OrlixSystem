@@ -16,7 +16,6 @@ public:
 private:
   bool isLinuxOwnerPath(llvm::StringRef Path) const;
   bool isHostKernelPath(llvm::StringRef Path) const;
-  bool isMLibCPath(llvm::StringRef Path) const;
 };
 
 } // namespace clang::tidy::orlix

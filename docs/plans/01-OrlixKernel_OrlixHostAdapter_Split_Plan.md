@@ -42,7 +42,7 @@ Version 1 product scope:
 - Native iOS arm64 execution only
 - Linux packages rebuilt from source
 - Zero target-package source modifications
-- Linux-identical observable behavior through `OrlixMLibC` plus `OrlixKernel`
+- Linux-identical observable behavior through the userspace libc layer plus `OrlixKernel`
 - Shebangs and script execution are mandatory
 - No ELF execution or WASM execution in this version
 
@@ -604,7 +604,7 @@ These are expected next, but not part of the split completion claim:
 - redesign signal ownership around per-task and shared state split
 - tighten futex guest-memory semantics
 - formalize VFS backend object model
-- continue sysroot discipline in `OrlixMLibC`
+- continue sysroot discipline in the userspace libc layer
 
 Those belong to later milestones and should happen on top of the enforced boundary created here.
 

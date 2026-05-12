@@ -11,16 +11,11 @@ settings:
     LINUX_VERSION: '6.12'
     LINUX_ARCH: arm64
     LINUX_KERNEL_VENDOR_ROOT: $(SRCROOT)/OrlixKernel/vendor/linux
-    LINUX_MLIBC_VENDOR_ROOT: $(SRCROOT)/OrlixMLibC/vendor/linux
     LINUX_KERNEL_KHEADERS_INCLUDE_ROOT: $(LINUX_KERNEL_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/kheaders/include
     LINUX_KERNEL_UAPI_INCLUDE_ROOT: $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi
-    LINUX_MLIBC_ROOT: $(LINUX_MLIBC_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)
-    LINUX_MLIBC_INCLUDE_ROOT: $(LINUX_MLIBC_ROOT)/include
     LINUX_ROOT: $(LINUX_KERNEL_VENDOR_ROOT)/$(LINUX_VERSION)/$(LINUX_ARCH)/kheaders
     LINUX_UAPI_ROOT: $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
     LINUX_UAPI_INCLUDE_ROOT: $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-    LINUX_MLIBC_UAPI_ROOT: $(LINUX_MLIBC_INCLUDE_ROOT)
-    LINUX_MLIBC_UAPI_INCLUDE_ROOT: $(LINUX_MLIBC_INCLUDE_ROOT)
     LINUX_KHEADERS_ROOT: $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
     CLANG_BUILTIN_INCLUDE_ROOT: $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include
     LINUX_HOST_COMPAT_INCLUDE_ROOT: $(SRCROOT)/tools/linux_host_compat/include
@@ -270,79 +265,6 @@ targets:
       group: OrlixHostAdapter/kernel
     - path: OrlixHostAdapter/fs/sync.c
       group: OrlixHostAdapter/fs
-  OrlixMLibC:
-    type: library.static
-    platform: iOS
-    deploymentTarget:
-      iOS: '16.0'
-    settings:
-      HEADER_SEARCH_PATHS:
-        - $(SRCROOT)/OrlixMLibC/include
-        - $(LINUX_MLIBC_INCLUDE_ROOT)
-      GCC_PREPROCESSOR_DEFINITIONS:
-      - __EXPORTED_HEADERS__
-      - _XOPEN_SOURCE
-      CLANG_ENABLE_MODULES: false
-      CLANG_ENABLE_OBJC_ARC: true
-      CLANG_WARN_DOCUMENTATION_COMMENTS: true
-      OTHER_CFLAGS:
-      - -fvisibility=hidden
-      - -Wno-macro-redefined
-    sources:
-    - path: OrlixMLibC/sysdeps/orlix/fs/open.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/fcntl.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/inode.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/stat.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/super.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/namei.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/mount.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/xattr.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/pipe.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/poll.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/read_write.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/readdir.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/uio.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/exec.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/epoll.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/epoll_mask.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/epoll_mask.h
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/fs/ioctl.c
-      group: OrlixMLibC/sysdeps/orlix/fs
-    - path: OrlixMLibC/sysdeps/orlix/kernel/cred.c
-      group: OrlixMLibC/sysdeps/orlix/kernel
-    - path: OrlixMLibC/sysdeps/orlix/kernel/futex.c
-      group: OrlixMLibC/sysdeps/orlix/kernel
-    - path: OrlixMLibC/sysdeps/orlix/kernel/wait.c
-      group: OrlixMLibC/sysdeps/orlix/kernel
-    - path: OrlixMLibC/sysdeps/orlix/kernel/resource.c
-      group: OrlixMLibC/sysdeps/orlix/kernel
-    - path: OrlixMLibC/sysdeps/orlix/kernel/uts.c
-      group: OrlixMLibC/sysdeps/orlix/kernel
-    - path: OrlixMLibC/sysdeps/orlix/kernel/random.c
-      group: OrlixMLibC/sysdeps/orlix/kernel
-    - path: OrlixMLibC/sysdeps/orlix/kernel/signal.c
-      group: OrlixMLibC/sysdeps/orlix/kernel
-    - path: OrlixMLibC/sysdeps/orlix/kernel/time.c
-      group: OrlixMLibC/sysdeps/orlix/kernel
-    dependencies:
-    - target: OrlixKernel
   OrlixKernelTests:
     type: bundle.unit-test
     platform: iOS
@@ -380,28 +302,7 @@ targets:
     - path: OrlixKernelTests/LinuxUAPICompileSmoke.c
       compilerFlags:
       - $(ORLIX_KERNEL_TEST_UAPI_CFLAGS)
-    - path: OrlixKernelTests/MLibCPackageHeadersCompileSmoke.c
-      compilerFlags:
-      - -D__EXPORTED_HEADERS__
-      - -D_XOPEN_SOURCE
-      - -I$(SRCROOT)/OrlixMLibC/include
-      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
-    - path: OrlixKernelTests/MLibCStatCompileSmoke.c
-      compilerFlags:
-      - -D__EXPORTED_HEADERS__
-      - -D_XOPEN_SOURCE
-      - -I$(SRCROOT)/OrlixMLibC/include
-      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
-    - path: OrlixKernelTests/MLibCConfigureProbeCompileSmoke.c
-      compilerFlags:
-      - -D__EXPORTED_HEADERS__
-      - -D_XOPEN_SOURCE
-      - -I$(SRCROOT)/OrlixMLibC/include
-      - -I$(LINUX_MLIBC_INCLUDE_ROOT)
     - path: OrlixKernelTests/KernelOwnerCompatCompileSmoke.c
-      compilerFlags:
-      - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
-    - path: OrlixKernelTests/LinuxKHeadersCompileSmoke.c
       compilerFlags:
       - $(ORLIX_KERNEL_TEST_STRICT_CFLAGS)
     - path: OrlixKernelTests/KernelBoot.c
@@ -592,7 +493,6 @@ schemes:
       targets:
         OrlixKernel: all
         OrlixHostAdapter: all
-        OrlixMLibC: all
         OrlixKernelTests: all
         OrlixHostAdapterTests: all
     test:

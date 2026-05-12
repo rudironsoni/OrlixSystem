@@ -112,7 +112,7 @@ Current subsystem ownership in this repository:
 - file operation owners: `OrlixKernel/fs/open.c`, `OrlixKernel/fs/read_write.c`, `OrlixKernel/fs/stat.c`, `OrlixKernel/fs/fcntl.c`, `OrlixKernel/fs/ioctl.c`, `OrlixKernel/fs/namei.c`, `OrlixKernel/fs/readdir.c`, `OrlixKernel/fs/eventpoll.c`, `OrlixKernel/fs/mount.c`, `OrlixKernel/fs/inode.c`, `OrlixKernel/fs/super.c`, `OrlixKernel/fs/path.c`, `OrlixKernel/fs/exec.c`
 - native runtime registry: `OrlixKernel/runtime/native/registry.c`, `OrlixKernel/runtime/native/registry.h`
 - private Darwin bridge surface: `OrlixHostAdapter/kernel/signal.c`
-- package-facing libc bootstrap surface: `OrlixMLibC/include/**`
+- package-facing libc header surface
 
 ## Test Layering
 
@@ -133,19 +133,12 @@ This repo currently contains two valid proof layers in XCTest plus Linux UAPI co
    - proves vendored UAPI resolution only
    - does not prove runtime behavior
 
-4. OrlixMLibC bootstrap compile smoke
-   - proves package-facing libc headers resolve through `OrlixMLibC/include/**`
-   - may use vendored Linux UAPI as the source of Linux constants and structs
-   - does not prove package runtime behavior yet
-
 Current test files:
 
 - `OrlixKernelTests/SignalTests.m` — LinuxKernel semantic test
 - `OrlixKernelTests/TaskGroupTests.m` — LinuxKernel semantic test
 - `OrlixKernelTests/CredentialTests.m` — LinuxKernel semantic test
 - `OrlixKernelTests/LinuxUAPICompileSmoke.c` — Linux UAPI / ABI compile smoke
-- `OrlixKernelTests/MLibCPackageHeadersCompileSmoke.c` — package-facing libc bootstrap compile smoke
-- `OrlixKernelTests/MLibCStatCompileSmoke.c` — package-facing stat/bootstrap compile smoke
 - `OrlixHostAdapterTests/HostBridgeSmokeTests.m` — HostBridge seam test
 
 True public drop-in Linux userspace compatibility proof is outside this XCTest tranche.

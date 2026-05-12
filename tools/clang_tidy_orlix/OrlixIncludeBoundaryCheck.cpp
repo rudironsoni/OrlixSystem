@@ -59,11 +59,6 @@ std::string repoRootFromMainFile(llvm::StringRef MainFilePath) {
     return MainFilePath.substr(0, HostPos).str();
   }
 
-  size_t MLibCPos = MainFilePath.find("/OrlixMLibC/");
-  if (MLibCPos != llvm::StringRef::npos) {
-    return MainFilePath.substr(0, MLibCPos).str();
-  }
-
   return {};
 }
 
@@ -131,9 +126,9 @@ public:
   IncludeBoundaryPPCallbacks(OrlixIncludeBoundaryCheck &Check,
                              const SourceManager &SM,
                              llvm::StringRef MainFilePath, bool LinuxOwner,
-                             bool HostKernel, bool MLibC)
+                             bool HostKernel)
       : Check(Check), MainFilePath(MainFilePath.str()), LinuxOwner(LinuxOwner),
-        HostKernel(HostKernel), MLibC(MLibC), SM(SM) {}
+        HostKernel(HostKernel), SM(SM) {}
 
   void InclusionDirective(SourceLocation HashLoc, const Token &, StringRef FileName,
                           bool IsAngled, CharSourceRange, OptionalFileEntryRef,
@@ -205,8 +200,7 @@ public:
       }
 
       if (FileName.starts_with("third_party/linux/") ||
-          FileName.starts_with("OrlixKernel/vendor/linux/") ||
-          FileName.starts_with("OrlixMLibC/vendor/linux/")) {
+          FileName.starts_with("OrlixKernel/vendor/linux/")) {
         Check.diag(HashLoc,
                    "provenance-heavy vendor paths are forbidden in source includes; use upstream Linux include names only");
       }
@@ -215,13 +209,6 @@ public:
           IncludeText.find("OrlixHostAdapter/") != std::string::npos) {
         Check.diag(HashLoc,
                    "Linux-owner code must not include OrlixHostAdapter headers");
-      }
-
-      if (FileName.starts_with("OrlixMLibC/") ||
-          FileName.starts_with("orlixmlibc/") ||
-          IncludeText.find("OrlixMLibC/") != std::string::npos) {
-        Check.diag(HashLoc,
-                   "Linux-owner code must not include OrlixMLibC headers");
       }
 
       if (FileName.contains("internal/ios")) {
@@ -277,22 +264,6 @@ public:
       }
     }
 
-    if (MLibC) {
-      if (FileName.starts_with("OrlixKernel/") ||
-          FileName.starts_with("OrlixHostAdapter/") ||
-          IncludeText.find("OrlixKernel/") != std::string::npos ||
-          IncludeText.find("OrlixHostAdapter/") != std::string::npos) {
-        Check.diag(HashLoc,
-                   "OrlixMLibC must not include OrlixKernel or OrlixHostAdapter headers");
-      }
-
-      if (FileName.starts_with("third_party/linux/") ||
-          FileName.starts_with("OrlixKernel/vendor/linux/") ||
-          FileName.contains("/kheaders/")) {
-        Check.diag(HashLoc,
-                   "OrlixMLibC must consume Linux UAPI through its own vendored surface, not OrlixKernel kheaders");
-      }
-    }
   }
 
 private:
@@ -300,7 +271,6 @@ private:
   std::string MainFilePath;
   bool LinuxOwner;
   bool HostKernel;
-  bool MLibC;
   bool SawDarwinHeader = false;
   bool SawDeepLinuxHeader = false;
   const SourceManager &SM;
@@ -325,10 +295,6 @@ bool OrlixIncludeBoundaryCheck::isHostKernelPath(llvm::StringRef Path) const {
          pathHasComponent(Path, "OrlixHostAdapter/kernel/clock.c");
 }
 
-bool OrlixIncludeBoundaryCheck::isMLibCPath(llvm::StringRef Path) const {
-  return pathHasComponent(Path, "OrlixMLibC/");
-}
-
 bool OrlixIncludeBoundaryCheck::isKernelPublicHeaderPath(
     llvm::StringRef Path) const {
   return pathHasComponent(Path, "OrlixKernel/include/");
@@ -340,12 +306,11 @@ void OrlixIncludeBoundaryCheck::registerPPCallbacks(const SourceManager &SM,
   StringRef Path = getCurrentMainFile();
   bool LinuxOwner = isLinuxOwnerPath(Path);
   bool HostKernel = isHostKernelPath(Path);
-  bool MLibC = isMLibCPath(Path);
-  if (!LinuxOwner && !HostKernel && !MLibC)
+  if (!LinuxOwner && !HostKernel)
     return;
   PP->addPPCallbacks(
       std::make_unique<IncludeBoundaryPPCallbacks>(*this, SM, Path, LinuxOwner,
-                                                   HostKernel, MLibC));
+                                                   HostKernel));
 }
 
 } // namespace clang::tidy::orlix

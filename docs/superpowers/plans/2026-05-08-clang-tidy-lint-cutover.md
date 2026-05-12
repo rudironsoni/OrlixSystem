@@ -34,7 +34,7 @@
 - Reference: `AGENTS.md`
 
 - [ ] Implement path classification for Linux-owner files under `OrlixKernel/fs`, `OrlixKernel/kernel`, `OrlixKernel/runtime`, and `OrlixKernel/include`.
-- [ ] Implement forbidden-include checks for host frameworks, `OrlixHostAdapter/**`, `OrlixMLibC/**`, and banned host headers.
+- [ ] Implement forbidden-include checks for host frameworks, `OrlixHostAdapter/**`, repo-local libc headers, and banned host headers.
 - [ ] Implement source-text or AST-backed checks for forbidden host vocabulary (`host_*`, `*_host`, `*_bridge`), forbidden logging calls, local type packs, forbidden Objective-C files in Linux-owner paths, and related wrong-direction source-policy bans currently enforced in shell.
 
 ### Task 3: Move test-policy source lint into clang-tidy

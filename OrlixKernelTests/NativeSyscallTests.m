@@ -375,8 +375,8 @@ extern int close_impl(int fd);
     XCTAssertEqual(syscall_uio_contract_vmsplice_and_tee_preserve_pipe_payloads(), 0, @"errno %d", errno);
 }
 
-- (void)testMlibcLinuxSysdepsInventoryIsKernelOwned {
-    XCTAssertEqual(native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(), 0, @"errno %d", errno);
+- (void)testLinuxSysdepsInventoryIsKernelOwned {
+    XCTAssertEqual(native_syscall_contract_linux_sysdeps_inventory_is_kernel_owned(), 0, @"errno %d", errno);
 }
 
 - (void)testRtSigactionUsesLinuxUapiLayout {

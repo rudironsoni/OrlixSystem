@@ -85,7 +85,7 @@ int native_syscall_contract_registers_native_artifact_descriptor(void);
 int native_syscall_contract_execs_sbin_init_through_syscall_surface(void);
 int native_syscall_contract_returns_raw_negative_errno(void);
 int native_syscall_contract_registered_program_uses_syscall_surface(void);
-int native_syscall_contract_mlibc_linux_sysdeps_inventory_is_kernel_owned(void);
+int native_syscall_contract_linux_sysdeps_inventory_is_kernel_owned(void);
 
 #ifdef __cplusplus
 }

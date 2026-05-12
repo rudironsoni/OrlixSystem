@@ -2,7 +2,7 @@
  * KernelOwnerCompatCompileSmoke.c
  *
  * Proves Linux-owner code can consume vendored Linux contract truth without
- * importing Darwin SDK or package-facing OrlixMLibC headers.
+ * importing Darwin SDK or package-facing libc headers.
  */
 
 #include <uapi/linux/time.h>
