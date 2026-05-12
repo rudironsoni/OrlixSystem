@@ -326,22 +326,22 @@ static void vfs_contract_cleanup_pivot_paths(void) {
     rmdir_impl("/tmp/vfs-pivot-new");
 }
 
-/* Contract: vfs_fstatat supports AT_FDCWD */
+/* Contract: vfs_path_fstatat supports AT_FDCWD */
 int vfs_contract_fstatat_at_fdcwd(void) {
     struct stat st;
-    return vfs_fstatat(AT_FDCWD, "/etc/passwd", &st, 0);
+    return vfs_path_fstatat(AT_FDCWD, "/etc/passwd", &st, 0);
 }
 
-/* Contract: vfs_fstatat supports AT_SYMLINK_NOFOLLOW */
+/* Contract: vfs_path_fstatat supports AT_SYMLINK_NOFOLLOW */
 int vfs_contract_fstatat_symlink_nofollow(void) {
     struct stat st;
-    return vfs_fstatat(AT_FDCWD, "/etc/passwd", &st, AT_SYMLINK_NOFOLLOW);
+    return vfs_path_fstatat(AT_FDCWD, "/etc/passwd", &st, AT_SYMLINK_NOFOLLOW);
 }
 
-/* Contract: vfs_fstatat rejects unsupported synthetic paths with AT_SYMLINK_NOFOLLOW */
+/* Contract: vfs_path_fstatat rejects unsupported synthetic paths with AT_SYMLINK_NOFOLLOW */
 int vfs_contract_fstatat_synthetic_child_nofollow(void) {
     struct stat st;
-    return vfs_fstatat(AT_FDCWD, "/sys/kernel", &st, AT_SYMLINK_NOFOLLOW);
+    return vfs_path_fstatat(AT_FDCWD, "/sys/kernel", &st, AT_SYMLINK_NOFOLLOW);
 }
 
 int vfs_contract_faccessat_eaccess_uses_effective_credentials(void) {
@@ -862,7 +862,7 @@ int vfs_contract_mkdirat_resolves_intermediate_symlink_directory(void) {
     if (mkdirat(AT_FDCWD, "/tmp/vfs-mkdirat-symlink/link/created", 0700) != 0) {
         goto out;
     }
-    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-mkdirat-symlink/real/created", &(struct stat){0}, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/tmp/vfs-mkdirat-symlink/real/created", &(struct stat){0}, 0) != 0) {
         goto out;
     }
     ret = 0;
@@ -979,7 +979,7 @@ int vfs_contract_linkat_respects_symlink_follow_flag(void) {
                "/tmp/vfs-linkat-follow/hard-link", 0) != 0) {
         goto out;
     }
-    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-linkat-follow/hard-link", &st, AT_SYMLINK_NOFOLLOW) != 0 ||
+    if (vfs_path_fstatat(AT_FDCWD, "/tmp/vfs-linkat-follow/hard-link", &st, AT_SYMLINK_NOFOLLOW) != 0 ||
         (st.st_mode & S_IFMT) != S_IFLNK) {
         errno = EIO;
         goto out;
@@ -1789,7 +1789,7 @@ int vfs_contract_unprivileged_mount_operations_fail_without_namespace_mutation(v
     }
     data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
     if (capset_impl(&header, data) != 0 ||
-        cred_has_cap(get_current_cred(), CAP_SYS_ADMIN)) {
+        cred_has_cap(cred_current(), CAP_SYS_ADMIN)) {
         goto out;
     }
 
@@ -6340,8 +6340,8 @@ int vfs_contract_renameat2_exchange_swaps_virtual_metadata(void) {
     if (renameat2_impl(dirfd, "left", dirfd, "right", AT_RENAME_EXCHANGE) != 0) {
         goto out;
     }
-    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-at-rename-dir/left", &left_st, 0) != 0 ||
-        vfs_fstatat(AT_FDCWD, "/tmp/vfs-at-rename-dir/right", &right_st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/tmp/vfs-at-rename-dir/left", &left_st, 0) != 0 ||
+        vfs_path_fstatat(AT_FDCWD, "/tmp/vfs-at-rename-dir/right", &right_st, 0) != 0) {
         goto out;
     }
     if (left_st.st_uid != 2000 || right_st.st_uid != 1000) {
@@ -6431,7 +6431,7 @@ int vfs_contract_renameat_overwrite_moves_virtual_metadata(void) {
     if (vfs_contract_read_file_exact("/tmp/vfs-at-rename-dir/right", "left") != 0) {
         goto out;
     }
-    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-at-rename-dir/right", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/tmp/vfs-at-rename-dir/right", &st, 0) != 0) {
         goto out;
     }
     if (st.st_uid != 1000 || st.st_gid != 1000) {
@@ -6553,7 +6553,7 @@ int vfs_contract_root_chown_updates_virtual_owner(void) {
     if (chown("/tmp/vfs-cred-chown-file", 1000, 1000) != 0) {
         goto out;
     }
-    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-cred-chown-file", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/tmp/vfs-cred-chown-file", &st, 0) != 0) {
         goto out;
     }
     if (st.st_uid != 1000 || st.st_gid != 1000) {
@@ -6609,7 +6609,7 @@ int vfs_contract_owner_chmod_updates_virtual_mode(void) {
     if (chmod("/tmp/vfs-cred-chmod-file", 0644) != 0) {
         goto out;
     }
-    if (vfs_fstatat(AT_FDCWD, "/tmp/vfs-cred-chmod-file", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/tmp/vfs-cred-chmod-file", &st, 0) != 0) {
         goto out;
     }
     if ((st.st_mode & 0777) != 0644) {

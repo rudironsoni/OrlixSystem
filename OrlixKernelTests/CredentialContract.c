@@ -44,21 +44,21 @@ int credential_contract_cred_reference_counting(void) {
         return -1;
     }
 
-    get_cred(cred);
+    cred_acquire(cred);
     if (cred->refs != 2) {
-        put_cred(cred);
-        put_cred(cred);
+        cred_release(cred);
+        cred_release(cred);
         errno = EPROTO;
         return -1;
     }
 
-    put_cred(cred);
+    cred_release(cred);
     if (cred->refs != 1) {
-        put_cred(cred);
+        cred_release(cred);
         errno = EPROTO;
         return -1;
     }
 
-    put_cred(cred);
+    cred_release(cred);
     return 0;
 }

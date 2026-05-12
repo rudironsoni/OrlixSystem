@@ -512,7 +512,7 @@ static int exec_build_initial_elf_stack(struct task *task,
 
     cursor = exec_align_down(cursor, EXEC_INITIAL_STACK_ALIGN);
 
-    cred = get_current_cred();
+    cred = cred_current();
     if ((ret = exec_auxv_append(mm, AT_PHDR, exec_phdr_vaddr(plan))) != 0 ||
         (ret = exec_auxv_append(mm, AT_PHENT, sizeof(Elf64_Phdr))) != 0 ||
         (ret = exec_auxv_append(mm, AT_PHNUM, plan->ehdr.e_phnum)) != 0 ||

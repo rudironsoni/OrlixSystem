@@ -227,7 +227,7 @@ void cred_init_defaults(struct cred *cred) {
     cred_reset_caps_for_root(cred);
 }
 
-int cred_init(void) {
+int cred_system_init(void) {
     static int initialized = 0;
     if (!initialized) {
         initialized = 1;
@@ -273,13 +273,13 @@ void cred_reset_to_defaults(void) {
     current_cred = &global_init_cred;
     task = task_current();
     if (task && task->cred != &global_init_cred) {
-        put_cred(task->cred);
-        get_cred(&global_init_cred);
+        cred_release(task->cred);
+        cred_acquire(&global_init_cred);
         task->cred = &global_init_cred;
     }
 }
 
-struct cred *get_current_cred(void) {
+struct cred *cred_current(void) {
     struct task *task = task_current();
     if (task && task->cred) {
         current_cred = task->cred;
@@ -296,21 +296,21 @@ void set_current_cred(struct cred *cred) {
     struct task *task = task_current();
     if (task && task->cred != cred) {
         if (cred) {
-            get_cred(cred);
+            cred_acquire(cred);
         }
-        put_cred(task->cred);
+        cred_release(task->cred);
         task->cred = cred;
     }
     current_cred = cred;
 }
 
-void get_cred(struct cred *cred) {
+void cred_acquire(struct cred *cred) {
     if (cred) {
         cred->refs++;
     }
 }
 
-void put_cred(struct cred *cred) {
+void cred_release(struct cred *cred) {
     if (!cred) {
         return;
     }
@@ -889,72 +889,72 @@ int cred_unshare_user_namespace(struct cred *cred) {
 
 /* Implementation of getuid_impl - internal entry point */
 __kernel_uid32_t getuid_impl(void) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return (__kernel_uid32_t)cred->uid;
 }
 
 /* Implementation of geteuid_impl - internal entry point */
 __kernel_uid32_t geteuid_impl(void) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return (__kernel_uid32_t)cred->euid;
 }
 
 /* Implementation of getgid_impl - internal entry point */
 __kernel_gid32_t getgid_impl(void) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return (__kernel_gid32_t)cred->gid;
 }
 
 /* Implementation of getegid_impl - internal entry point */
 __kernel_gid32_t getegid_impl(void) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return (__kernel_gid32_t)cred->egid;
 }
 
 /* Implementation of setuid_impl - internal entry point */
 int setuid_impl(__kernel_uid32_t uid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return cred_setuid(cred, (uint32_t)uid);
 }
 
 /* Implementation of setgid_impl - internal entry point */
 int setgid_impl(__kernel_gid32_t gid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return cred_setgid(cred, (uint32_t)gid);
 }
 
 int seteuid_impl(__kernel_uid32_t euid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return cred_seteuid(cred, (uint32_t)euid);
 }
 
 int setegid_impl(__kernel_gid32_t egid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return cred_setegid(cred, (uint32_t)egid);
 }
 
 int setresuid_impl(__kernel_uid32_t ruid, __kernel_uid32_t euid, __kernel_uid32_t suid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return cred_setresuid(cred, (uint32_t)ruid, (uint32_t)euid, (uint32_t)suid);
 }
 
 int setresgid_impl(__kernel_gid32_t rgid, __kernel_gid32_t egid, __kernel_gid32_t sgid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return cred_setresgid(cred, (uint32_t)rgid, (uint32_t)egid, (uint32_t)sgid);
 }
 
 int setreuid_impl(__kernel_uid32_t ruid, __kernel_uid32_t euid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return cred_setreuid(cred, (uint32_t)ruid, (uint32_t)euid);
 }
 
 int setregid_impl(__kernel_gid32_t rgid, __kernel_gid32_t egid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     return cred_setregid(cred, (uint32_t)rgid, (uint32_t)egid);
 }
 
 int getresuid_impl(__kernel_uid32_t *ruid, __kernel_uid32_t *euid, __kernel_uid32_t *suid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
 
     if (!ruid || !euid || !suid) {
         return -EFAULT;
@@ -966,7 +966,7 @@ int getresuid_impl(__kernel_uid32_t *ruid, __kernel_uid32_t *euid, __kernel_uid3
 }
 
 int getresgid_impl(__kernel_gid32_t *rgid, __kernel_gid32_t *egid, __kernel_gid32_t *sgid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
 
     if (!rgid || !egid || !sgid) {
         return -EFAULT;
@@ -978,7 +978,7 @@ int getresgid_impl(__kernel_gid32_t *rgid, __kernel_gid32_t *egid, __kernel_gid3
 }
 
 __kernel_uid32_t setfsuid_impl(__kernel_uid32_t fsuid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     __kernel_uid32_t old;
 
     if (!cred) {
@@ -994,7 +994,7 @@ __kernel_uid32_t setfsuid_impl(__kernel_uid32_t fsuid) {
 }
 
 __kernel_gid32_t setfsgid_impl(__kernel_gid32_t fsgid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     __kernel_gid32_t old;
 
     if (!cred) {
@@ -1010,7 +1010,7 @@ __kernel_gid32_t setfsgid_impl(__kernel_gid32_t fsgid) {
 }
 
 int getgroups_impl(int size, __kernel_gid32_t list[]) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
 
     if (!cred) {
         return -EINVAL;
@@ -1035,7 +1035,7 @@ int getgroups_impl(int size, __kernel_gid32_t list[]) {
 }
 
 int setgroups_impl(int size, const __kernel_gid32_t *list) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
 
     if (size < 0) {
         return -EINVAL;
@@ -1045,7 +1045,7 @@ int setgroups_impl(int size, const __kernel_gid32_t *list) {
 }
 
 int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
 
     switch (option) {
     case PR_CAPBSET_READ: {
@@ -1206,7 +1206,7 @@ static uint64_t cred_cap_join(const struct __user_cap_data_struct data[_LINUX_CA
 }
 
 int capget_impl(cap_user_header_t header, cap_user_data_t data) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
 
     if (!header || !data) {
         return -EFAULT;
@@ -1227,7 +1227,7 @@ int capget_impl(cap_user_header_t header, cap_user_data_t data) {
 }
 
 int capset_impl(cap_user_header_t header, const cap_user_data_t data) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
     uint64_t full = cred_full_cap_mask();
     uint64_t effective;
     uint64_t permitted;

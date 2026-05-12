@@ -14,7 +14,7 @@
 
 #include "CredentialContract.h"
 
-extern int cred_init(void);
+extern int cred_system_init(void);
 extern int close_impl(int fd);
 extern uint32_t getuid_impl(void);
 extern uint32_t geteuid_impl(void);
@@ -44,7 +44,7 @@ extern void cred_reset_to_defaults(void);
 - (void)setUp {
     [super setUp];
     /* Ensure credential subsystem is initialized */
-    cred_init();
+    cred_system_init();
     /* Reset credentials to Orlix defaults before each test */
     cred_reset_to_defaults();
     /* Clean up any lingering file descriptors using owner close_impl */

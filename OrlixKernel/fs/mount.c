@@ -8,6 +8,7 @@
  *
  */
 #include <linux/errno.h>
+#include <linux/fs.h>
 #include <linux/string.h>
 
 #include <uapi/linux/fcntl.h>
@@ -15,7 +16,6 @@
 #include <uapi/linux/stat.h>
 #include <uapi/asm/stat.h>
 
-#include "linux_umount2_flags.h"
 #include "vfs.h"
 
 extern int vfs_mount(const char *source, const char *target,
@@ -39,7 +39,7 @@ static int umount_target_is_symlink(const char *target, int *is_symlink) {
     if (!target || !is_symlink) {
         return -EFAULT;
     }
-    ret = vfs_fstatat(AT_FDCWD, target, &st, AT_SYMLINK_NOFOLLOW);
+    ret = vfs_path_fstatat(AT_FDCWD, target, &st, AT_SYMLINK_NOFOLLOW);
     if (ret < 0) {
         return ret;
     }

@@ -16,16 +16,16 @@ extern "C" {
 
 struct cred;
 
-int cred_init(void);
+int cred_system_init(void);
 struct cred *alloc_cred(void);
 void free_cred(struct cred *cred);
 struct cred *dup_cred(const struct cred *cred);
 void cred_init_defaults(struct cred *cred);
 void cred_reset_to_defaults(void);
-struct cred *get_current_cred(void);
+struct cred *cred_current(void);
 void set_current_cred(struct cred *cred);
-void get_cred(struct cred *cred);
-void put_cred(struct cred *cred);
+void cred_acquire(struct cred *cred);
+void cred_release(struct cred *cred);
 
 int cred_setuid(struct cred *cred, __kernel_uid32_t uid);
 int cred_setgid(struct cred *cred, __kernel_gid32_t gid);

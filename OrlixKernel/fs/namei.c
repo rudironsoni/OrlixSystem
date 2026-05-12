@@ -845,7 +845,7 @@ int chroot_impl(const char *path) {
         return ret;
     }
 
-    if (!cred_has_cap(get_current_cred(), CAP_SYS_CHROOT)) {
+    if (!cred_has_cap(cred_current(), CAP_SYS_CHROOT)) {
         return -EPERM;
     }
 

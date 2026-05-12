@@ -303,7 +303,7 @@ int kernel_init_contract_init_task_cwd_and_root_are_slash(void) {
 int kernel_init_contract_kernel_boot_exposes_root(void) {
     struct stat st;
 
-    if (vfs_fstatat(AT_FDCWD, "/", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/", &st, 0) != 0) {
         errno = EPROTO;
         return -1;
     }
@@ -317,10 +317,10 @@ int kernel_init_contract_kernel_boot_exposes_root(void) {
 int kernel_init_contract_kernel_boot_exposes_etc_passwd(void) {
     struct stat st;
 
-    if (vfs_fstatat(AT_FDCWD, "/etc", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/etc", &st, 0) != 0) {
         return -1;
     }
-    if (vfs_fstatat(AT_FDCWD, "/etc/passwd", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/etc/passwd", &st, 0) != 0) {
         return -1;
     }
     if ((st.st_mode & S_IFMT) != S_IFREG) {
@@ -337,7 +337,7 @@ int kernel_init_contract_kernel_boot_exposes_dev_root(void) {
         errno = EPROTO;
         return -1;
     }
-    if (vfs_fstatat(AT_FDCWD, "/dev", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/dev", &st, 0) != 0) {
         return -1;
     }
     return 0;
@@ -350,10 +350,10 @@ int kernel_init_contract_kernel_boot_exposes_proc_root(void) {
         errno = EPROTO;
         return -1;
     }
-    if (vfs_fstatat(AT_FDCWD, "/proc", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/proc", &st, 0) != 0) {
         return -1;
     }
-    if (vfs_fstatat(AT_FDCWD, "/proc/self", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/proc/self", &st, 0) != 0) {
         return -1;
     }
     return 0;
@@ -366,7 +366,7 @@ int kernel_init_contract_kernel_boot_exposes_sys_root_or_documents_policy(void) 
         errno = EPROTO;
         return -1;
     }
-    if (vfs_fstatat(AT_FDCWD, "/sys", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/sys", &st, 0) != 0) {
         return -1;
     }
     return 0;
@@ -383,10 +383,10 @@ int kernel_init_contract_kernel_boot_exposes_tmp_and_var_cache_routes(void) {
         errno = EPROTO;
         return -1;
     }
-    if (vfs_fstatat(AT_FDCWD, "/tmp", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/tmp", &st, 0) != 0) {
         return -1;
     }
-    if (vfs_fstatat(AT_FDCWD, "/var/cache", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/var/cache", &st, 0) != 0) {
         return -1;
     }
     return 0;

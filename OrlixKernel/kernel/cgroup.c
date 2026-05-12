@@ -46,7 +46,7 @@ static bool cgroupfs_current_can_control(void) {
         return false;
     }
     owner_user_ns_id = task->cgroup_ns_owner_user_ns_id ? task->cgroup_ns_owner_user_ns_id : 1;
-    return cred_has_cap_in_user_namespace(get_current_cred(), owner_user_ns_id, CAP_SYS_ADMIN);
+    return cred_has_cap_in_user_namespace(cred_current(), owner_user_ns_id, CAP_SYS_ADMIN);
 }
 
 static void cgroup_free_tree(struct cgroup *cgrp) {

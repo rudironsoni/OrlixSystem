@@ -4,14 +4,13 @@
 /*
  * Linux umount2(2) flag values.
  *
- * On Linux, userspace typically gets these from libc headers (e.g. <sys/mount.h>).
- * They are not present in the exported UAPI header set produced by
- * `make headers_install` for Linux 6.12.
+ * On Linux 6.12 these values are owned by the full kernel header
+ * include/linux/fs.h rather than by installed UAPI. Product code that can
+ * consume the full owner should prefer that path directly.
  *
- * Values are sourced from upstream Linux 6.12: include/linux/fs.h.
- *
- * NOTE: This header is OrlixKernel-private glue for the virtual-kernel syscall
- * surface and tests. It must not be treated as a vendored Linux header.
+ * This transitional header remains only for mixed-owner kernel tests that
+ * still cannot include full linux/fs.h without dragging incompatible repo
+ * VFS owner headers into the same translation unit.
  */
 
 #define MNT_FORCE 0x00000001
@@ -20,4 +19,4 @@
 #define UMOUNT_NOFOLLOW 0x00000008
 #define UMOUNT_UNUSED 0x80000000
 
-#endif /* ORLIX_LINUX_UMOUNT2_FLAGS_H */
+#endif

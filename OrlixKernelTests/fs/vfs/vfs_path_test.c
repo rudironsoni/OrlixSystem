@@ -622,13 +622,13 @@ static void testVfsTranslatePathAtInvalidDirfdReturnsBadf(struct kunit *test) {
 static void testVfsFstatatSupportsAtFdcwd(struct kunit *test) {
     extern int vfs_contract_fstatat_at_fdcwd(void);
     KUNIT_ASSERT_EQ_MSG(vfs_contract_fstatat_at_fdcwd(), 0,
-                   "vfs_fstatat with AT_FDCWD should succeed");
+                   "vfs_path_fstatat with AT_FDCWD should succeed");
 }
 
 static void testVfsFstatatSupportsSymlinkNoFollow(struct kunit *test) {
     extern int vfs_contract_fstatat_symlink_nofollow(void);
     KUNIT_ASSERT_EQ_MSG(vfs_contract_fstatat_symlink_nofollow(), 0,
-                   "vfs_fstatat with Linux AT_SYMLINK_NOFOLLOW should succeed");
+                   "vfs_path_fstatat with Linux AT_SYMLINK_NOFOLLOW should succeed");
 }
 
 static void testOpenNoFollowRejectsSymlinkWithEloop(struct kunit *test) {
@@ -699,9 +699,9 @@ static void testLinkatRespectsSymlinkFollowFlag(struct kunit *test) {
 
 static void testVfsFstatatRejectsInvalidFlags(struct kunit *test) {
     struct stat st;
-    int ret = vfs_fstatat(AT_FDCWD, "/etc/passwd", &st, INVALID_FLAG_TEST_VALUE);
+    int ret = vfs_path_fstatat(AT_FDCWD, "/etc/passwd", &st, INVALID_FLAG_TEST_VALUE);
 
-    KUNIT_ASSERT_EQ_MSG(ret, -EINVAL, "vfs_fstatat should reject invalid flags");
+    KUNIT_ASSERT_EQ_MSG(ret, -EINVAL, "vfs_path_fstatat should reject invalid flags");
 }
 
 static void testFstatInvalidFdReturnsBadf(struct kunit *test) {
@@ -826,17 +826,17 @@ static void testFstatProcSelfFdinfoFileReportsRegularFile(struct kunit *test) {
 static void testSyntheticRootStatSucceeds(struct kunit *test) {
     struct stat st;
 
-    KUNIT_ASSERT_EQ_MSG(vfs_fstatat(AT_FDCWD, "/proc", &st, 0), 0,
-                   "synthetic root vfs_fstatat should succeed");
+    KUNIT_ASSERT_EQ_MSG(vfs_path_fstatat(AT_FDCWD, "/proc", &st, 0), 0,
+                   "synthetic root vfs_path_fstatat should succeed");
     KUNIT_ASSERT_TRUE_MSG(stat_mode_is_directory(st.st_mode), "/proc root should be a directory");
     KUNIT_ASSERT_EQ_MSG(st.st_mode & 0777, 0555, "/proc root should have 0555 permissions");
 
-    KUNIT_ASSERT_EQ_MSG(vfs_fstatat(AT_FDCWD, "/sys", &st, 0), 0,
-                   "synthetic root vfs_fstatat should succeed for /sys");
+    KUNIT_ASSERT_EQ_MSG(vfs_path_fstatat(AT_FDCWD, "/sys", &st, 0), 0,
+                   "synthetic root vfs_path_fstatat should succeed for /sys");
     KUNIT_ASSERT_TRUE_MSG(stat_mode_is_directory(st.st_mode), "/sys root should be a directory");
 
-    KUNIT_ASSERT_EQ_MSG(vfs_fstatat(AT_FDCWD, "/dev", &st, 0), 0,
-                   "synthetic root vfs_fstatat should succeed for /dev");
+    KUNIT_ASSERT_EQ_MSG(vfs_path_fstatat(AT_FDCWD, "/dev", &st, 0), 0,
+                   "synthetic root vfs_path_fstatat should succeed for /dev");
     KUNIT_ASSERT_TRUE_MSG(stat_mode_is_directory(st.st_mode), "/dev root should be a directory");
 
     errno = 0;
@@ -854,11 +854,11 @@ static void testSyntheticChildStatHandlesSupportedProcFilesAndRejectsUnsupported
     struct stat st;
     extern int vfs_contract_fstatat_synthetic_child_nofollow(void);
 
-    KUNIT_ASSERT_EQ_MSG(vfs_fstatat(AT_FDCWD, "/proc/meminfo", &st, 0), 0,
+    KUNIT_ASSERT_EQ_MSG(vfs_path_fstatat(AT_FDCWD, "/proc/meminfo", &st, 0), 0,
                    "/proc/meminfo should be a supported procfs file");
     KUNIT_ASSERT_TRUE_MSG(stat_mode_is_regular(st.st_mode), "/proc/meminfo should stat as a regular file");
     KUNIT_ASSERT_EQ_MSG(vfs_contract_fstatat_synthetic_child_nofollow(), -ENOENT,
-                   "synthetic child vfs_fstatat with Linux AT_SYMLINK_NOFOLLOW should reject through descriptor policy");
+                   "synthetic child vfs_path_fstatat with Linux AT_SYMLINK_NOFOLLOW should reject through descriptor policy");
 
     errno = 0;
     KUNIT_ASSERT_EQ_MSG(stat_impl("/proc/meminfo", &st), 0,

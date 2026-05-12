@@ -185,7 +185,7 @@ int utimensat_impl(int dirfd, const char *pathname, const struct __kernel_timesp
     if (ret != 0) {
         return -1;
     }
-    ret = vfs_fstatat(AT_FDCWD, resolved_path, &st, stat_flags);
+    ret = vfs_path_fstatat(AT_FDCWD, resolved_path, &st, stat_flags);
     if (ret != 0) {
         return ret;
     }

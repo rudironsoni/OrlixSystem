@@ -565,8 +565,8 @@ int procfs_namespace_contract_proc_pid_status_reports_target_credentials(void) {
         return -1;
     }
 
-    parent_cred = dup_cred(get_current_cred());
-    child_cred = dup_cred(get_current_cred());
+    parent_cred = dup_cred(cred_current());
+    child_cred = dup_cred(cred_current());
     if (!parent_cred || !child_cred) {
         errno = ENOMEM;
         goto out;
@@ -579,11 +579,11 @@ int procfs_namespace_contract_proc_pid_status_reports_target_credentials(void) {
     saved = task_current();
     task_set_current(child);
     set_current_cred(child_cred);
-    put_cred(child_cred);
+    cred_release(child_cred);
     child_cred = NULL;
     task_set_current(parent);
     set_current_cred(parent_cred);
-    put_cred(parent_cred);
+    cred_release(parent_cred);
     parent_cred = NULL;
 
     proc_pid_status_path(path, sizeof(path), child->pid);
@@ -602,10 +602,10 @@ int procfs_namespace_contract_proc_pid_status_reports_target_credentials(void) {
 
 out:
     if (parent_cred) {
-        put_cred(parent_cred);
+        cred_release(parent_cred);
     }
     if (child_cred) {
-        put_cred(child_cred);
+        cred_release(child_cred);
     }
     if (child) {
         task_unlink_child_impl(parent, child);

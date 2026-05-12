@@ -23,7 +23,7 @@ int stat_impl(const char *pathname, struct stat *statbuf) {
     }
 
     if (vfs_path_is_linux_route(pathname)) {
-        ret = vfs_fstatat(AT_FDCWD, pathname, statbuf, 0);
+        ret = vfs_path_fstatat(AT_FDCWD, pathname, statbuf, 0);
         if (ret != 0) {
             return ret;
         }
@@ -90,7 +90,7 @@ int fstat_impl(int fd, struct stat *statbuf) {
         return ret;
     }
 
-    ret = vfs_fstatat(AT_FDCWD, path, statbuf, 0);
+    ret = vfs_path_fstatat(AT_FDCWD, path, statbuf, 0);
     if (ret != 0) {
         return ret;
     }
@@ -105,7 +105,7 @@ int lstat_impl(const char *pathname, struct stat *statbuf) {
     }
 
     if (vfs_path_is_linux_route(pathname)) {
-        ret = vfs_fstatat(AT_FDCWD, pathname, statbuf, AT_SYMLINK_NOFOLLOW);
+        ret = vfs_path_fstatat(AT_FDCWD, pathname, statbuf, AT_SYMLINK_NOFOLLOW);
         if (ret != 0) {
             return ret;
         }
@@ -140,7 +140,7 @@ int fstatat_impl(int dirfd, const char *pathname, struct stat *statbuf, int flag
         return -EFAULT;
     }
 
-    ret = vfs_fstatat(dirfd, pathname, statbuf, flags);
+    ret = vfs_path_fstatat(dirfd, pathname, statbuf, flags);
     if (ret != 0) {
         return ret;
     }

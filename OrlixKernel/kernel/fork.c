@@ -323,7 +323,7 @@ __kernel_pid_t fork_impl(void) {
         child->uts_ns = uts_get(parent->uts_ns);
     }
     if (parent->cred) {
-        put_cred(child->cred);
+        cred_release(child->cred);
         child->cred = dup_cred(parent->cred);
         if (!child->cred) {
             task_put(child);
@@ -777,7 +777,7 @@ int vfork_impl(void) {
         child->uts_ns = uts_get(parent->uts_ns);
     }
     if (parent->cred) {
-        put_cred(child->cred);
+        cred_release(child->cred);
         child->cred = dup_cred(parent->cred);
         if (!child->cred) {
             task_put(child);

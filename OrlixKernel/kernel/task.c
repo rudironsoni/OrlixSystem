@@ -1101,7 +1101,7 @@ struct task *task_create_child_with_flags_impl(struct task *parent, uint64_t fla
         child->uts_ns = uts_get(parent->uts_ns);
     }
     if (parent->cred) {
-        put_cred(child->cred);
+        cred_release(child->cred);
         child->cred = dup_cred(parent->cred);
         if (!child->cred) {
             task_put(child);
@@ -1343,7 +1343,7 @@ void task_put(struct task *task) {
     if (task->signal)
         free_signal_struct(task->signal);
     if (task->cred)
-        put_cred(task->cred);
+        cred_release(task->cred);
     if (task->cgroup)
         task_detach_cgroup(task);
     if (task->cgroup_ns_root)
@@ -1788,7 +1788,7 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
         old_cap_effective = task->cred->cap_effective;
     }
 
-    if (vfs_fstatat(AT_FDCWD, normalized_path, &st, 0) == 0) {
+    if (vfs_path_fstatat(AT_FDCWD, normalized_path, &st, 0) == 0) {
         uint32_t exec_mode = st.st_mode;
         uint64_t file_cap_permitted = 0;
         uint64_t file_cap_inheritable = 0;
@@ -1796,11 +1796,11 @@ int task_exec_transition_impl(const char *path, const char *argv0) {
         if ((vfs_mount_flags_for_path(normalized_path) & MNT_NOSUID) != 0) {
             exec_mode &= ~(uint32_t)(S_ISUID | S_ISGID);
         }
-        cred_apply_exec_metadata(get_current_cred(), st.st_uid, st.st_gid, exec_mode);
+        cred_apply_exec_metadata(cred_current(), st.st_uid, st.st_gid, exec_mode);
         if ((vfs_mount_flags_for_path(normalized_path) & MNT_NOSUID) == 0 &&
             vfs_get_file_capabilities(normalized_path, &file_cap_permitted,
                                       &file_cap_inheritable, &file_cap_effective) == 0) {
-            cred_apply_exec_file_capabilities(get_current_cred(), file_cap_permitted,
+            cred_apply_exec_file_capabilities(cred_current(), file_cap_permitted,
                                               file_cap_inheritable, file_cap_effective);
         }
     }

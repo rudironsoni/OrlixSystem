@@ -131,16 +131,16 @@ int kernel_boot_test_synthetic_roots(void) {
     }
 
     /* Synthetic root stat succeeds */
-    if (vfs_fstatat(AT_FDCWD, "/proc", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/proc", &st, 0) != 0) {
         return -3;
     }
-    if (vfs_fstatat(AT_FDCWD, "/dev", &st, 0) != 0) {
+    if (vfs_path_fstatat(AT_FDCWD, "/dev", &st, 0) != 0) {
         return -4;
     }
 
     /* /sys is synthetic if modeled */
     if (vfs_path_is_synthetic("/sys")) {
-        if (vfs_fstatat(AT_FDCWD, "/sys", &st, 0) != 0) {
+        if (vfs_path_fstatat(AT_FDCWD, "/sys", &st, 0) != 0) {
             return -5;
         }
     }

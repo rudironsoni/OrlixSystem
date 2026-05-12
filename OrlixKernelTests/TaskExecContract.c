@@ -293,7 +293,7 @@ int task_exec_contract_setuid_mode_updates_virtual_effective_uid(void) {
         goto out;
     }
 
-    cred = get_current_cred();
+    cred = cred_current();
     if (!cred || cred->uid != 1000 || cred->euid != 2000 || cred->suid != 2000) {
         errno = EPROTO;
         goto out;
@@ -339,7 +339,7 @@ int task_exec_contract_setgid_mode_updates_virtual_effective_gid(void) {
         goto out;
     }
 
-    cred = get_current_cred();
+    cred = cred_current();
     if (!cred || cred->gid != 1000 || cred->egid != 3000 || cred->sgid != 3000) {
         errno = EPROTO;
         goto out;
@@ -457,7 +457,7 @@ int task_exec_contract_no_new_privs_blocks_setuid_exec_gain(void) {
         goto out;
     }
 
-    cred = get_current_cred();
+    cred = cred_current();
     if (!cred || cred->uid != 1000 || cred->euid != 1000 || cred->suid != 1000) {
         errno = EPROTO;
         goto out;
@@ -506,7 +506,7 @@ int task_exec_contract_no_new_privs_blocks_setgid_exec_gain(void) {
         goto out;
     }
 
-    cred = get_current_cred();
+    cred = cred_current();
     if (!cred || cred->gid != 1000 || cred->egid != 1000 || cred->sgid != 1000) {
         errno = EPROTO;
         goto out;
@@ -913,7 +913,7 @@ int task_exec_contract_nosuid_mount_blocks_setuid_exec_gain(void) {
         task_exec_transition_impl("/tmp/task-exec-nosuid-target/suid-file", "nosuid-file") != 0) {
         goto out;
     }
-    cred = get_current_cred();
+    cred = cred_current();
     if (!cred || cred->uid != 1000 || cred->euid != 1000 || cred->suid != 1000) {
         errno = EPROTO;
         goto out;

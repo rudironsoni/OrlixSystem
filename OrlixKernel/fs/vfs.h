@@ -264,10 +264,10 @@ const char *vfs_temp_backing_root(void);
 
 /* Stat operations */
 int vfs_stat_path(const char *pathname, struct stat *statbuf);
-int vfs_lstat(const char *pathname, struct stat *statbuf);
+int vfs_path_lstat(const char *pathname, struct stat *statbuf);
 int vfs_path_exists(const char *pathname);
 int vfs_access(const char *pathname, int mode);
-int vfs_fstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags);
+int vfs_path_fstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags);
 int vfs_faccessat(int dirfd, const char *pathname, int mode, int flags);
 
 #ifdef __cplusplus

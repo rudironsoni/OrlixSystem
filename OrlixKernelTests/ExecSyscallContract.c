@@ -1158,7 +1158,7 @@ out:
 
 static int expect_current_ids(uint32_t uid, uint32_t euid, uint32_t suid,
                               uint32_t gid, uint32_t egid, uint32_t sgid) {
-    struct cred *cred = get_current_cred();
+    struct cred *cred = cred_current();
 
     if (!cred) {
         errno = ESRCH;
@@ -1333,8 +1333,8 @@ int exec_syscall_contract_native_execve_applies_file_capability_metadata(void) {
     }
     if ((data[0].permitted & (1U << CAP_NET_BIND_SERVICE)) == 0 ||
         (data[0].effective & (1U << CAP_NET_BIND_SERVICE)) == 0 ||
-        get_current_cred()->euid != 1000 ||
-        get_current_cred()->suid != 1000) {
+        cred_current()->euid != 1000 ||
+        cred_current()->suid != 1000) {
         errno = ENODATA;
         goto out;
     }
@@ -1373,7 +1373,7 @@ int exec_syscall_contract_native_execve_file_caps_mark_secure_and_clear_ambient(
         setuid_impl(1000) != 0) {
         goto out;
     }
-    get_current_cred()->cap_ambient = cap_mask;
+    cred_current()->cap_ambient = cap_mask;
 
     status = execve(path, argv, envp);
     if (status != 23) {
@@ -1382,9 +1382,9 @@ int exec_syscall_contract_native_execve_file_caps_mark_secure_and_clear_ambient(
     }
     if (task->exec_secure != 1 ||
         task->exec_dumpable != 0 ||
-        get_current_cred()->cap_ambient != 0 ||
-        (get_current_cred()->cap_permitted & cap_mask) == 0 ||
-        (get_current_cred()->cap_effective & cap_mask) == 0) {
+        cred_current()->cap_ambient != 0 ||
+        (cred_current()->cap_permitted & cap_mask) == 0 ||
+        (cred_current()->cap_effective & cap_mask) == 0) {
         errno = ENODATA;
         goto out;
     }
@@ -1526,14 +1526,14 @@ int exec_syscall_contract_native_execve_no_new_privs_clears_ambient_on_file_caps
         prctl_impl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
         goto out;
     }
-    get_current_cred()->cap_ambient = cap_mask;
+    cred_current()->cap_ambient = cap_mask;
 
     status = execve(path, argv, envp);
     if (status != 23) {
         errno = EPROTO;
         goto out;
     }
-    if (get_current_cred()->cap_ambient != 0 ||
+    if (cred_current()->cap_ambient != 0 ||
         prctl_impl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1) {
         errno = ENODATA;
         goto out;
@@ -1582,7 +1582,7 @@ int exec_syscall_contract_native_execve_secure_noroot_blocks_root_cap_gain(void)
     if (capget_impl(&header, data) != 0) {
         goto out;
     }
-    if (get_current_cred()->euid != 0 ||
+    if (cred_current()->euid != 0 ||
         data[0].permitted != 0 || data[0].effective != 0 ||
         data[1].permitted != 0 || data[1].effective != 0) {
         errno = ENODATA;
@@ -2665,7 +2665,7 @@ int exec_syscall_contract_elf_auxv_records_virtual_credentials(void) {
         goto out;
     }
 
-    cred = get_current_cred();
+    cred = cred_current();
     if (!cred ||
         expect_auxv_value(task, AT_UID, cred->uid) != 0 ||
         expect_auxv_value(task, AT_EUID, cred->euid) != 0 ||

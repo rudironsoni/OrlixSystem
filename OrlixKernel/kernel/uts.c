@@ -114,7 +114,7 @@ struct uts_state *uts_dup(struct uts_state *ns) {
 
     atomic_set(&copy->refs, 1);
     copy->ns_id = (uint64_t)(atomic_inc_return(&next_uts_ns_id) - 1);
-    copy->owner_user_ns_id = cred_user_namespace_id(get_current_cred());
+    copy->owner_user_ns_id = cred_user_namespace_id(cred_current());
     if (copy->owner_user_ns_id == 0) {
         copy->owner_user_ns_id = ns->owner_user_ns_id ? ns->owner_user_ns_id : 1;
     }
@@ -211,7 +211,7 @@ static int uts_set_name(struct uts_state *ns, char dst[__NEW_UTS_LEN + 1],
         return -EINVAL;
     }
 
-    cred = get_current_cred();
+    cred = cred_current();
     if (!cred_has_cap_in_user_namespace(cred, uts_namespace_owner_user_ns_id(ns), CAP_SYS_ADMIN)) {
         return -EPERM;
     }
