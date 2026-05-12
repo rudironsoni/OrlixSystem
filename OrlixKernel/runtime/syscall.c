@@ -392,7 +392,7 @@ static long syscall_clone(unsigned long flags, int *parent_tid, int *child_tid) 
     return child_pid;
 }
 
-static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *linux_act,
+static void syscall_sigaction_from_linux(const struct sigaction *linux_act,
                                          struct signal_action_slot *act) {
     memset(act, 0, sizeof(*act));
     if (!linux_act) {
@@ -405,7 +405,7 @@ static void syscall_sigaction_from_linux(const struct syscall_sigaction_frame *l
 }
 
 static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
-                                       struct syscall_sigaction_frame *linux_act) {
+                                       struct sigaction *linux_act) {
     memset(linux_act, 0, sizeof(*linux_act));
     if (!act) {
         return;
@@ -416,7 +416,7 @@ static void syscall_sigaction_to_linux(const struct signal_action_slot *act,
     linux_act->sa_mask.sig[0] = act->mask.sig[0];
 }
 
-static void syscall_sigaltstack_from_linux(const syscall_sigaltstack_frame *linux_stack,
+static void syscall_sigaltstack_from_linux(const stack_t *linux_stack,
                                            struct signal_altstack *stack) {
     memset(stack, 0, sizeof(*stack));
     if (!linux_stack) {
@@ -428,7 +428,7 @@ static void syscall_sigaltstack_from_linux(const syscall_sigaltstack_frame *linu
 }
 
 static void syscall_sigaltstack_to_linux(const struct signal_altstack *stack,
-                                         syscall_sigaltstack_frame *linux_stack) {
+                                         stack_t *linux_stack) {
     memset(linux_stack, 0, sizeof(*linux_stack));
     if (!stack) {
         return;
@@ -961,7 +961,7 @@ static long syscall_dispatch_inner_impl(long number,
             return -EINVAL;
         }
         if (arg1) {
-            syscall_sigaction_from_linux((const struct syscall_sigaction_frame *)(uintptr_t)arg1, &act);
+            syscall_sigaction_from_linux((const struct sigaction *)(uintptr_t)arg1, &act);
             act_ptr = &act;
         }
         if (arg2) {
@@ -974,7 +974,7 @@ static long syscall_dispatch_inner_impl(long number,
             }
         }
         if (arg2) {
-            syscall_sigaction_to_linux(&oldact, (struct syscall_sigaction_frame *)(uintptr_t)arg2);
+            syscall_sigaction_to_linux(&oldact, (struct sigaction *)(uintptr_t)arg2);
         }
         return 0;
     }
@@ -985,7 +985,7 @@ static long syscall_dispatch_inner_impl(long number,
         struct signal_altstack *old_stack_ptr = NULL;
 
         if (arg0) {
-            syscall_sigaltstack_from_linux((const syscall_sigaltstack_frame *)(uintptr_t)arg0, &new_stack);
+            syscall_sigaltstack_from_linux((const stack_t *)(uintptr_t)arg0, &new_stack);
             new_stack_ptr = &new_stack;
         }
         if (arg1) {
@@ -998,7 +998,7 @@ static long syscall_dispatch_inner_impl(long number,
             }
         }
         if (arg1) {
-            syscall_sigaltstack_to_linux(&old_stack, (syscall_sigaltstack_frame *)(uintptr_t)arg1);
+            syscall_sigaltstack_to_linux(&old_stack, (stack_t *)(uintptr_t)arg1);
         }
         return 0;
     }

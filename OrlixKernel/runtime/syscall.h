@@ -1,28 +1,11 @@
 #ifndef RUNTIME_SYSCALL_H
 #define RUNTIME_SYSCALL_H
 
-#include <uapi/linux/signal.h>
+#include <linux/signal.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef struct {
-    unsigned long sig[1];
-} syscall_sigset_frame;
-
-struct syscall_sigaction_frame {
-    __sighandler_t sa_handler;
-    unsigned long sa_flags;
-    __sigrestore_t sa_restorer;
-    syscall_sigset_frame sa_mask;
-};
-
-typedef struct {
-    void *ss_sp;
-    int ss_flags;
-    __kernel_size_t ss_size;
-} syscall_sigaltstack_frame;
 
 enum syscall_capability_class {
     SYSCALL_CAPABILITY_NONE = 0,
