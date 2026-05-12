@@ -4,6 +4,7 @@
 
 #include <uapi/asm/statfs.h>
 #include <uapi/asm/unistd.h>
+#include <uapi/linux/capability.h>
 #include <uapi/linux/errno.h>
 #include <uapi/linux/fcntl.h>
 #include <uapi/linux/mount.h>
@@ -11,6 +12,7 @@
 #include <linux/fs.h>
 #include <linux/string.h>
 
+#include "kernel/cred.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
 
@@ -28,6 +30,8 @@ extern long read_impl(int fd, void *buf, size_t count);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
+extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
+extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 extern int unlinkat(int dirfd, const char *pathname, int flags);
 extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
 extern long syscall_dispatch_impl(long number, long arg0, long arg1, long arg2,
@@ -45,6 +49,9 @@ extern int fs_unshare_mount_namespace(struct fs_context *fs);
 extern unsigned int fs_mount_namespace_refs(struct fs_context *fs);
 extern uint64_t fs_mount_namespace_id(struct fs_context *fs);
 extern unsigned int fs_mount_namespace_active_mounts(struct fs_context *fs);
+extern int vfs_open_tree(int dirfd, const char *pathname, unsigned int flags);
+extern int vfs_move_mount(int from_dirfd, const char *from_pathname, int to_dirfd,
+                          const char *to_pathname, unsigned int flags);
 
 static void mount_contract_release_lookup_child(struct task *parent, struct task *child) {
     if (!child) {
@@ -277,6 +284,17 @@ static void mount_contract_cleanup_mount_paths(void) {
     unlink_impl("/tmp/vfs-bind-target/file");
     rmdir_impl("/tmp/vfs-bind-source");
     rmdir_impl("/tmp/vfs-bind-target");
+}
+
+static void mount_contract_cleanup_cred_mount_paths(void) {
+    umount_impl("/tmp/vfs-cred-mount-target");
+    umount_impl("/tmp/vfs-cred-mount-peer");
+    unlink_impl("/tmp/vfs-cred-mount-source/file");
+    unlink_impl("/tmp/vfs-cred-mount-denied/file");
+    rmdir_impl("/tmp/vfs-cred-mount-source");
+    rmdir_impl("/tmp/vfs-cred-mount-denied");
+    rmdir_impl("/tmp/vfs-cred-mount-target");
+    rmdir_impl("/tmp/vfs-cred-mount-peer");
 }
 
 static void mount_contract_cleanup_mount_namespace_paths(void) {
@@ -2196,6 +2214,112 @@ int vfs_contract_proc_self_mount_views_do_not_expose_host_paths(void) {
     return 0;
 }
 
+int vfs_contract_unprivileged_mount_operations_fail_without_namespace_mutation(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    struct mnt_id_req req;
+    struct statmount st;
+    uint64_t ids[4];
+    char content[8192];
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    mount_contract_cleanup_cred_mount_paths();
+    if (mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-cred-mount-source", 0700)) != 0 ||
+        mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-cred-mount-denied", 0700)) != 0 ||
+        mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-cred-mount-target", 0700)) != 0 ||
+        mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-cred-mount-peer", 0700)) != 0 ||
+        mount_contract_write_file("/tmp/vfs-cred-mount-source/file", "privileged") != 0 ||
+        mount_contract_write_file("/tmp/vfs-cred-mount-denied/file", "denied") != 0 ||
+        mount("/tmp/vfs-cred-mount-source", "/tmp/vfs-cred-mount-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    if (capget_impl(&header, data) != 0) {
+        goto out;
+    }
+    data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
+    if (capset_impl(&header, data) != 0 ||
+        cred_has_cap(cred_current(), CAP_SYS_ADMIN)) {
+        goto out;
+    }
+
+    if (mount("/tmp/vfs-cred-mount-denied", "/tmp/vfs-cred-mount-peer", NULL, MS_BIND, NULL) != -1) {
+        errno = ENOMSG;
+        goto out;
+    }
+    if (errno != EPERM) {
+        goto out;
+    }
+    if (open_impl("/tmp/vfs-cred-mount-peer/file", O_RDONLY, 0) != -1 || errno != ENOENT) {
+        errno = ENODATA;
+        goto out;
+    }
+    if (mount(NULL, "/tmp/vfs-cred-mount-target", NULL, MS_BIND | MS_REMOUNT | MS_SHARED, NULL) != -1 ||
+        errno != EPERM) {
+        errno = EIDRM;
+        goto out;
+    }
+    if (mount_contract_read_proc_file("/proc/self/mountinfo", content, sizeof(content)) != 0 ||
+        mount_contract_content_contains(content, " /tmp/vfs-cred-mount-target rw,relatime shared:")) {
+        errno = ENOMSG;
+        goto out;
+    }
+    if (vfs_move_mount(AT_FDCWD, "/tmp/vfs-cred-mount-target", AT_FDCWD,
+                       "/tmp/vfs-cred-mount-peer", 0) != -1 || errno != EPERM) {
+        errno = EXDEV;
+        goto out;
+    }
+    if (mount_contract_read_file_exact("/tmp/vfs-cred-mount-target/file", "privileged") != 0 ||
+        (open_impl("/tmp/vfs-cred-mount-peer/file", O_RDONLY, 0) != -1 || errno != ENOENT)) {
+        errno = ENOMSG;
+        goto out;
+    }
+    if (vfs_open_tree(AT_FDCWD, "/tmp/vfs-cred-mount-target", OPEN_TREE_CLONE) != -1 || errno != EPERM) {
+        errno = ENOTBLK;
+        goto out;
+    }
+    memset(&req, 0, sizeof(req));
+    memset(ids, 0, sizeof(ids));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = LSMT_ROOT;
+    if (syscall_dispatch_impl(__NR_listmount, (long)(uintptr_t)&req,
+                              (long)(uintptr_t)ids, sizeof(ids) / sizeof(ids[0]), 0, 0, 0) != -EPERM) {
+        errno = ERANGE;
+        goto out;
+    }
+    memset(&req, 0, sizeof(req));
+    memset(&st, 0, sizeof(st));
+    req.size = MNT_ID_REQ_SIZE_VER1;
+    req.mnt_id = LSMT_ROOT;
+    req.param = STATMOUNT_MNT_BASIC;
+    if (syscall_dispatch_impl(__NR_statmount, (long)(uintptr_t)&req,
+                              (long)(uintptr_t)&st, sizeof(st), 0, 0, 0) != -EPERM) {
+        errno = ERANGE;
+        goto out;
+    }
+    if (umount_impl("/tmp/vfs-cred-mount-target") != -1 || errno != EPERM) {
+        errno = EBUSY;
+        goto out;
+    }
+    if (mount_contract_read_file_exact("/tmp/vfs-cred-mount-target/file", "privileged") != 0) {
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    {
+        int saved_errno = errno;
+        cred_reset_to_defaults();
+        mount_contract_cleanup_cred_mount_paths();
+        errno = saved_errno;
+    }
+    return ret;
+}
+
 int vfs_contract_shared_mountinfo_uses_peer_group_ids(void) {
     char content[4096];
     unsigned long long peer_a = 0;
@@ -2235,6 +2359,101 @@ out:
         mount_contract_cleanup_mount_namespace_paths();
         errno = saved_errno;
     }
+    return ret;
+}
+
+int vfs_contract_nonroot_cannot_create_bind_mount(void) {
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    mount_contract_cleanup_mount_namespace_paths();
+    if (mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != -1 ||
+        errno != EPERM) {
+        errno = EPERM;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    mount_contract_cleanup_mount_namespace_paths();
+    return ret;
+}
+
+int vfs_contract_root_without_sys_admin_cannot_create_bind_mount(void) {
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3];
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    mount_contract_cleanup_mount_namespace_paths();
+    if (mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (capget_impl(&header, data) != 0) {
+        goto out;
+    }
+    data[CAP_SYS_ADMIN / 32].effective &= ~(1U << (CAP_SYS_ADMIN % 32));
+    if (capset_impl(&header, data) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != -1 ||
+        errno != EPERM) {
+        errno = EPERM;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    mount_contract_cleanup_mount_namespace_paths();
+    return ret;
+}
+
+int vfs_contract_nonroot_cannot_unmount_bind_mount(void) {
+    int ret = -1;
+
+    cred_reset_to_defaults();
+    mount_contract_cleanup_mount_namespace_paths();
+    if (mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-parent-source", 0700)) != 0 ||
+        mount_contract_ignore_exists(mkdir_impl("/tmp/vfs-mntns-target", 0700)) != 0) {
+        goto out;
+    }
+    if (mount("/tmp/vfs-mntns-parent-source", "/tmp/vfs-mntns-target", NULL, MS_BIND, NULL) != 0) {
+        goto out;
+    }
+    if (setuid_impl(1000) != 0) {
+        goto out;
+    }
+
+    errno = 0;
+    if (umount_impl("/tmp/vfs-mntns-target") != -1 || errno != EPERM) {
+        errno = EPERM;
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    cred_reset_to_defaults();
+    mount_contract_cleanup_mount_namespace_paths();
     return ret;
 }
 
