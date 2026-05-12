@@ -161,22 +161,6 @@ static int read_fdinfo_flags(int fd_num, unsigned int *flags_out) {
     return 0;
 }
 
-static void clear_pending_signal(struct task *task, int sig) {
-    int32_t dequeued = 0;
-
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    while (signal_dequeue(task, NULL, &dequeued) > 0) {
-        if (dequeued == sig) {
-            break;
-        }
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 struct pipe_thread_case {
     int fds[2];
     kernel_mutex_t lock;
@@ -975,7 +959,7 @@ int pipe_contract_write_no_readers_queues_sigpipe(void) {
     if (!task) {
         return ESRCH;
     }
-    clear_pending_signal(task, SIGPIPE);
+    signal_clear_pending_task(task, SIGPIPE);
     if (pipe_impl(fds) != 0) {
         return errno;
     }
@@ -989,7 +973,7 @@ int pipe_contract_write_no_readers_queues_sigpipe(void) {
     if (!signal_is_pending(task, SIGPIPE)) {
         ret = ENODATA;
     }
-    clear_pending_signal(task, SIGPIPE);
+    signal_clear_pending_task(task, SIGPIPE);
 
 out:
     close_if_open(fds[1]);

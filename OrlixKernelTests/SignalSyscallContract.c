@@ -32,22 +32,6 @@ static void signal_contract_disable_altstack(void) {
     syscall_dispatch_impl(__NR_sigaltstack, (long)(uintptr_t)&disabled, 0, 0, 0, 0, 0);
 }
 
-static void signal_contract_clear_pending(struct task *task, int signo) {
-    int32_t dequeued = 0;
-
-    if (!task || !task->signal || signo < 1 || signo > KERNEL_SIG_NUM) {
-        return;
-    }
-    while (signal_dequeue(task, NULL, &dequeued) > 0) {
-        if (dequeued == signo) {
-            break;
-        }
-    }
-    task->thread_pending_signals &= ~(1ULL << ((signo - 1) & 63));
-    task->signal->pending.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
-    task->signal->shared_pending.sig[(signo - 1) >> 6] &= ~(1ULL << ((signo - 1) & 63));
-}
-
 static void signal_contract_clear_queued_signal(struct task *task, int signo) {
     struct signal_queue_entry *prev = NULL;
     struct signal_queue_entry *entry;
@@ -77,7 +61,7 @@ static void signal_contract_clear_queued_signal(struct task *task, int signo) {
         entry = next;
     }
     kernel_mutex_unlock(&task->signal->queue.lock);
-    signal_contract_clear_pending(task, signo);
+    signal_clear_pending_task(task, signo);
 }
 
 static int signal_contract_queued_count(struct task *task, int signo) {
@@ -870,7 +854,7 @@ int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void)
     old_term = (struct sigaction){0};
     dfl.sa_handler = SIG_DFL;
 
-    signal_contract_clear_pending(task, SIGWINCH);
+    signal_clear_pending_task(task, SIGWINCH);
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGWINCH, (long)(uintptr_t)&dfl,
                                 0, sizeof(dfl.sa_mask), 0, 0);
     if (ret != 0 ||
@@ -880,7 +864,7 @@ int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void)
         return -1;
     }
 
-    signal_contract_clear_pending(task, SIGTERM);
+    signal_clear_pending_task(task, SIGTERM);
     act.sa_handler = SIG_IGN;
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGTERM, (long)(uintptr_t)&act,
                                 (long)(uintptr_t)&old_term, sizeof(act.sa_mask), 0, 0);
@@ -898,7 +882,7 @@ int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void)
     act.sa_handler = (__sighandler_t)(uintptr_t)0x7000;
     ret = syscall_dispatch_impl(__NR_rt_sigaction, SIGTERM, (long)(uintptr_t)&act,
                                 0, sizeof(act.sa_mask), 0, 0);
-    signal_contract_clear_pending(task, SIGTERM);
+    signal_clear_pending_task(task, SIGTERM);
     atomic_set(&task->exited, 0);
     atomic_set(&task->signaled, 0);
     if (ret != 0 ||
@@ -912,7 +896,7 @@ int signal_syscall_contract_ignored_dispositions_do_not_queue_or_terminate(void)
         return -1;
     }
 
-    signal_contract_clear_pending(task, SIGTERM);
+    signal_clear_pending_task(task, SIGTERM);
     syscall_dispatch_impl(__NR_rt_sigaction, SIGTERM, (long)(uintptr_t)&old_term,
                           0, sizeof(old_term.sa_mask), 0, 0);
     return 0;
@@ -1115,7 +1099,7 @@ int signal_syscall_contract_restart_metadata_follows_sa_restart(void) {
             errno = EBADMSG;
             goto out;
         }
-        signal_contract_clear_pending(task, SIGUSR1);
+        signal_clear_pending_task(task, SIGUSR1);
         if (syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0) != 0 ||
             task->mm->signal_frame_restart_kind != TASK_RESTART_NONE) {
             errno = EALREADY;
@@ -1131,7 +1115,7 @@ out:
         syscall_dispatch_impl(__NR_rt_sigaction, SIGUSR1, (long)(uintptr_t)&old_usr1,
                               0, sizeof(old_usr1.sa_mask), 0, 0);
         task->signal->blocked = old_blocked;
-        signal_contract_clear_pending(task, SIGUSR1);
+        signal_clear_pending_task(task, SIGUSR1);
         task->mm->signal_frame_restartable = 0;
         task_restart_clear_impl(task);
         syscall_dispatch_impl(__NR_munmap, (long)(uintptr_t)mapped, 16384, 0, 0, 0, 0);

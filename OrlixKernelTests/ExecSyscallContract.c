@@ -192,22 +192,6 @@ static int expect_nul_vector(const char *buf, ssize_t len, const char *const exp
     return 0;
 }
 
-static void clear_pending_signal(struct task *task, int32_t sig) {
-    int32_t dequeued = 0;
-
-    if (!task || !task->signal || sig <= 0 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    while (signal_dequeue(task, NULL, &dequeued) > 0) {
-        if (dequeued == sig) {
-            break;
-        }
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 static int find_auxv_value(const struct task *task, uint64_t type, uint64_t *out_value) {
     if (!task || !task->mm || !out_value) {
         errno = EINVAL;
@@ -2858,7 +2842,7 @@ int exec_syscall_contract_elf_virtual_memory_fault_policy(void) {
     result = 0;
 
 out:
-    clear_pending_signal(task, SIGSEGV);
+    signal_clear_pending_task(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-vm-faults");
     return result;
 }
@@ -2952,7 +2936,7 @@ int exec_syscall_contract_elf_below_stack_guard_faults_with_sigsegv_maperr(void)
     result = 0;
 
 out:
-    clear_pending_signal(task, SIGSEGV);
+    signal_clear_pending_task(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-stack-guard");
     return result;
 }
@@ -3066,7 +3050,7 @@ int exec_syscall_contract_elf_stack_growth_respects_rlimit(void) {
     result = 0;
 
 out:
-    clear_pending_signal(task, SIGSEGV);
+    signal_clear_pending_task(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-stack-rlimit");
     return result;
 }
@@ -3116,7 +3100,7 @@ int exec_syscall_contract_elf_stack_growth_keeps_lower_guard_faulting(void) {
     result = 0;
 
 out:
-    clear_pending_signal(task, SIGSEGV);
+    signal_clear_pending_task(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-stack-lower-guard");
     return result;
 }
@@ -3355,7 +3339,7 @@ int exec_syscall_contract_elf_vma_page_permissions_are_page_granular(void) {
     result = 0;
 
 out:
-    clear_pending_signal(task, SIGSEGV);
+    signal_clear_pending_task(task, SIGSEGV);
     unlink_impl("/tmp/exec-elf-vma-page-policy");
     return result;
 }
@@ -3658,11 +3642,11 @@ int exec_syscall_contract_mmap_mprotect_and_munmap_update_vmas(void) {
     }
 
     result = 0;
-    clear_pending_signal(task, SIGSEGV);
+    signal_clear_pending_task(task, SIGSEGV);
     return result;
 
 out:
-    clear_pending_signal(task, SIGSEGV);
+    signal_clear_pending_task(task, SIGSEGV);
     munmap_impl(addr, TASK_VMA_PAGE_SIZE * 2);
     return result;
 }
@@ -3780,7 +3764,7 @@ int exec_syscall_contract_shared_file_truncate_faults_with_sigbus_bus_adrerr(voi
     result = 0;
 
 out:
-    clear_pending_signal(task, SIGBUS);
+    signal_clear_pending_task(task, SIGBUS);
     if (addr != (void *)-1) {
         munmap_impl(addr, sizeof(page) * 2);
     }

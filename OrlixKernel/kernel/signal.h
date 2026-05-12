@@ -52,6 +52,7 @@ void signal_reset_on_exec(struct task *task);
 int signal_enqueue_task(struct task *task, int32_t sig);
 int signal_enqueue_group(int32_t pgid, int32_t sig);
 int signal_dequeue(struct task *task, sigset_t *mask, int32_t *sig);
+void signal_clear_pending_task(struct task *task, int32_t sig);
 
 /* Recompute pending state after mask changes */
 void signal_recompute_pending(struct task *task);

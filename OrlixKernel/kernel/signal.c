@@ -516,6 +516,22 @@ int signal_dequeue(struct task *task, sigset_t *mask, int32_t *sig) {
     return -EAGAIN;
 }
 
+void signal_clear_pending_task(struct task *task, int32_t sig) {
+    int32_t dequeued = 0;
+
+    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
+        return;
+    }
+    while (signal_dequeue(task, NULL, &dequeued) > 0) {
+        if (dequeued == sig) {
+            break;
+        }
+    }
+    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
+}
+
 void signal_recompute_pending(struct task *task) {
     /* Recompute whether task has any deliverable pending signals */
     if (!task || !task->signal)

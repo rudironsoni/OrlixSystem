@@ -135,22 +135,6 @@ static void futex_wait_op_thread_wait_done(struct futex_wait_op_thread *ctx) {
     kernel_mutex_unlock(&ctx->lock);
 }
 
-static void futex_clear_pending_signal(struct task *task, int sig) {
-    int32_t dequeued = 0;
-
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    while (signal_dequeue(task, NULL, &dequeued) > 0) {
-        if (dequeued == sig) {
-            break;
-        }
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 static void futex_release_lookup_child(struct task *parent, struct task **child) {
     if (!parent || !child || !*child) {
         return;
@@ -532,7 +516,7 @@ int futex_contract_interrupted_wait_records_restart(void) {
         return -1;
     }
 
-    futex_clear_pending_signal(child, SIGUSR1);
+    signal_clear_pending_task(child, SIGUSR1);
     word = 1;
     restore = task_current();
     task_set_current(child);

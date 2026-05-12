@@ -37,22 +37,6 @@ static int close_if_open(int fd) {
     return fd >= 0 ? close_impl(fd) : 0;
 }
 
-static void clear_pending_signal(struct task *task, int sig) {
-    int32_t dequeued = 0;
-
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    while (signal_dequeue(task, NULL, &dequeued) > 0) {
-        if (dequeued == sig) {
-            break;
-        }
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 static void fdset_zero(__kernel_fd_set *set) {
     if (!set) {
         return;
@@ -525,7 +509,7 @@ static void *select_restart_thread(void *arg) {
         case_mark_done(ctx, ENODATA);
         return NULL;
     }
-    clear_pending_signal(ctx->task, SIGUSR1);
+    signal_clear_pending_task(ctx->task, SIGUSR1);
     case_mark_restart_ready(ctx);
     ret = syscall_dispatch_impl(__NR_restart_syscall, 0, 0, 0, 0, 0, 0);
     if (ret == 1 && fdset_isset(ctx->fd, &readfds) &&
@@ -1120,7 +1104,7 @@ int readiness_contract_poll_pidfd_readable_after_task_exit(void) {
         goto out;
     }
 
-    clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_task(parent, SIGCHLD);
     close_if_open(pidfd);
     task_unlink_child_impl(parent, child);
     task_put(child);

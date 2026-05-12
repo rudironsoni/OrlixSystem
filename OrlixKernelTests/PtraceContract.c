@@ -54,22 +54,6 @@ static void ptrace_release_lookup_child(struct task *parent, struct task *child)
     task_put(child);
 }
 
-static void ptrace_clear_pending_signal(struct task *task, int sig) {
-    int32_t dequeued = 0;
-
-    if (!task || !task->signal || sig < 1 || sig > KERNEL_SIG_NUM) {
-        return;
-    }
-    while (signal_dequeue(task, NULL, &dequeued) > 0) {
-        if (dequeued == sig) {
-            break;
-        }
-    }
-    task->thread_pending_signals &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-    task->signal->shared_pending.sig[(sig - 1) >> 6] &= ~(1ULL << ((sig - 1) & 63));
-}
-
 int ptrace_contract_attach_detach_child_same_user_namespace(void) {
     struct task *parent = task_current();
     struct task *child;
@@ -86,12 +70,12 @@ int ptrace_contract_attach_detach_child_same_user_namespace(void) {
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL) != 0) {
         int saved_errno = errno;
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
         return -1;
     }
     ptrace_release_child(parent, child);
-    ptrace_clear_pending_signal(parent, SIGCHLD);
+    signal_clear_pending_task(parent, SIGCHLD);
     return 0;
 }
 
@@ -213,7 +197,7 @@ out:
         int saved_errno = errno;
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -281,7 +265,7 @@ out:
         task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -315,7 +299,7 @@ out:
         int saved_errno = errno;
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -350,7 +334,7 @@ out:
         int saved_errno = errno;
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -392,7 +376,7 @@ out:
         task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -445,7 +429,7 @@ out:
         }
         task_set_current(parent);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -500,7 +484,7 @@ out:
         }
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -576,7 +560,7 @@ out:
         }
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return result;
@@ -623,7 +607,7 @@ out:
         task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -675,7 +659,7 @@ out:
         task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -720,7 +704,7 @@ out:
         int saved_errno = errno;
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -762,7 +746,7 @@ out:
         int saved_errno = errno;
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
@@ -807,7 +791,7 @@ out:
         task_set_current(parent);
         ptrace_impl(PTRACE_DETACH, child->pid, NULL, NULL);
         ptrace_release_child(parent, child);
-        ptrace_clear_pending_signal(parent, SIGCHLD);
+        signal_clear_pending_task(parent, SIGCHLD);
         errno = saved_errno;
     }
     return ret;
