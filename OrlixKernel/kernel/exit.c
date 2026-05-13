@@ -3,6 +3,7 @@
 #include "futex.h"
 #include "../private/kernel/futex_state.h"
 #include "ptrace.h"
+#include "../private/kernel/ptrace_state.h"
 #include "signal.h"
 #include "../private/kernel/signal_state.h"
 #include "task.h"

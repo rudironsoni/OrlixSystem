@@ -15,6 +15,7 @@
 #include "../private/kernel/fork_frame_state.h"
 #include "cred.h"
 #include "ptrace.h"
+#include "../private/kernel/ptrace_state.h"
 #include "signal.h"
 #include "../private/kernel/signal_state.h"
 #include "task.h"
