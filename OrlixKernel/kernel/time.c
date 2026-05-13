@@ -9,7 +9,7 @@
  * Linux-shaped canonical owner with a narrow Darwin-backed timekeeping seam
  */
 
-#include "time_state.h"
+#include "internal/timekeeping.h"
 
 #include <linux/errno.h>
 #include <linux/limits.h>
