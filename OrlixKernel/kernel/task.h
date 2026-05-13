@@ -94,11 +94,6 @@ int task_init(void);
 void task_deinit(void);
 struct task *task_lookup(int32_t pid);
 int task_hash(int32_t pid);
-void task_mark_stopped_by_signal(struct task *task, int32_t sig);
-void task_mark_continued_by_signal(struct task *task);
-void task_mark_signaled_exit(struct task *task, int32_t sig);
-void task_mark_exited(struct task *task, int status);
-void task_notify_parent_state_change(struct task *task);
 /* Virtual process identity syscalls (internal helpers) */
 int32_t getpid_impl(void);
 int32_t getppid_impl(void);
