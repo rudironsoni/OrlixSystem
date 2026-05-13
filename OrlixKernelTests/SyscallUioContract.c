@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 
+#include "fs/pipe.h"
 #include "runtime/syscall.h"
 
 extern int errno;
@@ -16,7 +17,6 @@ extern int errno;
 extern int close_impl(int fd);
 extern int unlink_impl(const char *pathname);
 extern ssize_t pread_impl(int fd, void *buf, size_t count, long long offset);
-extern int pipe_impl(int pipefd[2]);
 
 static int close_if_open(int fd) {
     if (fd >= 0) {
