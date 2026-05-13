@@ -206,12 +206,6 @@ bool fdtable_has_open_path_under_mount_namespace_impl(uint64_t mount_ns_id, cons
 void fdtable_mark_path_deleted_impl(const char *path);
 void fdtable_rename_path_impl(const char *old_path, const char *new_path);
 void fdtable_exchange_paths_impl(const char *left_path, const char *right_path);
-bool fdtable_task_is_used_impl(struct task *task, int fd);
-int fdtable_task_fd_path_impl(struct task *task, int fd, char *path, size_t path_len);
-int fdtable_task_fdinfo_content_impl(struct task *task, int fd, unsigned long long mnt_id,
-                                     char *buf, size_t buf_len);
-void fdtable_sync_current_task_fd_impl(int fd);
-void fdtable_sync_current_task_from_static_impl(void);
 
 /* Close implementation using static fd table */
 int close_impl(int fd);

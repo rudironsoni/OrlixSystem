@@ -7,6 +7,7 @@
 
 #include "private/fs/lock_state.h"
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 
 static int fcntl_get_entry_or_badf(int fd, void **entry_out) {
     void *entry;

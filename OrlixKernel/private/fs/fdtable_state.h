@@ -48,6 +48,13 @@ struct fd_entry {
     fs_mutex_t lock;
 };
 
+bool fdtable_task_is_used_impl(struct task *task, int fd);
+int fdtable_task_fd_path_impl(struct task *task, int fd, char *path, size_t path_len);
+int fdtable_task_fdinfo_content_impl(struct task *task, int fd, unsigned long long mnt_id,
+                                     char *buf, size_t buf_len);
+void fdtable_sync_current_task_fd_impl(int fd);
+void fdtable_sync_current_task_from_static_impl(void);
+
 #ifdef __cplusplus
 }
 #endif

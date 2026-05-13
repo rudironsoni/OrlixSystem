@@ -17,6 +17,7 @@
 #include "../private/kernel/ptrace_state.h"
 
 #include "../fs/fdtable.h"
+#include "../private/fs/fdtable_state.h"
 #include "../private/fs/readiness_state.h"
 #include "../fs/vfs.h"
 
