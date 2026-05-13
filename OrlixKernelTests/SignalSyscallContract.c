@@ -15,6 +15,7 @@
 #include "fs/fdtable.h"
 #include "runtime/syscall.h"
 #include "kernel/signal.h"
+#include "kernel/time.h"
 #include "private/kernel/signal_state.h"
 #include "private/kernel/cred_state.h"
 #include "kernel/cred.h"
@@ -22,8 +23,6 @@
 #include "private/kernel/task_state.h"
 
 extern int errno;
-
-extern int nanosleep_impl(const struct __kernel_timespec *req, struct __kernel_timespec *rem);
 
 static void signal_contract_disable_altstack(void) {
     stack_t disabled = {0};

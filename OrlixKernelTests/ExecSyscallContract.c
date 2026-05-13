@@ -19,6 +19,7 @@
 #include <stddef.h>
 
 #include "fs/fdtable.h"
+#include "fs/exec.h"
 #include "private/fs/fdtable_state.h"
 #include "fs/vfs.h"
 #include "private/kernel/cred_state.h"
@@ -37,7 +38,6 @@
 extern int errno;
 
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
-extern int fexecve_impl(int fd, char *const argv[], char *const envp[]);
 extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern long read_impl(int fd, void *buf, size_t count);

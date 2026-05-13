@@ -15,6 +15,7 @@
 
 #include "../fs/fdtable.h"
 #include "../fs/eventpoll.h"
+#include "../fs/exec.h"
 #include "../private/fs/fdtable_state.h"
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
@@ -28,6 +29,7 @@
 #include "../private/kernel/resource_state.h"
 #include "../private/kernel/seccomp_state.h"
 #include "../kernel/signal.h"
+#include "../kernel/time.h"
 #include "../private/kernel/signal_state.h"
 #include "../kernel/task.h"
 #include "../private/kernel/task_state.h"
@@ -133,16 +135,7 @@ extern int mkdirat_impl(int dirfd, const char *pathname, uint32_t mode);
 extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
 extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
                           const char *newpath, unsigned int flags);
-extern int execve_impl(const char *pathname, char *const argv[], char *const envp[]);
-extern int execveat_impl(int dirfd, const char *pathname, char *const argv[], char *const envp[],
-                         int flags);
 extern void exit_impl(int status);
-extern int nanosleep_impl(const struct __kernel_timespec *req, struct __kernel_timespec *rem);
-extern int gettimeofday_impl(struct __kernel_old_timeval *tv, void *tz);
-extern int clock_gettime_impl(__kernel_clockid_t clk_id, struct __kernel_timespec *tp);
-extern int interval_timer_set_impl(int which, const struct __kernel_old_itimerval *new_value,
-                                   struct __kernel_old_itimerval *old_value);
-extern int interval_timer_get_impl(int which, struct __kernel_old_itimerval *curr_value);
 extern ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags);
 
 static long syscall_result(long ret);
