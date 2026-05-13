@@ -103,8 +103,6 @@ void task_mark_continued_by_signal(struct task *task);
 void task_mark_signaled_exit(struct task *task, int32_t sig);
 void task_mark_exited(struct task *task, int status);
 void task_notify_parent_state_change(struct task *task);
-long task_read_virtual_memory_impl(struct task *task, uint64_t addr, void *buf, size_t count);
-long task_write_virtual_memory_impl(struct task *task, uint64_t addr, const void *buf, size_t count);
 /* Virtual process identity syscalls (internal helpers) */
 int32_t getpid_impl(void);
 int32_t getppid_impl(void);
@@ -122,7 +120,6 @@ int32_t clone_impl(uint64_t flags);
 int32_t clone3_impl(const struct clone_args *args, size_t size);
 int unshare_impl(uint64_t flags);
 int task_exec_transition_impl(const char *path, const char *argv0);
-int task_record_exec_strings_impl(char *const argv[], char *const envp[]);
 
 /* Virtual exit helper */
 void exit_impl(int status);

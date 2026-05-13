@@ -27,9 +27,12 @@ const struct task_vma *task_find_vma_impl(struct task *task, uint64_t addr);
 struct task_vma *task_find_vma_mutable_impl(struct task *task, uint64_t addr);
 uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
 int task_set_vma_page_flags_impl(struct task *task, uint64_t addr, uint64_t size, uint32_t flags);
+long task_read_virtual_memory_impl(struct task *task, uint64_t addr, void *buf, size_t count);
+long task_write_virtual_memory_impl(struct task *task, uint64_t addr, const void *buf, size_t count);
 void task_rename_vma_backing_path_impl(const char *old_path, const char *new_path);
 void task_exchange_vma_backing_paths_impl(const char *left_path, const char *right_path);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task);
+int task_record_exec_strings_impl(char *const argv[], char *const envp[]);
 long long mm_vma_file_remaining_impl(const struct task_vma *vma, size_t offset);
 long long mm_vma_file_size_impl(const struct task_vma *vma);
 
