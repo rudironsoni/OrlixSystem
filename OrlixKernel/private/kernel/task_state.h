@@ -23,6 +23,9 @@ long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, siz
 long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
 long mm_private_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
 long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
+void task_rename_vma_backing_path_impl(const char *old_path, const char *new_path);
+void task_exchange_vma_backing_paths_impl(const char *left_path, const char *right_path);
+const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task);
 
 enum task_vma_kind {
     TASK_VMA_EXEC = 1,

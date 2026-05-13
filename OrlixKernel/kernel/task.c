@@ -38,6 +38,9 @@ extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);
 extern char *kstrdup(const char *src, gfp_t flags);
 
+static void task_note_memory_signal_fault_impl(struct task *task, int32_t signo, int32_t code,
+                                               uint64_t addr);
+
 static struct memory_space *task_ensure_mm_impl(struct task *task) {
     if (!task) {
         return NULL;
@@ -371,11 +374,11 @@ void task_exchange_vma_backing_paths_impl(const char *left_path, const char *rig
     kernel_mutex_unlock(&task_table_lock);
 }
 
-void task_note_memory_fault_impl(struct task *task, uint64_t addr, int32_t code) {
+static void task_note_memory_fault_impl(struct task *task, uint64_t addr, int32_t code) {
     task_note_memory_signal_fault_impl(task, SIGSEGV, code, addr);
 }
 
-void task_note_memory_signal_fault_impl(struct task *task, int32_t signo, int32_t code, uint64_t addr) {
+static void task_note_memory_signal_fault_impl(struct task *task, int32_t signo, int32_t code, uint64_t addr) {
     if (!task) {
         return;
     }

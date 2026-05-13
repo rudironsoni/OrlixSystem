@@ -109,11 +109,6 @@ const struct task_vma *task_find_vma_impl(struct task *task, uint64_t addr);
 struct task_vma *task_find_vma_mutable_impl(struct task *task, uint64_t addr);
 uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
 int task_set_vma_page_flags_impl(struct task *task, uint64_t addr, uint64_t size, uint32_t flags);
-void task_rename_vma_backing_path_impl(const char *old_path, const char *new_path);
-void task_exchange_vma_backing_paths_impl(const char *left_path, const char *right_path);
-void task_note_memory_fault_impl(struct task *task, uint64_t addr, int32_t code);
-void task_note_memory_signal_fault_impl(struct task *task, int32_t signo, int32_t code, uint64_t addr);
-const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task);
 /* Virtual process identity syscalls (internal helpers) */
 int32_t getpid_impl(void);
 int32_t getppid_impl(void);
