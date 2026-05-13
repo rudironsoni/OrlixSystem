@@ -38,6 +38,7 @@
 #include "eventpoll.h"
 #include "private/fs/eventpoll_state.h"
 #include "private/fs/readiness_state.h"
+#include "private/fs/pipe_state.h"
 #include "pipe.h"
 #include "pty.h"
 #include "vfs.h"

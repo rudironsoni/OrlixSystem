@@ -9,6 +9,7 @@
 #include "private/fs/fdtable_state.h"
 #include "internal/fs/poll.h"
 #include "pipe.h"
+#include "private/fs/pipe_state.h"
 #include "pty.h"
 #include "kernel/net/socket.h"
 #include "../private/kernel/wait_queue_state.h"

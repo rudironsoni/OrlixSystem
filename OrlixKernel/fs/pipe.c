@@ -6,6 +6,7 @@
 
 #include "pipe.h"
 #include "private/fs/fdtable_state.h"
+#include "private/fs/pipe_state.h"
 #include "private/fs/readiness_state.h"
 
 #include <linux/string.h>
@@ -44,7 +45,8 @@ static void pipe_free_endpoint(struct pipe_endpoint *endpoint) {
     kfree(endpoint);
 }
 
-int pipe_create_endpoint_pair(struct pipe_endpoint **read_end, struct pipe_endpoint **write_end) {
+static int pipe_create_endpoint_pair(struct pipe_endpoint **read_end,
+                                     struct pipe_endpoint **write_end) {
     struct pipe_object *pipe;
     struct pipe_endpoint *reader;
     struct pipe_endpoint *writer;
