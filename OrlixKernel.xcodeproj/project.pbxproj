@@ -141,7 +141,6 @@
 		F30CAC59510415B82CCBE8AA /* KernelInitContract.c in Sources */ = {isa = PBXBuildFile; fileRef = 05AE1FF80CFF0BE1D29A8FA9 /* KernelInitContract.c */; settings = {COMPILER_FLAGS = "$(ORLIX_KERNEL_TEST_STRICT_CFLAGS)"; }; };
 		F4AD27EE5897CE2C419026B3 /* KernelWaitTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 245D862016125A04CE378F70 /* KernelWaitTests.m */; };
 		F6C6AD74C619C37CB38D71F9 /* pipe_test.c in Sources */ = {isa = PBXBuildFile; fileRef = 47E104D5E107AFBA97502D81 /* pipe_test.c */; settings = {COMPILER_FLAGS = "$(ORLIX_KERNEL_TEST_STRICT_CFLAGS)"; }; };
-		F853311645624C533A29E8D7 /* orlix_observability.c in Sources */ = {isa = PBXBuildFile; fileRef = 8B1CF9495806F5C54C7E3113 /* orlix_observability.c */; };
 		F8B47F2375284B567A6375A8 /* wait_test.c in Sources */ = {isa = PBXBuildFile; fileRef = 5348B6BDCB598AFACF426F13 /* wait_test.c */; settings = {COMPILER_FLAGS = "$(ORLIX_KERNEL_TEST_STRICT_CFLAGS)"; }; };
 		F8F39A6EBDE77E5B02BC6A50 /* sys.c in Sources */ = {isa = PBXBuildFile; fileRef = 1D7ED6C9008BFAB23132C915 /* sys.c */; };
 		FA8D9AF468B55E8F4CAF924A /* uts.c in Sources */ = {isa = PBXBuildFile; fileRef = BA557A76C0643EF0CF2B4301 /* uts.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_UAPI_ROOT)"; }; };
@@ -298,7 +297,6 @@
 		84245D3FA37D3059CF6B6B7A /* HostTestSupport.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = HostTestSupport.c; sourceTree = "<group>"; };
 		8456D2DBC9D6E6D83A7B67E6 /* MountContract.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = MountContract.c; sourceTree = "<group>"; };
 		88D9107BD95B20C2E495FB01 /* SignalSyscallContract.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SignalSyscallContract.h; sourceTree = "<group>"; };
-		8B1CF9495806F5C54C7E3113 /* orlix_observability.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = orlix_observability.c; sourceTree = "<group>"; };
 		8CF0AA8646A0B520A0C2E146 /* uio.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = uio.c; sourceTree = "<group>"; };
 		8E078B7A6C6D1E2DB8C89525 /* resource.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = resource.c; sourceTree = "<group>"; };
 		92495377427D0B0247DCF63F /* backing_stat_translate.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = backing_stat_translate.c; sourceTree = "<group>"; };
@@ -541,7 +539,6 @@
 			children = (
 				CF6F41FCCD785D3696F6A23D /* fs */,
 				153D9352EC8CE8A6630EB5D5 /* kernel */,
-				9CF46824F5AA28EA333BECA6 /* observability */,
 				398DCADE5088448B4769FA4E /* private */,
 				EADA5313EBF323E291DCE078 /* runtime */,
 			);
@@ -659,14 +656,6 @@
 			);
 			name = task;
 			path = OrlixKernelTests/kernel/task;
-			sourceTree = "<group>";
-		};
-		9CF46824F5AA28EA333BECA6 /* observability */ = {
-			isa = PBXGroup;
-			children = (
-				8B1CF9495806F5C54C7E3113 /* orlix_observability.c */,
-			);
-			path = observability;
 			sourceTree = "<group>";
 		};
 		A9C8F9E892D70345D838BEB4 /* native */ = {
@@ -930,7 +919,6 @@
 				BDF16D8FA4D20EAE2F56ADEF /* namei.c in Sources */,
 				1D9458CC826A6C5E0AC91E5A /* network.c in Sources */,
 				DF481DBF1548D3F1163FF4E9 /* open.c in Sources */,
-				F853311645624C533A29E8D7 /* orlix_observability.c in Sources */,
 				879D9E052C2180E94F90B926 /* path.c in Sources */,
 				4FE797A1947867AF6E7029B8 /* pid.c in Sources */,
 				ABF874E8EF9C89B06625E22A /* pipe.c in Sources */,

@@ -179,8 +179,6 @@ targets:
       group: OrlixKernel/kernel
     - path: OrlixKernel/kernel/wait.c
       group: OrlixKernel/kernel
-    - path: OrlixKernel/observability/orlix_observability.c
-      group: OrlixKernel/observability
     - path: OrlixKernel/runtime/aarch64/exec_context.c
       group: OrlixKernel/runtime/aarch64
     - path: OrlixKernel/runtime/aarch64/elf_reloc.c
