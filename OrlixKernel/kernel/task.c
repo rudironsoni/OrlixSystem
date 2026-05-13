@@ -926,14 +926,8 @@ int task_restart_record_impl(struct task *task, enum task_restart_kind kind,
     if (!task_ensure_mm_impl(task)) {
         return -ENOMEM;
     }
-    task->mm->signal_frame_restart_kind = (uint64_t)kind;
-    task->mm->signal_frame_restart_arg0 = arg0;
-    task->mm->signal_frame_restart_arg1 = arg1;
-    task->mm->signal_frame_restart_arg2 = arg2;
-    task->mm->signal_frame_restart_arg3 = arg3;
-    task->mm->signal_frame_restart_arg4 = arg4;
-    task->mm->signal_frame_restart_arg5 = arg5;
-    return 0;
+    return signal_frame_restart_record_task(task, (uint64_t)kind,
+                                            arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
 struct task *alloc_task(void) {

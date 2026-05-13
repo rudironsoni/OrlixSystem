@@ -107,6 +107,14 @@ int signal_frame_restart_status_get_task(const struct task *task,
                                          uint64_t *restart_return_pc_out,
                                          uint64_t *restart_sp_out,
                                          uint64_t *restart_signo_out);
+int signal_frame_restart_record_task(struct task *task,
+                                     uint64_t kind,
+                                     uint64_t arg0,
+                                     uint64_t arg1,
+                                     uint64_t arg2,
+                                     uint64_t arg3,
+                                     uint64_t arg4,
+                                     uint64_t arg5);
 void signal_frame_restart_clear_task(struct task *task);
 void signal_frame_clear_task(struct task *task);
 long signal_finish_sigreturn_task(struct task *task);
