@@ -11,6 +11,7 @@
 #include "../../kunit/suite_registry.h"
 #include "kernel/init.h"
 #include "fs/fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "fs/vfs.h"
 #include "kernel/signal.h"
 #include "private/kernel/signal_state.h"

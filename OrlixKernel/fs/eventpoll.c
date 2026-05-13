@@ -5,6 +5,7 @@
 #include <uapi/linux/fcntl.h>
 
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "internal/slab.h"
 #include "private/fs/lock_state.h"
 #include "poll.h"

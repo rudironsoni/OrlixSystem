@@ -11,6 +11,7 @@
 #include <linux/types.h>
 
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "pty.h"
 #include "internal/fs/ioctl.h"
 

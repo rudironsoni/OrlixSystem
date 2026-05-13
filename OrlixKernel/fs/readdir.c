@@ -11,6 +11,7 @@
 
 #include "../private/fs/backing_dir_state.h"
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "internal/fs/file.h"
 #include "path.h"
 #include "pty.h"

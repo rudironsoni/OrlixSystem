@@ -9,6 +9,7 @@
 #include <linux/types.h>
 
 #include "fs/fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "fs/vfs.h"
 #include "private/fs/vfs_state.h"
 #include "private/kernel/cred_state.h"

@@ -28,7 +28,9 @@
 #include "../private/runtime/native/registry_state.h"
 #include "internal/slab.h"
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "vfs.h"
+#include "private/fs/vfs_state.h"
 
 extern int open_impl(const char *pathname, int flags, mode_t mode);
 extern int close_impl(int fd);

@@ -13,6 +13,7 @@
 #include <uapi/linux/mount.h>
 #include <linux/types.h>
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "vfs.h"
 
 static long vfs_statfs_magic_for_path(const char *path) {

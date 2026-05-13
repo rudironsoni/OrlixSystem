@@ -12,6 +12,7 @@
 #include <uapi/asm/stat.h>
 
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "vfs.h"
 #include "private/fs/vfs_state.h"
 #include "internal/fs/file.h"

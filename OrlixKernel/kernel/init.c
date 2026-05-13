@@ -8,6 +8,7 @@
 #include <linux/atomic.h>
 
 #include "../fs/fdtable.h"
+#include "../private/fs/fdtable_state.h"
 #include "../fs/vfs.h"
 #include "../private/kernel/mutex_state.h"
 #include "../runtime/native/registry.h"

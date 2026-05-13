@@ -11,11 +11,13 @@
 #include <linux/string.h>
 
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "internal/fs/file.h"
 #include "internal/random.h"
 #include "pipe.h"
 #include "pty.h"
 #include "vfs.h"
+#include "private/fs/vfs_state.h"
 #include "kernel/cgroup.h"
 #include "kernel/net/socket.h"
 #include "kernel/task.h"

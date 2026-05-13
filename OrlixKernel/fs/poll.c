@@ -6,6 +6,7 @@
 #include <limits.h>
 
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "internal/fs/poll.h"
 #include "pipe.h"
 #include "pty.h"

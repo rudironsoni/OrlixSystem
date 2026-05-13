@@ -7,6 +7,7 @@
 #include "../private/kernel/task_state.h"
 
 #include "../fs/fdtable.h"
+#include "../private/fs/fdtable_state.h"
 
 #include <linux/atomic.h>
 #include <linux/errno.h>

@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "fs/fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "fs/vfs.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"

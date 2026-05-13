@@ -21,6 +21,7 @@
 
 #include "socket.h"
 #include "fs/fdtable.h"
+#include "private/fs/fdtable_state.h"
 
 extern int *__error(void);
 extern void *malloc(size_t);

@@ -6,12 +6,17 @@
 #include <linux/types.h>
 
 #include "fs/fdtable.h"
+#include "private/fs/fdtable_state.h"
 #include "fs/vfs.h"
 #include "private/fs/lock_state.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+synthetic_dev_node_t vfs_path_is_synthetic_dev_node(const char *vpath);
+long vfs_proc_task_write_id_map_content(synthetic_proc_file_t proc_file, int32_t pid,
+                                        const char *buf, size_t count);
 
 struct vfs_file_ops {
     int64_t (*read)(struct fd_file *file, char *buf, size_t count, int64_t *pos);

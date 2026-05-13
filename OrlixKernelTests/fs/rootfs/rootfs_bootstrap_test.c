@@ -4,6 +4,7 @@
 #include <uapi/linux/fcntl.h>
 #include <linux/string.h>
 
+#include "fs/path.h"
 #include "fs/vfs.h"
 #include "kernel/init.h"
 

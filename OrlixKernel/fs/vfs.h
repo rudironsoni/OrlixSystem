@@ -140,7 +140,6 @@ int vfs_describe_route_for_path(const char *vpath, enum vfs_route_identity *rout
 bool vfs_path_is_linux_route(const char *vpath);
 bool vfs_path_is_synthetic(const char *vpath);
 bool vfs_path_is_synthetic_root(const char *vpath);
-synthetic_dev_node_t vfs_path_is_synthetic_dev_node(const char *vpath);
 
 enum proc_self_path_class {
     PROC_SELF_NONE = 0,
@@ -208,8 +207,6 @@ int vfs_proc_task_status_content(int32_t pid, char *buf, size_t buf_len);
 int vfs_proc_task_uid_map_content(int32_t pid, char *buf, size_t buf_len);
 int vfs_proc_task_gid_map_content(int32_t pid, char *buf, size_t buf_len);
 int vfs_proc_task_setgroups_content(int32_t pid, char *buf, size_t buf_len);
-long vfs_proc_task_write_id_map_content(synthetic_proc_file_t proc_file, int32_t pid,
-                                        const char *buf, size_t count);
 int vfs_proc_task_cgroup_content(int32_t pid, char *buf, size_t buf_len);
 int vfs_proc_self_mountinfo_content(char *buf, size_t buf_len);
 int vfs_proc_task_mountinfo_content(int32_t pid, char *buf, size_t buf_len);

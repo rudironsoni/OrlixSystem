@@ -9,6 +9,7 @@
 #include <uapi/linux/sched.h>
 
 #include "../fs/fdtable.h"
+#include "../private/fs/fdtable_state.h"
 #include "../fs/vfs.h"
 #include "cgroup.h"
 #include "../private/kernel/cred_state.h"

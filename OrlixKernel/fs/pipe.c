@@ -5,6 +5,7 @@
 #include <uapi/linux/signal.h>
 
 #include "pipe.h"
+#include "private/fs/fdtable_state.h"
 #include "private/fs/readiness_state.h"
 
 #include <linux/string.h>

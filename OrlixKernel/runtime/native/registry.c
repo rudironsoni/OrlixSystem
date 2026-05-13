@@ -2,7 +2,7 @@
 
 #include "../../private/runtime/native/registry_state.h"
 #include "../../private/kernel/mutex_state.h"
-#include "../../fs/fdtable.h"
+#include "../../fs/path.h"
 #include "../../fs/vfs.h"
 
 #include <linux/gfp_types.h>

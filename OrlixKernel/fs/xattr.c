@@ -1,5 +1,6 @@
 #include "vfs.h"
 #include "fdtable.h"
+#include "private/fs/fdtable_state.h"
 
 #include <linux/errno.h>
 #include <linux/string.h>
