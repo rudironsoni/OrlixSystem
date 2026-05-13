@@ -14,6 +14,7 @@
 #include "kernel/cred.h"
 #include "kernel/futex.h"
 #include "kernel/signal.h"
+#include "private/kernel/futex_state.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/kthread_state.h"

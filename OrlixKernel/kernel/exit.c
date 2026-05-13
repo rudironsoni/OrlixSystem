@@ -1,6 +1,7 @@
 #include <linux/errno.h>
 
 #include "futex.h"
+#include "../private/kernel/futex_state.h"
 #include "ptrace.h"
 #include "signal.h"
 #include "../private/kernel/signal_state.h"

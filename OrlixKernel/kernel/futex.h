@@ -8,11 +8,8 @@ extern "C" {
 int futex_wait_impl(int *uaddr, int expected, int timeout_ms);
 int futex_wake_impl(int *uaddr, int max_wake);
 int futex_op_impl(int *uaddr, int futex_op, int val, int timeout_ms, int *uaddr2, int val3);
-void futex_reset_impl(void);
 int set_robust_list_impl(void *head, unsigned long len);
 int get_robust_list_impl(int pid, void **head, unsigned long *len);
-struct task;
-void futex_task_exit_impl(struct task *task);
 
 #ifdef __cplusplus
 }
