@@ -21,6 +21,10 @@
 #include <linux/types.h>
 
 /* Orlix VFS types */
+#include "fs/fcntl.h"
+#include "fs/open.h"
+#include "fs/read_write.h"
+#include "fs/stat.h"
 #include "fs/vfs.h"
 #include "fs/fdtable.h"
 #include "fs/path.h"
@@ -44,19 +48,11 @@ extern ssize_t pwrite(int fd, const void *buf, size_t count, int64_t offset);
 extern int64_t lseek(int fd, int64_t offset, int whence);
 extern ssize_t readlink(const char *pathname, char *buf, size_t bufsiz);
 #include "internal/fs/rootfs.h"
-extern int stat_impl(const char *path, struct stat *statbuf);
-extern int fstat_impl(int fd, struct stat *statbuf);
-extern int lstat_impl(const char *path, struct stat *statbuf);
 extern int access(const char *pathname, int mode);
 extern int dup(int oldfd);
 extern int getpid(void);
 extern int kill(int pid, int sig);
 extern int unlink(const char *pathname);
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
-extern int openat_impl(int dirfd, const char *pathname, int flags, uint32_t mode);
-extern int dup2_impl(int oldfd, int newfd);
-extern long read_impl(int fd, void *buf, size_t count);
-extern long pread_impl(int fd, void *buf, size_t count, int64_t offset);
 extern void cred_reset_to_defaults(void);
 extern int vfs_path_contract_open_tmp_fd_symlink_file(void);
 extern int errno;

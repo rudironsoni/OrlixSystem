@@ -3,14 +3,8 @@
 #include <linux/errno.h>
 #include <linux/types.h>
 
+#include "read_write.h"
 #include "fs/vfs.h"
-
-extern long read_impl(int fd, void *buf, size_t count);
-extern long write_impl(int fd, const void *buf, size_t count);
-extern int64_t pread_impl(int fd, void *buf, size_t count, long long offset);
-extern int64_t pwrite_impl(int fd, const void *buf, size_t count, long long offset);
-extern int64_t copy_file_range_impl(int fd_in, long long *off_in, int fd_out,
-                                    long long *off_out, size_t len, unsigned int flags);
 
 static long long uio_combine_offset(unsigned long pos_l, unsigned long pos_h) {
     return (long long)(((uint64_t)pos_h << 32) | (uint64_t)(uint32_t)pos_l);

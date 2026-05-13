@@ -211,6 +211,8 @@ const std::vector<RegexRule> KernelTestRules = {
      "raw numeric Linux socket ABI arguments are forbidden in LinuxKernel tests; consume the vendored Linux header owner for these constants instead"},
     {R"(\bextern\s+int\s+(ioctl|open|close|snprintf)\s*\()",
      "host syscall forward declarations are forbidden in test support"},
+    {R"(\bextern\s+(int|long|ssize_t|int64_t)\s+(open_impl|openat_impl|creat_impl|flock_impl|dup_impl|dup2_impl|dup3_impl|fcntl_impl|stat_impl|fstat_impl|lstat_impl|access_impl|fstatat_impl|faccessat_impl|statx_impl|ioctl_impl|read_impl|write_impl|lseek_impl|pread_impl|pwrite_impl|copy_file_range_impl|fallocate_impl|sync_file_range_impl|splice_impl|vmsplice_impl|tee_impl|readv_impl|writev_impl|preadv_impl|pwritev_impl|preadv2_impl|pwritev2_impl|sendfile_impl)\s*\()",
+     "raw extern declarations for repo-owned syscall surfaces are forbidden in LinuxKernel tests; include the owning OrlixKernel header instead"},
     {R"(\bsnprintf\s*\()",
      "snprintf is forbidden in test support"},
     {R"(\b[A-Za-z_][A-Za-z0-9_>]*->signal->(actions|blocked|shared_pending|queue|altstack)\b)",

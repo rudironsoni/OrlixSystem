@@ -12,6 +12,8 @@
 #include <uapi/linux/stat.h>
 #include <linux/string.h>
 
+#include "fs/open.h"
+#include "fs/read_write.h"
 #include "fs/vfs.h"
 #include "fs/fdtable.h"
 #include "private/fs/fdtable_state.h"
@@ -22,9 +24,7 @@
 
 extern int errno;
 
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
-extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 
 static int path_has_orlix_suffix(const char *path) {

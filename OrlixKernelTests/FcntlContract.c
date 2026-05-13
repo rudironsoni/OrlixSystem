@@ -8,7 +8,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "fs/fcntl.h"
 #include "fs/fdtable.h"
+#include "fs/open.h"
+#include "fs/read_write.h"
 #include "kernel/cred.h"
 #include "kernel/signal.h"
 #include "private/kernel/signal_state.h"
@@ -17,16 +20,6 @@
 #include "runtime/syscall.h"
 
 extern int errno;
-
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
-extern int dup_impl(int oldfd);
-extern int dup2_impl(int oldfd, int newfd);
-extern int dup3_impl(int oldfd, int newfd, int flags);
-extern int fcntl_impl(int fd, int cmd, ...);
-extern long read_impl(int fd, void *buf, size_t count);
-extern long pread_impl(int fd, void *buf, size_t count, int64_t offset);
-extern long write_impl(int fd, const void *buf, size_t count);
-extern int64_t lseek_impl(int fd, int64_t offset, int whence);
 
 static int close_if_open(int fd) {
     if (fd >= 0) {

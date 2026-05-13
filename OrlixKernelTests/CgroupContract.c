@@ -11,6 +11,8 @@
 
 #include <stdint.h>
 
+#include "fs/open.h"
+#include "fs/read_write.h"
 #include "private/kernel/cgroup_state.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
@@ -21,9 +23,6 @@
 
 extern int errno;
 
-extern int open_impl(const char *pathname, int flags, unsigned int mode);
-extern long read_impl(int fd, void *buf, unsigned long count);
-extern long write_impl(int fd, const void *buf, unsigned long count);
 extern int close_impl(int fd);
 extern int mkdir_impl(const char *pathname, unsigned int mode);
 extern int rmdir_impl(const char *pathname);

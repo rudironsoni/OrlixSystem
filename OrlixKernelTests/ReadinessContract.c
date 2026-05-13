@@ -11,8 +11,10 @@
 #include <linux/string.h>
 
 #include "fs/fdtable.h"
+#include "fs/open.h"
 #include "fs/pipe.h"
 #include "fs/poll.h"
+#include "fs/read_write.h"
 #include "kernel/signal.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
@@ -21,9 +23,6 @@
 #include "runtime/syscall.h"
 
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
-extern long read_impl(int fd, void *buf, size_t count);
-extern long write_impl(int fd, const void *buf, size_t count);
 extern int signal_generate_task(struct task *target, int32_t sig);
 extern int errno;
 extern long socketpair_stream_syscall(int fds[2]);

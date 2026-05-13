@@ -6,6 +6,8 @@
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
+#include "fs/open.h"
+#include "fs/read_write.h"
 #include "kernel/init.h"
 #include "fs/fdtable.h"
 #include "private/fs/pty_state.h"
@@ -14,10 +16,7 @@
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
 
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
-extern long read_impl(int fd, void *buf, size_t count);
-extern long write_impl(int fd, const void *buf, size_t count);
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
 extern __kernel_pid_t tcgetpgrp(int fd);
 extern int tcsetpgrp(int fd, __kernel_pid_t pgrp);

@@ -8,7 +8,9 @@
 #include <linux/string.h>
 #include <linux/types.h>
 
+#include "fs/fcntl.h"
 #include "fs/fdtable.h"
+#include "fs/open.h"
 #include "private/fs/fdtable_state.h"
 #include "fs/vfs.h"
 #include "private/fs/vfs_state.h"
@@ -17,8 +19,6 @@
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
 
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
-extern int fcntl_impl(int fd, int cmd, ...);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);

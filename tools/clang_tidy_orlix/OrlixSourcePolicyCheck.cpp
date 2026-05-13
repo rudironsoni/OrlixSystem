@@ -99,6 +99,11 @@ const std::vector<RegexRule> NonSignalFrameOwnerRules = {
      "direct signal frame bookkeeping access is forbidden outside the owning signal/task/mm surfaces; add or use an owner API instead"},
 };
 
+const std::vector<RegexRule> OwnerExternBypassRules = {
+    {R"(\bextern\s+(int|long|ssize_t|int64_t)\s+(open_impl|openat_impl|creat_impl|flock_impl|dup_impl|dup2_impl|dup3_impl|fcntl_impl|stat_impl|fstat_impl|lstat_impl|access_impl|fstatat_impl|faccessat_impl|statx_impl|ioctl_impl|read_impl|write_impl|lseek_impl|pread_impl|pwrite_impl|copy_file_range_impl|fallocate_impl|sync_file_range_impl|splice_impl|vmsplice_impl|tee_impl|readv_impl|writev_impl|preadv_impl|pwritev_impl|preadv2_impl|pwritev2_impl|sendfile_impl)\s*\()",
+     "raw extern declarations for repo-owned syscall surfaces are forbidden; include the owning OrlixKernel header instead"},
+};
+
 } // namespace
 
 OrlixSourcePolicyCheck::OrlixSourcePolicyCheck(llvm::StringRef Name,
@@ -160,6 +165,8 @@ void OrlixSourcePolicyCheck::scanMainFile() {
       !Path.ends_with("OrlixKernel/private/kernel/task_state.h")) {
     scanLines(*this, SM, Buffer, Path, NonSignalFrameOwnerRules);
   }
+
+  scanLines(*this, SM, Buffer, Path, OwnerExternBypassRules);
 }
 
 } // namespace clang::tidy::orlix

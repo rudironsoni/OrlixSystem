@@ -8,12 +8,12 @@
 
 #include "EpollContract.h"
 #include "fs/eventpoll.h"
+#include "fs/read_write.h"
 #include "runtime/syscall.h"
 
 extern int errno;
 
 extern int close_impl(int fd);
-extern long write_impl(int fd, const void *buf, size_t count);
 
 static int close_if_open(int fd) {
     return fd >= 0 ? close_impl(fd) : 0;

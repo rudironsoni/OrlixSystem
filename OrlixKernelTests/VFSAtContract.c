@@ -15,6 +15,10 @@
 #include <uapi/linux/errno.h>
 #include <linux/string.h>
 
+#include "fs/fcntl.h"
+#include "fs/open.h"
+#include "fs/read_write.h"
+#include "fs/stat.h"
 #include "fs/vfs.h"
 #include "private/fs/vfs_state.h"
 #include "kernel/cred.h"
@@ -31,22 +35,14 @@ extern int fchdir(int fd);
 extern char *getcwd(char *buf, size_t size);
 extern int access(const char *pathname, int mode);
 extern int mkdir_impl(const char *pathname, uint32_t mode);
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
 
 int vfs_path_contract_open_tmp_fd_symlink_file(void) {
     return open_impl("/tmp/test_fd_symlink", O_CREAT | O_RDWR, 0644);
 }
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
-extern int openat_impl(int dirfd, const char *pathname, int flags, uint32_t mode);
-extern int fcntl_impl(int fd, int cmd, ...);
 extern int close_impl(int fd);
-extern long read_impl(int fd, void *buf, size_t count);
-extern long write_impl(int fd, const void *buf, size_t count);
-extern long pread_impl(int fd, void *buf, size_t count, int64_t offset);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
-extern int fstat_impl(int fd, struct stat *statbuf);
 extern int mkdirat(int dirfd, const char *pathname, uint32_t mode);
 extern int unlinkat(int dirfd, const char *pathname, int flags);
 extern int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);

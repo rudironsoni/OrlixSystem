@@ -10,9 +10,12 @@
 
 #include <stddef.h>
 
+#include "fs/fcntl.h"
 #include "fs/fdtable.h"
 #include "fs/eventpoll.h"
+#include "fs/open.h"
 #include "fs/pipe.h"
+#include "fs/read_write.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "private/kernel/kthread_state.h"
@@ -23,10 +26,6 @@
 extern int errno;
 
 extern int pty_contract_ioctl(int fd, unsigned long request, ...);
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
-extern int fcntl_impl(int fd, int cmd, ...);
-extern long write_impl(int fd, const void *buf, size_t count);
-extern long read_impl(int fd, void *buf, size_t count);
 extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int signal_generate_task(struct task *target, int32_t sig);
 

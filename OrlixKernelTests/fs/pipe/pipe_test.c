@@ -9,10 +9,14 @@
 
 #include "../../kunit/kunit.h"
 #include "../../kunit/suite_registry.h"
+#include "fs/fcntl.h"
+#include "fs/open.h"
 #include "kernel/init.h"
 #include "fs/fdtable.h"
 #include "fs/pipe.h"
 #include "fs/poll.h"
+#include "fs/read_write.h"
+#include "fs/stat.h"
 #include "private/fs/fdtable_state.h"
 #include "fs/vfs.h"
 #include "kernel/signal.h"
@@ -21,15 +25,6 @@
 #include "private/kernel/kthread_state.h"
 #include "private/kernel/task_state.h"
 
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
-extern int dup_impl(int oldfd);
-extern int fcntl_impl(int fd, int cmd, ...);
-extern long read_impl(int fd, void *buf, size_t count);
-extern long write_impl(int fd, const void *buf, size_t count);
-extern int64_t lseek_impl(int fd, int64_t offset, int whence);
-extern ssize_t pread_impl(int fd, void *buf, size_t count, int64_t offset);
-extern ssize_t pwrite_impl(int fd, const void *buf, size_t count, int64_t offset);
-extern int fstat_impl(int fd, struct stat *statbuf);
 extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int signal_generate_task(struct task *target, int32_t sig);

@@ -10,6 +10,8 @@
 #include <stddef.h>
 
 #include "NamespaceContract.h"
+#include "fs/open.h"
+#include "fs/read_write.h"
 #include "fs/vfs.h"
 #include "private/fs/vfs_state.h"
 #include "kernel/cred.h"
@@ -25,10 +27,7 @@ extern int mount(const char *source, const char *target, const char *filesystemt
                  unsigned long mountflags, const void *data);
 extern int umount_impl(const char *target);
 extern int mkdir_impl(const char *pathname, uint32_t mode);
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
-extern long read_impl(int fd, void *buf, size_t count);
-extern long write_impl(int fd, const void *buf, size_t count);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
 extern void cred_reset_to_defaults(void);

@@ -16,6 +16,9 @@
 #include <stdint.h>
 
 #include "ProcfsNamespaceContract.h"
+#include "fs/fcntl.h"
+#include "fs/open.h"
+#include "fs/read_write.h"
 #include "fs/vfs.h"
 #include "kernel/cred.h"
 #include "private/kernel/cred_state.h"
@@ -30,15 +33,11 @@
 
 extern int errno;
 
-extern int fcntl_impl(int fd, int cmd, ...);
 extern int mkdir_impl(const char *pathname, uint32_t mode);
 extern int mount(const char *source, const char *target, const char *filesystemtype,
                  unsigned long mountflags, const void *data);
 extern int umount_impl(const char *target);
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
-extern long long lseek_impl(int fd, long long offset, int whence);
-extern long read_impl(int fd, void *buf, size_t count);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern int signal_generate_process(struct task *target, int32_t sig);

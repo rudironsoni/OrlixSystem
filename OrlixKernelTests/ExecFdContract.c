@@ -7,7 +7,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "fs/fcntl.h"
 #include "fs/fdtable.h"
+#include "fs/open.h"
+#include "fs/read_write.h"
 #include "private/fs/fdtable_state.h"
 #include "fs/vfs.h"
 #include "kernel/task.h"
@@ -15,13 +18,7 @@
 
 extern int errno;
 
-extern int open_impl(const char *pathname, int flags, uint32_t mode);
 extern int close_impl(int fd);
-extern int dup_impl(int oldfd);
-extern int dup3_impl(int oldfd, int newfd, int flags);
-extern int fcntl_impl(int fd, int cmd, ...);
-extern long read_impl(int fd, void *buf, size_t count);
-extern int64_t lseek_impl(int fd, int64_t offset, int whence);
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
 
 static int close_if_open(int fd) {
