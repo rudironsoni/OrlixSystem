@@ -58,6 +58,13 @@ int signal_handler_get_task(const struct task *task,
 int signal_handler_set_task(struct task *task,
                             int32_t sig,
                             __sighandler_t handler);
+int signal_proc_status_snapshot_task(const struct task *task,
+                                     unsigned int *queued_out,
+                                     uint64_t *private_pending_out,
+                                     uint64_t *shared_pending_out,
+                                     uint64_t *blocked_out,
+                                     uint64_t *ignored_out,
+                                     uint64_t *caught_out);
 
 int signal_frame_metadata_get_task(const struct task *task,
                                    uint64_t *signo_out,

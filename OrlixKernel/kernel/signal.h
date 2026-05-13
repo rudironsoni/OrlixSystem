@@ -55,13 +55,6 @@ int signal_blocked_get_task(const struct task *task, sigset_t *mask);
 int signal_blocked_set_task(struct task *task, const sigset_t *mask);
 int signal_blocked_clear_task(struct task *task);
 bool signal_handler_ignored_task(const struct task *task, int32_t sig);
-int signal_proc_status_snapshot_task(const struct task *task,
-                                     unsigned int *queued_out,
-                                     uint64_t *private_pending_out,
-                                     uint64_t *shared_pending_out,
-                                     uint64_t *blocked_out,
-                                     uint64_t *ignored_out,
-                                     uint64_t *caught_out);
 /* Recompute pending state after mask changes */
 void signal_recompute_pending(struct task *task);
 
