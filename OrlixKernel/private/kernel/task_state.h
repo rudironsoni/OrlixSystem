@@ -23,6 +23,10 @@ long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, siz
 long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
 long mm_private_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
 long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
+const struct task_vma *task_find_vma_impl(struct task *task, uint64_t addr);
+struct task_vma *task_find_vma_mutable_impl(struct task *task, uint64_t addr);
+uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
+int task_set_vma_page_flags_impl(struct task *task, uint64_t addr, uint64_t size, uint32_t flags);
 void task_rename_vma_backing_path_impl(const char *old_path, const char *new_path);
 void task_exchange_vma_backing_paths_impl(const char *left_path, const char *right_path);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task);

@@ -105,10 +105,6 @@ void task_mark_exited(struct task *task, int status);
 void task_notify_parent_state_change(struct task *task);
 long task_read_virtual_memory_impl(struct task *task, uint64_t addr, void *buf, size_t count);
 long task_write_virtual_memory_impl(struct task *task, uint64_t addr, const void *buf, size_t count);
-const struct task_vma *task_find_vma_impl(struct task *task, uint64_t addr);
-struct task_vma *task_find_vma_mutable_impl(struct task *task, uint64_t addr);
-uint32_t task_vma_page_flags_impl(const struct task_vma *vma, uint64_t addr);
-int task_set_vma_page_flags_impl(struct task *task, uint64_t addr, uint64_t size, uint32_t flags);
 /* Virtual process identity syscalls (internal helpers) */
 int32_t getpid_impl(void);
 int32_t getppid_impl(void);
