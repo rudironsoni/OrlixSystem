@@ -14,6 +14,7 @@
 #include <linux/string.h>
 
 #include "../fs/fdtable.h"
+#include "../fs/eventpoll.h"
 #include "../private/fs/fdtable_state.h"
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
@@ -38,12 +39,7 @@ extern int mount_impl(const char *source, const char *target,
 extern int umount2_impl(const char *target, int flags);
 
 struct epoll_instance;
-struct epoll_event;
 extern int openat_impl(int dirfd, const char *pathname, int flags, uint32_t mode);
-extern int epoll_create1_impl(int flags);
-extern int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event);
-extern int epoll_wait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout);
-extern int epoll_pwait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout);
 extern long sys_socket(int domain, int type, int protocol);
 extern long sys_socketpair(int domain, int type, int protocol, int *sv);
 extern long sys_connect(int sockfd, void *addr, int addrlen);

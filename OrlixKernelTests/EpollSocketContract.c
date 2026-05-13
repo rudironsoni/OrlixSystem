@@ -7,14 +7,12 @@
 #include <stdint.h>
 
 #include "EpollContract.h"
+#include "fs/eventpoll.h"
 #include "runtime/syscall.h"
 
 extern int errno;
 
 extern int close_impl(int fd);
-extern int epoll_create1_impl(int flags);
-extern int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event);
-extern int epoll_wait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout);
 extern long write_impl(int fd, const void *buf, size_t count);
 
 static int close_if_open(int fd) {

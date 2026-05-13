@@ -11,6 +11,7 @@
 #include <stddef.h>
 
 #include "fs/fdtable.h"
+#include "fs/eventpoll.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "private/kernel/kthread_state.h"
@@ -27,10 +28,6 @@ extern int fcntl_impl(int fd, int cmd, ...);
 extern long write_impl(int fd, const void *buf, size_t count);
 extern long read_impl(int fd, void *buf, size_t count);
 extern int readlink_impl(const char *pathname, char *buf, size_t bufsiz);
-extern int epoll_create_impl(int size);
-extern int epoll_create1_impl(int flags);
-extern int epoll_ctl_impl(int epfd, int op, int fd, struct epoll_event *event);
-extern int epoll_wait_impl(int epfd, struct epoll_event *events, int maxevents, int timeout);
 extern int signal_generate_task(struct task *target, int32_t sig);
 extern void exit_impl(int status);
 
