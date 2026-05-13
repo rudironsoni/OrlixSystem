@@ -19,6 +19,7 @@
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
+#include "../fs/xattr.h"
 #include "../kernel/cred.h"
 #include "../kernel/futex.h"
 #include "../kernel/mm.h"
@@ -143,18 +144,6 @@ extern int interval_timer_set_impl(int which, const struct __kernel_old_itimerva
                                    struct __kernel_old_itimerval *old_value);
 extern int interval_timer_get_impl(int which, struct __kernel_old_itimerval *curr_value);
 extern ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags);
-extern int setxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags);
-extern int lsetxattr_impl(const char *path, const char *name, const void *value, size_t size, int flags);
-extern int fsetxattr_impl(int fd, const char *name, const void *value, size_t size, int flags);
-extern long getxattr_impl(const char *path, const char *name, void *value, size_t size);
-extern long lgetxattr_impl(const char *path, const char *name, void *value, size_t size);
-extern long fgetxattr_impl(int fd, const char *name, void *value, size_t size);
-extern long listxattr_impl(const char *path, char *list, size_t size);
-extern long llistxattr_impl(const char *path, char *list, size_t size);
-extern long flistxattr_impl(int fd, char *list, size_t size);
-extern int removexattr_impl(const char *path, const char *name);
-extern int lremovexattr_impl(const char *path, const char *name);
-extern int fremovexattr_impl(int fd, const char *name);
 
 static long syscall_result(long ret);
 
