@@ -9,13 +9,13 @@
 
 #include <stdint.h>
 
+#include "fs/fdtable.h"
 #include "fs/pipe.h"
 #include "fs/read_write.h"
 #include "runtime/syscall.h"
 
 extern int errno;
 
-extern int close_impl(int fd);
 extern int unlink_impl(const char *pathname);
 
 static int close_if_open(int fd) {

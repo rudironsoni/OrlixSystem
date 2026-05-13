@@ -18,7 +18,6 @@
 
 extern int errno;
 
-extern int close_impl(int fd);
 extern ssize_t getdents64(int fd, void *dirp, size_t count);
 
 static int close_if_open(int fd) {
