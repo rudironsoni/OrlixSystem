@@ -17,13 +17,18 @@
 #include "../fs/eventpoll.h"
 #include "../fs/exec.h"
 #include "../fs/fcntl.h"
+#include "../fs/inode.h"
 #include "../fs/ioctl.h"
+#include "../fs/mount.h"
+#include "../fs/namei.h"
 #include "../fs/open.h"
 #include "../private/fs/fdtable_state.h"
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
+#include "../fs/readdir.h"
 #include "../fs/read_write.h"
 #include "../fs/stat.h"
+#include "../fs/super.h"
 #include "../fs/uio.h"
 #include "../fs/vfs.h"
 #include "../fs/xattr.h"
@@ -41,11 +46,6 @@
 #include "../private/kernel/task_state.h"
 #include "../kernel/uts.h"
 #include "../kernel/wait.h"
-
-extern int mount_impl(const char *source, const char *target,
-                      const char *filesystemtype, unsigned long mountflags,
-                      const void *data);
-extern int umount2_impl(const char *target, int flags);
 
 struct epoll_instance;
 extern long sys_socket(int domain, int type, int protocol);
@@ -69,30 +69,6 @@ extern long sys_getsockname(int sockfd, void *addr, int *addrlen);
 extern long sys_getpeername(int sockfd, void *addr, int *addrlen);
 extern long sys_setsockopt(int sockfd, int level, int optname, char *optval, int optlen);
 extern long sys_getsockopt(int sockfd, int level, int optname, char *optval, int *optlen);
-extern int truncate_impl(const char *path, int64_t length);
-extern int ftruncate_impl(int fd, int64_t length);
-extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
-extern int getcwd_impl(char *buf, size_t size);
-extern int chdir_impl(const char *path);
-extern int fchdir_impl(int fd);
-extern int fchmod_impl(int fd, uint32_t mode);
-extern int fchmodat_impl(int dirfd, const char *pathname, uint32_t mode, int flags);
-extern int fchown_impl(int fd, uint32_t owner, uint32_t group);
-extern int fchownat_impl(int dirfd, const char *pathname, uint32_t owner, uint32_t group, int flags);
-extern int utimensat_impl(int dirfd, const char *pathname,
-                          const struct __kernel_timespec times[2], int flags);
-struct statfs;
-extern void sync_impl(void);
-extern int fsync_impl(int fd);
-extern int fdatasync_impl(int fd);
-extern int syncfs_impl(int fd);
-extern int statfs_impl(const char *path, struct statfs *buf);
-extern int fstatfs_impl(int fd, struct statfs *buf);
-extern uint32_t umask_impl(uint32_t mask);
-extern ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz);
-extern int linkat(int olddirfd, const char *oldpath, int newdirfd, const char *newpath, int flags);
-extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
-extern int chroot(const char *path);
 extern int close_range_impl(unsigned int first, unsigned int last, unsigned int flags);
 extern int eventfd2_impl(unsigned int initval, int flags);
 extern int timerfd_create_impl(int clockid, int flags);
@@ -103,10 +79,6 @@ extern int memfd_create_impl(const char *name, unsigned int flags);
 extern int pidfd_open_impl(int32_t pid, unsigned int flags);
 extern int pidfd_getfd_impl(struct task *target, int targetfd, unsigned int flags);
 extern int task_pidfd_getfd_access_impl(struct task *target);
-extern int mkdirat_impl(int dirfd, const char *pathname, uint32_t mode);
-extern int unlinkat_impl(int dirfd, const char *pathname, int flags);
-extern int renameat2_impl(int olddirfd, const char *oldpath, int newdirfd,
-                          const char *newpath, unsigned int flags);
 extern void exit_impl(int status);
 extern ssize_t getrandom_impl(void *buf, size_t buflen, unsigned int flags);
 
@@ -1083,8 +1055,8 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)ret);
     }
     case __NR_readlinkat:
-        return syscall_result((long)readlinkat((int)arg0, (const char *)(uintptr_t)arg1,
-                                               (char *)(uintptr_t)arg2, (size_t)arg3));
+        return syscall_result((long)readlinkat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                    (char *)(uintptr_t)arg2, (size_t)arg3));
     case __NR_mkdirat:
         return syscall_result((long)mkdirat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                  (uint32_t)arg2));
@@ -1092,12 +1064,12 @@ static long syscall_dispatch_inner_impl(long number,
         return syscall_result((long)unlinkat_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                   (int)arg2));
     case __NR_linkat:
-        return syscall_result((long)linkat((int)arg0, (const char *)(uintptr_t)arg1,
-                                           (int)arg2, (const char *)(uintptr_t)arg3,
-                                           (int)arg4));
+        return syscall_result((long)linkat_impl((int)arg0, (const char *)(uintptr_t)arg1,
+                                                (int)arg2, (const char *)(uintptr_t)arg3,
+                                                (int)arg4));
     case __NR_symlinkat:
-        return syscall_result((long)symlinkat((const char *)(uintptr_t)arg0, (int)arg1,
-                                              (const char *)(uintptr_t)arg2));
+        return syscall_result((long)symlinkat_impl((const char *)(uintptr_t)arg0, (int)arg1,
+                                                   (const char *)(uintptr_t)arg2));
     case __NR_renameat:
         return syscall_result((long)renameat2_impl((int)arg0, (const char *)(uintptr_t)arg1,
                                                    (int)arg2, (const char *)(uintptr_t)arg3, 0));
@@ -1151,7 +1123,7 @@ static long syscall_dispatch_inner_impl(long number,
     case __NR_fchdir:
         return syscall_result((long)fchdir_impl((int)arg0));
     case __NR_chroot:
-        return syscall_result((long)chroot((const char *)(uintptr_t)arg0));
+        return syscall_result((long)chroot_impl((const char *)(uintptr_t)arg0));
     case __NR_umask:
         return (long)umask_impl((uint32_t)arg0);
     case __NR_fchmod:
