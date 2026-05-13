@@ -11,7 +11,7 @@
 #include "../fs/fdtable.h"
 #include "../private/fs/fdtable_state.h"
 #include "../fs/vfs.h"
-#include "cgroup.h"
+#include "../private/kernel/cgroup_state.h"
 #include "../private/kernel/cred_state.h"
 #include "../private/kernel/fork_frame_state.h"
 #include "cred.h"

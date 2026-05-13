@@ -19,7 +19,7 @@
 #include "private/fs/pty_state.h"
 #include "vfs.h"
 #include "private/fs/vfs_state.h"
-#include "kernel/cgroup.h"
+#include "../private/kernel/cgroup_state.h"
 #include "kernel/net/socket.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"

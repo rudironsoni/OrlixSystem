@@ -30,7 +30,7 @@
 #include "../private/kernel/uts_state.h"
 #include "../private/kernel/signal_state.h"
 #include "../private/kernel/cred_state.h"
-#include "../kernel/cgroup.h"
+#include "../private/kernel/cgroup_state.h"
 #include "../kernel/task.h"
 #include "../kernel/cred.h"
 #include "../kernel/signal.h"

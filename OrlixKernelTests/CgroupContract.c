@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-#include "kernel/cgroup.h"
+#include "private/kernel/cgroup_state.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "private/kernel/signal_state.h"

@@ -1,11 +1,5 @@
-/* OrlixKernel/kernel/cgroup.h
- * Private owner header for Orlix virtual cgroup state.
- *
- * This is runtime state, not Linux UAPI.
- */
-
-#ifndef KERNEL_CGROUP_H
-#define KERNEL_CGROUP_H
+#ifndef PRIVATE_KERNEL_CGROUP_STATE_H
+#define PRIVATE_KERNEL_CGROUP_STATE_H
 
 #include <linux/types.h>
 
@@ -61,4 +55,4 @@ int cgroupfs_child_at(const char *path, size_t index, char *name, size_t name_le
 }
 #endif
 
-#endif /* KERNEL_CGROUP_H */
+#endif /* PRIVATE_KERNEL_CGROUP_STATE_H */

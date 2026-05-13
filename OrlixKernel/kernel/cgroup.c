@@ -2,7 +2,7 @@
  * Virtual cgroup hierarchy and membership ownership.
  */
 
-#include "cgroup.h"
+#include "../private/kernel/cgroup_state.h"
 
 #include "../private/kernel/cred_state.h"
 #include "cred.h"

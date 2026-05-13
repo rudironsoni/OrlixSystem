@@ -13,7 +13,7 @@
 #include <linux/string.h>
 
 #include "internal/fs/namei.h"
-#include "kernel/cgroup.h"
+#include "../private/kernel/cgroup_state.h"
 
 /* Standard file descriptors - local definitions to avoid Darwin <unistd.h> */
 #ifndef STDERR_FILENO

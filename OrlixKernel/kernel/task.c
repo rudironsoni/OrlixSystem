@@ -7,7 +7,7 @@
 #include "../private/kernel/cred_state.h"
 #include "task.h"
 #include "signal.h"
-#include "cgroup.h"
+#include "../private/kernel/cgroup_state.h"
 #include "cred.h"
 #include "mm.h"
 #include "ptrace.h"

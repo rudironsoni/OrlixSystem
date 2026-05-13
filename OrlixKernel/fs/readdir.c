@@ -16,7 +16,7 @@
 #include "path.h"
 #include "private/fs/pty_state.h"
 #include "vfs.h"
-#include "kernel/cgroup.h"
+#include "../private/kernel/cgroup_state.h"
 #include "kernel/task.h"
 #include "../private/kernel/task_state.h"
 
