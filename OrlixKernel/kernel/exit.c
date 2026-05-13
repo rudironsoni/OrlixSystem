@@ -10,7 +10,7 @@
 #include "../private/kernel/kthread_state.h"
 #include "../private/kernel/task_state.h"
 #include "internal/exit.h"
-#include "../fs/pty.h"
+#include "../private/fs/pty_state.h"
 
 struct orphaned_pgrp_candidate {
     int32_t sid;

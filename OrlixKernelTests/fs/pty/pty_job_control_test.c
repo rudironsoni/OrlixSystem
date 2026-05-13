@@ -8,7 +8,7 @@
 #include "../../kunit/suite_registry.h"
 #include "kernel/init.h"
 #include "fs/fdtable.h"
-#include "fs/pty.h"
+#include "private/fs/pty_state.h"
 #include "kernel/signal.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"

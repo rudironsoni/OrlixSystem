@@ -25,7 +25,7 @@
 #include "fdtable.h"
 #include "private/fs/fdtable_state.h"
 #include "private/fs/eventpoll_state.h"
-#include "pty.h"
+#include "private/fs/pty_state.h"
 #include "../private/kernel/task_state.h"
 #include "../private/kernel/signal_state.h"
 #include "../private/kernel/cred_state.h"

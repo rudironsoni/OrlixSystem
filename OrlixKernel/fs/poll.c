@@ -10,7 +10,7 @@
 #include "internal/fs/poll.h"
 #include "pipe.h"
 #include "private/fs/pipe_state.h"
-#include "pty.h"
+#include "private/fs/pty_state.h"
 #include "kernel/net/socket.h"
 #include "../private/kernel/wait_queue_state.h"
 #include "../kernel/wait_queue.h"

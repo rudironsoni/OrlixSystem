@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 #include "fs/fdtable.h"
-#include "fs/pty.h"
+#include "private/fs/pty_state.h"
 #include "fs/vfs.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"

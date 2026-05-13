@@ -4,7 +4,7 @@
 #include <linux/string.h>
 
 #include "fdtable.h"
-#include "pty.h"
+#include "private/fs/pty_state.h"
 #include "vfs.h"
 #include "private/fs/fdtable_state.h"
 #include "private/fs/vfs_state.h"

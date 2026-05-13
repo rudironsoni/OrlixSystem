@@ -16,7 +16,7 @@
 #include "internal/random.h"
 #include "pipe.h"
 #include "private/fs/pipe_state.h"
-#include "pty.h"
+#include "private/fs/pty_state.h"
 #include "vfs.h"
 #include "private/fs/vfs_state.h"
 #include "kernel/cgroup.h"

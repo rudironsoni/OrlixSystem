@@ -14,7 +14,7 @@
 #include "private/fs/fdtable_state.h"
 #include "internal/fs/file.h"
 #include "path.h"
-#include "pty.h"
+#include "private/fs/pty_state.h"
 #include "vfs.h"
 #include "kernel/cgroup.h"
 #include "kernel/task.h"

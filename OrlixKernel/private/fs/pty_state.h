@@ -1,5 +1,5 @@
-#ifndef PTY_H
-#define PTY_H
+#ifndef PRIVATE_FS_PTY_STATE_H
+#define PRIVATE_FS_PTY_STATE_H
 
 #include <linux/stddef.h>
 #include <uapi/asm/termbits.h>
@@ -20,10 +20,14 @@ size_t pty_list_slave_indices_impl(unsigned int *indices, size_t capacity);
 
 int pty_close_end_impl(unsigned int pty_index, bool is_master);
 
-__kernel_ssize_t pty_read_master_impl(unsigned int pty_index, void *buf, size_t count, bool nonblock);
-__kernel_ssize_t pty_write_master_impl(unsigned int pty_index, const void *buf, size_t count, bool nonblock);
-__kernel_ssize_t pty_read_slave_impl(unsigned int pty_index, void *buf, size_t count, bool nonblock);
-__kernel_ssize_t pty_write_slave_impl(unsigned int pty_index, const void *buf, size_t count, bool nonblock);
+__kernel_ssize_t pty_read_master_impl(unsigned int pty_index, void *buf, size_t count,
+                                      bool nonblock);
+__kernel_ssize_t pty_write_master_impl(unsigned int pty_index, const void *buf, size_t count,
+                                       bool nonblock);
+__kernel_ssize_t pty_read_slave_impl(unsigned int pty_index, void *buf, size_t count,
+                                     bool nonblock);
+__kernel_ssize_t pty_write_slave_impl(unsigned int pty_index, const void *buf, size_t count,
+                                      bool nonblock);
 
 short pty_poll_revents_impl(unsigned int pty_index, bool is_master, short events);
 void pty_poll_wake_impl(unsigned int pty_index);
@@ -34,7 +38,8 @@ int pty_get_lock_impl(unsigned int pty_index, int *locked);
 
 int pty_get_termios_impl(unsigned int pty_index, struct termios *termios);
 int pty_set_termios_impl(unsigned int pty_index, const struct termios *termios);
-int pty_set_termios_with_action_impl(unsigned int pty_index, const struct termios *termios, int action);
+int pty_set_termios_with_action_impl(unsigned int pty_index, const struct termios *termios,
+                                     int action);
 
 int pty_get_winsize_impl(unsigned int pty_index, struct winsize *winsize);
 int pty_set_winsize_impl(unsigned int pty_index, const struct winsize *winsize);

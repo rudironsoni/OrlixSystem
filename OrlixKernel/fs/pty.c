@@ -1,4 +1,4 @@
-#include "pty.h"
+#include "private/fs/pty_state.h"
 
 #include <linux/atomic.h>
 #include <linux/errno.h>

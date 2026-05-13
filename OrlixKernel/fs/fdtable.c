@@ -40,7 +40,7 @@
 #include "private/fs/readiness_state.h"
 #include "private/fs/pipe_state.h"
 #include "pipe.h"
-#include "pty.h"
+#include "private/fs/pty_state.h"
 #include "vfs.h"
 #include "kernel/net/socket.h"
 #include "../kernel/task.h"

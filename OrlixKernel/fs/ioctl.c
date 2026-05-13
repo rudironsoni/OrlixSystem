@@ -12,7 +12,7 @@
 
 #include "fdtable.h"
 #include "private/fs/fdtable_state.h"
-#include "pty.h"
+#include "private/fs/pty_state.h"
 #include "internal/fs/ioctl.h"
 
 int ioctl_impl(int fd, unsigned long request, void *arg) {
