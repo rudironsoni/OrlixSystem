@@ -47,7 +47,6 @@ void signal_clear_queued_task(struct task *task, int32_t sig);
 void signal_clear_next_pending_task(struct task *task, int32_t sig);
 void signal_clear_pending_markers_task(struct task *task, int32_t sig);
 void signal_clear_pending_task(struct task *task, int32_t sig);
-bool signal_handler_ignored_task(const struct task *task, int32_t sig);
 
 /* Internal signal generation */
 int signal_generate_task(struct task *target, int32_t sig);

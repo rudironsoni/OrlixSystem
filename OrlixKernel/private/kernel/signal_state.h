@@ -75,6 +75,7 @@ bool signal_latest_queued_info_matches(const struct task *task,
 int signal_blocked_get_task(const struct task *task, sigset_t *mask);
 int signal_blocked_set_task(struct task *task, const sigset_t *mask);
 int signal_blocked_clear_task(struct task *task);
+bool signal_handler_ignored_task(const struct task *task, int32_t sig);
 void signal_recompute_pending(struct task *task);
 void signal_wake_task(struct task *task, bool group_wide);
 
