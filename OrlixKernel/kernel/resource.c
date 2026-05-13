@@ -78,30 +78,3 @@ int getrusage_impl(int who, struct rusage *usage) {
     memset(usage, 0, sizeof(*usage));
     return 0;
 }
-
-/* ============================================================================
- * PRLIMIT - Process resource limits (private implementation)
- * ============================================================================ */
-
-int prlimit_impl(int32_t pid, int resource, const struct rlimit *new_limit,
-                 struct rlimit *old_limit) {
-    struct task *task = task_current();
-
-    if (pid != 0 && (!task || pid != task->pid)) {
-        return -ESRCH;
-    }
-
-    /* Get old values first */
-    if (old_limit) {
-        if (getrlimit_impl(resource, old_limit) < 0) {
-            return -1;
-        }
-    }
-
-    /* Set new values */
-    if (new_limit) {
-        return setrlimit_impl(resource, new_limit);
-    }
-
-    return 0;
-}
