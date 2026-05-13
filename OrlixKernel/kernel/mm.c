@@ -3,6 +3,7 @@
  */
 
 #include "mm.h"
+#include "../private/kernel/mm_state.h"
 #include "task.h"
 #include "../private/kernel/task_state.h"
 

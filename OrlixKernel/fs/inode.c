@@ -16,8 +16,8 @@
 #include "vfs.h"
 #include "private/fs/vfs_state.h"
 #include "internal/fs/file.h"
+#include "../private/kernel/mm_state.h"
 #include "../private/kernel/task_state.h"
-#include "../kernel/mm.h"
 #include "../kernel/task.h"
 
 #define LINUX_UTIME_NOW_VALUE  ((1L << 30) - 1L)
