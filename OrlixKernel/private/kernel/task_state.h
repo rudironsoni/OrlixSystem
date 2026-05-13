@@ -35,6 +35,7 @@ void task_mark_continued_by_signal(struct task *task);
 void task_mark_signaled_exit(struct task *task, int32_t sig);
 void task_mark_exited(struct task *task, int status);
 void task_notify_parent_state_change(struct task *task);
+int task_session_has_pgrp_impl(int32_t sid, int32_t pgid);
 int task_reassign_pid_impl(struct task *task, int32_t pid);
 long task_read_virtual_memory_impl(struct task *task, uint64_t addr, void *buf, size_t count);
 long task_write_virtual_memory_impl(struct task *task, uint64_t addr, const void *buf, size_t count);

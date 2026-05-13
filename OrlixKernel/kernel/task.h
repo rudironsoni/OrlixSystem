@@ -102,7 +102,6 @@ int32_t getpgid_impl(int32_t pid);
 int setpgid_impl(int32_t pid, int32_t pgid);
 int32_t getsid_impl(int32_t pid);
 int32_t setsid_impl(void);
-int task_session_has_pgrp_impl(int32_t sid, int32_t pgid);
 
 /* Virtual fork/exec - internal helpers */
 int32_t fork_impl(void);
