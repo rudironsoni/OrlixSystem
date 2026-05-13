@@ -23,7 +23,6 @@
 #include "../kernel/mm.h"
 #include "../kernel/ptrace.h"
 #include "../private/kernel/ptrace_state.h"
-#include "../kernel/resource.h"
 #include "../private/kernel/resource_state.h"
 #include "../kernel/seccomp.h"
 #include "../kernel/signal.h"

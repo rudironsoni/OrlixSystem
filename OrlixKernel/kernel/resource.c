@@ -8,7 +8,8 @@
  * Linux-shaped canonical owner - iOS mediation as implementation detail
  */
 
-#include "resource.h"
+#include <linux/resource.h>
+#include <uapi/linux/times.h>
 #include "../private/kernel/resource_state.h"
 #include "task.h"
 #include "../private/kernel/task_state.h"
