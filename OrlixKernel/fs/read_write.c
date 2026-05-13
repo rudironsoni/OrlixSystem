@@ -19,6 +19,7 @@
 #include "kernel/cgroup.h"
 #include "kernel/net/socket.h"
 #include "kernel/task.h"
+#include "private/kernel/task_state.h"
 
 extern int ftruncate_impl(int fd, int64_t length);
 extern int fdatasync_impl(int fd);

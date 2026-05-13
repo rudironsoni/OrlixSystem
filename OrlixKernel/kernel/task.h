@@ -114,9 +114,6 @@ void task_exchange_vma_backing_paths_impl(const char *left_path, const char *rig
 void task_note_memory_fault_impl(struct task *task, uint64_t addr, int32_t code);
 void task_note_memory_signal_fault_impl(struct task *task, int32_t signo, int32_t code, uint64_t addr);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task);
-int task_restart_record_impl(struct task *task, enum task_restart_kind kind,
-                             uint64_t arg0, uint64_t arg1, uint64_t arg2,
-                             uint64_t arg3, uint64_t arg4, uint64_t arg5);
 void task_clear_vmas_impl(struct memory_space *mm);
 struct memory_space *task_mm_get_impl(struct memory_space *mm);
 struct memory_space *task_mm_dup_impl(const struct memory_space *mm);

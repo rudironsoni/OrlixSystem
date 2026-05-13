@@ -9,6 +9,7 @@
 #include "private/fs/lock_state.h"
 #include "poll.h"
 #include "../kernel/task.h"
+#include "../private/kernel/task_state.h"
 
 typedef struct epitem {
     int fd;

@@ -17,6 +17,7 @@
 #include <uapi/linux/time.h>
 
 #include "task.h"
+#include "../private/kernel/task_state.h"
 #include "signal.h"
 #include "wait_queue.h"
 

@@ -13,6 +13,7 @@
 #include "../private/kernel/wait_queue_state.h"
 #include "../kernel/wait_queue.h"
 #include "../kernel/task.h"
+#include "../private/kernel/task_state.h"
 
 extern int *__error(void);
 extern void *calloc(size_t, size_t);
