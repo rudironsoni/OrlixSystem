@@ -16,9 +16,12 @@
 #include <stdint.h>
 
 #include "ProcfsNamespaceContract.h"
+#include "fs/fdtable.h"
 #include "fs/fcntl.h"
 #include "fs/mount.h"
+#include "fs/namei.h"
 #include "fs/open.h"
+#include "fs/readdir.h"
 #include "fs/read_write.h"
 #include "fs/vfs.h"
 #include "kernel/cred.h"
@@ -34,10 +37,6 @@
 
 extern int errno;
 
-extern int mkdir_impl(const char *pathname, uint32_t mode);
-extern int close_impl(int fd);
-extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
-extern ssize_t getdents64_impl(int fd, void *dirp, size_t count);
 extern int signal_generate_process(struct task *target, int32_t sig);
 extern void cred_reset_to_defaults(void);
 extern void set_current_cred(struct cred *cred);

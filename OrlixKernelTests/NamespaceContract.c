@@ -10,7 +10,9 @@
 #include <stddef.h>
 
 #include "NamespaceContract.h"
+#include "fs/fdtable.h"
 #include "fs/mount.h"
+#include "fs/namei.h"
 #include "fs/open.h"
 #include "fs/read_write.h"
 #include "fs/vfs.h"
@@ -24,10 +26,6 @@
 
 extern int errno;
 
-extern int mkdir_impl(const char *pathname, uint32_t mode);
-extern int close_impl(int fd);
-extern int unlink_impl(const char *pathname);
-extern int rmdir_impl(const char *pathname);
 extern void cred_reset_to_defaults(void);
 extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
 extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
