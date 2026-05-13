@@ -30,6 +30,8 @@ int task_set_vma_page_flags_impl(struct task *task, uint64_t addr, uint64_t size
 void task_rename_vma_backing_path_impl(const char *old_path, const char *new_path);
 void task_exchange_vma_backing_paths_impl(const char *left_path, const char *right_path);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task);
+long long mm_vma_file_remaining_impl(const struct task_vma *vma, size_t offset);
+long long mm_vma_file_size_impl(const struct task_vma *vma);
 
 enum task_vma_kind {
     TASK_VMA_EXEC = 1,
