@@ -36,6 +36,7 @@
 #include "internal/fs/file.h"
 #include "internal/fs/memfd.h"
 #include "eventpoll.h"
+#include "private/fs/eventpoll_state.h"
 #include "pipe.h"
 #include "pty.h"
 #include "vfs.h"

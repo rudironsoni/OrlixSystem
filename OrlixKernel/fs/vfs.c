@@ -24,6 +24,7 @@
 
 #include "fdtable.h"
 #include "private/fs/fdtable_state.h"
+#include "private/fs/eventpoll_state.h"
 #include "pty.h"
 #include "../private/kernel/task_state.h"
 #include "../private/kernel/signal_state.h"
@@ -46,8 +47,6 @@ static const char *vfs_virtual_root_path = "/";
 static int vfs_ensure_backing_initialized(void);
 static int vfs_join_virtual_path(const char *base_path, const char *suffix, char *joined_path,
                                  size_t joined_path_len);
-extern int epoll_fdinfo_content_impl(struct epoll_instance *instance, char *buf, size_t buf_len,
-                                     size_t *pos);
 static int vfs_parse_decimal_i32(const char *s, int allow_zero, int32_t *value_out,
                                  const char **end_out);
 static int vfs_stat_virtual_backed_path(const char *resolved_vpath, const char *translated_path,
