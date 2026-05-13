@@ -54,6 +54,7 @@ int fdtable_task_fdinfo_content_impl(struct task *task, int fd, unsigned long lo
                                      char *buf, size_t buf_len);
 void fdtable_sync_current_task_fd_impl(int fd);
 void fdtable_sync_current_task_from_static_impl(void);
+struct task *pidfd_get_task_entry_impl(void *entry);
 
 #ifdef __cplusplus
 }

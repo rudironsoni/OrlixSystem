@@ -158,7 +158,6 @@ int memfd_add_seals_entry_impl(void *entry, int seals);
 int memfd_write_allowed_entry_impl(void *entry, int64_t offset, size_t count);
 int memfd_truncate_allowed_entry_impl(void *entry, int64_t length);
 bool get_fd_is_pidfd_impl(void *entry);
-struct task *pidfd_get_task_entry_impl(void *entry);
 bool pidfd_read_ready_entry_impl(void *entry);
 
 enum synthetic_proc_file {

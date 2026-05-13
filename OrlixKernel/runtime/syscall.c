@@ -14,6 +14,7 @@
 #include <linux/string.h>
 
 #include "../fs/fdtable.h"
+#include "../private/fs/fdtable_state.h"
 #include "../fs/pipe.h"
 #include "../fs/poll.h"
 #include "../fs/vfs.h"
