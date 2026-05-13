@@ -494,14 +494,18 @@ int select_impl(int nfds,
 
     if (requested == 0) {
         int ret = poll_impl_common(NULL, 0, timeout_ms, false);
-        if (ret < 0 && errno == EINTR) {
-            task_restart_record_impl(task_current(), TASK_RESTART_SELECT,
-                                     (uint64_t)(int64_t)nfds,
-                                     (uint64_t)(uintptr_t)readfds,
-                                     (uint64_t)(uintptr_t)writefds,
-                                     (uint64_t)(uintptr_t)errorfds,
-                                     (uint64_t)(uintptr_t)timeout,
-                                     0);
+        if (ret < 0) {
+            errno = -ret;
+            if (ret == -EINTR) {
+                task_restart_record_impl(task_current(), TASK_RESTART_SELECT,
+                                         (uint64_t)(int64_t)nfds,
+                                         (uint64_t)(uintptr_t)readfds,
+                                         (uint64_t)(uintptr_t)writefds,
+                                         (uint64_t)(uintptr_t)errorfds,
+                                         (uint64_t)(uintptr_t)timeout,
+                                         0);
+            }
+            return -1;
         }
         return ret;
     }
@@ -535,7 +539,8 @@ int select_impl(int nfds,
 
     int ret = poll_impl_common(pfds, (__kernel_ulong_t)requested, timeout_ms, false);
     if (ret < 0) {
-        if (errno == EINTR) {
+        errno = -ret;
+        if (ret == -EINTR) {
             if (readfds && requested_read_ptr) {
                 *readfds = requested_read;
             }

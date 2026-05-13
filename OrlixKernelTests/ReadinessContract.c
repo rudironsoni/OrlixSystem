@@ -19,6 +19,7 @@
 #include "kernel/signal.h"
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
+#include "kernel/wait_queue.h"
 #include "private/kernel/kthread_state.h"
 #include "private/kernel/task_state.h"
 #include "runtime/syscall.h"
@@ -341,12 +342,25 @@ static void case_mark_restart_ready(struct readiness_thread_case *ctx) {
     kernel_mutex_unlock(&ctx->lock);
 }
 
-static void case_wait_restart_ready(struct readiness_thread_case *ctx) {
+static int case_wait_restart_ready_timed(struct readiness_thread_case *ctx, int timeout_ms) {
+    int ret = 0;
+    int result = 0;
+
     kernel_mutex_lock(&ctx->lock);
-    while (!ctx->restart_ready) {
-        kernel_cond_wait(&ctx->cond, &ctx->lock);
+    while (!ctx->restart_ready && !ctx->done) {
+        ret = kernel_cond_timedwait_ms(&ctx->cond, &ctx->lock, timeout_ms);
+        if (ret == KERNEL_COND_WAIT_TIMED_OUT) {
+            kernel_mutex_unlock(&ctx->lock);
+            return ETIMEDOUT;
+        }
+        if (ret != 0) {
+            kernel_mutex_unlock(&ctx->lock);
+            return ret;
+        }
     }
+    result = ctx->done ? ctx->result : 0;
     kernel_mutex_unlock(&ctx->lock);
+    return result;
 }
 
 static void case_allow_restart(struct readiness_thread_case *ctx) {
@@ -477,6 +491,7 @@ static void *select_thread(void *arg) {
     struct readiness_thread_case *ctx = arg;
     __kernel_fd_set readfds;
     int ret;
+    int saved_errno = 0;
     if (ctx->task) {
         task_set_current(ctx->task);
     }
@@ -484,12 +499,14 @@ static void *select_thread(void *arg) {
     fdset_set(ctx->fd, &readfds);
     case_mark_started(ctx);
     ret = select_impl(ctx->fd + 1, &readfds, NULL, NULL, NULL);
+    saved_errno = errno;
     if (ret == 1 && fdset_isset(ctx->fd, &readfds)) {
         case_mark_done(ctx, 0);
-    } else if (ret == -1 && errno == EINTR) {
+    } else if (ret == -1 &&
+               signal_frame_restart_is_task(ctx->task, TASK_RESTART_SELECT)) {
         case_mark_done(ctx, EINTR);
     } else {
-        case_mark_done(ctx, errno ? errno : EIO);
+        case_mark_done(ctx, saved_errno ? saved_errno : EIO);
     }
     return NULL;
 }
@@ -498,18 +515,20 @@ static void *select_restart_thread(void *arg) {
     struct readiness_thread_case *ctx = arg;
     __kernel_fd_set readfds;
     long ret;
+    int saved_errno = 0;
 
     task_set_current(ctx->task);
     fdset_zero(&readfds);
     fdset_set(ctx->fd, &readfds);
     case_mark_started(ctx);
     ret = select_impl(ctx->fd + 1, &readfds, NULL, NULL, NULL);
-    if (ret != -1 || errno != EINTR ||
+    saved_errno = errno;
+    if (ret != -1 ||
         !signal_frame_restart_matches_task(ctx->task, TASK_RESTART_SELECT,
                                            (uint64_t)(int64_t)(ctx->fd + 1),
                                            (uint64_t)(uintptr_t)&readfds,
                                            0, 0, 0, 0)) {
-        case_mark_done(ctx, ENODATA);
+        case_mark_done(ctx, saved_errno ? saved_errno : ENODATA);
         return NULL;
     }
     signal_clear_pending_task(ctx->task, SIGUSR1);
@@ -672,8 +691,9 @@ int readiness_contract_poll_pipe_signal_interrupt_returns_intr(void) {
     }
     kernel_thread_detach(thread);
     case_wait_started(&ctx);
-    if (signal_generate_task(child, SIGUSR1) != 0) {
-        ret = errno ? errno : EIO;
+    ret = signal_generate_task(child, SIGUSR1);
+    if (ret != 0) {
+        ret = kernel_error_or_eio(ret);
         goto out_destroy;
     }
     ret = case_wait_done(&ctx);
@@ -856,8 +876,10 @@ int readiness_contract_select_signal_interrupt_returns_intr(void) {
     }
     kernel_thread_detach(thread);
     case_wait_started(&ctx);
-    if (signal_generate_task(child, SIGUSR1) != 0) {
-        ret = errno ? errno : EIO;
+    wait_queue_sleep_ms(1);
+    ret = signal_generate_task(child, SIGUSR1);
+    if (ret != 0) {
+        ret = kernel_error_or_eio(ret);
         goto out_destroy;
     }
     ret = case_wait_done(&ctx);
@@ -889,6 +911,7 @@ int readiness_contract_select_restart_syscall_reenters_readiness_wait(void) {
     struct task *parent = task_current();
     struct task *child = NULL;
     int ret = 0;
+    int attempts = 0;
 
     if (pipe_impl(fds) != 0) return errno;
     child = task_create_child_impl(parent);
@@ -905,11 +928,24 @@ int readiness_contract_select_restart_syscall_reenters_readiness_wait(void) {
     }
     kernel_thread_detach(thread);
     case_wait_started(&ctx);
-    if (signal_generate_task(child, SIGUSR1) != 0) {
-        ret = errno ? errno : EIO;
+    wait_queue_sleep_ms(1);
+    for (attempts = 0; attempts < 3; attempts++) {
+        ret = signal_generate_task(child, SIGUSR1);
+        if (ret != 0) {
+            ret = kernel_error_or_eio(ret);
+            goto out_destroy;
+        }
+        ret = case_wait_restart_ready_timed(&ctx, 50);
+        if (ret == 0) {
+            break;
+        }
+        if (ret != ETIMEDOUT) {
+            goto out_destroy;
+        }
+    }
+    if (ret != 0) {
         goto out_destroy;
     }
-    case_wait_restart_ready(&ctx);
     if (write_impl(ctx.write_fd, "r", 1) != 1) {
         ret = errno ? errno : EIO;
         goto out_destroy;
@@ -984,7 +1020,12 @@ int readiness_contract_pselect6_mask_blocks_signal_until_pipe_ready_and_restores
     }
     kernel_thread_detach(thread);
     pselect_case_wait_started(&ctx);
-    if (signal_generate_task(child, SIGUSR1) != 0 || write_impl(fds[1], "m", 1) != 1) {
+    result = signal_generate_task(child, SIGUSR1);
+    if (result != 0) {
+        result = kernel_error_or_eio(result);
+        goto out_destroy;
+    }
+    if (write_impl(fds[1], "m", 1) != 1) {
         result = errno ? errno : EIO;
         goto out_destroy;
     }
