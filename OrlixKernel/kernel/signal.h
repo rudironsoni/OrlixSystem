@@ -36,14 +36,6 @@ int kernel_sigemptyset(sigset_t *set);
 int kernel_sigaddset(sigset_t *set, int signo);
 int kernel_sigismember(sigset_t *set, int signo);
 
-/* Initialize signal state for a new task */
-int signal_init_task(struct task *task);
-
-/* Inherit signal state on fork/clone */
-struct signal_state *alloc_signal_struct(void);
-void free_signal_struct(struct signal_state *sig);
-struct signal_state *dup_signal_struct(struct signal_state *parent);
-
 /* Reset signal state on exec */
 void signal_reset_on_exec(struct task *task);
 
@@ -70,7 +62,6 @@ int signal_handler_get_task(const struct task *task, int32_t sig,
                             __sighandler_t *handler);
 int signal_handler_set_task(struct task *task, int32_t sig,
                             __sighandler_t handler);
-int signal_copy_fork_state_task(struct task *child, const struct task *parent);
 int signal_proc_status_snapshot_task(const struct task *task,
                                      unsigned int *queued_out,
                                      uint64_t *private_pending_out,

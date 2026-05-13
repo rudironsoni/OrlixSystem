@@ -44,6 +44,12 @@ struct pending_signals {
     struct signal_queue queue;
 };
 
+struct signal_state *alloc_signal_struct(void);
+void free_signal_struct(struct signal_state *sig);
+struct signal_state *dup_signal_struct(struct signal_state *parent);
+int signal_init_task(struct task *task);
+int signal_copy_fork_state_task(struct task *child, const struct task *parent);
+
 int signal_frame_metadata_get_task(const struct task *task,
                                    uint64_t *signo_out,
                                    uint64_t *return_pc_out,
