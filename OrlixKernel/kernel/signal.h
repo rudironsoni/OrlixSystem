@@ -47,7 +47,6 @@ void signal_clear_queued_task(struct task *task, int32_t sig);
 void signal_clear_next_pending_task(struct task *task, int32_t sig);
 void signal_clear_pending_markers_task(struct task *task, int32_t sig);
 void signal_clear_pending_task(struct task *task, int32_t sig);
-void signal_reset_task_state(struct task *task);
 int signal_queued_count_task(const struct task *task, int32_t sig);
 bool signal_thread_pending(const struct task *task, int32_t sig);
 bool signal_shared_pending(const struct task *task, int32_t sig);
@@ -55,13 +54,7 @@ bool signal_latest_queued_info_matches(const struct task *task, int32_t sig, int
 int signal_blocked_get_task(const struct task *task, sigset_t *mask);
 int signal_blocked_set_task(struct task *task, const sigset_t *mask);
 int signal_blocked_clear_task(struct task *task);
-bool signal_action_default_task(const struct task *task, int32_t sig);
-bool signal_altstack_has_flags_task(const struct task *task, int32_t flags);
 bool signal_handler_ignored_task(const struct task *task, int32_t sig);
-int signal_handler_get_task(const struct task *task, int32_t sig,
-                            __sighandler_t *handler);
-int signal_handler_set_task(struct task *task, int32_t sig,
-                            __sighandler_t handler);
 int signal_proc_status_snapshot_task(const struct task *task,
                                      unsigned int *queued_out,
                                      uint64_t *private_pending_out,

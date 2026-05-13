@@ -49,6 +49,15 @@ void free_signal_struct(struct signal_state *sig);
 struct signal_state *dup_signal_struct(struct signal_state *parent);
 int signal_init_task(struct task *task);
 int signal_copy_fork_state_task(struct task *child, const struct task *parent);
+void signal_reset_task_state(struct task *task);
+bool signal_action_default_task(const struct task *task, int32_t sig);
+bool signal_altstack_has_flags_task(const struct task *task, int32_t flags);
+int signal_handler_get_task(const struct task *task,
+                            int32_t sig,
+                            __sighandler_t *handler);
+int signal_handler_set_task(struct task *task,
+                            int32_t sig,
+                            __sighandler_t handler);
 
 int signal_frame_metadata_get_task(const struct task *task,
                                    uint64_t *signo_out,
