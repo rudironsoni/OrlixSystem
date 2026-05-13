@@ -87,8 +87,6 @@ int signal_frame_metadata_get_task(const struct task *task,
                                    uint64_t *mask_out,
                                    uint64_t *current_sp_out,
                                    uint64_t *size_out);
-int signal_frame_restart_kind_get_task(const struct task *task,
-                                       uint64_t *kind_out);
 bool signal_frame_restart_is_task(const struct task *task,
                                   uint64_t kind);
 bool signal_frame_restart_matches_task(const struct task *task,

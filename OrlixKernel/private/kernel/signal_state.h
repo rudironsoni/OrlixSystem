@@ -44,6 +44,8 @@ struct pending_signals {
     struct signal_queue queue;
 };
 
+int signal_frame_restart_kind_get_task(const struct task *task,
+                                       uint64_t *kind_out);
 int signal_frame_restart_record_task(struct task *task,
                                      uint64_t kind,
                                      uint64_t arg0,
