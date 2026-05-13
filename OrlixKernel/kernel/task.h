@@ -114,19 +114,6 @@ void task_exchange_vma_backing_paths_impl(const char *left_path, const char *rig
 void task_note_memory_fault_impl(struct task *task, uint64_t addr, int32_t code);
 void task_note_memory_signal_fault_impl(struct task *task, int32_t signo, int32_t code, uint64_t addr);
 const struct task_exec_handoff *task_get_exec_handoff_impl(struct task *task);
-void task_clear_vmas_impl(struct memory_space *mm);
-struct memory_space *task_mm_get_impl(struct memory_space *mm);
-struct memory_space *task_mm_dup_impl(const struct memory_space *mm);
-void task_mm_put_impl(struct memory_space *mm);
-void task_mm_update_high_water_impl(struct memory_space *mm);
-void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping);
-void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping);
-void mm_private_page_put_impl(struct vm_private_page *page);
-long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
-long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
-long mm_private_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
-long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
-
 /* Virtual process identity syscalls (internal helpers) */
 int32_t getpid_impl(void);
 int32_t getppid_impl(void);

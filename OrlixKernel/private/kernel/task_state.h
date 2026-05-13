@@ -11,6 +11,19 @@ extern "C" {
 
 extern kernel_mutex_t task_table_lock;
 
+void task_clear_vmas_impl(struct memory_space *mm);
+struct memory_space *task_mm_get_impl(struct memory_space *mm);
+struct memory_space *task_mm_dup_impl(const struct memory_space *mm);
+void task_mm_put_impl(struct memory_space *mm);
+void task_mm_update_high_water_impl(struct memory_space *mm);
+void mm_shared_mapping_get_impl(struct vm_shared_mapping *mapping);
+void mm_shared_mapping_put_impl(struct vm_shared_mapping *mapping);
+void mm_private_page_put_impl(struct vm_private_page *page);
+long mm_shared_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
+long mm_shared_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
+long mm_private_vma_read_impl(struct task_vma *vma, uint64_t addr, void *buf, size_t count);
+long mm_private_vma_write_impl(struct task_vma *vma, uint64_t addr, const void *buf, size_t count);
+
 enum task_vma_kind {
     TASK_VMA_EXEC = 1,
     TASK_VMA_INTERP = 2,
