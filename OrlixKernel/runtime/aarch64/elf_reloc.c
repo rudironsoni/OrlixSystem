@@ -2,7 +2,7 @@
  * AArch64 ELF relocation application for Orlix virtual task memory.
  */
 
-#include "elf_reloc.h"
+#include "../../private/runtime/aarch64/elf_reloc_state.h"
 
 #include <linux/elf.h>
 #include <linux/errno.h>

@@ -28,9 +28,9 @@
 #include "private/kernel/signal_state.h"
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
-#include "runtime/aarch64/exec_context.h"
+#include "private/runtime/aarch64/exec_context_api.h"
 #include "private/runtime/aarch64/exec_context_state.h"
-#include "runtime/aarch64/elf_reloc.h"
+#include "private/runtime/aarch64/elf_reloc_state.h"
 #include "runtime/native/registry.h"
 #include "runtime/syscall.h"
 

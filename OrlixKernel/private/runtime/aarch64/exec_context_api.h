@@ -1,9 +1,9 @@
-/* OrlixKernel/runtime/aarch64/exec_context.h
+/* OrlixKernel/private/runtime/aarch64/exec_context_api.h
  * Private aarch64 execution handoff substrate for virtual Linux tasks.
  */
 
-#ifndef RUNTIME_AARCH64_EXEC_CONTEXT_H
-#define RUNTIME_AARCH64_EXEC_CONTEXT_H
+#ifndef PRIVATE_RUNTIME_AARCH64_EXEC_CONTEXT_API_H
+#define PRIVATE_RUNTIME_AARCH64_EXEC_CONTEXT_API_H
 
 #include <linux/types.h>
 
@@ -23,4 +23,4 @@ int aarch64_exec_context_run(struct aarch64_exec_context *context, u64 max_steps
 }
 #endif
 
-#endif /* RUNTIME_AARCH64_EXEC_CONTEXT_H */
+#endif /* PRIVATE_RUNTIME_AARCH64_EXEC_CONTEXT_API_H */

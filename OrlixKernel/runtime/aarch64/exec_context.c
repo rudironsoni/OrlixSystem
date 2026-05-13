@@ -2,7 +2,7 @@
  * Virtual aarch64 execution context setup from task exec handoff state.
  */
 
-#include "exec_context.h"
+#include "../../private/runtime/aarch64/exec_context_api.h"
 
 #include "../../kernel/task.h"
 #include "../../private/runtime/aarch64/exec_context_state.h"

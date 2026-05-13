@@ -1,9 +1,9 @@
-/* OrlixKernel/runtime/aarch64/elf_reloc.h
+/* OrlixKernel/private/runtime/aarch64/elf_reloc_state.h
  * Private aarch64 ELF relocation application over virtual task memory.
  */
 
-#ifndef RUNTIME_AARCH64_ELF_RELOC_H
-#define RUNTIME_AARCH64_ELF_RELOC_H
+#ifndef PRIVATE_RUNTIME_AARCH64_ELF_RELOC_STATE_H
+#define PRIVATE_RUNTIME_AARCH64_ELF_RELOC_STATE_H
 
 #include <linux/types.h>
 
@@ -31,4 +31,4 @@ int aarch64_apply_dynamic_relocations(struct task *task,
 }
 #endif
 
-#endif /* RUNTIME_AARCH64_ELF_RELOC_H */
+#endif /* PRIVATE_RUNTIME_AARCH64_ELF_RELOC_STATE_H */

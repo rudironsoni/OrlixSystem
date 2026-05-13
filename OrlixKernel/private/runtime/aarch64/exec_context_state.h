@@ -1,7 +1,7 @@
 #ifndef PRIVATE_RUNTIME_AARCH64_EXEC_CONTEXT_STATE_H
 #define PRIVATE_RUNTIME_AARCH64_EXEC_CONTEXT_STATE_H
 
-#include "runtime/aarch64/exec_context.h"
+#include "private/runtime/aarch64/exec_context_api.h"
 
 #ifdef __cplusplus
 extern "C" {
