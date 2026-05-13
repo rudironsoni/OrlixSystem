@@ -30,7 +30,7 @@ struct signal_queue {
 
 struct signal_state {
     atomic_t refs;
-    struct sigaction actions[KERNEL_SIG_NUM];
+    struct sigaction actions[_NSIG];
     sigset_t blocked;
     sigset_t pending;
     sigset_t shared_pending;

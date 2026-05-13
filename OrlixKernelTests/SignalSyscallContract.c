@@ -35,7 +35,7 @@ static sigset_t signal_contract_mask_all_except(int signo) {
     sigset_t mask = {0};
 
     sigfillset(&mask);
-    if (signo >= 1 && signo <= KERNEL_SIG_NUM) {
+    if (signo >= 1 && signo <= _NSIG) {
         sigdelset(&mask, signo);
     }
     return mask;
@@ -283,7 +283,7 @@ int signal_syscall_contract_pidfd_send_signal_rejects_invalid_parameters(void) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto fail;
     }
-    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, KERNEL_SIG_NUM + 1, 0, 0, 0, 0);
+    ret = syscall_dispatch_impl(__NR_pidfd_send_signal, pidfd, _NSIG + 1, 0, 0, 0, 0);
     if (ret != -EINVAL) {
         errno = ret < 0 ? (int)-ret : EPROTO;
         goto fail;

@@ -272,7 +272,7 @@ static long syscall_tgkill(int32_t tgid, int32_t tid, int32_t sig) {
     struct task *target;
     int result;
 
-    if (tgid <= 0 || tid <= 0 || sig < 0 || sig > KERNEL_SIG_NUM) {
+    if (tgid <= 0 || tid <= 0 || sig < 0 || sig > _NSIG) {
         return -EINVAL;
     }
 
