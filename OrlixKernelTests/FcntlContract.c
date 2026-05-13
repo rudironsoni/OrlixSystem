@@ -28,6 +28,14 @@ static int close_if_open(int fd) {
     return 0;
 }
 
+static int expect_kernel_error(long ret, int expected) {
+    if (ret != -expected) {
+        errno = EPROTO;
+        return -1;
+    }
+    return 0;
+}
+
 static int append_decimal(char *buf, size_t buf_size, int value) {
     char digits[16];
     size_t count = 0;
@@ -235,12 +243,7 @@ out:
 }
 
 int fcntl_contract_dup2_same_fd_invalid_returns_badf(void) {
-    if (dup2_impl(-1, -1) != -1) {
-        errno = EPROTO;
-        return -1;
-    }
-    if (errno != EBADF) {
-        errno = EPROTO;
+    if (expect_kernel_error(dup2_impl(-1, -1), EBADF) != 0) {
         return -1;
     }
     return 0;
@@ -336,12 +339,7 @@ int fcntl_contract_dup3_same_fd_returns_inval(void) {
         return -1;
     }
 
-    if (dup3_impl(fd, fd, 0) != -1) {
-        errno = EPROTO;
-        goto out;
-    }
-    if (errno != EINVAL) {
-        errno = EPROTO;
+    if (expect_kernel_error(dup3_impl(fd, fd, 0), EINVAL) != 0) {
         goto out;
     }
 
@@ -418,12 +416,7 @@ int fcntl_contract_f_dupfd_rejects_negative_minimum(void) {
         return -1;
     }
 
-    if (fcntl_impl(fd, F_DUPFD, -1) != -1) {
-        errno = EPROTO;
-        goto out;
-    }
-    if (errno != EINVAL) {
-        errno = EPROTO;
+    if (expect_kernel_error(fcntl_impl(fd, F_DUPFD, -1), EINVAL) != 0) {
         goto out;
     }
 
@@ -443,12 +436,7 @@ int fcntl_contract_f_dupfd_rejects_out_of_range_minimum(void) {
         return -1;
     }
 
-    if (fcntl_impl(fd, F_DUPFD, NR_OPEN_DEFAULT) != -1) {
-        errno = EPROTO;
-        goto out;
-    }
-    if (errno != EINVAL) {
-        errno = EPROTO;
+    if (expect_kernel_error(fcntl_impl(fd, F_DUPFD, NR_OPEN_DEFAULT), EINVAL) != 0) {
         goto out;
     }
 

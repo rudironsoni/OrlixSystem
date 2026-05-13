@@ -1557,6 +1557,7 @@ int pidfd_getfd_impl(struct task *target, int targetfd, unsigned int flags) {
 
     source_file = source_files->fd[targetfd];
     if (!source_file || !source_file->private_data) {
+        newfd = -EBADF;
         goto out_unlock;
     }
 
@@ -1567,11 +1568,13 @@ int pidfd_getfd_impl(struct task *target, int targetfd, unsigned int flags) {
         }
     }
     if (newfd < 0) {
+        newfd = -EMFILE;
         goto out_unlock;
     }
 
     new_file = alloc_file();
     if (!new_file) {
+        newfd = -ENOMEM;
         goto out_unlock;
     }
 
