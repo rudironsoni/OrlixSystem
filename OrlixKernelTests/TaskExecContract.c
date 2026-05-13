@@ -10,6 +10,7 @@
 
 #include "fs/fcntl.h"
 #include "fs/fdtable.h"
+#include "fs/namei.h"
 #include "fs/mount.h"
 #include "fs/open.h"
 #include "private/fs/fdtable_state.h"
@@ -20,10 +21,6 @@
 #include "kernel/task.h"
 #include "private/kernel/task_state.h"
 
-extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
-extern int unlink_impl(const char *pathname);
-extern int rmdir_impl(const char *pathname);
-extern int mkdir_impl(const char *pathname, uint32_t mode);
 extern int chmod(const char *pathname, uint32_t mode);
 extern int chown(const char *pathname, __kernel_uid32_t owner, __kernel_gid32_t group);
 extern int capget_impl(cap_user_header_t header, cap_user_data_t data);

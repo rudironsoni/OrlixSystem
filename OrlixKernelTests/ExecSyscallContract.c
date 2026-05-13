@@ -20,6 +20,7 @@
 
 #include "fs/fdtable.h"
 #include "fs/exec.h"
+#include "fs/namei.h"
 #include "fs/mount.h"
 #include "fs/open.h"
 #include "fs/read_write.h"
@@ -41,13 +42,9 @@
 extern int errno;
 
 extern int execve(const char *pathname, char *const argv[], char *const envp[]);
-extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
-extern int unlink_impl(const char *pathname);
 extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
 extern int chmod(const char *pathname, uint32_t mode);
 extern int chown(const char *pathname, uint32_t owner, uint32_t group);
-extern int mkdir_impl(const char *pathname, uint32_t mode);
-extern int rmdir_impl(const char *pathname);
 extern int ftruncate_impl(int fd, int64_t length);
 extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
 extern bool signal_is_pending(const struct task *task, int32_t sig);

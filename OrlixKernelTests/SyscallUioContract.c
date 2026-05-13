@@ -10,13 +10,12 @@
 #include <stdint.h>
 
 #include "fs/fdtable.h"
+#include "fs/namei.h"
 #include "fs/pipe.h"
 #include "fs/read_write.h"
 #include "runtime/syscall.h"
 
 extern int errno;
-
-extern int unlink_impl(const char *pathname);
 
 static int close_if_open(int fd) {
     if (fd >= 0) {
