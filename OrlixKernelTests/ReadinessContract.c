@@ -11,6 +11,7 @@
 #include <linux/string.h>
 
 #include "fs/fdtable.h"
+#include "fs/ioctl.h"
 #include "fs/open.h"
 #include "fs/pipe.h"
 #include "fs/poll.h"
@@ -22,13 +23,16 @@
 #include "private/kernel/task_state.h"
 #include "runtime/syscall.h"
 
-extern int pty_contract_ioctl(int fd, unsigned long request, ...);
 extern int signal_generate_task(struct task *target, int32_t sig);
 extern int errno;
 extern long socketpair_stream_syscall(int fds[2]);
 
 static int close_if_open(int fd) {
     return fd >= 0 ? close_impl(fd) : 0;
+}
+
+static int kernel_error_or_eio(long ret) {
+    return ret < 0 ? (int)-ret : EIO;
 }
 
 static void fdset_zero(__kernel_fd_set *set) {
@@ -240,28 +244,35 @@ static int alloc_pty_pair(int *master_fd_out, int *slave_fd_out) {
     unsigned int pty_index = 0;
     int unlock = 0;
     char slave_path[64];
+    int ret = 0;
 
     master_fd = open_impl("/dev/ptmx", O_RDWR, 0);
     if (master_fd < 0) {
-        return -1;
+        return -master_fd;
     }
-    if (pty_contract_ioctl(master_fd, TIOCGPTN, &pty_index) != 0) {
+    ret = ioctl_impl(master_fd, TIOCGPTN, &pty_index);
+    if (ret != 0) {
+        ret = kernel_error_or_eio(ret);
         close_impl(master_fd);
-        return -1;
+        return ret;
     }
-    if (pty_contract_ioctl(master_fd, TIOCSPTLCK, &unlock) != 0) {
+    ret = ioctl_impl(master_fd, TIOCSPTLCK, &unlock);
+    if (ret != 0) {
+        ret = kernel_error_or_eio(ret);
         close_impl(master_fd);
-        return -1;
+        return ret;
     }
     memcpy(slave_path, "/dev/pts/", 9);
     if (append_decimal(slave_path + 9, sizeof(slave_path) - 9, (int)pty_index) != 0) {
+        ret = errno ? errno : EIO;
         close_impl(master_fd);
-        return -1;
+        return ret;
     }
     slave_fd = open_impl(slave_path, O_RDWR, 0);
     if (slave_fd < 0) {
+        ret = -slave_fd;
         close_impl(master_fd);
-        return -1;
+        return ret;
     }
     *master_fd_out = master_fd;
     *slave_fd_out = slave_fd;
@@ -454,10 +465,10 @@ static void *poll_thread(void *arg) {
     ret = poll_impl(&pfd, 1, -1);
     if (ret == 1 && (pfd.revents & POLLIN)) {
         case_mark_done(ctx, 0);
-    } else if (ret == -1 && errno == EINTR) {
+    } else if (ret == -EINTR) {
         case_mark_done(ctx, EINTR);
     } else {
-        case_mark_done(ctx, errno ? errno : EIO);
+        case_mark_done(ctx, kernel_error_or_eio(ret));
     }
     return NULL;
 }
@@ -744,7 +755,10 @@ static int run_pty_wake_case(int wait_fd_is_master, int select_mode) {
     struct readiness_thread_case ctx;
     kernel_thread_t thread;
     int ret = 0;
-    if (alloc_pty_pair(&master, &slave) != 0) return errno;
+    ssize_t wrote = 0;
+
+    ret = alloc_pty_pair(&master, &slave);
+    if (ret != 0) return ret;
     case_init(&ctx, wait_fd_is_master ? master : slave, 0);
     if (kernel_thread_create(&thread, NULL, select_mode ? select_thread : poll_thread, &ctx) != 0) {
         ret = errno ? errno : EIO;
@@ -752,8 +766,9 @@ static int run_pty_wake_case(int wait_fd_is_master, int select_mode) {
     }
     kernel_thread_detach(thread);
     case_wait_started(&ctx);
-    if (write_impl(wait_fd_is_master ? slave : master, "x\n", 2) < 1) {
-        ret = errno ? errno : EIO;
+    wrote = write_impl(wait_fd_is_master ? slave : master, "x\n", 2);
+    if (wrote != 2) {
+        ret = kernel_error_or_eio(wrote);
         goto out_destroy;
     }
     ret = case_wait_done(&ctx);
@@ -777,10 +792,14 @@ int readiness_contract_poll_pty_hup_after_peer_close(void) {
     int slave = -1;
     struct pollfd pfd;
     int ret = 0;
-    if (alloc_pty_pair(&master, &slave) != 0) return errno;
+    int poll_ret = 0;
+
+    ret = alloc_pty_pair(&master, &slave);
+    if (ret != 0) return ret;
     close_if_open(slave); slave = -1;
     pfd.fd = master; pfd.events = POLLIN; pfd.revents = 0;
-    if (poll_impl(&pfd, 1, 0) != 1 || (pfd.revents & POLLHUP) == 0) ret = errno ? errno : EIO;
+    poll_ret = poll_impl(&pfd, 1, 0);
+    if (poll_ret != 1 || (pfd.revents & POLLHUP) == 0) ret = kernel_error_or_eio(poll_ret);
     close_if_open(master);
     return ret;
 }
