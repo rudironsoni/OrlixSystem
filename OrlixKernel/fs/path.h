@@ -44,10 +44,6 @@ bool path_is_valid(const char *path);
 bool path_is_safe(const char *path);
 bool path_in_sandbox(const char *path);
 
-/* Path subsystem lifecycle */
-int path_init(void);
-void path_deinit(void);
-
 #ifdef __cplusplus
 }
 #endif
