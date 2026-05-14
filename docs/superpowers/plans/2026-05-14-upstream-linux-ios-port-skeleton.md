@@ -95,7 +95,7 @@
 - Create: `Linux/ports/orlix/configs/development_defconfig`
 - Create: `Linux/ports/orlix/configs/enterprise_defconfig`
 
-- [ ] Create all three defconfig files with Orlix block, TTY, char, initrd, devtmpfs, procfs, sysfs, cgroups, namespaces, seccomp, tmpfs, ext4, inet, unix sockets, script and ELF binary format support, and modules disabled.
+- [ ] Create all three defconfig files with Orlix block, TTY, char, initrd, devtmpfs, procfs, sysfs, cgroups, namespaces, tmpfs, ext4, inet, unix sockets, script and ELF binary format support, and modules disabled. Keep seccomp disabled until `arch/orlix` provides the required Linux seccomp hooks.
 - [ ] Ensure `appstore_defconfig` disables `CONFIG_BPF_JIT`.
 - [ ] Ensure `development_defconfig` enables `CONFIG_KALLSYMS` and `CONFIG_DEBUG_KERNEL`.
 - [ ] Run `test -f Linux/ports/orlix/configs/appstore_defconfig && test -f Linux/ports/orlix/configs/development_defconfig && test -f Linux/ports/orlix/configs/enterprise_defconfig` and expect exit `0`.
