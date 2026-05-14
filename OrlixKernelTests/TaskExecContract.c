@@ -23,8 +23,6 @@
 
 extern int chmod(const char *pathname, uint32_t mode);
 extern int chown(const char *pathname, __kernel_uid32_t owner, __kernel_gid32_t group);
-extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
-extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 extern void cred_reset_to_defaults(void);
 extern int errno;
 

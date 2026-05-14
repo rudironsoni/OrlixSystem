@@ -27,8 +27,6 @@
 extern int errno;
 
 extern void cred_reset_to_defaults(void);
-extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
-extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 
 static int expect_errno(int expected) {
     if (errno != expected) {

@@ -32,8 +32,6 @@ extern int close_impl(int fd);
 extern long readlink_impl(const char *pathname, char *buf, size_t bufsiz);
 extern int unlink_impl(const char *pathname);
 extern int rmdir_impl(const char *pathname);
-extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
-extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 extern int unlinkat(int dirfd, const char *pathname, int flags);
 extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
 extern long syscall_dispatch_impl(long number, long arg0, long arg1, long arg2,

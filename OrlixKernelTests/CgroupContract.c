@@ -15,6 +15,7 @@
 #include "fs/open.h"
 #include "fs/read_write.h"
 #include "private/kernel/cgroup_state.h"
+#include "kernel/cred.h"
 #include "kernel/signal.h"
 #include "kernel/task.h"
 #include "kernel/wait.h"
@@ -28,8 +29,6 @@ extern int close_impl(int fd);
 extern int mkdir_impl(const char *pathname, unsigned int mode);
 extern int rmdir_impl(const char *pathname);
 extern int unshare_impl(uint64_t flags);
-extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
-extern int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 
 static void cgroup_contract_format_pid(int32_t pid, char *buf, unsigned long size);
 

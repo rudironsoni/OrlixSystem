@@ -9,6 +9,7 @@
 #define KERNEL_CRED_H
 
 #include <linux/types.h>
+#include <uapi/linux/capability.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,6 +35,8 @@ __kernel_uid32_t setfsuid_impl(__kernel_uid32_t fsuid);
 __kernel_gid32_t setfsgid_impl(__kernel_gid32_t fsgid);
 int getgroups_impl(int size, __kernel_gid32_t list[]);
 int setgroups_impl(int size, const __kernel_gid32_t *list);
+int capget_impl(cap_user_header_t header, cap_user_data_t data);
+int capset_impl(cap_user_header_t header, const cap_user_data_t data);
 int prctl_impl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5);
 
 #ifdef __cplusplus

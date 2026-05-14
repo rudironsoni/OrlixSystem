@@ -46,7 +46,6 @@ extern int symlinkat(const char *target, int newdirfd, const char *linkpath);
 extern int chmod(const char *pathname, uint32_t mode);
 extern int chown(const char *pathname, uint32_t owner, uint32_t group);
 extern int ftruncate_impl(int fd, int64_t length);
-extern int capget_impl(cap_user_header_t header, cap_user_data_t data);
 extern bool signal_is_pending(const struct task *task, int32_t sig);
 
 static bool task_execed(const struct task *task) {
