@@ -182,8 +182,16 @@ build-linux-simulator: prepare-linux-worktree
 		exit 1; \
 	fi; \
 	build_dir="$(CURDIR)/Build/linux-simulator"; \
+	objects_dir="$$build_dir/objects"; \
 	mkdir -p "$$build_dir"; \
 	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH=orlix LLVM=1 mrproper defconfig; \
+	rm -rf "$$objects_dir"; \
+	mkdir -p "$$objects_dir"; \
+	for src in boot/*.c; do \
+		obj="$$objects_dir/$$(basename "$$src" .c).o"; \
+		xcrun --sdk iphonesimulator clang -arch arm64 -mios-simulator-version-min=16.0 -IOrlixKernel/include -c "$$src" -o "$$obj"; \
+	done; \
+	xcrun --sdk iphonesimulator libtool -static -o "$$build_dir/libOrlixKernel.a" "$$objects_dir"/*.o; \
 	echo "simulator Linux configuration ready: Build/linux-simulator"
 
 build-linux-iphoneos: prepare-linux-worktree
@@ -197,8 +205,16 @@ build-linux-iphoneos: prepare-linux-worktree
 		exit 1; \
 	fi; \
 	build_dir="$(CURDIR)/Build/linux-iphoneos"; \
+	objects_dir="$$build_dir/objects"; \
 	mkdir -p "$$build_dir"; \
 	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH=orlix LLVM=1 mrproper defconfig; \
+	rm -rf "$$objects_dir"; \
+	mkdir -p "$$objects_dir"; \
+	for src in boot/*.c; do \
+		obj="$$objects_dir/$$(basename "$$src" .c).o"; \
+		xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -IOrlixKernel/include -c "$$src" -o "$$obj"; \
+	done; \
+	xcrun --sdk iphoneos libtool -static -o "$$build_dir/libOrlixKernel.a" "$$objects_dir"/*.o; \
 	echo "iphoneos Linux configuration ready: Build/linux-iphoneos"
 
 package-orlixkernel-xcframework: build-linux-simulator build-linux-iphoneos
@@ -209,12 +225,19 @@ package-orlixkernel-xcframework: build-linux-simulator build-linux-iphoneos
 		echo "missing OrlixKernel header: $$header" >&2; \
 		exit 1; \
 	fi; \
+	if [ ! -f Build/linux-iphoneos/libOrlixKernel.a ]; then \
+		echo "missing device library: Build/linux-iphoneos/libOrlixKernel.a" >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -f Build/linux-simulator/libOrlixKernel.a ]; then \
+		echo "missing simulator library: Build/linux-simulator/libOrlixKernel.a" >&2; \
+		exit 1; \
+	fi; \
 	rm -rf "$$xcframework_dir"; \
-	mkdir -p \
-		"$$xcframework_dir/ios-arm64/OrlixKernel.framework/Headers" \
-		"$$xcframework_dir/ios-arm64_x86_64-simulator/OrlixKernel.framework/Headers"; \
-	cp "$$header" "$$xcframework_dir/ios-arm64/OrlixKernel.framework/Headers/OrlixKernel.h"; \
-	cp "$$header" "$$xcframework_dir/ios-arm64_x86_64-simulator/OrlixKernel.framework/Headers/OrlixKernel.h"; \
+	xcodebuild -create-xcframework \
+		-library Build/linux-iphoneos/libOrlixKernel.a -headers OrlixKernel/include \
+		-library Build/linux-simulator/libOrlixKernel.a -headers OrlixKernel/include \
+		-output "$$xcframework_dir" >/dev/null; \
 	echo "OrlixKernel.xcframework skeleton ready: Build/OrlixKernel.xcframework"
 
 build-orlix-clang-tidy-module:
