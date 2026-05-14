@@ -2,6 +2,13 @@ SHELL := /bin/bash
 
 LINUX_VERSION ?= 6.12
 LINUX_ARCH ?= arm64
+LINUX_TAG ?= v$(LINUX_VERSION)
+LINUX_REMOTE ?= https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+LINUX_UPSTREAM_DIR ?= Linux/upstream
+LINUX_WORK_DIR ?= $(LINUX_UPSTREAM_DIR)/linux-$(LINUX_VERSION)
+ORLIX_LINUX_OVERLAY ?= Linux/ports/orlix/overlay
+ORLIX_LINUX_PATCH_DIR ?= Linux/ports/orlix/patches
+ORLIX_XCFRAMEWORK_DIR ?= Build/OrlixKernel.xcframework
 LINUX_KERNEL_SERIES ?=
 LINUX_TARBALL_URL ?=
 LINUX_KERNEL_VENDOR_ROOT ?= OrlixKernel/vendor/linux
@@ -93,7 +100,31 @@ ORLIX_LINT_OBJC_FLAGS := \
 	-F$(IPHONESIM_SDK_FRAMEWORK_DIR) \
 	-DDEBUG=1
 
-.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface
+.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream
+
+bootstrap-linux-upstream:
+	@set -euo pipefail; \
+	linux_remote="$(LINUX_REMOTE)"; \
+	linux_tag="$(LINUX_TAG)"; \
+	linux_work_dir="$(LINUX_WORK_DIR)"; \
+	mkdir -p "$$(dirname "$$linux_work_dir")"; \
+	if [ -d "$$linux_work_dir/.git" ]; then \
+		git -C "$$linux_work_dir" remote set-url origin "$$linux_remote"; \
+		git -C "$$linux_work_dir" fetch --tags --force origin "$$linux_tag"; \
+	else \
+		rm -rf "$$linux_work_dir"; \
+		git clone --no-checkout --origin origin "$$linux_remote" "$$linux_work_dir"; \
+		git -C "$$linux_work_dir" fetch --tags --force origin "$$linux_tag"; \
+	fi; \
+	git -C "$$linux_work_dir" -c advice.detachedHead=false checkout --quiet --force --detach "$$linux_tag"; \
+	checked_tag="$$(git -C "$$linux_work_dir" describe --tags --exact-match HEAD)"; \
+	checked_commit="$$(git -C "$$linux_work_dir" rev-parse HEAD)"; \
+	tag_commit="$$(git -C "$$linux_work_dir" rev-list -n1 "$$linux_tag")"; \
+	if [ "$$checked_tag" != "$$linux_tag" ] || [ "$$checked_commit" != "$$tag_commit" ]; then \
+		echo "expected $$linux_tag at $$tag_commit but checked out $$checked_tag at $$checked_commit" >&2; \
+		exit 1; \
+	fi; \
+	echo "upstream Linux ready: $$linux_work_dir ($$checked_tag)"
 
 build-orlix-clang-tidy-module:
 	@set -euo pipefail; \
