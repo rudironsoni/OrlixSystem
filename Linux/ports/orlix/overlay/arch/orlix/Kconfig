@@ -1,0 +1,9 @@
+config ORLIX
+	bool "Orlix architecture"
+	default y
+
+config ARCH_DEFCONFIG
+	string
+	default "defconfig"
+
+source "init/Kconfig"
