@@ -78,6 +78,7 @@ ModuleCache/
 
 # Generated Linux source trees
 Linux/upstream/linux-6.12/
+Linux/upstream/linux-*/
 
 
 # Clangd compilation database cache
