@@ -100,7 +100,7 @@ ORLIX_LINT_OBJC_FLAGS := \
 	-F$(IPHONESIM_SDK_FRAMEWORK_DIR) \
 	-DDEBUG=1
 
-.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream
+.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream prepare-linux-worktree
 
 bootstrap-linux-upstream:
 	@set -euo pipefail; \
@@ -128,6 +128,39 @@ bootstrap-linux-upstream:
 		exit 1; \
 	fi; \
 	echo "upstream Linux ready: $$linux_upstream_dir ($$checked_tag)"
+
+prepare-linux-worktree: bootstrap-linux-upstream
+	@set -euo pipefail; \
+	linux_upstream_dir="$(LINUX_UPSTREAM_DIR)"; \
+	linux_work_dir="$(LINUX_WORK_DIR)"; \
+	overlay_dir="$(ORLIX_LINUX_OVERLAY)"; \
+	patch_dir="$(ORLIX_LINUX_PATCH_DIR)"; \
+	exception_dir="$$patch_dir/exceptions"; \
+	forbidden_re='^(fs|kernel|mm|ipc|net|include/linux|include/uapi)(/|$$)'; \
+	if [ ! -d "$$overlay_dir" ]; then \
+		echo "missing Linux overlay directory: $$overlay_dir" >&2; \
+		echo "Create $$overlay_dir before running prepare-linux-worktree." >&2; \
+		exit 1; \
+	fi; \
+	rm -rf "$$linux_work_dir"; \
+	mkdir -p "$$linux_work_dir"; \
+	git -C "$$linux_upstream_dir" archive --format=tar HEAD | tar -x -C "$$linux_work_dir"; \
+	cp -R "$$overlay_dir/." "$$linux_work_dir"; \
+	if [ -d "$$patch_dir" ]; then \
+		for patch in "$$patch_dir"/*.patch "$$patch_dir"/*.diff; do \
+			[ -e "$$patch" ] || continue; \
+			patch_name="$$(basename "$$patch")"; \
+			case "$$patch" in /*) patch_abs="$$patch" ;; *) patch_abs="$(CURDIR)/$$patch" ;; esac; \
+			if git -C "$$linux_work_dir" apply --numstat "$$patch_abs" | awk -v re="$$forbidden_re" 'BEGIN { bad = 0 } { path = $$3; if (path ~ re) { print path; bad = 1 } } END { exit bad ? 0 : 1 }' >/dev/null; then \
+				if [ ! -f "$$exception_dir/$$patch_name.md" ]; then \
+					echo "patch $$patch_name touches a forbidden upstream path; add $$exception_dir/$$patch_name.md" >&2; \
+					exit 1; \
+				fi; \
+			fi; \
+			git -C "$$linux_work_dir" apply "$$patch_abs"; \
+		done; \
+	fi; \
+	echo "prepared Linux worktree: $$linux_work_dir"
 
 build-orlix-clang-tidy-module:
 	@set -euo pipefail; \
