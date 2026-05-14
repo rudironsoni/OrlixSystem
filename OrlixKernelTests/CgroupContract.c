@@ -11,7 +11,9 @@
 
 #include <stdint.h>
 
+#include "fs/fdtable.h"
 #include "fs/mount.h"
+#include "fs/namei.h"
 #include "fs/open.h"
 #include "fs/read_write.h"
 #include "private/kernel/cgroup_state.h"
@@ -24,11 +26,6 @@
 #include "runtime/syscall.h"
 
 extern int errno;
-
-extern int close_impl(int fd);
-extern int mkdir_impl(const char *pathname, unsigned int mode);
-extern int rmdir_impl(const char *pathname);
-extern int unshare_impl(uint64_t flags);
 
 static void cgroup_contract_format_pid(int32_t pid, char *buf, unsigned long size);
 
