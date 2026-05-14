@@ -66,13 +66,18 @@ Orlix.xcodeproj/
 
 # Build artifacts
 build/
+Build/
 .deriveddata/
 DerivedData/
 *.xcresult/
+*.xcframework/
 CompilationCache/
 Index.noindex/
 Logs/
 ModuleCache/
+
+# Generated Linux source trees
+Linux/upstream/linux-6.12/
 
 
 # Clangd compilation database cache
