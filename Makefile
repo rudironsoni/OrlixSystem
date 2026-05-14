@@ -9,6 +9,7 @@ LINUX_WORK_DIR ?= Build/linux-work
 ORLIX_LINUX_OVERLAY ?= Linux/ports/orlix/overlay
 ORLIX_LINUX_PATCH_DIR ?= Linux/ports/orlix/patches
 ORLIX_XCFRAMEWORK_DIR ?= Build/OrlixKernel.xcframework
+ORLIX_KERNEL_HEADER ?= OrlixKernel/include/OrlixKernel.h
 LINUX_MAKE ?=
 LINUX_LLVM_BIN ?=
 LINUX_SED ?=
@@ -95,7 +96,7 @@ ORLIX_LINT_OBJC_FLAGS := \
 	-F$(IPHONESIM_SDK_FRAMEWORK_DIR) \
 	-DDEBUG=1
 
-.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream prepare-linux-worktree
+.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream prepare-linux-worktree build-linux-simulator build-linux-iphoneos package-orlixkernel-xcframework
 
 bootstrap-linux-upstream:
 	@set -euo pipefail; \
@@ -169,6 +170,52 @@ prepare-linux-worktree: bootstrap-linux-upstream
 		done; \
 	fi; \
 	echo "prepared Linux worktree: $$linux_work_dir"
+
+build-linux-simulator: prepare-linux-worktree
+	@set -euo pipefail; \
+	linux_make="$(LINUX_MAKE)"; \
+	if [ -z "$$linux_make" ]; then \
+		linux_make="$$(command -v gmake || true)"; \
+	fi; \
+	if [ -z "$$linux_make" ]; then \
+		echo "GNU Make >= 4.0 is required by Linux Kbuild; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; \
+		exit 1; \
+	fi; \
+	build_dir="$(CURDIR)/Build/linux-simulator"; \
+	mkdir -p "$$build_dir"; \
+	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH=orlix LLVM=1 mrproper defconfig; \
+	echo "simulator Linux configuration ready: Build/linux-simulator"
+
+build-linux-iphoneos: prepare-linux-worktree
+	@set -euo pipefail; \
+	linux_make="$(LINUX_MAKE)"; \
+	if [ -z "$$linux_make" ]; then \
+		linux_make="$$(command -v gmake || true)"; \
+	fi; \
+	if [ -z "$$linux_make" ]; then \
+		echo "GNU Make >= 4.0 is required by Linux Kbuild; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; \
+		exit 1; \
+	fi; \
+	build_dir="$(CURDIR)/Build/linux-iphoneos"; \
+	mkdir -p "$$build_dir"; \
+	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH=orlix LLVM=1 mrproper defconfig; \
+	echo "iphoneos Linux configuration ready: Build/linux-iphoneos"
+
+package-orlixkernel-xcframework: build-linux-simulator build-linux-iphoneos
+	@set -euo pipefail; \
+	xcframework_dir="$(ORLIX_XCFRAMEWORK_DIR)"; \
+	header="$(ORLIX_KERNEL_HEADER)"; \
+	if [ ! -f "$$header" ]; then \
+		echo "missing OrlixKernel header: $$header" >&2; \
+		exit 1; \
+	fi; \
+	rm -rf "$$xcframework_dir"; \
+	mkdir -p \
+		"$$xcframework_dir/ios-arm64/OrlixKernel.framework/Headers" \
+		"$$xcframework_dir/ios-arm64_x86_64-simulator/OrlixKernel.framework/Headers"; \
+	cp "$$header" "$$xcframework_dir/ios-arm64/OrlixKernel.framework/Headers/OrlixKernel.h"; \
+	cp "$$header" "$$xcframework_dir/ios-arm64_x86_64-simulator/OrlixKernel.framework/Headers/OrlixKernel.h"; \
+	echo "OrlixKernel.xcframework skeleton ready: Build/OrlixKernel.xcframework"
 
 build-orlix-clang-tidy-module:
 	@set -euo pipefail; \

@@ -1,0 +1,15 @@
+diff --git a/Makefile b/Makefile
+index 68c2681a64c4..898a709ed8d8 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1105,7 +1105,7 @@ PHONY += prepare0
+ 
+ ifeq ($(KBUILD_EXTMOD),)
+ 
+-build-dir	:= .
+-clean-dirs	:= $(sort . Documentation \
++build-dir	:= .
++clean-dirs	:= $(sort . $(if $(filter orlix,$(SRCARCH)),,Documentation) \
+ 		     $(patsubst %/,%,$(filter %/, $(core-) \
+ 			$(drivers-) $(libs-))))
+ 
