@@ -155,12 +155,20 @@ public:
       }
 
       static const std::vector<std::string> ForbiddenHeaders = {
-          "pthread.h",            "sys/sysctl.h",   "mach/",
-          "objc/",                "dispatch/",      "os/log.h",
-          "TargetConditionals.h", "Foundation/",    "UIKit/",
-          "CoreFoundation/",      "sys/socket.h",   "sys/types.h",
-          "sys/uio.h",            "sys/ioctl.h",    "sys/select.h",
-          "sys/resource.h",       "sys/statvfs.h",  "sys/wait.h"};
+          "assert.h",             "ctype.h",         "dirent.h",
+          "dispatch/",            "errno.h",         "float.h",
+          "Foundation/",          "inttypes.h",      "iso646.h",
+          "limits.h",             "locale.h",        "mach/",
+          "math.h",               "objc/",           "os/log.h",
+          "pthread.h",            "setjmp.h",        "stdbool.h",
+          "stddef.h",             "stdint.h",        "stdio.h",
+          "stdlib.h",             "string.h",        "strings.h",
+          "sys/ioctl.h",          "sys/resource.h",  "sys/select.h",
+          "sys/socket.h",         "sys/statvfs.h",   "sys/sysctl.h",
+          "sys/types.h",          "sys/uio.h",       "sys/wait.h",
+          "TargetConditionals.h", "time.h",          "unistd.h",
+          "UIKit/",               "wchar.h",         "wctype.h",
+          "CoreFoundation/"};
       static const std::vector<std::string> ForbiddenAngledOnlyHeaders = {
           "poll.h", "termios.h", "signal.h"};
 

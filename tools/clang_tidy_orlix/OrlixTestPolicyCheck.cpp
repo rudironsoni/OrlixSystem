@@ -85,11 +85,12 @@ public:
     if (KernelTests) {
       if (SM.isWrittenInMainFile(HashLoc)) {
         static const std::vector<std::string> ForbiddenKernelTestHeaders = {
-            "string.h",      "strings.h",      "stdatomic.h",
-            "sys/socket.h",  "sys/types.h",    "sys/uio.h",
-            "sys/ioctl.h",   "sys/select.h",   "sys/resource.h",
-            "sys/statvfs.h", "sys/wait.h",     "poll.h",
-            "termios.h",     "signal.h"};
+            "errno.h",       "string.h",       "strings.h",
+            "stdatomic.h",   "stdbool.h",      "stddef.h",
+            "stdint.h",      "sys/socket.h",   "sys/types.h",
+            "sys/uio.h",     "sys/ioctl.h",    "sys/select.h",
+            "sys/resource.h","sys/statvfs.h",  "sys/wait.h",
+            "poll.h",        "termios.h",      "signal.h"};
 
         for (const auto &Header : ForbiddenKernelTestHeaders) {
           if (!isKernelHarnessSupportPath(Path) &&
@@ -209,6 +210,12 @@ const std::vector<RegexRule> KernelTestRules = {
      "local fallback definitions for Linux ABI constants are forbidden in LinuxKernel tests; use vendored Linux headers instead"},
     {R"(syscall_dispatch_impl\s*\(\s*__NR_socketpair\s*,\s*[0-9]+\s*,\s*[0-9]+\s*,)",
      "raw numeric Linux socket ABI arguments are forbidden in LinuxKernel tests; consume the vendored Linux header owner for these constants instead"},
+    {R"(^\s*extern\s+int\s+errno\s*;)",
+     "libc errno globals are forbidden in LinuxKernel tests; keep direct OrlixKernel helper assertions on kernel-style negative errno returns instead"},
+    {R"(\b__error\s*\()",
+     "libc errno accessors are forbidden in LinuxKernel tests; keep direct OrlixKernel helper assertions on kernel-style negative errno returns instead"},
+    {R"(^\s*#\s*define\s+errno\b)",
+     "libc errno macro rebinding is forbidden in LinuxKernel tests; keep direct OrlixKernel helper assertions on kernel-style negative errno returns instead"},
     {R"(\bextern\s+int\s+(ioctl|open|close|snprintf)\s*\()",
      "host syscall forward declarations are forbidden in test support"},
     {R"(\bextern\s+(int|long|ssize_t|int64_t)\s+(open_impl|openat_impl|creat_impl|flock_impl|dup_impl|dup2_impl|dup3_impl|fcntl_impl|stat_impl|fstat_impl|lstat_impl|access_impl|fstatat_impl|faccessat_impl|statx_impl|ioctl_impl|read_impl|write_impl|lseek_impl|pread_impl|pwrite_impl|copy_file_range_impl|fallocate_impl|sync_file_range_impl|splice_impl|vmsplice_impl|tee_impl|readv_impl|writev_impl|preadv_impl|pwritev_impl|preadv2_impl|pwritev2_impl|sendfile_impl)\s*\()",
