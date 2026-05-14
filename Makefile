@@ -137,6 +137,17 @@ prepare-linux-worktree: bootstrap-linux-upstream
 	patch_dir="$(ORLIX_LINUX_PATCH_DIR)"; \
 	exception_dir="$$patch_dir/exceptions"; \
 	forbidden_re='^(fs|kernel|mm|ipc|net|include/linux|include/uapi)(/|$$)'; \
+	case "$$linux_work_dir" in \
+		""|"/"|"."|"..") echo "unsafe Linux work directory: $$linux_work_dir" >&2; exit 1 ;; \
+	esac; \
+	case "$$linux_work_dir" in \
+		Build/*) ;; \
+		*) echo "Linux work directory must be under Build/: $$linux_work_dir" >&2; exit 1 ;; \
+	esac; \
+	if [ "$$linux_work_dir" = "$$linux_upstream_dir" ]; then \
+		echo "Linux work directory must not equal upstream directory: $$linux_work_dir" >&2; \
+		exit 1; \
+	fi; \
 	if [ ! -d "$$overlay_dir" ]; then \
 		echo "missing Linux overlay directory: $$overlay_dir" >&2; \
 		echo "Create $$overlay_dir before running prepare-linux-worktree." >&2; \
