@@ -1,0 +1,13 @@
+menu "Orlix block drivers"
+
+config ORLIX_BLOCK_FILE
+	tristate "Orlix file-backed block device"
+	help
+	  Build the Orlix file-backed block device skeleton.
+
+config ORLIX_BLOCK_IMAGE
+	tristate "Orlix image-backed block device"
+	help
+	  Build the Orlix image-backed block device skeleton.
+
+endmenu

@@ -1,0 +1,8 @@
+menu "Orlix tty drivers"
+
+config ORLIX_TTY_CONSOLE
+	tristate "Orlix console tty"
+	help
+	  Build the Orlix console tty skeleton.
+
+endmenu

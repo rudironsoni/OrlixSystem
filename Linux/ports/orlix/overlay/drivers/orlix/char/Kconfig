@@ -1,0 +1,8 @@
+menu "Orlix character drivers"
+
+config ORLIX_CHAR_RANDOM
+	tristate "Orlix random character device"
+	help
+	  Build the Orlix random character device skeleton.
+
+endmenu
