@@ -1,133 +1,74 @@
-# Project Orlix
+# Orlix
 
-Act as the architecture and implementation assistant for Orlix, a Linux-shaped runtime and developer system for iOS and iPadOS.
+Orlix is a Linux-shaped runtime and developer system for iOS and iPadOS.
 
-Primary repo:
-- OrlixSystem: https://github.com/rudironsoni/OrlixSystem
+Primary repository:
+- `OrlixSystem`: https://github.com/rudironsoni/OrlixSystem
 
-IXLand is historical. Orlix is current.
+IXLand is the historical name. Orlix is current.
 
-## Core Objective
+## What Orlix Is
 
-Orlix must provide Linux-oriented source compatibility, ABI discipline, syscall behavior, and runtime behavior so real Linux userspace can compile and run with minimal downstream patching.
+Orlix exists to make iPhone and iPad capable of hosting real Linux-oriented software and workflows without redefining that software around Apple-native assumptions.
 
-Orlix is iOS-first only in host placement. Its public contract is Linux-shaped, not Darwin-shaped, libc-shaped, or branding-shaped.
+The goal is not to make Linux tools feel “sort of portable” on iOS.
 
-## Non-Negotiable Rules
+The goal is to provide a Linux-shaped environment so Linux userspace can compile and run with minimal downstream patching.
 
-### 1. Upstream Linux header parity is mandatory.
+Orlix is iOS-first only in host placement. Its contract is Linux-shaped.
 
-`OrlixKernel` MUST preserve 100% parity with vendored upstream Linux headers as contract truth.
+## Why Orlix Exists
 
-Do not create local replacements, facades, aliases, typedefs, private clones, compatibility headers, or wrappers for Linux UAPI, kheaders, constants, structs, flags, ioctl payloads, errno values, syscall contracts, or ABI surfaces.
+iOS and iPadOS are powerful platforms, but their native application model does not expose a Linux runtime model directly.
 
-If upstream Linux defines the concept, use the upstream Linux name and shape.
+That leaves a large gap for developers who want:
+- Linux command-line workflows
+- Linux process and syscall semantics
+- Linux-oriented source compatibility
+- a serious development environment on mobile Apple hardware
+- a path to run real Linux userspace instead of app-specific rewrites
 
-Do not invent `orlix_*`, `ix_*`, `kernel_*`, `linux_*`, `compat_*`, `bridge_*`, `shim_*`, `adapter_*`, `*_compat`, `*_bridge`, `*_shim`, or similar names for Linux concepts.
+Orlix exists to close that gap with a runtime that is hosted on iOS but shaped for Linux userspace.
 
-### 2. OrlixKernel is the Linux kernel/runtime owner.
+## What Users Should Expect
 
-Linux-facing behavior belongs in `OrlixKernel` only:
-- syscalls
-- process model
-- fork-like behavior
-- exec
-- wait
-- exit
-- signals
-- credentials
-- fdtable
-- VFS
-- path resolution
-- mounts
-- file operations
-- pipes
-- PTY/TTY
-- poll/select/epoll
-- futex
-- procfs
-- devfs
-- cgroups
-- namespaces
-- networking
-- time
-- resources
-- seccomp
-- ptrace
-- native runtime behavior
+From a user perspective, Orlix aims to provide:
+- Linux-oriented source compatibility for real userspace code
+- Linux ABI discipline instead of ad hoc Darwin-flavored compatibility
+- Linux-shaped syscall and runtime behavior
+- shell and terminal workflows that behave like Linux workflows
+- virtual kernel subsystems such as VFS, signals, PTY, poll, epoll, futex, procfs, devfs, namespaces, and cgroups where the host does not provide them directly
+- adaptation of App Store and iOS platform constraints without leaking those constraints into the user-facing Linux contract
 
-`OrlixKernel` must model the Linux rule first, then delegate only private host mechanics to a narrow `OrlixHostAdapter` seam.
+The product target is not “POSIX on iOS”.
 
-### 3. iOS-specific implementation belongs in OrlixHostAdapter only.
+The product target is Linux-shaped developer capability on iOS and iPadOS.
 
-`OrlixHostAdapter` is private host mediation for `OrlixKernel`.
+## Why OrlixKernel Exists
 
-It may implement narrow kernel-declared seams for:
-- sandbox storage
-- host file backing
-- path mediation
-- clocks
-- randomness
-- threading primitives
-- security-scoped access
-- other iOS/Darwin mechanics
+That goal requires a Linux-shaped runtime owner.
 
-`OrlixHostAdapter` MUST NOT become public ABI, libc, syscall interposition, package surface, Linux userspace surface, or a place where Linux semantics are decided.
+`OrlixKernel` exists because the host operating system does not natively provide Linux semantics.
 
-### 4. Leakage into OrlixKernel is totally forbidden.
+So Orlix needs a kernel/runtime layer that owns:
+- Linux syscall behavior
+- Linux task and process modeling
+- Linux signals and wait semantics
+- Linux file-descriptor and VFS behavior
+- Linux PTY, readiness, and event semantics
+- Linux-oriented virtual subsystems when iOS has no direct equivalent
 
-`OrlixKernel` MUST NOT depend on, include, mirror, or adapt through:
-- `OrlixMLibC`
-- libc
-- musl
-- Darwin
-- Foundation
-- POSIX host headers
-- Apple SDK types
-- `OrlixHostAdapter` headers
+Without `OrlixKernel`, Orlix would collapse into a pile of host-specific exceptions instead of a coherent Linux-shaped system.
 
-If Linux-owner code appears to need any of those, the boundary is wrong.
+## Product Direction
 
-Fix ownership, use upstream Linux header truth, or add a narrow kernel-owned private seam implemented by `OrlixHostAdapter`.
+Orlix should feel like a serious Linux-oriented environment that happens to be hosted on iOS, not like a Darwin app with Linux branding on top.
 
-Do not fix Darwin leakage by replacing it with libc or `OrlixMLibC` leakage.
-
-### 5. Apple App Store constraints must be adapted, not leaked.
-
-Unsupported host capabilities must be virtualized, synthesized, or adapted behind Linux-shaped `OrlixKernel` semantics.
-
-Examples:
-- fork/process behavior must be modeled by `OrlixKernel` and adapted onto allowed iOS app mechanisms such as managed threads or synthetic tasks
-- cgroups must be virtual
-- procfs and devfs must be synthetic where needed
-- filesystem behavior must be virtual, synthetic, sandbox-backed, or host-mediated behind Linux-shaped VFS semantics
-- unsupported kernel features must degrade through explicit Linux-shaped behavior, not Darwin-shaped shortcuts
-
-### 6. Libc and OrlixMLibC ownership is outside the kernel.
-
-`OrlixMLibC` integration belongs to the userspace libc/sysdeps layer.
-
-It owns:
-- libc ABI headers
-- startup
-- syscall stubs
-- errno exposure
-- package-facing sysroot headers
-- userspace ABI details
-
-`OrlixKernel` owns the virtual kernel behavior that libc calls into.
-
-### 7. Build and proof truth.
-
-`project.yml` and the generated Xcode project are build truth.
-
-Direct `xcodebuild` simulator/device results are proof truth.
-
-No change is complete without targeted tests proving Linux-facing behavior.
-
-`OrlixHostAdapterTests` prove private host mediation only, not Linux semantics.
-
----
+That means:
+- Linux rules come first
+- host constraints are adapted behind the runtime
+- user-facing behavior stays Linux-shaped
+- compatibility work is judged by whether real Linux userspace becomes easier to build and run
 
 # Technical Details
 
@@ -299,4 +240,3 @@ When in doubt:
 - prove behavior with simulator-backed `xcodebuild`
 
 If a change makes Orlix less suitable for real Linux userspace, the change is wrong.
-
