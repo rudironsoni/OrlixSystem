@@ -1,0 +1,12 @@
+diff --git a/scripts/Makefile.clang b/scripts/Makefile.clang
+index a607f4d8c64b..f80263c4f29d 100644
+--- a/scripts/Makefile.clang
++++ b/scripts/Makefile.clang
+@@ -3,6 +3,7 @@
+ # relying on the target triple.
+ CLANG_TARGET_FLAGS_arm		:= arm-linux-gnueabi
+ CLANG_TARGET_FLAGS_arm64	:= aarch64-linux-gnu
++CLANG_TARGET_FLAGS_orlix	:= aarch64-linux-gnu
+ CLANG_TARGET_FLAGS_hexagon	:= hexagon-linux-musl
+ CLANG_TARGET_FLAGS_loongarch	:= loongarch64-linux-gnusf
+ CLANG_TARGET_FLAGS_m68k		:= m68k-linux-gnu

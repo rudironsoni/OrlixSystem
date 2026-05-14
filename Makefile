@@ -164,13 +164,13 @@ prepare-linux-worktree: bootstrap-linux-upstream
 			[ -e "$$patch" ] || continue; \
 			patch_name="$$(basename "$$patch")"; \
 			case "$$patch" in /*) patch_abs="$$patch" ;; *) patch_abs="$(CURDIR)/$$patch" ;; esac; \
-			if git -C "$$linux_work_dir" apply --numstat "$$patch_abs" | awk -v re="$$forbidden_re" 'BEGIN { bad = 0 } { path = $$3; if (path ~ re) { print path; bad = 1 } } END { exit bad ? 0 : 1 }' >/dev/null; then \
+			if awk -v re="$$forbidden_re" '/^\+\+\+ b\// { path = substr($$2, 3); if (path ~ re) { bad = 1 } } END { exit bad ? 0 : 1 }' "$$patch_abs"; then \
 				if [ ! -f "$$exception_dir/$$patch_name.md" ]; then \
 					echo "patch $$patch_name touches a forbidden upstream path; add $$exception_dir/$$patch_name.md" >&2; \
 					exit 1; \
 				fi; \
 			fi; \
-			git -C "$$linux_work_dir" apply "$$patch_abs"; \
+			patch -d "$$linux_work_dir" -p1 < "$$patch_abs" >/dev/null; \
 		done; \
 	fi; \
 	echo "prepared Linux worktree: $$linux_work_dir"
