@@ -69,8 +69,8 @@ std::string siblingKernelHeaderForUapi(llvm::StringRef FileName) {
   return FileName.drop_front(5).str();
 }
 
-bool vendoredKernelHeaderExists(llvm::StringRef MainFilePath,
-                                llvm::StringRef CandidateHeader) {
+bool kernelHeaderExists(llvm::StringRef MainFilePath,
+                        llvm::StringRef CandidateHeader) {
   static std::unordered_map<std::string, bool> Cache;
 
   if (CandidateHeader.empty()) {
@@ -88,34 +88,11 @@ bool vendoredKernelHeaderExists(llvm::StringRef MainFilePath,
     return It->second;
   }
 
-  std::filesystem::path VendorRoot =
-      std::filesystem::path(RepoRoot) / "OrlixKernel" / "vendor" / "linux";
-  bool Found = false;
-
   std::error_code EC;
-  if (std::filesystem::exists(VendorRoot, EC)) {
-    for (const auto &VersionDir :
-         std::filesystem::directory_iterator(VendorRoot, EC)) {
-      if (EC || !VersionDir.is_directory()) {
-        continue;
-      }
-      for (const auto &ArchDir :
-           std::filesystem::directory_iterator(VersionDir.path(), EC)) {
-        if (EC || !ArchDir.is_directory()) {
-          continue;
-        }
-        std::filesystem::path CandidatePath =
-            ArchDir.path() / "kheaders" / "include" / CandidateHeader.str();
-        if (std::filesystem::exists(CandidatePath, EC)) {
-          Found = true;
-          break;
-        }
-      }
-      if (Found) {
-        break;
-      }
-    }
-  }
+  std::filesystem::path CandidatePath = std::filesystem::path(RepoRoot) /
+                                        "Build" / "linux-work" / "include" /
+                                        CandidateHeader.str();
+  bool Found = std::filesystem::exists(CandidatePath, EC);
 
   Cache.emplace(CacheKey, Found);
   return Found;
@@ -201,8 +178,7 @@ public:
           isHeaderPath(MainFilePath) &&
           !isRuntimeUserspaceAbiSurface(MainFilePath) &&
           FileName.starts_with("uapi/") &&
-          vendoredKernelHeaderExists(MainFilePath,
-                                     siblingKernelHeaderForUapi(FileName))) {
+          kernelHeaderExists(MainFilePath, siblingKernelHeaderForUapi(FileName))) {
         Check.diag(HashLoc,
                    "direct UAPI includes are forbidden in public Linux-owner headers; use full upstream Linux kernel headers there and keep UAPI consumption in implementation files or kernel-private subsystem headers that translate Linux userspace ABI");
       }

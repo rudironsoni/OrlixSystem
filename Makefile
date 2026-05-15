@@ -6,6 +6,7 @@ LINUX_TAG ?= v$(LINUX_VERSION)
 LINUX_REMOTE ?= https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 LINUX_UPSTREAM_DIR ?= Linux/upstream/linux-$(LINUX_VERSION)
 LINUX_WORK_DIR ?= Build/linux-work
+LINUX_LINT_BUILD_DIR ?= Build/linux-lint
 ORLIX_LINUX_OVERLAY ?= Linux/ports/orlix/overlay
 ORLIX_LINUX_PATCH_DIR ?= Linux/ports/orlix/patches
 ORLIX_XCFRAMEWORK_DIR ?= Build/OrlixKernel.xcframework
@@ -19,11 +20,17 @@ LLVM_CONFIG ?= $(LLVM_PREFIX)/bin/llvm-config
 CLANG_TIDY_BUILD_DIR ?= .clang-tidy-build
 CLANG_TIDY_PLUGIN_SO := $(CLANG_TIDY_BUILD_DIR)/OrlixTidyModule.so
 CLANG_TIDY_PLUGIN_DYLIB := $(CLANG_TIDY_BUILD_DIR)/OrlixTidyModule.dylib
-IPHONESIM_SDK := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk
-IPHONESIM_FRAMEWORK_DIR := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Frameworks
-IPHONESIM_SDK_FRAMEWORK_DIR := /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.4.sdk/Developer/Library/Frameworks
+IPHONESIM_SDK ?= $(shell xcrun --sdk iphonesimulator --show-sdk-path)
+IPHONESIM_PLATFORM_DIR ?= $(shell xcrun --sdk iphonesimulator --show-sdk-platform-path)
+IPHONESIM_FRAMEWORK_DIR := $(IPHONESIM_PLATFORM_DIR)/Developer/Library/Frameworks
+IPHONESIM_SDK_FRAMEWORK_DIR := $(IPHONESIM_SDK)/Developer/Library/Frameworks
+LINUX_KERNEL_GENERATED_INCLUDE_ROOT := $(CURDIR)/$(LINUX_LINT_BUILD_DIR)/include
+LINUX_KERNEL_GENERATED_ARCH_UAPI_INCLUDE_ROOT := $(CURDIR)/$(LINUX_LINT_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi
+LINUX_KERNEL_TOOLS_GENERATED_INCLUDE_ROOT := $(CURDIR)/$(LINUX_WORK_DIR)/tools/include/generated
 LINUX_KERNEL_KHEADERS_INCLUDE_ROOT := $(CURDIR)/$(LINUX_WORK_DIR)/include
 LINUX_KERNEL_UAPI_INCLUDE_ROOT := $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi
+LINUX_KERNEL_ARCH_INCLUDE_ROOT := $(CURDIR)/$(LINUX_WORK_DIR)/arch/$(LINUX_ARCH)/include
+LINUX_KERNEL_ARCH_UAPI_INCLUDE_ROOT := $(CURDIR)/$(LINUX_WORK_DIR)/arch/$(LINUX_ARCH)/include/uapi
 LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
 ORLIX_LINT_HOST_COMMON_FLAGS := \
 	-target arm64-apple-ios26.4-simulator \
@@ -37,8 +44,13 @@ ORLIX_LINT_LINUX_COMMON_FLAGS := \
 	-ffreestanding \
 	-fno-modules
 ORLIX_LINT_LINUX_HEADER_FLAGS := \
+	-I$(LINUX_KERNEL_GENERATED_INCLUDE_ROOT) \
+	-I$(LINUX_KERNEL_GENERATED_ARCH_UAPI_INCLUDE_ROOT) \
+	-I$(LINUX_KERNEL_TOOLS_GENERATED_INCLUDE_ROOT) \
 	-I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) \
-	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
+	-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT) \
+	-I$(LINUX_KERNEL_ARCH_INCLUDE_ROOT) \
+	-I$(LINUX_KERNEL_ARCH_UAPI_INCLUDE_ROOT)
 ORLIX_LINT_C_FLAGS := \
 	$(ORLIX_LINT_LINUX_COMMON_FLAGS) \
 	-nostdinc \
@@ -96,7 +108,7 @@ ORLIX_LINT_OBJC_FLAGS := \
 	-F$(IPHONESIM_SDK_FRAMEWORK_DIR) \
 	-DDEBUG=1
 
-.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream prepare-linux-worktree build-linux-simulator build-linux-iphoneos package-orlixkernel-xcframework
+.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream prepare-linux-worktree prepare-linux-lint-config build-linux-simulator build-linux-iphoneos package-orlixkernel-xcframework
 
 bootstrap-linux-upstream:
 	@set -euo pipefail; \
@@ -170,6 +182,40 @@ prepare-linux-worktree: bootstrap-linux-upstream
 		done; \
 	fi; \
 	echo "prepared Linux worktree: $$linux_work_dir"
+
+prepare-linux-lint-config: prepare-linux-worktree
+	@set -euo pipefail; \
+	linux_make="$(LINUX_MAKE)"; \
+	if [ -z "$$linux_make" ]; then \
+		linux_make="$$(command -v gmake || true)"; \
+	fi; \
+	if [ -z "$$linux_make" ]; then \
+		echo "GNU Make >= 4.0 is required by Linux Kbuild; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; \
+		exit 1; \
+	fi; \
+	linux_sed_dir=""; \
+	if [ -n "$(LINUX_SED)" ]; then \
+		case "$$(basename "$(LINUX_SED)")" in sed) linux_sed_dir="$$(dirname "$(LINUX_SED)")" ;; esac; \
+	fi; \
+	if [ -z "$$linux_sed_dir" ] && [ -x /opt/homebrew/opt/gnu-sed/libexec/gnubin/sed ]; then \
+		linux_sed_dir=/opt/homebrew/opt/gnu-sed/libexec/gnubin; \
+	fi; \
+	if [ -z "$$linux_sed_dir" ]; then \
+		echo "GNU sed is required by Linux headers; install gnu-sed or set LINUX_SED=/path/to/gnu/sed" >&2; \
+		exit 1; \
+	fi; \
+	PATH="$$linux_sed_dir:$$PATH"; \
+	export PATH; \
+	sed --version >/dev/null 2>&1 || { echo "GNU sed is required by Linux headers" >&2; exit 1; }; \
+	build_dir="$(CURDIR)/$(LINUX_LINT_BUILD_DIR)"; \
+	if [ "$(LINUX_LINT_BUILD_DIR)" != "Build/linux-lint" ]; then \
+		echo "Linux lint build directory must be Build/linux-lint: $(LINUX_LINT_BUILD_DIR)" >&2; \
+		exit 1; \
+	fi; \
+	rm -rf "$$build_dir"; \
+	mkdir -p "$$build_dir"; \
+	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 defconfig headers; \
+	echo "Linux lint configuration ready: $(LINUX_LINT_BUILD_DIR)"
 
 build-linux-simulator: prepare-linux-worktree
 	@set -euo pipefail; \
@@ -255,7 +301,7 @@ build-orlix-clang-tidy-module:
 		-DLLVM_CONFIG_EXECUTABLE="$(LLVM_CONFIG)" >/dev/null; \
 	cmake --build "$(CLANG_TIDY_BUILD_DIR)" >/dev/null
 
-lint: build-orlix-clang-tidy-module
+lint: prepare-linux-lint-config build-orlix-clang-tidy-module
 	@set -euo pipefail; \
 	plugin_path="$(CLANG_TIDY_PLUGIN_SO)"; \
 	if [ ! -f "$$plugin_path" ]; then \
@@ -265,13 +311,16 @@ lint: build-orlix-clang-tidy-module
 		echo "clang-tidy plugin not found" >&2; \
 		exit 1; \
 	fi; \
-	c_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixKernelTests OrlixHostAdapterTests | rg '\.(c|cc|cpp|cxx)$$' || true)"; \
-	header_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixKernelTests OrlixHostAdapterTests | rg '\.h$$' || true)"; \
-	objc_files="$$(rg --files OrlixKernel OrlixHostAdapter OrlixKernelTests OrlixHostAdapterTests | rg '\.(m|mm)$$' || true)"; \
+	lint_roots="boot OrlixKernel/include OrlixHostAdapter"; \
+	c_files="$$(rg --files $$lint_roots | rg '\.(c|cc|cpp|cxx)$$' || true)"; \
+	header_files="$$(rg --files $$lint_roots | rg '\.h$$' || true)"; \
+	objc_files="$$(rg --files $$lint_roots | rg '\.(m|mm)$$' || true)"; \
 	if [ -n "$$c_files" ]; then \
 		while IFS= read -r file; do \
 			flags="$(ORLIX_LINT_C_FLAGS)"; \
-			if [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* ]]; then \
+			if [[ "$$file" == boot/* ]]; then \
+				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
+			elif [[ "$$file" == OrlixHostAdapter/* || "$$file" == OrlixHostAdapterTests/* ]]; then \
 				flags="$(ORLIX_LINT_HOST_C_FLAGS)"; \
 				if [[ "$$file" == OrlixHostAdapter/fs/open_flags.c || "$$file" == OrlixHostAdapter/fs/backing_stat_translate.c ]]; then \
 					flags="$$flags $(ORLIX_LINT_LINUX_HEADER_FLAGS)"; \
