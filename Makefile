@@ -12,7 +12,7 @@ ORLIX_LINUX_PATCH_DIR ?= Linux/ports/orlix/patches
 ORLIX_XCFRAMEWORK_DIR ?= Build/OrlixKernel.xcframework
 ORLIX_KERNEL_HEADER ?= OrlixKernel/include/OrlixKernel.h
 LINUX_MAKE ?=
-LINUX_LLVM_BIN ?=
+LINUX_LLVM_BIN ?= $(shell if command -v llvm-ar >/dev/null 2>&1; then dirname "$$(command -v llvm-ar)"; elif [ -x /opt/homebrew/opt/llvm/bin/llvm-ar ]; then printf '%s\n' /opt/homebrew/opt/llvm/bin; fi)
 LINUX_SED ?=
 LLVM_PREFIX ?= /opt/homebrew/opt/llvm
 CLANG_TIDY ?= $(LLVM_PREFIX)/bin/clang-tidy
@@ -108,7 +108,7 @@ ORLIX_LINT_OBJC_FLAGS := \
 	-F$(IPHONESIM_SDK_FRAMEWORK_DIR) \
 	-DDEBUG=1
 
-.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream prepare-linux-worktree prepare-linux-lint-config build-linux-simulator build-linux-iphoneos package-orlixkernel-xcframework
+.PHONY: build-orlix-clang-tidy-module lint lint-linux-surface bootstrap-linux-upstream prepare-linux-worktree prepare-linux-lint-config build-linux-orlix-kernel-simulator build-linux-simulator build-linux-iphoneos package-orlixkernel-xcframework
 
 bootstrap-linux-upstream:
 	@set -euo pipefail; \
@@ -205,8 +205,13 @@ prepare-linux-lint-config: prepare-linux-worktree
 		exit 1; \
 	fi; \
 	PATH="$$linux_sed_dir:$$PATH"; \
+	linux_llvm_bin="$(LINUX_LLVM_BIN)"; \
+	if [ -n "$$linux_llvm_bin" ]; then \
+		PATH="$$linux_llvm_bin:$$PATH"; \
+	fi; \
 	export PATH; \
 	sed --version >/dev/null 2>&1 || { echo "GNU sed is required by Linux headers" >&2; exit 1; }; \
+	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
 	build_dir="$(CURDIR)/$(LINUX_LINT_BUILD_DIR)"; \
 	if [ "$(LINUX_LINT_BUILD_DIR)" != "Build/linux-lint" ]; then \
 		echo "Linux lint build directory must be Build/linux-lint: $(LINUX_LINT_BUILD_DIR)" >&2; \
@@ -216,6 +221,46 @@ prepare-linux-lint-config: prepare-linux-worktree
 	mkdir -p "$$build_dir"; \
 	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 defconfig headers; \
 	echo "Linux lint configuration ready: $(LINUX_LINT_BUILD_DIR)"
+
+build-linux-orlix-kernel-simulator: prepare-linux-worktree
+	@set -euo pipefail; \
+	linux_make="$(LINUX_MAKE)"; \
+	if [ -z "$$linux_make" ]; then \
+		linux_make="$$(command -v gmake || true)"; \
+	fi; \
+	if [ -z "$$linux_make" ]; then \
+		echo "GNU Make >= 4.0 is required by Linux Kbuild; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; \
+		exit 1; \
+	fi; \
+	linux_sed_dir=""; \
+	if [ -n "$(LINUX_SED)" ]; then \
+		case "$$(basename "$(LINUX_SED)")" in sed) linux_sed_dir="$$(dirname "$(LINUX_SED)")" ;; esac; \
+	fi; \
+	if [ -z "$$linux_sed_dir" ] && [ -x /opt/homebrew/opt/gnu-sed/libexec/gnubin/sed ]; then \
+		linux_sed_dir=/opt/homebrew/opt/gnu-sed/libexec/gnubin; \
+	fi; \
+	if [ -z "$$linux_sed_dir" ]; then \
+		echo "GNU sed is required by Linux Kbuild on this host; install gnu-sed or set LINUX_SED=/path/to/gnu/sed" >&2; \
+		exit 1; \
+	fi; \
+	PATH="$$linux_sed_dir:$$PATH"; \
+	linux_llvm_bin="$(LINUX_LLVM_BIN)"; \
+	if [ -n "$$linux_llvm_bin" ]; then \
+		PATH="$$linux_llvm_bin:$$PATH"; \
+	fi; \
+	export PATH; \
+	sed --version >/dev/null 2>&1 || { echo "GNU sed is required by Linux Kbuild on this host" >&2; exit 1; }; \
+	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
+	build_dir="$(CURDIR)/Build/linux-orlix-kernel-simulator"; \
+	if [ -L Build ]; then \
+		echo "refusing to use symlinked Build directory" >&2; \
+		exit 1; \
+	fi; \
+	rm -rf "$$build_dir"; \
+	mkdir -p "$$build_dir"; \
+	echo "Kbuild boundary: compiling real arch/orlix/kernel objects; vmlinux is intentionally out of scope for Milestone 1."; \
+	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH=orlix LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" mrproper defconfig arch/orlix/kernel/; \
+	echo "arch/orlix kernel object compile boundary reached: Build/linux-orlix-kernel-simulator"
 
 build-linux-simulator: prepare-linux-worktree
 	@set -euo pipefail; \
@@ -229,6 +274,12 @@ build-linux-simulator: prepare-linux-worktree
 	fi; \
 	build_dir="$(CURDIR)/Build/linux-simulator"; \
 	objects_dir="$$build_dir/objects"; \
+	linux_llvm_bin="$(LINUX_LLVM_BIN)"; \
+	if [ -n "$$linux_llvm_bin" ]; then \
+		PATH="$$linux_llvm_bin:$$PATH"; \
+	fi; \
+	export PATH; \
+	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
 	mkdir -p "$$build_dir"; \
 	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH=orlix LLVM=1 mrproper defconfig; \
 	rm -rf "$$objects_dir"; \
@@ -252,6 +303,12 @@ build-linux-iphoneos: prepare-linux-worktree
 	fi; \
 	build_dir="$(CURDIR)/Build/linux-iphoneos"; \
 	objects_dir="$$build_dir/objects"; \
+	linux_llvm_bin="$(LINUX_LLVM_BIN)"; \
+	if [ -n "$$linux_llvm_bin" ]; then \
+		PATH="$$linux_llvm_bin:$$PATH"; \
+	fi; \
+	export PATH; \
+	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
 	mkdir -p "$$build_dir"; \
 	"$$linux_make" -C "$(LINUX_WORK_DIR)" O="$$build_dir" ARCH=orlix LLVM=1 mrproper defconfig; \
 	rm -rf "$$objects_dir"; \

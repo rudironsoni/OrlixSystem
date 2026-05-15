@@ -2,6 +2,12 @@ config ORLIX
 	bool "Orlix architecture"
 	default y
 
+config 64BIT
+	bool
+	default y
+
 config MMU
 	bool
 	default y
+
+source "kernel/Kconfig.hz"

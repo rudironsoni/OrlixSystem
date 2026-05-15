@@ -226,6 +226,10 @@ Long-term, converge this toward a device-tree-style description where practical:
 
 ## 8. Product Surface
 
+Milestone 1 compile boundary: `make build-linux-orlix-kernel-simulator` prepares the upstream Linux worktree, configures `ARCH=orlix LLVM=1`, and attempts the real Kbuild target `arch/orlix/kernel/` in the isolated output directory `Build/linux-orlix-kernel-simulator`.
+
+This target deliberately stops before `vmlinux`. `vmlinux` requires later architecture obligations such as entry code, linker script, interrupt/trap handling, memory-management details, and boot image integration. Milestone 1 satisfies the initial Kbuild contracts needed to compile `arch/orlix/kernel/` into `built-in.a`, including generated UAPI headers, generic asm selections, `asm-offsets.c`, and 64-bit architecture atomics. Later milestones must continue adding architecture-owned Linux hooks without hiding obligations behind local Linux-core rewrites, fake runtime facades, or local replacements for upstream Linux subsystems.
+
 The product surface must be bootloader-shaped, not runtime-shaped.
 
 Allowed exported symbol:
