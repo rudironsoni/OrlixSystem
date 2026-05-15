@@ -11,6 +11,12 @@ enum OrlixBootProfile {
     ORLIX_BOOT_PROFILE_ENTERPRISE = 2,
 };
 
+enum OrlixBootStatus {
+    ORLIX_BOOT_STATUS_OK = 0,
+    ORLIX_BOOT_STATUS_INVALID_CONFIG = -1,
+    ORLIX_BOOT_STATUS_UNAVAILABLE = -2,
+};
+
 struct OrlixBootConfig {
     enum OrlixBootProfile profile;
     const char *root_image_identifier;

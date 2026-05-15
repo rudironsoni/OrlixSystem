@@ -14,7 +14,7 @@ LINUX_CLONE_CACHE_REPO := $(CURDIR)/$(LINUX_CLONE_CACHE_DIR)/linux-$(LINUX_VERSI
 
 ORLIX_LINUX_OVERLAY ?= Linux/ports/orlix/overlay
 ORLIX_LINUX_PATCH_DIR ?= Linux/ports/orlix/patches
-ORLIX_PROFILE_CONFIG := Linux/ports/orlix/configs/$(PROFILE)_defconfig
+override ORLIX_PROFILE_CONFIG := Linux/ports/orlix/configs/$(PROFILE)_defconfig
 ORLIX_KERNEL_HEADER ?= OrlixKernel/include/OrlixKernel.h
 
 ORLIX_KERNEL_PORT_DIR ?= Build/OrlixKernel/linux-$(LINUX_VERSION)-port
@@ -148,6 +148,7 @@ build-linux-kernel: prepare-orlixkernel-port
 		echo "Orlix kernel build directory must be $$expected_build_dir: $$build_dir" >&2; \
 		exit 1; \
 	fi; \
+	vmlinux="$$build_dir/vmlinux"; \
 	if [ -e Build/OrlixKernel/build ] && [ -L Build/OrlixKernel/build ]; then \
 		echo "refusing to use symlinked Build/OrlixKernel/build directory" >&2; \
 		exit 1; \
@@ -158,6 +159,14 @@ build-linux-kernel: prepare-orlixkernel-port
 		case "$$linux_sed" in /*) ;; *) linux_sed="$(CURDIR)/$$linux_sed" ;; esac; \
 		[ -x "$$linux_sed" ] || { echo "GNU sed is required by Linux Kbuild on this host; LINUX_SED is not executable: $$linux_sed" >&2; exit 1; }; \
 		sed_shim_dir="$(CURDIR)/Build/OrlixKernel/tool-shims/$(PROFILE)"; \
+		if [ -e Build/OrlixKernel/tool-shims ] && [ -L Build/OrlixKernel/tool-shims ]; then \
+			echo "refusing to use symlinked Build/OrlixKernel/tool-shims directory" >&2; \
+			exit 1; \
+		fi; \
+		if [ -e Build/OrlixKernel/tool-shims/$(PROFILE) ] && [ -L Build/OrlixKernel/tool-shims/$(PROFILE) ]; then \
+			echo "refusing to use symlinked Build/OrlixKernel/tool-shims/$(PROFILE) directory" >&2; \
+			exit 1; \
+		fi; \
 		mkdir -p "$$sed_shim_dir"; \
 		ln -sf "$$linux_sed" "$$sed_shim_dir/sed"; \
 		linux_sed_dir="$$sed_shim_dir"; \
@@ -174,12 +183,21 @@ build-linux-kernel: prepare-orlixkernel-port
 	rm -rf "$$build_dir"; \
 	mkdir -p "$$build_dir"; \
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" mrproper defconfig vmlinux; \
-	[ -f "$(ORLIX_KERNEL_VMLINUX)" ] || { echo "missing vmlinux artifact: $(ORLIX_KERNEL_VMLINUX)" >&2; exit 1; }; \
-	echo "Linux vmlinux ready: $(ORLIX_KERNEL_VMLINUX) (profile $(PROFILE))"
+	[ -f "$$vmlinux" ] || { echo "missing vmlinux artifact: $$vmlinux" >&2; exit 1; }; \
+	echo "Linux vmlinux ready: $$vmlinux (profile $(PROFILE))"
 
 test-bootloader-contract:
 	@set -euo pipefail; \
-	build_dir="$(ORLIX_BOOT_CONTRACT_DIR)"; \
+	build_dir="$(CURDIR)/Build/OrlixKernel/bootloader-contract"; \
+	expected_boot_contract_dir="$(CURDIR)/Build/OrlixKernel/bootloader-contract"; \
+	if [ "$$build_dir" != "$$expected_boot_contract_dir" ]; then \
+		echo "Orlix bootloader contract directory must be $$expected_boot_contract_dir: $$build_dir" >&2; \
+		exit 1; \
+	fi; \
+	if [ -e Build/OrlixKernel/bootloader-contract ] && [ -L Build/OrlixKernel/bootloader-contract ]; then \
+		echo "refusing to use symlinked Build/OrlixKernel/bootloader-contract directory" >&2; \
+		exit 1; \
+	fi; \
 	mkdir -p "$$build_dir"; \
 	$(CC) -std=c11 -Wall -Wextra -Werror \
 		-IOrlixKernel/include \
@@ -190,4 +208,4 @@ test-bootloader-contract:
 	"$$build_dir/bootloader_contract"
 
 test-milestone1-contract:
-	@tests/milestone1_makefile_contract.sh
+	@MAKE_BIN="$(MAKE)" tests/milestone1_makefile_contract.sh

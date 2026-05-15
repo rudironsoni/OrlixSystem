@@ -16,16 +16,16 @@ static int OrlixBootStringIsPresent(const char *value) {
 
 __attribute__((visibility("hidden"))) int OrlixPrepareBootConfig(const struct OrlixBootConfig *config) {
     if (!config) {
-        return -1;
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
     if (!OrlixBootProfileIsValid(config->profile)) {
-        return -1;
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
     if (!OrlixBootStringIsPresent(config->root_image_identifier)) {
-        return -1;
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
     if (!OrlixBootStringIsPresent(config->terminal_identifier)) {
-        return -1;
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
-    return 0;
+    return ORLIX_BOOT_STATUS_OK;
 }

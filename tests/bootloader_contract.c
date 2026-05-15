@@ -4,7 +4,7 @@ int OrlixPrepareBootConfig(const struct OrlixBootConfig *config);
 
 static int expect_invalid_config(const struct OrlixBootConfig *config)
 {
-    return OrlixPrepareBootConfig(config) == -1 ? 0 : -1;
+    return OrlixPrepareBootConfig(config) == ORLIX_BOOT_STATUS_INVALID_CONFIG ? 0 : -1;
 }
 
 int main(void)
@@ -49,11 +49,11 @@ int main(void)
     }
     config.terminal_identifier = "default-terminal";
 
-    if (OrlixPrepareBootConfig(&config) != 0) {
+    if (OrlixPrepareBootConfig(&config) != ORLIX_BOOT_STATUS_OK) {
         return 7;
     }
 
-    if (OrlixBoot(&config) != -1) {
+    if (OrlixBoot(&config) != ORLIX_BOOT_STATUS_UNAVAILABLE) {
         return 8;
     }
 
