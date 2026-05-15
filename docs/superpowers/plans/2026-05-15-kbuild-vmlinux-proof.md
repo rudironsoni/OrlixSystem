@@ -561,7 +561,7 @@ Expected: no output and exit 0.
 - [ ] **Step 3: Commit project target removal**
 
 ```bash
-rtk git add project.yml
+rtk git rm project.yml
 rtk git commit -m "build: remove boot stub Xcode product target"
 ```
 
