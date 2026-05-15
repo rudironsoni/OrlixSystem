@@ -2,7 +2,9 @@
 
 Orlix is an iOS-hosted port of upstream Linux. This repository keeps the local Orlix port overlay and build packaging around an upstream Linux source tree generated on demand.
 
-The product goal for this skeleton is narrow: materialize and configure an Orlix-flavored upstream Linux worktree, then package the bootloader-facing OrlixKernel skeleton library for iOS simulator and device targets. This repository does not claim real boot-to-`start_kernel`, syscall entry, drivers, rootfs mount, bundled userspace, procfs/sysfs/devfs/cgroupfs runtime proof, or App Store execution policy.
+The product goal for this skeleton is narrow: materialize and configure an Orlix-flavored upstream Linux worktree, then package the bootloader-facing `OrlixKernel.xcframework` skeleton library for iOS simulator and device targets. This repository does not claim real boot-to-`start_kernel`, syscall entry, drivers, rootfs mount, bundled userspace, procfs/sysfs/devfs/cgroupfs runtime proof, or App Store execution policy.
+
+The generated Xcode project remains `OrlixKernel.xcodeproj` in this branch. See `docs/UPSTREAM_LINUX_IOS_PORT_SPEC.md` for the canonical architecture and naming rules.
 
 ## Source Model
 
@@ -109,4 +111,4 @@ These targets prove the skeleton build/package flow. They are not runtime proof 
 - Keep iOS/Darwin mechanics private to `OrlixHostAdapter/`.
 - Keep the public product API limited to the bootloader-facing surface until runtime proof exists.
 
-See `docs/UPSTREAM_LINUX_IOS_PORT_SPEC.md` for the architecture rules.
+See `docs/UPSTREAM_LINUX_IOS_PORT_SPEC.md` for the full architecture rules, long-term ownership model, App Store profile boundaries, and proof expectations.
