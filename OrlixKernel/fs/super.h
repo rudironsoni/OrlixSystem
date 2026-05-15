@@ -2,7 +2,7 @@
 #define FS_SUPER_H
 
 #include <linux/types.h>
-#include <uapi/asm/statfs.h>
+#include <asm/statfs.h>
 
 #ifdef __cplusplus
 extern "C" {

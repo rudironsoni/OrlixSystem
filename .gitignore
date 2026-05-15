@@ -60,15 +60,15 @@ dkms.conf
 
 # Xcode
 xcuserdata/
-.build
+/.build/
 .DS_Store
 Orlix.xcodeproj/
 
 # Build artifacts
-build/
-Build/
-.deriveddata/
-DerivedData/
+/build/
+/Build/
+/.deriveddata/
+/DerivedData/
 *.xcresult/
 *.xcframework/
 CompilationCache/
@@ -77,14 +77,16 @@ Logs/
 ModuleCache/
 
 # Generated Linux source trees
+Linux/upstream/
 Linux/upstream/linux-6.12/
 Linux/upstream/linux-*/
 
 
 # Clangd compilation database cache
-.clangd-cache/
-.clang-tidy-build/
-.cache/
+/.clangd-cache/
+/.clang-tidy-build/
+/.cache/linux-clone/
+/.cache/
 # (No @.cache variants should be tracked; only .cache is ignored)
 
 # Generated binary
@@ -105,6 +107,5 @@ init.*.zsh
 # Backup files
 .old-backup/
 
-compile_commands.json
 # CocoIndex Code (ccc)
 /.cocoindex_code/

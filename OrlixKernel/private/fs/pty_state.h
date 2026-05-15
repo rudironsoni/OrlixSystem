@@ -2,8 +2,8 @@
 #define PRIVATE_FS_PTY_STATE_H
 
 #include <linux/stddef.h>
-#include <uapi/asm/termbits.h>
-#include <uapi/asm/termios.h>
+#include <asm/termbits.h>
+#include <asm/termios.h>
 
 #ifdef __cplusplus
 extern "C" {

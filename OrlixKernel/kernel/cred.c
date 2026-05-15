@@ -19,7 +19,7 @@
 #include <linux/string.h>
 
 #include <linux/limits.h>
-#include <uapi/linux/prctl.h>
+#include <linux/prctl.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);

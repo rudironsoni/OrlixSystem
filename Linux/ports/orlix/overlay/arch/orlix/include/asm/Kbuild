@@ -1,3 +1,4 @@
+generic-y += cache.h
 generic-y += early_ioremap.h
 generic-y += cmpxchg.h
 generic-y += cmpxchg-local.h

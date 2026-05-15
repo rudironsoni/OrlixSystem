@@ -11,10 +11,10 @@
 #include <linux/fs.h>
 #include <linux/string.h>
 
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/mount.h>
-#include <uapi/linux/stat.h>
-#include <uapi/asm/stat.h>
+#include <linux/fcntl.h>
+#include <linux/mount.h>
+#include <linux/stat.h>
+#include <asm/stat.h>
 
 #include "vfs.h"
 

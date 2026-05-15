@@ -4,9 +4,7 @@ settings:
     GCC_TREAT_WARNINGS_AS_ERRORS: true
     SWIFT_TREAT_WARNINGS_AS_ERRORS: true
     LINUX_VERSION: '6.12'
-    LINUX_ARCH: arm64
-    LINUX_KERNEL_KHEADERS_INCLUDE_ROOT: $(SRCROOT)/Build/linux-work/include
-    LINUX_KERNEL_UAPI_INCLUDE_ROOT: $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi
+    LINUX_ARCH: orlix
     CLANG_BUILTIN_INCLUDE_ROOT: $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include
 targets:
   OrlixKernel:
@@ -18,6 +16,7 @@ targets:
       ALWAYS_SEARCH_USER_PATHS: false
       HEADER_SEARCH_PATHS:
         - $(SRCROOT)/OrlixKernel/include
+        - $(SRCROOT)/Linux/ports/orlix/overlay/arch/orlix/include
       USE_HEADERMAP: false
       CLANG_ENABLE_MODULES: false
       CLANG_ENABLE_OBJC_ARC: true
@@ -31,70 +30,10 @@ targets:
       - path: boot/loader.c
       - path: boot/params.c
       - path: boot/rootfs.c
+      - path: Linux/ports/orlix/overlay/arch/orlix/boot/boot.c
       - path: OrlixKernel/include
         buildPhase: headers
         headerVisibility: public
-  OrlixHostAdapter:
-    type: library.static
-    platform: iOS
-    deploymentTarget:
-      iOS: '16.0'
-    settings:
-      ALWAYS_SEARCH_USER_PATHS: false
-      HEADER_SEARCH_PATHS:
-        - $(SRCROOT)
-        - $(SRCROOT)/OrlixKernel
-        - $(SRCROOT)/OrlixKernel/include
-        - $(SRCROOT)/OrlixKernel/internal
-        - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
-        - $(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-      SYSTEM_HEADER_SEARCH_PATHS:
-        - $(CLANG_BUILTIN_INCLUDE_ROOT)
-      GCC_PREPROCESSOR_DEFINITIONS:
-        - _XOPEN_SOURCE
-      CLANG_ENABLE_OBJC_ARC: true
-      CLANG_WARN_DOCUMENTATION_COMMENTS: true
-      OTHER_CFLAGS:
-        - -fvisibility=hidden
-    sources:
-      - path: OrlixHostAdapter/fs/backing_dir.c
-      - path: OrlixHostAdapter/fs/backing_io.m
-      - path: OrlixHostAdapter/fs/backing_paths.m
-      - path: OrlixHostAdapter/fs/backing_stat_translate.c
-        compilerFlags:
-          - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-      - path: OrlixHostAdapter/fs/errno_translation.c
-      - path: OrlixHostAdapter/fs/memfd.c
-      - path: OrlixHostAdapter/fs/open_flags.c
-        compilerFlags:
-          - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-      - path: OrlixHostAdapter/fs/path.c
-        compilerFlags:
-          - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-      - path: OrlixHostAdapter/fs/sync.c
-      - path: OrlixHostAdapter/kernel/clock.c
-        compilerFlags:
-          - -D__KERNEL__
-          - -include
-          - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-          - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
-          - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-      - path: OrlixHostAdapter/kernel/fork.c
-      - path: OrlixHostAdapter/kernel/random.c
-      - path: OrlixHostAdapter/kernel/slab.c
-        compilerFlags:
-          - -D__KERNEL__
-          - -include
-          - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-          - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
-          - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
-      - path: OrlixHostAdapter/kernel/sync.c
-        compilerFlags:
-          - -D__KERNEL__
-          - -include
-          - $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h
-          - -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)
-          - -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)
 configurations:
   Debug:
     settings:

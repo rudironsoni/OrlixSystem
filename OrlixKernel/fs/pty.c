@@ -2,8 +2,8 @@
 
 #include <linux/atomic.h>
 #include <linux/errno.h>
-#include <uapi/linux/poll.h>
-#include <uapi/linux/signal.h>
+#include <linux/poll.h>
+#include <linux/signal.h>
 #include <linux/string.h>
 
 #include "../kernel/signal.h"

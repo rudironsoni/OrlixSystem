@@ -1,4 +1,0 @@
-Checks: '-*,orlix-*'
-WarningsAsErrors: 'orlix-*'
-HeaderFilterRegex: '^(.*OrlixKernel/.*|.*OrlixHostAdapter/.*|.*OrlixMLibC/.*|.*OrlixKernelTests/.*|.*OrlixHostAdapterTests/.*)$'
-FormatStyle: none

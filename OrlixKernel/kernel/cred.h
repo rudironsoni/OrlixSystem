@@ -9,7 +9,7 @@
 #define KERNEL_CRED_H
 
 #include <linux/types.h>
-#include <uapi/linux/capability.h>
+#include <linux/capability.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -4,9 +4,9 @@
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/atomic.h>
-#include <uapi/linux/sched.h>
-#include <uapi/linux/signal.h>
-#include <uapi/linux/wait.h>
+#include <linux/sched.h>
+#include <linux/signal.h>
+#include <linux/wait.h>
 
 #include "signal.h"
 #include "../private/kernel/signal_state.h"

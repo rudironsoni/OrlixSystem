@@ -3,13 +3,13 @@
 
 #include <linux/types.h>
 
-#include <uapi/linux/fcntl.h>
+#include <linux/fcntl.h>
 /*
- * Keep the epoll UAPI contract off the deep kernel fcntl owner graph in this
+ * Keep the epoll upstream Linux ABI contract off the deep kernel fcntl owner graph in this
  * translation unit family.
  */
 #define _LINUX_FCNTL_H
-#include <uapi/linux/eventpoll.h>
+#include <linux/eventpoll.h>
 #undef _LINUX_FCNTL_H
 
 #ifdef __cplusplus

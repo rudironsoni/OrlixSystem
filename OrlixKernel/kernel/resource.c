@@ -9,7 +9,7 @@
  */
 
 #include <linux/resource.h>
-#include <uapi/linux/times.h>
+#include <linux/times.h>
 #include "../private/kernel/resource_state.h"
 #include "task.h"
 #include "../private/kernel/task_state.h"

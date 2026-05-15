@@ -6,7 +6,7 @@
  * Linux-shaped canonical owner - iOS mediation as implementation detail
  */
 
-#include <uapi/asm/ioctls.h>
+#include <asm/ioctls.h>
 #include <linux/errno.h>
 #include <linux/types.h>
 

@@ -1,7 +1,7 @@
 #ifndef PRIVATE_FS_VFS_STATE_H
 #define PRIVATE_FS_VFS_STATE_H
 
-#include <uapi/asm/statfs.h>
+#include <asm/statfs.h>
 #include <linux/atomic.h>
 #include <linux/types.h>
 

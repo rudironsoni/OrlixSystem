@@ -8,24 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		1C583E8E88A2CDB09C72242B /* image.c in Sources */ = {isa = PBXBuildFile; fileRef = 91BC5A2BD8AB42935974A441 /* image.c */; };
-		25CC65804107BE83C2E8890A /* memfd.c in Sources */ = {isa = PBXBuildFile; fileRef = 6FC3DE33B2141FA01EFE55AA /* memfd.c */; };
-		33BEFFEC7C29C74869B84178 /* slab.c in Sources */ = {isa = PBXBuildFile; fileRef = 5F6CA9038198F085FA307644 /* slab.c */; settings = {COMPILER_FLAGS = "-D__KERNEL__ -include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)"; }; };
+		20F833B5E5B9AC889B208605 /* boot.c in Sources */ = {isa = PBXBuildFile; fileRef = F56BC04040D0001308D647AC /* boot.c */; };
 		369A2573A61D4E6540ECEC5A /* params.c in Sources */ = {isa = PBXBuildFile; fileRef = 3FDFEEEFB05CEF159BCC1E04 /* params.c */; };
 		4400446967E4FE44396AD681 /* dtb.c in Sources */ = {isa = PBXBuildFile; fileRef = 3F89AA4C9A2720F7E21A559C /* dtb.c */; };
-		48F6DFC04D3AE43474862A1F /* errno_translation.c in Sources */ = {isa = PBXBuildFile; fileRef = 27CD02B0A3351CBA5D79919A /* errno_translation.c */; };
-		5908C916A450B8E917F9A467 /* backing_dir.c in Sources */ = {isa = PBXBuildFile; fileRef = 3CF221D80FFF67F8D8ABF210 /* backing_dir.c */; };
-		5F5BD1C851A8D36481C4A887 /* random.c in Sources */ = {isa = PBXBuildFile; fileRef = 8145266CAB35CD21967FCAE9 /* random.c */; };
-		6F4F254ECD91ABE4BDE9C90D /* fork.c in Sources */ = {isa = PBXBuildFile; fileRef = 90BF0FFA58DC49B4D50A5D59 /* fork.c */; };
 		949A956F39AC8966AF42F237 /* initrd.c in Sources */ = {isa = PBXBuildFile; fileRef = 0F218D25CD31403A15695504 /* initrd.c */; };
 		9ADE42494494FF23D6EDDB84 /* OrlixKernel.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = B8F7D634D8B706AD46B1DBD5 /* OrlixKernel.h */; };
-		9CB992E34FFF67E82BF7534E /* sync.c in Sources */ = {isa = PBXBuildFile; fileRef = 1441FE43BB06F15441382736 /* sync.c */; settings = {COMPILER_FLAGS = "-D__KERNEL__ -include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)"; }; };
-		A7903FB1E345B4ED98010F7D /* sync.c in Sources */ = {isa = PBXBuildFile; fileRef = 2401922D1F56E35519F684B9 /* sync.c */; };
-		A873E6AE3E41818F3F8B56BB /* open_flags.c in Sources */ = {isa = PBXBuildFile; fileRef = 3A5B2CECF2A6FCC8295E8C25 /* open_flags.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)"; }; };
-		B349E6F39265E2AAF0EF0D57 /* backing_io.m in Sources */ = {isa = PBXBuildFile; fileRef = 5BA6DE7AA26774177BFB981E /* backing_io.m */; };
-		D02B39E31997C023E00E92A8 /* clock.c in Sources */ = {isa = PBXBuildFile; fileRef = 6A3FCA3F5B629DC5BECDBF51 /* clock.c */; settings = {COMPILER_FLAGS = "-D__KERNEL__ -include $(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/linux/kconfig.h -I$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT) -I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)"; }; };
-		D473DAC6B68DBD41A0F88AF1 /* backing_stat_translate.c in Sources */ = {isa = PBXBuildFile; fileRef = 305CF4870AE0FECCDE9262E9 /* backing_stat_translate.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)"; }; };
-		E17E32877D9ACF122F70650F /* path.c in Sources */ = {isa = PBXBuildFile; fileRef = 7B330BE06A7C7545D0C3BDC5 /* path.c */; settings = {COMPILER_FLAGS = "-I$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)"; }; };
-		E57379ADE095CA56B99A465E /* backing_paths.m in Sources */ = {isa = PBXBuildFile; fileRef = B43C726D7AA375EB5C00E2D5 /* backing_paths.m */; };
 		EA0A8A4A86E5BEF96B90429D /* rootfs.c in Sources */ = {isa = PBXBuildFile; fileRef = 8809A7DBC5730F627AD623AB /* rootfs.c */; };
 		EC5986F551BD15E5E8BF1BC0 /* loader.c in Sources */ = {isa = PBXBuildFile; fileRef = 33ED867D63499A85DC653474 /* loader.c */; };
 /* End PBXBuildFile section */
@@ -44,29 +31,15 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		0378D449A2474BB6F384F7C4 /* libOrlixHostAdapter.a */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = archive.ar; path = libOrlixHostAdapter.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		0F218D25CD31403A15695504 /* initrd.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = initrd.c; sourceTree = "<group>"; };
-		1441FE43BB06F15441382736 /* sync.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sync.c; sourceTree = "<group>"; };
-		2401922D1F56E35519F684B9 /* sync.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sync.c; sourceTree = "<group>"; };
-		27CD02B0A3351CBA5D79919A /* errno_translation.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = errno_translation.c; sourceTree = "<group>"; };
-		305CF4870AE0FECCDE9262E9 /* backing_stat_translate.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = backing_stat_translate.c; sourceTree = "<group>"; };
 		33ED867D63499A85DC653474 /* loader.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = loader.c; sourceTree = "<group>"; };
-		3A5B2CECF2A6FCC8295E8C25 /* open_flags.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = open_flags.c; sourceTree = "<group>"; };
-		3CF221D80FFF67F8D8ABF210 /* backing_dir.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = backing_dir.c; sourceTree = "<group>"; };
 		3F89AA4C9A2720F7E21A559C /* dtb.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = dtb.c; sourceTree = "<group>"; };
 		3FDFEEEFB05CEF159BCC1E04 /* params.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = params.c; sourceTree = "<group>"; };
-		5BA6DE7AA26774177BFB981E /* backing_io.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = backing_io.m; sourceTree = "<group>"; };
-		5F6CA9038198F085FA307644 /* slab.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = slab.c; sourceTree = "<group>"; };
-		6A3FCA3F5B629DC5BECDBF51 /* clock.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = clock.c; sourceTree = "<group>"; };
-		6FC3DE33B2141FA01EFE55AA /* memfd.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = memfd.c; sourceTree = "<group>"; };
-		7B330BE06A7C7545D0C3BDC5 /* path.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = path.c; sourceTree = "<group>"; };
 		7E6C64E3F7C4F1E9A05ECCB6 /* libOrlixKernel.a */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = archive.ar; path = libOrlixKernel.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		8145266CAB35CD21967FCAE9 /* random.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = random.c; sourceTree = "<group>"; };
 		8809A7DBC5730F627AD623AB /* rootfs.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = rootfs.c; sourceTree = "<group>"; };
-		90BF0FFA58DC49B4D50A5D59 /* fork.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = fork.c; sourceTree = "<group>"; };
 		91BC5A2BD8AB42935974A441 /* image.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = image.c; sourceTree = "<group>"; };
-		B43C726D7AA375EB5C00E2D5 /* backing_paths.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = backing_paths.m; sourceTree = "<group>"; };
 		B8F7D634D8B706AD46B1DBD5 /* OrlixKernel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OrlixKernel.h; sourceTree = "<group>"; };
+		F56BC04040D0001308D647AC /* boot.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = boot.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -74,11 +47,19 @@
 			isa = PBXGroup;
 			children = (
 				6EDD7E1B7CDA1A57EA6FC29E /* boot */,
-				5528FB037DF1139FD68B881D /* fs */,
+				2D61DBA0CBDC302267D62D78 /* boot */,
 				31CA9DA5977F9F7E0D6A8704 /* include */,
-				8BCE3AE3FA7E971D573951A4 /* kernel */,
 				75BAA0C86E845A4B0BFF3203 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		2D61DBA0CBDC302267D62D78 /* boot */ = {
+			isa = PBXGroup;
+			children = (
+				F56BC04040D0001308D647AC /* boot.c */,
+			);
+			name = boot;
+			path = Linux/ports/orlix/overlay/arch/orlix/boot;
 			sourceTree = "<group>";
 		};
 		31CA9DA5977F9F7E0D6A8704 /* include */ = {
@@ -88,23 +69,6 @@
 			);
 			name = include;
 			path = OrlixKernel/include;
-			sourceTree = "<group>";
-		};
-		5528FB037DF1139FD68B881D /* fs */ = {
-			isa = PBXGroup;
-			children = (
-				3CF221D80FFF67F8D8ABF210 /* backing_dir.c */,
-				5BA6DE7AA26774177BFB981E /* backing_io.m */,
-				B43C726D7AA375EB5C00E2D5 /* backing_paths.m */,
-				305CF4870AE0FECCDE9262E9 /* backing_stat_translate.c */,
-				27CD02B0A3351CBA5D79919A /* errno_translation.c */,
-				6FC3DE33B2141FA01EFE55AA /* memfd.c */,
-				3A5B2CECF2A6FCC8295E8C25 /* open_flags.c */,
-				7B330BE06A7C7545D0C3BDC5 /* path.c */,
-				2401922D1F56E35519F684B9 /* sync.c */,
-			);
-			name = fs;
-			path = OrlixHostAdapter/fs;
 			sourceTree = "<group>";
 		};
 		6EDD7E1B7CDA1A57EA6FC29E /* boot */ = {
@@ -123,23 +87,9 @@
 		75BAA0C86E845A4B0BFF3203 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				0378D449A2474BB6F384F7C4 /* libOrlixHostAdapter.a */,
 				7E6C64E3F7C4F1E9A05ECCB6 /* libOrlixKernel.a */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		8BCE3AE3FA7E971D573951A4 /* kernel */ = {
-			isa = PBXGroup;
-			children = (
-				6A3FCA3F5B629DC5BECDBF51 /* clock.c */,
-				90BF0FFA58DC49B4D50A5D59 /* fork.c */,
-				8145266CAB35CD21967FCAE9 /* random.c */,
-				5F6CA9038198F085FA307644 /* slab.c */,
-				1441FE43BB06F15441382736 /* sync.c */,
-			);
-			name = kernel;
-			path = OrlixHostAdapter/kernel;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -161,23 +111,6 @@
 			);
 			productName = OrlixKernel;
 			productReference = 7E6C64E3F7C4F1E9A05ECCB6 /* libOrlixKernel.a */;
-			productType = "com.apple.product-type.library.static";
-		};
-		4B681D306CE5B285CF6D5D72 /* OrlixHostAdapter */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = CEDCD10FB7015D6FC17C2DC0 /* Build configuration list for PBXNativeTarget "OrlixHostAdapter" */;
-			buildPhases = (
-				3D975DDB994FB7C1821F61E3 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = OrlixHostAdapter;
-			packageProductDependencies = (
-			);
-			productName = OrlixHostAdapter;
-			productReference = 0378D449A2474BB6F384F7C4 /* libOrlixHostAdapter.a */;
 			productType = "com.apple.product-type.library.static";
 		};
 /* End PBXNativeTarget section */
@@ -205,38 +138,17 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				4B681D306CE5B285CF6D5D72 /* OrlixHostAdapter */,
 				0E81156E7BC3E4ED1EB5311D /* OrlixKernel */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
-		3D975DDB994FB7C1821F61E3 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				5908C916A450B8E917F9A467 /* backing_dir.c in Sources */,
-				B349E6F39265E2AAF0EF0D57 /* backing_io.m in Sources */,
-				E57379ADE095CA56B99A465E /* backing_paths.m in Sources */,
-				D473DAC6B68DBD41A0F88AF1 /* backing_stat_translate.c in Sources */,
-				D02B39E31997C023E00E92A8 /* clock.c in Sources */,
-				48F6DFC04D3AE43474862A1F /* errno_translation.c in Sources */,
-				6F4F254ECD91ABE4BDE9C90D /* fork.c in Sources */,
-				25CC65804107BE83C2E8890A /* memfd.c in Sources */,
-				A873E6AE3E41818F3F8B56BB /* open_flags.c in Sources */,
-				E17E32877D9ACF122F70650F /* path.c in Sources */,
-				5F5BD1C851A8D36481C4A887 /* random.c in Sources */,
-				33BEFFEC7C29C74869B84178 /* slab.c in Sources */,
-				A7903FB1E345B4ED98010F7D /* sync.c in Sources */,
-				9CB992E34FFF67E82BF7534E /* sync.c in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		9AAB662B2060F8CA48F85E72 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				20F833B5E5B9AC889B208605 /* boot.c in Sources */,
 				4400446967E4FE44396AD681 /* dtb.c in Sources */,
 				1C583E8E88A2CDB09C72242B /* image.c in Sources */,
 				949A956F39AC8966AF42F237 /* initrd.c in Sources */,
@@ -249,39 +161,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		2565ECB80494F980A4FF3A7A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					_XOPEN_SOURCE,
-				);
-				HEADER_SEARCH_PATHS = (
-					"$(SRCROOT)",
-					"$(SRCROOT)/OrlixKernel",
-					"$(SRCROOT)/OrlixKernel/include",
-					"$(SRCROOT)/OrlixKernel/internal",
-					"$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)",
-					"$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)",
-				);
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				OTHER_CFLAGS = (
-					"-fvisibility=hidden",
-				);
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				SYSTEM_HEADER_SEARCH_PATHS = (
-					"$(CLANG_BUILTIN_INCLUDE_ROOT)",
-				);
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
 		6835EA089CBEA633D66C9CAE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -291,6 +170,7 @@
 				CLANG_WARN_DOCUMENTATION_COMMENTS = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/OrlixKernel/include",
+					"$(SRCROOT)/Linux/ports/orlix/overlay/arch/orlix/include",
 				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -359,9 +239,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LINUX_ARCH = arm64;
-				LINUX_KERNEL_KHEADERS_INCLUDE_ROOT = "$(SRCROOT)/Build/linux-work/include";
-				LINUX_KERNEL_UAPI_INCLUDE_ROOT = "$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi";
+				LINUX_ARCH = orlix;
 				LINUX_VERSION = 6.12;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -384,6 +262,7 @@
 				CLANG_WARN_DOCUMENTATION_COMMENTS = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/OrlixKernel/include",
+					"$(SRCROOT)/Linux/ports/orlix/overlay/arch/orlix/include",
 				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -396,39 +275,6 @@
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				USE_HEADERMAP = NO;
-			};
-			name = Release;
-		};
-		E170827C7C4FE0DACC856B58 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					_XOPEN_SOURCE,
-				);
-				HEADER_SEARCH_PATHS = (
-					"$(SRCROOT)",
-					"$(SRCROOT)/OrlixKernel",
-					"$(SRCROOT)/OrlixKernel/include",
-					"$(SRCROOT)/OrlixKernel/internal",
-					"$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)",
-					"$(LINUX_KERNEL_UAPI_INCLUDE_ROOT)",
-				);
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				OTHER_CFLAGS = (
-					"-fvisibility=hidden",
-				);
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				SYSTEM_HEADER_SEARCH_PATHS = (
-					"$(CLANG_BUILTIN_INCLUDE_ROOT)",
-				);
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -479,9 +325,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LINUX_ARCH = arm64;
-				LINUX_KERNEL_KHEADERS_INCLUDE_ROOT = "$(SRCROOT)/Build/linux-work/include";
-				LINUX_KERNEL_UAPI_INCLUDE_ROOT = "$(LINUX_KERNEL_KHEADERS_INCLUDE_ROOT)/uapi";
+				LINUX_ARCH = orlix;
 				LINUX_VERSION = 6.12;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -502,15 +346,6 @@
 			buildConfigurations = (
 				6835EA089CBEA633D66C9CAE /* Debug */,
 				B38E7C76D4C56086942EAB61 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		CEDCD10FB7015D6FC17C2DC0 /* Build configuration list for PBXNativeTarget "OrlixHostAdapter" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				2565ECB80494F980A4FF3A7A /* Debug */,
-				E170827C7C4FE0DACC856B58 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

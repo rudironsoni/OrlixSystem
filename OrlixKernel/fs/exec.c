@@ -8,15 +8,15 @@
  * Linux-shaped canonical owner - iOS mediation as implementation detail
  */
 
-/* Linux UAPI headers for ABI constants and types */
+/* Upstream Linux ABI headers for ABI constants and types */
 #include <linux/errno.h>
 #include <linux/string.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/elf.h>
-#include <uapi/linux/auxvec.h>
-#include <uapi/linux/stat.h>
-#include <uapi/asm/stat.h>
-#include <uapi/linux/signal.h>
+#include <linux/fcntl.h>
+#include <linux/elf.h>
+#include <linux/auxvec.h>
+#include <linux/stat.h>
+#include <asm/stat.h>
+#include <linux/signal.h>
 
 #include "../private/kernel/task_state.h"
 #include "../private/kernel/signal_state.h"

@@ -6,10 +6,10 @@
  */
 
 #include <linux/errno.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/stat.h>
+#include <linux/fcntl.h>
+#include <linux/stat.h>
 #include <linux/time_types.h>
-#include <uapi/asm/stat.h>
+#include <asm/stat.h>
 
 #include "fdtable.h"
 #include "private/fs/fdtable_state.h"

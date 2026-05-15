@@ -1,20 +1,20 @@
 #include "vfs.h"
 #include "private/fs/vfs_state.h"
 
-/* Linux UAPI headers for ABI constants */
-#include <uapi/linux/capability.h>
+/* Upstream Linux ABI headers for ABI constants */
+#include <linux/capability.h>
 #include <linux/errno.h>
-#include <uapi/linux/elf.h>
-#include <uapi/linux/fcntl.h>
+#include <linux/elf.h>
+#include <linux/fcntl.h>
 #include <linux/mount.h>
-#include <uapi/linux/mount.h>
-#include <uapi/linux/signal.h>
-#include <uapi/asm/stat.h>
-#include <uapi/linux/stat.h>
+#include <linux/mount.h>
+#include <linux/signal.h>
+#include <asm/stat.h>
+#include <linux/stat.h>
 #include <linux/limits.h>
 #include <linux/stdarg.h>
 #include <linux/string.h>
-#include <uapi/linux/xattr.h>
+#include <linux/xattr.h>
 #include "internal/slab.h"
 
 /* Narrow seam headers for host operations */
@@ -36,7 +36,7 @@
 #include "../kernel/signal.h"
 #include "../kernel/uts.h"
 
-/* makedev for device nodes - Linux UAPI style */
+/* makedev for device nodes - Upstream Linux ABI style */
 #ifndef makedev
 #define makedev(major, minor) ((((major) & 0xfff) << 8) | ((minor) & 0xff))
 #endif

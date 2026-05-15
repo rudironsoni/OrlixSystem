@@ -10,13 +10,13 @@
 #include <linux/errno.h>
 #include <linux/types.h>
 #include <linux/stddef.h>
-#include <uapi/asm/ptrace.h>
-#include <uapi/linux/audit.h>
-#include <uapi/linux/capability.h>
-#include <uapi/linux/elf.h>
-#include <uapi/linux/ptrace.h>
-#include <uapi/linux/signal.h>
-#include <uapi/linux/uio.h>
+#include <asm/ptrace.h>
+#include <linux/audit.h>
+#include <linux/capability.h>
+#include <linux/elf.h>
+#include <linux/ptrace.h>
+#include <linux/signal.h>
+#include <linux/uio.h>
 
 static bool ptrace_same_credential_domain(const struct cred *tracer, const struct cred *target) {
     if (!tracer || !target || tracer->user_ns_id != target->user_ns_id) {
