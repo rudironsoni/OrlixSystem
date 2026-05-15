@@ -194,6 +194,14 @@ test-bootloader-contract:
 		echo "Orlix bootloader contract directory must be $$expected_boot_contract_dir: $$build_dir" >&2; \
 		exit 1; \
 	fi; \
+	if [ -L Build ]; then \
+		echo "refusing to use symlinked Build directory" >&2; \
+		exit 1; \
+	fi; \
+	if [ -e Build/OrlixKernel ] && [ -L Build/OrlixKernel ]; then \
+		echo "refusing to use symlinked Build/OrlixKernel directory" >&2; \
+		exit 1; \
+	fi; \
 	if [ -e Build/OrlixKernel/bootloader-contract ] && [ -L Build/OrlixKernel/bootloader-contract ]; then \
 		echo "refusing to use symlinked Build/OrlixKernel/bootloader-contract directory" >&2; \
 		exit 1; \

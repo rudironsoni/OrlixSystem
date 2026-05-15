@@ -80,6 +80,8 @@ expect_success_contains "refusing to use symlinked Build/OrlixKernel/tool-shims 
 expect_success_contains "refusing to use symlinked Build/OrlixKernel/tool-shims/appstore directory" "$MAKE_BIN" -n build-linux-kernel PROFILE=appstore LINUX_SED=/tmp/gsed
 expect_success_contains 'ln -sf "$linux_sed" "$sed_shim_dir/sed"' "$MAKE_BIN" -n build-linux-kernel PROFILE=appstore LINUX_SED=/tmp/gsed
 expect_success_contains "expected_boot_contract_dir=\"$ROOT/Build/OrlixKernel/bootloader-contract\"" "$MAKE_BIN" -n test-bootloader-contract ORLIX_BOOT_CONTRACT_DIR=/tmp/boot-contract
+expect_success_contains "refusing to use symlinked Build directory" "$MAKE_BIN" -n test-bootloader-contract
+expect_success_contains "refusing to use symlinked Build/OrlixKernel directory" "$MAKE_BIN" -n test-bootloader-contract
 expect_success_contains "refusing to use symlinked Build/OrlixKernel/bootloader-contract directory" "$MAKE_BIN" -n test-bootloader-contract
 expect_success_not_contains "/tmp/boot-contract" "$MAKE_BIN" -n test-bootloader-contract ORLIX_BOOT_CONTRACT_DIR=/tmp/boot-contract
 
