@@ -142,8 +142,25 @@ build-linux-kernel: prepare-orlixkernel-port
 		echo "GNU Make >= 4.0 is required by Linux Kbuild; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; \
 		exit 1; \
 	fi; \
+	build_dir="$(ORLIX_KERNEL_BUILD_DIR)"; \
+	expected_build_dir="$(CURDIR)/Build/OrlixKernel/build/$(PROFILE)"; \
+	if [ "$$build_dir" != "$$expected_build_dir" ]; then \
+		echo "Orlix kernel build directory must be $$expected_build_dir: $$build_dir" >&2; \
+		exit 1; \
+	fi; \
+	if [ -e Build/OrlixKernel/build ] && [ -L Build/OrlixKernel/build ]; then \
+		echo "refusing to use symlinked Build/OrlixKernel/build directory" >&2; \
+		exit 1; \
+	fi; \
 	linux_sed_dir=""; \
-	if [ -n "$(LINUX_SED)" ]; then linux_sed_dir="$$(dirname "$(LINUX_SED)")"; \
+	if [ -n "$(LINUX_SED)" ]; then \
+		linux_sed="$(LINUX_SED)"; \
+		case "$$linux_sed" in /*) ;; *) linux_sed="$(CURDIR)/$$linux_sed" ;; esac; \
+		[ -x "$$linux_sed" ] || { echo "GNU sed is required by Linux Kbuild on this host; LINUX_SED is not executable: $$linux_sed" >&2; exit 1; }; \
+		sed_shim_dir="$(CURDIR)/Build/OrlixKernel/tool-shims/$(PROFILE)"; \
+		mkdir -p "$$sed_shim_dir"; \
+		ln -sf "$$linux_sed" "$$sed_shim_dir/sed"; \
+		linux_sed_dir="$$sed_shim_dir"; \
 	elif [ -x /opt/homebrew/opt/gnu-sed/libexec/gnubin/sed ]; then linux_sed_dir=/opt/homebrew/opt/gnu-sed/libexec/gnubin; fi; \
 	if [ -z "$$linux_sed_dir" ]; then \
 		echo "GNU sed is required by Linux Kbuild on this host; install gnu-sed or set LINUX_SED=/path/to/gnu/sed" >&2; \
@@ -154,7 +171,6 @@ build-linux-kernel: prepare-orlixkernel-port
 	export PATH; \
 	sed --version >/dev/null 2>&1 || { echo "GNU sed is required by Linux Kbuild on this host" >&2; exit 1; }; \
 	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
-	build_dir="$(ORLIX_KERNEL_BUILD_DIR)"; \
 	rm -rf "$$build_dir"; \
 	mkdir -p "$$build_dir"; \
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" mrproper defconfig vmlinux; \

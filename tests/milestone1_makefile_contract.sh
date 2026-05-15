@@ -55,6 +55,9 @@ expect_success_contains "Linux/ports/orlix/configs/appstore_defconfig" make -n p
 expect_success_contains "vmlinux" make -n build-linux-kernel PROFILE=appstore
 expect_success_contains "Build/OrlixKernel/build/appstore" make -n build-linux-kernel PROFILE=appstore
 expect_success_contains "Build/OrlixKernel/build/development" make -n build-linux-kernel PROFILE=development
+expect_success_contains "expected_build_dir=\"$ROOT/Build/OrlixKernel/build/appstore\"" make -n build-linux-kernel PROFILE=appstore ORLIX_KERNEL_BUILD_ROOT=/tmp/orlix-build
+expect_success_contains "refusing to use symlinked Build/OrlixKernel/build directory" make -n build-linux-kernel PROFILE=appstore
+expect_success_contains 'ln -sf "$linux_sed" "$sed_shim_dir/sed"' make -n build-linux-kernel PROFILE=appstore LINUX_SED=/tmp/gsed
 
 expect_fail_contains "No rule to make target" make -n prepare-linux-worktree
 expect_fail_contains "No rule to make target" make -n build-linux-orlix-kernel-simulator
