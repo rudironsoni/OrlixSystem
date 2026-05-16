@@ -23,17 +23,15 @@ jobs:
         xcodebuild -version
         swift --version
 
-    - name: Install XcodeGen
-      run: brew install xcodegen
-
-    - name: Generate Xcode project
-      run: xcodegen generate --project .
-
-    - name: Build with Xcode (iOS Simulator)
-      run: xcodebuild -project OrlixKernel.xcodeproj -scheme OrlixKernel-6.12-arm64 -sdk iphonesimulator -arch arm64 -configuration Debug build
-
-    - name: Test with Xcode (iOS Simulator)
-      run: xcodebuild test -project OrlixKernel.xcodeproj -scheme OrlixKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'
+    - name: Run Milestone 1 contract checks
+      run: |
+        if command -v rtk >/dev/null 2>&1; then
+          rtk make test-milestone1-contract
+          rtk make test-bootloader-contract
+        else
+          make test-milestone1-contract
+          make test-bootloader-contract
+        fi
 
     - name: Report build status
       run: echo "Build completed successfully"
@@ -50,14 +48,15 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install XcodeGen
-      run: brew install xcodegen
-
-    - name: Generate Xcode project
-      run: xcodegen generate --project .
-
-    - name: Build with Xcode (iOS Simulator)
-      run: xcodebuild -project OrlixKernel.xcodeproj -scheme OrlixKernel-6.12-arm64 -sdk iphonesimulator -arch arm64 -configuration Debug build
+    - name: Run Milestone 1 contract checks
+      run: |
+        if command -v rtk >/dev/null 2>&1; then
+          rtk make test-milestone1-contract
+          rtk make test-bootloader-contract
+        else
+          make test-milestone1-contract
+          make test-bootloader-contract
+        fi
 
     - name: Create Release
       id: create_release

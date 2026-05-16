@@ -4,13 +4,13 @@
  * Host filesystem statistics do not define the Linux-facing contract here.
  */
 
-#include <uapi/asm/statfs.h>
+#include <asm/statfs.h>
 #include <linux/errno.h>
 #include <linux/magic.h>
 #include <linux/mount.h>
 #include <linux/string.h>
 #include <linux/fcntl.h>
-#include <uapi/linux/mount.h>
+#include <linux/mount.h>
 #include <linux/types.h>
 #include "fdtable.h"
 #include "private/fs/fdtable_state.h"

@@ -2,7 +2,7 @@
 #define KERNEL_TIME_H
 
 #include <linux/types.h>
-#include <uapi/linux/time.h>
+#include <linux/time.h>
 
 #ifdef __cplusplus
 extern "C" {

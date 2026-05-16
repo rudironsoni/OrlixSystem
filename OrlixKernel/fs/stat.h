@@ -2,7 +2,7 @@
 #define FS_STAT_H
 
 #include <linux/types.h>
-#include <uapi/asm/stat.h>
+#include <asm/stat.h>
 
 #ifdef __cplusplus
 extern "C" {

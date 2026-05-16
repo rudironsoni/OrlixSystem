@@ -14,7 +14,7 @@
 #include <linux/errno.h>
 #include <linux/limits.h>
 #include <linux/string.h>
-#include <uapi/linux/time.h>
+#include <linux/time.h>
 
 #include "task.h"
 #include "../private/kernel/task_state.h"

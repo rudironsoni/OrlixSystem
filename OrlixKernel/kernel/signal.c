@@ -10,9 +10,9 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/capability.h>
-#include <uapi/linux/signal.h>
-#include <uapi/asm/sigcontext.h>
-#include <uapi/asm/ucontext.h>
+#include <linux/signal.h>
+#include <asm/sigcontext.h>
+#include <asm/ucontext.h>
 
 #include "../private/kernel/signal_state.h"
 #include "../private/kernel/task_state.h"

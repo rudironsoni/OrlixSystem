@@ -1,7 +1,7 @@
 /* OrlixKernel/kernel/uts.h
  * Private internal header for virtual UTS namespace state.
  *
- * This is runtime-owned namespace state, not a Linux UAPI mirror.
+ * This is runtime-owned namespace state, not a Upstream Linux ABI mirror.
  */
 
 #ifndef KERNEL_UTS_H

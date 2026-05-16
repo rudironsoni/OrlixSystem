@@ -1,0 +1,4 @@
+config ORLIX_BLOCK
+	bool "Orlix block devices"
+	help
+	  Enable Orlix Linux block device skeletons.

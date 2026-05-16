@@ -1,8 +1,8 @@
 #include <linux/errno.h>
 #include <linux/atomic.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/poll.h>
-#include <uapi/linux/signal.h>
+#include <linux/fcntl.h>
+#include <linux/poll.h>
+#include <linux/signal.h>
 
 #include "pipe.h"
 #include "private/fs/fdtable_state.h"

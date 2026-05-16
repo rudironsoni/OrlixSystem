@@ -19,7 +19,7 @@
 #include <linux/stddef.h>
 #include <linux/time_types.h>
 #include <linux/uio.h>
-#include <uapi/linux/un.h>
+#include <linux/un.h>
 
 #include "../../private/kernel/net/endpoint_state.h"
 #include "fs/fdtable.h"

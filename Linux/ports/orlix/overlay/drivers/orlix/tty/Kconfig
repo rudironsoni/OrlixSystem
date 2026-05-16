@@ -1,0 +1,4 @@
+config ORLIX_TTY
+	bool "Orlix TTY devices"
+	help
+	  Enable Orlix Linux TTY skeletons.

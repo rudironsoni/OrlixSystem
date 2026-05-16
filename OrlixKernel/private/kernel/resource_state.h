@@ -2,7 +2,7 @@
 #define PRIVATE_KERNEL_RESOURCE_STATE_H
 
 #include <linux/resource.h>
-#include <uapi/linux/times.h>
+#include <linux/times.h>
 
 #ifdef __cplusplus
 extern "C" {

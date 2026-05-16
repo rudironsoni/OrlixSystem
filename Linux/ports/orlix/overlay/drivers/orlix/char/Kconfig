@@ -1,0 +1,4 @@
+config ORLIX_CHAR
+	bool "Orlix character devices"
+	help
+	  Enable Orlix Linux character device skeletons.

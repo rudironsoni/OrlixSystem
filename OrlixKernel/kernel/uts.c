@@ -11,8 +11,8 @@
 #include <linux/gfp_types.h>
 #include <linux/string.h>
 
-#include <uapi/linux/capability.h>
-#include <uapi/linux/utsname.h>
+#include <linux/capability.h>
+#include <linux/utsname.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);

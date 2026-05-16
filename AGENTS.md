@@ -1,459 +1,148 @@
-12-rule template
+# AGENTS.md
 
-These rules apply to every task in this project unless explicitly overridden.
-Bias: caution over speed on non-trivial work. Use judgment on trivial tasks.
-
-## Rule 1 — Think Before Coding
-State assumptions explicitly. If uncertain, ask rather than guess.
-Present multiple interpretations when ambiguity exists.
-Push back when a simpler approach exists.
-Stop when confused. Name what's unclear.
-
-## Rule 2 — Simplicity First
-Minimum code that solves the problem. Nothing speculative.
-No features beyond what was asked. No abstractions for single-use code.
-Test: would a senior engineer say this is overcomplicated? If yes, simplify.
-
-## Rule 3 — Surgical Changes
-Touch only what you must. Clean up only your own mess.
-Don't "improve" adjacent code, comments, or formatting.
-Don't refactor what isn't broken. Match existing style.
-
-## Rule 4 — Goal-Driven Execution
-Define success criteria. Loop until verified.
-Don't follow steps. Define success and iterate.
-Strong success criteria let you loop independently.
-
-## Rule 5 — Use the model only for judgment calls
-Use me for: classification, drafting, summarization, extraction.
-Do NOT use me for: routing, retries, deterministic transforms.
-If code can answer, code answers.
-
-## Rule 6 — Token budgets are not advisory
-Per-task: 4,000 tokens. Per-session: 30,000 tokens.
-If approaching budget, summarize and start fresh.
-Surface the breach. Do not silently overrun.
-
-## Rule 7 — Surface conflicts, don't average them
-If two patterns contradict, pick one (more recent / more tested).
-Explain why. Flag the other for cleanup.
-Don't blend conflicting patterns.
-
-## Rule 8 — Read before you write
-Before adding code, read exports, immediate callers, shared utilities.
-"Looks orthogonal" is dangerous. If unsure why code is structured a way, ask.
-
-## Rule 9 — Tests verify intent, not just behavior
-Tests must encode WHY behavior matters, not just WHAT it does.
-A test that can't fail when business logic changes is wrong.
-
-## Rule 10 — Checkpoint after every significant step
-Summarize what was done, what's verified, what's left.
-Don't continue from a state you can't describe back.
-If you lose track, stop and restate.
-
-## Rule 11 — Match the codebase's conventions, even if you disagree
-Conformance > taste inside the codebase.
-If you genuinely think a convention is harmful, surface it. Don't fork silently.
-
-## Rule 12 — Fail loud
-"Completed" is wrong if anything was skipped silently.
-"Tests pass" is wrong if any were skipped.
-Default to surfacing uncertainty, not hiding it.
-
-# AGENTS.md - Linux-Shaped Architecture Rules for OrlixKernel
+These rules apply to every task in this repository unless explicitly overridden by the user.
 
 ## Project Invariant
 
-OrlixKernel is a Linux-shaped headers + syscall + runtime target hosted on iOS.
+Orlix compiles upstream Linux into an iOS-hosted `OrlixKernel.xcframework`. Orlix adapts Linux through Linux-native extension points, not by locally rewriting Linux core subsystems.
 
-If a change makes OrlixKernel less suitable for real Linux userspace (for example bash, zsh, grep, sed, awk, fzf), the change is wrong.
+If a change makes Orlix less suitable for real Linux userspace, the change is wrong.
 
-Repo-local convenience never outranks Linux userspace compatibility.
+## Working Rules
 
-## 1) Linux-Shaped Surface First
+1. Think before coding. State assumptions, surface ambiguity, and ask when ownership is unclear.
+2. Prefer the smallest correct change. Do not add speculative abstractions or convenience layers.
+3. Touch only what the task requires. Do not refactor unrelated code.
+4. Define success criteria and verify them before claiming completion.
+5. If code or build output can answer a question, inspect that before asking the user.
+6. Surface conflicts directly. Do not average incompatible architecture patterns.
+7. Read owning files, callers, and docs before writing.
+8. Tests must verify intent and must match the target architecture.
+9. Checkpoint after significant steps.
+10. Follow repository conventions unless they conflict with the new upstream-Linux architecture.
+11. Fail loud when proof is missing, partial, or skipped.
+12. Do not preserve backward compatibility with wrong architecture unless the user explicitly asks for it.
 
-Linux-owner behavior must prefer Linux expectations for:
-- headers, constants, and public names
-- struct layouts and ioctl payload contracts
-- errno behavior
-- file descriptor and open-file-description semantics
-- path resolution, dirfd, and pathname rules
-- poll/select readiness behavior
-- signals, default actions, masking, and delivery
-- sessions/process-groups/controlling-tty behavior
-- termios/tty behavior
-- procfs/devfs names and shape
-- exec/shebang/interpreter/argv/env/wait/exit behavior
+## Architecture Ownership
 
-Do not drift toward Darwin-shaped semantics in Linux-owner code.
+Upstream Linux owns Linux core behavior:
 
-## 2) Ownership and Directionality
+- VFS
+- tasks and process model
+- fd tables
+- signals
+- wait and reaping
+- procfs, sysfs, devtmpfs
+- cgroups and namespaces
+- sockets and networking core
+- syscall semantics
+- exec and interpreter behavior
 
-Linux-owner paths (Linux semantics live here):
-- `OrlixKernel/fs/`
-- `OrlixKernel/kernel/`
-- `OrlixKernel/runtime/`
-- `OrlixKernel/include/`
+Durable Orlix Linux port inputs live under:
 
-Host mediation paths (host mechanics live here only):
-- `OrlixHostAdapter/**`
+- `Linux/ports/orlix/overlay/arch/orlix`
+- `Linux/ports/orlix/overlay/drivers/orlix`
+- `Linux/ports/orlix/configs`
+- `Linux/ports/orlix/patches`
 
-OrlixHostAdapter ownership rule:
-- `OrlixHostAdapter/**` serves `OrlixKernel` only.
-- `OrlixHostAdapter/**` must not become a public libc surface, syscall interposition layer, or package-facing ABI provider.
-- The userspace libc layer must rely on `OrlixKernel` only. It must not rely on `OrlixHostAdapter` directly.
-- If a Linux-facing public function such as `open`, `close`, `read`, `write`, `ioctl`, `sigaction`, `waitpid`, `clock_gettime`, `futex`, `getuid`, `epoll_wait`, or similar must exist for userspace, that ownership belongs to the userspace libc layer, not to `OrlixHostAdapter`.
-- `OrlixHostAdapter/**` may implement only private host seam entry points for `OrlixKernel`, for example narrow subsystem-owned `*_impl()` functions or equivalent kernel-owned private contracts.
-- Public/default-visible symbols in `OrlixHostAdapter/**` are forbidden unless the thing being exported is itself a kernel-private seam declared by `OrlixKernel` rather than a libc/public API surface.
-- Bootstrap convenience is not an excuse to keep public libc-shaped wrappers in `OrlixHostAdapter/**`. Delete the wrong layer instead of preserving it.
+Generated upstream source is read-only input:
 
-Wrong-direction changes are forbidden:
-- Do not move Linux semantic decisions into `OrlixHostAdapter/**`.
-- Do not move host mechanics into Linux-owner paths.
-- Do not excuse Darwin/iOS leakage in Linux-owner code as an environmental fact.
-- If Darwin/iOS types, headers, macros, constants, process APIs, fd APIs, wait APIs, signal APIs, or filesystem semantics appear in Linux-owner code, treat that as an agent implementation error.
-- Fix such leakage by restoring the architecture boundary: Linux header truth (UAPI + kernel-internal generated headers) in Linux-owner code, private host mediation only under `OrlixHostAdapter/**`.
-- Never describe Linux-owner files as “not needing Darwin” as if Darwin was a valid option there. Darwin is not a Linux-owner dependency.
-- Do not include host toolchain `std*.h` headers in Linux-owner code. That includes, at minimum, `stddef.h`, `stdint.h`, `stdbool.h`, `stdatomic.h`, `stdarg.h`, `stdlib.h`, `stdio.h`, and any similar standard-library convenience headers.
-- If a Linux-owner file appears to need a `std*.h` header, that is a boundary bug to fix, not a convenience exception to take. Use the vendored truth from `OrlixKernel/vendor/linux/<version>/<arch>/include`, or redesign the kernel-private type ownership.
-- Do not replace missing Linux-owned declarations by scattering compiler builtin aliases such as `#define memcpy __builtin_memcpy`, `#define memset __builtin_memset`, `#define strlen __builtin_strlen`, `#define strcmp __builtin_strcmp`, `#define strrchr __builtin_strrchr`, or similar repo-local escape hatches through Linux-owner code or Linux-kernel tests.
-- If a Linux-owner file only parses after adding `__builtin_*` aliases, implicit builtin declarations, or compiler-only macro rewrites, treat that as a build/lint environment or ownership bug. Fix the owning header surface or lint environment instead of keeping the builtin escape hatch.
-- Do not introduce repo-local private shim headers, split-contract headers, or reduced include façades whose purpose is to avoid including the real vendored Linux kernel header graph.
-- If the full vendored Linux header graph trips lint or the Apple toolchain, the fix belongs in the build/lint environment and vendor integration layer, not in a new repo-local private header that cuts around Linux truth.
-- Non-`private/**` headers under `OrlixKernel/fs/`, `OrlixKernel/kernel/`, and `OrlixKernel/runtime/` must stay declaration/API-oriented. Repo-private runtime state layouts, snapshot records, linked-list nodes, queue internals, synthetic classification records, and similar implementation detail containers belong under `OrlixKernel/private/**`, not in those owner headers.
-- If a new repo-private struct layout seems “convenient” in an owner header because tests or another subsystem want to inspect it, stop. Either keep the detail local to the owning `.c` file, or move the shared layout under `OrlixKernel/private/**`.
-- Cross-subsystem convenience reaches through private state are forbidden. Files outside the owning subsystem must not directly poke or inspect fields such as `task->signal->...`, `task->mm->signal_frame_*`, or comparable private runtime state just because the field already exists. Add or use an owner API instead.
+- `Linux/upstream/linux-6.12`
 
-## 3) Narrow Subsystem Seams Only
+Generated Orlix port source is disposable:
 
-When Linux-owner code needs host mediation, use narrow, subsystem-owned, private contracts declared by `OrlixKernel` and implemented under `OrlixHostAdapter/**`.
+- `Build/OrlixKernel/linux-<version>-port`
 
-Allowed seam shape:
-- specific to one subsystem
-- minimal exported surface
-- no ambient host vocabulary leakage
-- kernel-owned declarations, host-owned implementations only
-- Darwin-importing `OrlixHostAdapter` implementation files must not directly include deep Linux kheaders or broad kernel owner headers when a narrower kernel-owned seam can carry the data
+Host mechanics live only in:
 
-Forbidden seam shape:
-- generic helper bags
-- catch-all mediation headers used by unrelated subsystems
-- abstractions that rename/deodorize host APIs and make them ambient
-- adapter-owned include surfaces consumed by `OrlixKernel`
-- filenames or contract names that encode host role redundantly with `_host`, `_bridge`, `internal/ios`, or similar labels
-- repo-local compatibility layers that rename Linux-shaped concepts instead of using Linux names
-- adapter-owned public wrappers for libc or userspace ABI entry points
-- repo-local private split headers whose only purpose is to narrow or bypass the real vendored Linux include graph
-- mixed Darwin-SDK plus deep-Linux aggregate translation units in `OrlixHostAdapter/**`
+- `OrlixHostAdapter`
 
-Linux naming rule:
-- If the concept already has a Linux name, use the Linux name.
-- If the concept already exists in `third_party/linux/<version>/<arch>/uapi/include` or `third_party/linux/<version>/<arch>/kheaders/**`, do not recreate it in `OrlixKernel/**` under any repo-local spelling.
-- If the concept is libc-owned and already belongs in the userspace libc layer, do not recreate it in `OrlixKernel/**` under any repo-local spelling.
-- Do not invent repo-local spellings for Linux-shaped concepts such as `orlix_*`, `kernel_*`, or `*_compat`.
-- Do not invent repo-local `linux_*` stand-ins for common Linux concepts when the real contract name is just `timespec`, `timeval`, `itimerval`, `fd_set`, `sockaddr`, `msghdr`, `termios`, `winsize`, `statfs`, or similar.
-- This applies to filenames, header names, structs, typedefs, enums, macros, helper functions, and local private state when the thing being modeled is still a Linux concept.
-- Examples of forbidden spellings include patterns such as `kernel_timeval`, `orlix_kernel_fd_zero`, `kernel_select_compat.h`, or similar repo-local renames of `timespec`, `timeval`, `fd_set`, `sockaddr`, `pollfd`, `termios`, `winsize`, and related Linux-shaped concepts.
-- Additional forbidden examples include `linux_timespec`, `linux_statfs`, `linux_mmsghdr`, and other repo-local spellings that merely prepend `linux_` to a concept whose real Linux-facing name is already defined elsewhere.
-- If the concept is genuinely private state and not a Linux concept, use a plain subsystem noun instead of branding or fake compatibility vocabulary.
-- Extrapolation rule: if a repo-local name would still read as “Linux concept plus project/role/private/compat dressing,” it is forbidden even if the exact spelling is new.
-- Forbidden dressing includes project branding, ownership branding, and fake adaptation words before or after a Linux concept:
-  - prefixes such as `orlix_`, `ix_`, `kernel_`, `linux_`, `private_`, `internal_`, `bridge_`, `adapter_`, `shim_`, `compat_`
-  - suffixes such as `_compat`, `_bridge`, `_adapter`, `_shim`, `_private`, `_internal`, `_owner`
-- This prohibition applies equally to helper functions, typedefs, structs, macros, local aliases, and header filenames.
-- If you are tempted to write a name like `kernel_*`, `linux_*`, `orlix_*`, `*_compat`, `*_bridge`, or similar around a Linux concept, stop and redesign the ownership boundary instead.
-- Mandatory stop rule: if the only apparent way forward is to mint a repo-local Linux-concept rename, stop immediately and ask for guidance instead of inventing the name.
+The public product header lives in:
 
-## 4) Ambient Host Vocabulary Is Forbidden in Linux-Owner Code
+- `OrlixKernel/include`
 
-In `OrlixKernel/fs/`, `OrlixKernel/kernel/`, `OrlixKernel/runtime/`, `OrlixKernel/include/`, do not introduce:
-- direct host APIs/types/macros
-- renamed host APIs wrapped as generic helpers
-- generic wrapper families for mutex/thread/cond/signal/io/platform bridging
-- broad mediation headers that encode host assumptions globally
-- any include from `OrlixHostAdapter/**`
-- ambient host vocabulary such as `host_*`, `*_host`, or `*_bridge`
+## Local Kernel Prototype Rule
 
-Category rule: banning one prefix and reintroducing the same leakage with a new prefix is still a violation.
+`OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` are not target implementation paths.
 
-Darwin-backed `OrlixHostAdapter/**` implementation rule:
-- if a host implementation file needs Linux-owned structs, Linux-owned conversions, or broad kernel subsystem state, that logic belongs back in `OrlixKernel`
-- host seams should prefer primitive/scalar exchange or opaque kernel-owned handles, not mixed Darwin/Linux aggregate contracts in one translation unit
-- build or lint friction caused by vendored Linux headers inside Darwin-importing host files must be resolved by seam narrowing and ownership correction, not by weakening Linux truth or inventing repo-local compatibility façades
+Do not add new Linux subsystem behavior there. Read those directories only as migration reference. Useful behavior must move by ownership into upstream Linux, `arch/orlix`, Linux-native drivers, boot code, or host-adapter seams. The end state has no `OrlixKernel/fs`, `OrlixKernel/kernel`, or `OrlixKernel/runtime` directories.
 
-## 5) Public ABI Discipline
+## Virtio-First Rule
 
-- Public syscall names remain Linux-shaped.
-- No branded/public ABI names that encode platform identity.
-- Darwin/BSD header behavior must not define Linux-facing contracts.
-- Keep internal implementation behind private `*_impl()` helpers and preserve clean public wrapper boundaries.
-- Cross-target contract headers are kernel-private only. `OrlixHostAdapter` does not own or export the seam.
-- `OrlixHostAdapter/**` must not export libc entry points or Linux-facing public wrappers with default visibility.
-- `OrlixHostAdapter/**` must not define public wrappers for APIs such as file I/O, process credentials, signals, wait, futex, epoll, poll, time, tty, mount, or other userspace-facing libc/syscall surfaces.
-- If a wrapper name would be valid to expose from libc or to include from package-facing headers, it does not belong in `OrlixHostAdapter/**`.
+Use upstream Linux virtio device classes wherever they fit.
 
-## 6) Test Target Ownership
+Linux-visible behavior should be owned by upstream drivers such as `virtio_blk`, `virtio_console`, `virtio-rng`, `virtio_net`, virtio-fs, or 9p over virtio. Orlix-specific code supplies transport and backend mechanics under `drivers/orlix`, shaped as close to Linux virtio conventions as possible.
 
-`OrlixKernelTests` proves Linux-facing OrlixKernel behavior.
+Do not write custom Orlix block, network, random, console, or filesystem drivers when an upstream virtio class satisfies the requirement.
 
-Rules for LinuxKernel tests:
-- Exercise syscall-facing OrlixKernel functions and Linux-visible runtime behavior.
-- Use C contract files for Linux UAPI constants, macros, structs, and ioctl payloads.
-- Objective-C test files must not include Linux UAPI headers.
-- Do not include `OrlixHostAdapter/**`.
-- Do not depend on HostBridge helpers or Darwin host behavior as Linux proof.
-- Do not introduce branded helper vocabularies such as `orlix_test_*`, `IX_*`, `TEST_*`, or Linux constant accessor wrappers.
+## Boot And Product API Rule
 
-KUnit rules for `OrlixKernelTests`:
-- Treat KUnit as the required model for Linux-owner unit tests. New LinuxKernel unit suites must be written as C KUnit-style suites and cases, not as hand-maintained Objective-C test methods.
-- The canonical shape is:
-  - `void case_name(struct kunit *test)`
-  - `struct kunit_case`
-  - `struct kunit_suite`
-  - `KUNIT_CASE(...)`
-  - `KUNIT_EXPECT_*` and `KUNIT_ASSERT_*`
-- XCTest is allowed only as outer discovery/reporting plumbing for Xcode. All real Linux test logic, kernel-private setup, and vendored Linux header usage must live in C KUnit-owned files.
-- Objective-C files in `OrlixKernelTests` are harness-only:
-  - they may select or expose KUnit suites to XCTest
-  - they must not own kernel state reset/setup logic
-  - they must not manipulate `task_struct`, `signal`, `fdtable`, `vfs`, PTY state, wait state, or similar kernel-private structures directly
-  - they must not include kernel-private owner headers such as `kernel/task.h`, `kernel/signal.h`, `kernel/wait.h`, `kernel/futex.h`, `fs/fdtable.h`, `fs/vfs.h`, `fs/path.h`, `fs/pty.h`
-- KUnit suite ownership must follow Linux subsystem ownership, not historical wrapper names:
-  - prefer paths such as `OrlixKernelTests/kernel/<subsystem>/...` or `OrlixKernelTests/fs/<subsystem>/...`
-  - prefer suite names based on the subsystem under test, with underscores instead of dashes
-  - do not put `test`, `unittest`, `compat`, `bridge`, or project branding into suite names unless the thing under test is literally the KUnit machinery itself
-- Each KUnit case should test one Linux-facing behavior rule. Keep cases short, deterministic, and hermetic. Prefer many small cases over one aggregate case that hides the failing rule.
-- Use `KUNIT_EXPECT_*` when the case can continue gathering evidence after a failure, and `KUNIT_ASSERT_*` when continuing would invalidate the rest of the case.
-- Shared setup/teardown belongs to the suite-owned C side, not to Objective-C `setUp` / `tearDown` methods and not to ambient global helpers scattered across unrelated files.
-- Linux proof must stay Linux-shaped under KUnit too:
-  - use vendored Linux UAPI and vendored kheaders where appropriate
-  - do not replace Linux contracts with Darwin or POSIX host headers because they are easier to compile
-  - do not hide ABI drift behind test-only compatibility wrappers
-- If a LinuxKernel test cannot be expressed cleanly as a KUnit-style C suite and apparently requires direct Objective-C/kernel-private coupling, stop and redesign the test seam instead of bypassing KUnit.
+The product API is bootloader-shaped only.
 
-Dynamic XCTest discovery rules for `OrlixKernelTests`:
-- Preserve per-case XCTest visibility while keeping Linux test ownership in C.
-- The accepted end-state is:
-  - one shared Objective-C base runner that bridges XCTest discovery/execution to C KUnit-style suite metadata
-  - one thin Objective-C subclass per C suite or closely related Linux subsystem group
-  - one XCTest case entry per C case discovered dynamically from suite metadata
-- Do not hand-maintain one Objective-C method per Linux test case.
-- Objective-C subclasses should do only suite selection, for example “return the suite for `kernel/wait`” or “return the suite for `fs/pty`”.
-- Dynamic selector generation must be deterministic and derived from the C case name. Preserve the original C case name for failure reporting even if the Objective-C selector must be sanitized.
-- Failure reporting must point back to the C test file and line that raised the KUnit failure. Do not collapse failures into generic Objective-C wrapper locations when the underlying C case can be reported directly.
-- XCTest filtering and rerun must continue to work at per-case granularity after the bridge is introduced. If a proposed harness would only expose one aggregate suite-level XCTest case, it is not acceptable.
-- Compile-smoke and header-surface tests may remain plain C files without dynamic discovery when they are not modeling a KUnit suite. Do not force discovery plumbing onto simple compile probes unnecessarily.
+Allowed direction:
 
-Current course and migration direction for LinuxKernel tests:
-- The repo is moving away from mixed Objective-C kernel-state tests plus ad hoc `*Contract.c` wrappers toward subsystem-owned C suites with a thin XCTest bridge.
-- Preferred path layout is Linux-shaped by subsystem, for example:
-  - `OrlixKernelTests/kernel/cred/cred_test.c`
-  - `OrlixKernelTests/kernel/wait/wait_test.c`
-  - `OrlixKernelTests/kernel/futex/futex_test.c`
-  - `OrlixKernelTests/fs/pty/pty_job_control_test.c`
-  - `OrlixKernelTests/fs/pipe/pipe_test.c`
-  - `OrlixKernelTests/fs/poll/poll_test.c`
-  - `OrlixKernelTests/fs/epoll/epoll_test.c`
-  - `OrlixKernelTests/runtime/syscall/syscall_test.c`
-- Historical names like `*Contract.c` are transitional at best. When touching a migrated subsystem, prefer finishing the move to subsystem-owned KUnit-style files rather than adding more logic to the old wrapper shape.
-- The first-wave migration model is:
-  - process-group/session
-  - PTY job control
-  - wait/job control
-  - futex
-  - pipe
-- After that, continue the same pattern for signal, task-group, VFS-path/internal VFS, and related kernel-internal suites instead of creating a second competing test architecture.
-- Keep suite-local reset/setup helpers in C next to the owning subsystem tests. Do not split reset logic back into Objective-C `setUp`/`tearDown` or broad shared helper bags.
-- The policy/lint direction must match the architecture:
-  - C files in `OrlixKernelTests` may include vendored Linux headers and kernel-private headers as needed for Linux proof
-  - Objective-C files in `OrlixKernelTests` are harness-only and must not include kernel-private owner headers
-  - `OrlixKernelTests` must not include `OrlixHostAdapter/**` or host-fixture helpers as Linux proof
-- If extending the harness, prefer strengthening the single shared bridge instead of creating parallel custom runners for individual subsystems.
+- a minimal `OrlixBoot` entrypoint
+- a closed boot profile selection
+- opaque app-level resource identifiers
 
-`OrlixHostAdapterTests` proves private iOS host mediation seams only.
+Forbidden direction:
 
-Rules for HostBridge tests:
-- May include `OrlixHostAdapter/**` and may use Darwin/Foundation/POSIX host APIs when testing host mechanics.
-- Must verify bridge contracts such as host path discovery, host errno translation, backing storage setup, security-scoped access, and host fd mediation.
-- Must not be cited as proof that Linux semantics are correct.
-- Must not define Linux-facing ABI, Linux UAPI aliases, or Linux-looking compatibility helpers.
-- HostBridge helpers should be host-test fixtures with plain, non-branded names, or direct host calls where clearer.
+- public syscall APIs
+- public file, mount, exec, task, cgroup, or runtime management APIs
+- raw Linux boot parameters as the main public API
+- fake kernel management facades
 
-The test target split is intentional:
+Boot data should be Linux-shaped. Prefer profile device trees and kernel command-line defaults over custom Orlix boot-template formats.
 
-```text
-OrlixKernelTests -> Linux surface proof
-OrlixHostAdapterTests  -> OrlixHostAdapter seam proof
+## Host Boundary Rule
+
+`OrlixHostAdapter` owns private iOS and Darwin mechanics only. It must not own Linux policy or public Linux ABI.
+
+Use narrow owner seams:
+
+- `arch/orlix` may use host seams for clocks, timers, execution substrate, low-level memory mapping, lifecycle notification, and very-early entropy.
+- `drivers/orlix` may use host seams for virtio transport and backend mechanics.
+
+Virtio is for virtual devices. It is not the path for Linux MM policy, syscall semantics, task model, or executable-memory decisions.
+
+## Build And Proof Rule
+
+The first honest proof target is upstream Linux `vmlinux` for `ARCH=orlix`.
+
+Required Milestone 1 proof commands are:
+
+```bash
+make prepare-orlixkernel-port PROFILE=appstore
+make build-linux-kernel PROFILE=appstore
+make build-linux-kernel PROFILE=development
 ```
 
-HostBridge failures can block a full repo-green milestone, but they do not replace LinuxKernel proof.
+`PROFILE=appstore` is the default normal profile.
 
-## 7) Libc Reference Boundary
+`OrlixKernel.xcframework` packaging must depend on a real Linux build artifact for the selected profile. Packaging boot stubs alone is not product proof.
 
-The upstream libc source is the Linux userspace compatibility reference, not code to paste into OrlixKernel.
+## Test Rule
 
-OrlixKernel ownership:
-- virtual kernel behavior that libc sysdeps call into
-- syscall/runtime ABI entry points
-- tasks, signals, wait, fdtable, VFS, mounts, pipes, PTY, poll/select/epoll, procfs/devfs, credentials, namespaces, cgroups, seccomp, ptrace, netlink
-- vendored Linux UAPI consumption
-  - Vendored generated Linux headers are the only source of truth:
-    - tuple root: `third_party/linux/<version>/<arch>/`
-    - UAPI: `third_party/linux/<version>/<arch>/uapi/include`
-    - kheaders/source: `third_party/linux/<version>/<arch>/kheaders/source/**`
-    - kheaders/generated: `third_party/linux/<version>/<arch>/kheaders/generated/**`
+Tests for the old local kernel prototype are migration reference only. They are not authoritative proof for the target architecture.
 
-Userspace libc ownership:
-- libc ABI headers and typedef surfaces
-- libc `options` APIs
-- native iOS arm64/aarch64 sysdeps for recompiled Linux-oriented packages
-- errno exposure at the libc boundary
-- `_start`, libc startup, libc syscall stubs/wrappers, package-facing sysroot headers
-- userspace socket ABI surfaces built from vendored Linux UAPI, including:
-  - `sys/socket.h`
-  - `socklen_t`
-  - `sa_family_t`
-  - `struct sockaddr`
-  - `struct sockaddr_storage`
-  - `struct msghdr`
-  - `struct cmsghdr`
-  - `struct mmsghdr` when needed by Linux userspace ABI
+New proof should focus on:
 
-Hard direction rule:
-- `OrlixKernel/**` must not include repo-local libc headers.
-- The only allowed consumers of repo-local libc surfaces inside this repo are package-facing compile probes, sysroot/bootstrap plumbing, and non-kernel targets that explicitly model native userspace.
-- If Linux-owner code needs a type or struct that is not appropriate to take from Darwin and not appropriate to take from the userspace libc layer, define or use a kernel-private/Linux-owned surface instead of crossing into libc ownership.
-- Do not "fix" Darwin leakage in `OrlixKernel` by replacing it with libc includes. That is still a wrong-direction dependency.
-- `OrlixKernel` must not own libc specifics. Libc-facing typedefs, structs, and APIs belong either to vendored Linux UAPI/kernel headers or to the userspace libc layer, never to repo-local kernel headers.
-- Treat libc-owned spellings such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `nlink_t`, `socklen_t`, `sa_family_t`, `suseconds_t`, `sigval`, `sigevent`, `statvfs`, `termios`, `winsize`, `iovec`, `msghdr`, `cmsghdr`, and `mmsghdr` as non-kernel ownership unless they come from the correct vendored Linux source of truth.
-- `OrlixKernel/**` must not include libc-facing headers such as `sys/socket.h`, `sys/types.h`, `sys/uio.h`, `sys/ioctl.h`, `sys/select.h`, `sys/resource.h`, `sys/statvfs.h`, `sys/wait.h`, `poll.h`, `termios.h`, or `signal.h`. Use vendored Linux UAPI/kheaders or a kernel-owned private state model instead.
-- Do not recreate public socket ABI structs or typedefs inside `OrlixKernel`. Socket runtime behavior is kernel-owned; userspace socket ABI types are libc-owned.
+- upstream Linux Kbuild behavior
+- Linux-native tests where applicable
+- boot and rootfs integration
+- Xcode packaging after a real Linux artifact exists
+- `OrlixHostAdapter` host-mechanics tests only for host mechanics
 
-Correct native userspace path:
+## Documentation Rule
 
-```text
-native iOS arm64/aarch64 package code
-        ↓
-userspace libc Linux ABI headers + syscall/sysdeps layer
-        ↓
-OrlixKernel syscall/runtime ABI
-        ↓
-OrlixKernel virtual kernel subsystems
-        ↓
-OrlixHostAdapter host mediation
-```
+Architecture rules live in:
 
-Do not vendor upstream libc `abis`, `sysdeps`, or `options` into OrlixKernel.
-Do not implement libc sysdeps inside OrlixKernel.
-Do not create kernel-owned replacements for libc typedef headers such as `pid_t`, `uid_t`, `gid_t`, `mode_t`, `dev_t`, `ino_t`, `sigevent`, `sigval`, `socklen_t`, `statvfs`, or `suseconds_t`.
+- `docs/UPSTREAM_LINUX_IOS_PORT_SPEC.md`
 
-The Linux header vendoring pipeline must treat the upstream Linux libc ABI inventory as a coverage reference:
-- map headers already present in vendored generated Linux headers to the correct surface (UAPI vs kernel-internal)
-- classify libc-owned surfaces as userspace-libc-owned
-- fail on unclassified surfaces instead of silently inventing kernel headers
+Durable architecture decisions live in:
 
-## 8) Proof Discipline (Required)
+- `docs/adr/`
 
-Lint green is necessary but insufficient.
-Build green is necessary but insufficient.
+Resolved glossary terms live in:
 
-Lint model:
-- Source lint is `clang-tidy` only.
-- `make lint` is the only lint entrypoint.
-- Do not reintroduce shell/Python lint wrappers, repo-layout lint targets, or sidecar text-policy checks.
-- Do not reintroduce `grep`, `rg`, `sed`, Python regex scans, or shell text-policy checks as a parallel lint system outside the `Makefile` + `clang-tidy` path.
-- Do not revive `scripts/lint_linux_vendor_headers.sh` or any shell wrapper that pretends to be source lint.
-
-Authoritative proof target is iOS Simulator:
-1. `make lint`
-3. `xcodegen generate --project .`
-4. `xcodebuild build-for-testing -project OrlixKernel.xcodeproj -scheme OrlixKernel-6.12-arm64 -sdk iphonesimulator -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17'`
-5. required targeted tests for the current tranche
-
-Simulator proof authority rule:
-- The authoritative simulator proof is the direct `xcodebuild` result itself.
-- If a sandboxed shell, pipeline, formatter, or output wrapper such as `xcsift` loses CoreSimulator visibility, reports placeholder-only destinations, or otherwise disagrees with a direct `xcodebuild` run, do not treat the wrapper failure as product truth.
-- In that case, rerun the exact simulator proof outside the sandbox and use the direct `xcodebuild` result as the source of truth.
-- Do not claim simulator failure, destination mismatch, or build breakage from wrapped output alone when the underlying issue is CoreSimulatorService access in the execution environment.
-
-Catalyst may be secondary smoke only.
-No commit/push before required proof is green.
-
-## 9) Tranche Discipline
-
-Changes must be bounded by subsystem tranche with explicit ownership and proof.
-
-Do not mix unrelated architecture migrations into one tranche.
-Do not “fix lint” by weakening checks or broadening allowlists.
-Do not “fix lint” by rerouting a file into a lighter lint mode, adding per-file flag exceptions, or changing the owning parse mode unless that routing is genuinely correct for the file's ownership surface and the diff explains why.
-Do not use lint-mode changes to hide Linux-vs-Darwin collisions that still exist in the real owning header graph.
-
-## 10) Quality Bar: No Shortcuts
-
-OrlixKernel is a kernel/runtime substrate, not a test-passing exercise.
-
-Forbidden implementation behavior:
-- shallow compatibility stubs presented as completed kernel capability
-- compile-only hacks that weaken Linux source compatibility
-- local typedefs, aliases, wrappers, or renames that dodge ABI ownership
-- replacing Linux UAPI/libc-owned concepts with repo-local convenience types
-- renaming Linux concepts into repo-local “private” or “compat” spellings instead of using Linux names
-- using Darwin/POSIX host types because they are easier to compile
-- introducing repo-local private shim headers to avoid consuming the full vendored Linux header graph directly
-- moving semantic problems into tests instead of fixing subsystem ownership
-- stopping at the smallest green test when the architecture is still wrong
-- narrowing behavior to one current test case instead of modeling the Linux-facing rule
-- dumping unrelated subsystem plumbing into giant junk-drawer owner headers instead of splitting private implementation detail under `OrlixKernel/private/**` or narrower subsystem-owned headers
-- adding repo-private runtime snapshot structs, frame records, queue records, or bookkeeping containers to non-`private/**` owner headers for convenience
-- reading or mutating another subsystem's private state fields directly when an owner seam should exist
-
-Required implementation behavior:
-- use vendored generated Linux headers for kernel/userspace contract truth
-- keep libc-owned typedef/API surfaces out of OrlixKernel and in the userspace libc layer
-- model the real virtual-kernel behavior in the owning subsystem
-- keep host mediation inside `OrlixHostAdapter/**` only
-- declare any cross-target contract from `OrlixKernel`, not from `OrlixHostAdapter`
-- keep `OrlixKernel` independent from libc includes and package-facing header ownership
-- prefer deleting a bad shortcut over preserving compatibility with it
-- verify the subsystem through syscall-facing LinuxKernel tests, not internal struct peeking
-- raise the implementation to the product contract before claiming completion
-
-If a quick fix conflicts with these rules, the quick fix is wrong.
-
-Additional hard rule:
-- Do not rationalize Darwin/iOS leakage in Linux-owner files by saying a file
-  “does not need Darwin.” Linux-owner files are forbidden from depending on
-  Darwin/iOS in the first place. If such a dependency appears, fix the boundary
-  instead of explaining it away.
-- Do not respond to Linux header integration friction by inventing repo-local
-  private header splits such as narrow handoff headers, partial contract clones,
-  or reduced include façades. Keep the direct Linux-owner include path and fix
-  the toolchain or lint environment so the real vendored Linux headers work.
-- Do not downgrade Linux ABI types to local fixed-width convenience types when
-  vendored generated Linux headers provide the contract type.
-- Do not create repo-local header files whose purpose is to restate Linux UAPI or kheaders concepts that already exist under `OrlixKernel/vendor/linux/<version>/<arch>/include`.
-- Do not create repo-local wrapper macros or helper functions whose sole job is to rename Linux constants, Linux structs, or Linux fd-set/socket/time/termios behavior into project-specific spellings.
-- Do not use compiler builtins as a standing substitute for Linux-owned header truth in Linux-owner code or Linux-kernel tests.
-- Laziness is not an implementation strategy: do not choose shallow stubs,
-  renamed adapters, local typedefs, or narrow test-shaped behavior when the
-  kernel capability requires real subsystem semantics.
-
-## 11) No Policy Theater
-
-Forbidden:
-- incident-specific blacklist hacks (single test/helper name grudges)
-- fake completion claims without repo truth and proof logs
-- cosmetic renames that preserve the same architectural violation
-- adapter-owned seam headers consumed by `OrlixKernel`
-- redundant path or filename role labels such as `internal/ios`, `*_host`, and `*_bridge` in the accepted end-state
-- repo-local Linux-concept renames such as `orlix_*`, `kernel_*`, or `*_compat` when Linux naming already exists
-- near-equivalent permutations of the same rename pattern using `linux_*`, `ix_*`, `private_*`, `internal_*`, `bridge_*`, `adapter_*`, `shim_*`, or matching suffix variants
-
-Required response to lint conflicts:
-- refine seam boundaries
-- relocate host mechanics behind `OrlixHostAdapter/**`
-- move cross-target declarations under kernel-owned private contract headers
-- preserve Linux-owner semantics and contracts
-
-@RTK.md
+- `CONTEXT.md`

@@ -13,9 +13,9 @@
 #include "../../private/kernel/wait_queue_state.h"
 #include "../wait_queue.h"
 
-#include <uapi/asm/socket.h>
-#include <uapi/linux/poll.h>
-#include <uapi/linux/signal.h>
+#include <asm/socket.h>
+#include <linux/poll.h>
+#include <linux/signal.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);
 extern void kfree(const void *objp);

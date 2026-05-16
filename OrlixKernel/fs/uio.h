@@ -2,7 +2,7 @@
 #define FS_UIO_H
 
 #include <linux/types.h>
-#include <uapi/linux/uio.h>
+#include <linux/uio.h>
 
 #ifdef __cplusplus
 extern "C" {

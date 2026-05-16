@@ -9,7 +9,7 @@
 #include <linux/errno.h>
 #include <linux/string.h>
 
-#include <uapi/linux/futex.h>
+#include <linux/futex.h>
 
 #define KERNEL_WAIT_WORD_BUCKETS 64
 

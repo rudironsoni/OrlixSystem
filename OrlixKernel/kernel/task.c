@@ -26,15 +26,15 @@
 #include <linux/gfp_types.h>
 #include <linux/limits.h>
 #include <linux/string.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/capability.h>
-#include <uapi/linux/elf.h>
+#include <linux/fcntl.h>
+#include <linux/capability.h>
+#include <linux/elf.h>
 #include <linux/mount.h>
-#include <uapi/linux/sched.h>
-#include <uapi/linux/signal.h>
-#include <uapi/linux/stat.h>
-#include <uapi/asm/siginfo.h>
-#include <uapi/asm/stat.h>
+#include <linux/sched.h>
+#include <linux/signal.h>
+#include <linux/stat.h>
+#include <asm/siginfo.h>
+#include <asm/stat.h>
 #include <linux/resource.h>
 
 extern void *__kmalloc_noprof(size_t size, gfp_t flags);

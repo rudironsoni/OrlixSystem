@@ -1,15 +1,15 @@
 #include "syscall.h"
 
-#include <uapi/asm/unistd.h>
+#include <asm/unistd.h>
 #include <linux/errno.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/futex.h>
-#include <uapi/linux/mount.h>
-#include <uapi/linux/openat2.h>
-#include <uapi/linux/sched.h>
-#include <uapi/linux/signal.h>
-#include <uapi/linux/stat.h>
-#include <uapi/linux/time.h>
+#include <linux/fcntl.h>
+#include <linux/futex.h>
+#include <linux/mount.h>
+#include <linux/openat2.h>
+#include <linux/sched.h>
+#include <linux/signal.h>
+#include <linux/stat.h>
+#include <linux/time.h>
 #include <linux/types.h>
 #include <linux/string.h>
 

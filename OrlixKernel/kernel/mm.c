@@ -18,11 +18,11 @@
 #include <linux/limits.h>
 #include <linux/string.h>
 
-#include <uapi/linux/elf.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/fs.h>
+#include <linux/elf.h>
+#include <linux/fcntl.h>
+#include <linux/fs.h>
 #define BUILD_VDSO 1
-#include <uapi/linux/mman.h>
+#include <linux/mman.h>
 #undef BUILD_VDSO
 
 #ifndef MAP_ANONYMOUS

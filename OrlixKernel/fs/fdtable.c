@@ -1,25 +1,25 @@
 #include "fdtable.h"
 
-#include <uapi/linux/close_range.h>
+#include <linux/close_range.h>
 #include <linux/errno.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/ioctl.h>
+#include <linux/fcntl.h>
+#include <linux/ioctl.h>
 /*
- * These UAPI headers recurse through <linux/fcntl.h>. Keep them on the UAPI
+ * These upstream Linux ABI headers recurse through <linux/fcntl.h>. Keep them on the upstream Linux ABI
  * contract path in this translation unit instead of pulling the full kernel
  * owner graph.
  */
 #define _LINUX_FCNTL_H
-#include <uapi/linux/eventfd.h>
-#include <uapi/linux/memfd.h>
-#include <uapi/linux/pidfd.h>
-#include <uapi/linux/timerfd.h>
+#include <linux/eventfd.h>
+#include <linux/memfd.h>
+#include <linux/pidfd.h>
+#include <linux/timerfd.h>
 #undef _LINUX_FCNTL_H
 #include <linux/limits.h>
 #include <linux/string.h>
-#include <uapi/linux/stat.h>
-#include <uapi/linux/time.h>
-#include <uapi/asm/stat.h>
+#include <linux/stat.h>
+#include <linux/time.h>
+#include <asm/stat.h>
 
 #include "internal/slab.h"
 #include "internal/timekeeping.h"

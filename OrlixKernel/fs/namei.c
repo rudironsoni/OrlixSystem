@@ -5,10 +5,10 @@
  * are delegated through the exported OrlixHostAdapter fs seam.
  */
 
-#include <uapi/linux/capability.h>
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/stat.h>
-#include <uapi/asm/stat.h>
+#include <linux/capability.h>
+#include <linux/fcntl.h>
+#include <linux/stat.h>
+#include <asm/stat.h>
 #include <linux/errno.h>
 #include <linux/string.h>
 

@@ -2,7 +2,7 @@
  * Virtual stat/fstat implementation
  */
 #include <linux/fcntl.h>
-#include <uapi/asm/stat.h>
+#include <asm/stat.h>
 #include <linux/stat.h>
 
 #include <linux/errno.h>

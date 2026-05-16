@@ -1,0 +1,20 @@
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index 7bdad836e9a2..a8b7f16a0eb3 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -244,4 +244,6 @@ source "drivers/cdx/Kconfig"
+ 
+ source "drivers/dpll/Kconfig"
+ 
++source "drivers/orlix/Kconfig"
++
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index d1a1256e8c47..cb5908320358 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -195,3 +195,4 @@ obj-$(CONFIG_CDX_BUS)		+= cdx/
+ obj-$(CONFIG_DPLL)		+= dpll/
+ 
+ obj-$(CONFIG_S390)		+= s390/
++obj-$(CONFIG_ORLIX)		+= orlix/

@@ -2,7 +2,7 @@
 
 #include <linux/atomic.h>
 #include <linux/errno.h>
-#include <uapi/linux/fcntl.h>
+#include <linux/fcntl.h>
 
 #include "fdtable.h"
 #include "private/fs/fdtable_state.h"

@@ -1,0 +1,28 @@
+config ORLIX
+	bool "Orlix architecture"
+	default y
+	select GENERIC_IRQ_SHOW
+	select HAVE_PAGE_SIZE_4KB
+
+config 64BIT
+	bool
+	default y
+
+config MMU
+	bool
+	default y
+
+config PGTABLE_LEVELS
+	int
+	default 4
+
+config GENERIC_CSUM
+	def_bool y
+
+config GENERIC_CALIBRATE_DELAY
+	def_bool y
+
+config GENERIC_HWEIGHT
+	def_bool y
+
+source "kernel/Kconfig.hz"

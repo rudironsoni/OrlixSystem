@@ -2,10 +2,10 @@
  * Virtual read/write/lseek implementation
  */
 
-#include <uapi/linux/fcntl.h>
-#include <uapi/linux/fs.h>
-#include <uapi/asm/stat.h>
-#include <uapi/linux/uio.h>
+#include <linux/fcntl.h>
+#include <linux/fs.h>
+#include <asm/stat.h>
+#include <linux/uio.h>
 
 #include <linux/errno.h>
 #include <linux/string.h>
