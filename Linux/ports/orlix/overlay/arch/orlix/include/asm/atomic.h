@@ -2,8 +2,11 @@
 #ifndef _ASM_ORLIX_ATOMIC_H
 #define _ASM_ORLIX_ATOMIC_H
 
+#include <linux/types.h>
 #include <asm-generic/atomic.h>
 #include <asm/cmpxchg.h>
+
+#define ATOMIC64_INIT(i)	{ (i) }
 
 #define arch_atomic64_read(v) READ_ONCE((v)->counter)
 #define arch_atomic64_set(v, i) WRITE_ONCE(((v)->counter), (i))

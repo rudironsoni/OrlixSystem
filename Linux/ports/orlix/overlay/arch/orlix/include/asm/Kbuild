@@ -1,10 +1,12 @@
 generic-y += cache.h
+generic-y += checksum.h
+generic-y += delay.h
 generic-y += early_ioremap.h
-generic-y += cmpxchg.h
-generic-y += cmpxchg-local.h
-generic-y += irqflags.h
+generic-y += extable.h
+generic-y += kvm_para.h
 generic-y += mcs_spinlock.h
 generic-y += param.h
 generic-y += parport.h
 generic-y += string.h
+generic-y += tlb.h
 generic-y += user.h

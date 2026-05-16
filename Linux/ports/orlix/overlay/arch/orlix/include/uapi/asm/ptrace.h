@@ -4,6 +4,11 @@
 
 #include <linux/types.h>
 
+#define PSR_MODE_EL0t	0x00000000
+#define PSR_MODE_EL1t	0x00000004
+#define PSR_MODE_EL1h	0x00000005
+#define PSR_MODE_MASK	0x0000000f
+
 #ifndef __ASSEMBLY__
 struct user_pt_regs {
 	__u64 regs[31];
