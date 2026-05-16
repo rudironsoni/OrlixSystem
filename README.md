@@ -45,6 +45,14 @@ make test-milestone2-boot-contract
 
 Milestone 2 does not prove QEMU execution, iOS execution, task switching, MMU behavior, userspace access, device binding, or root filesystem assembly.
 
+Milestone 3 boot-to-virtio-probe proof keeps the dependency chain honest. It verifies that valid boot configs reach a private boot handoff, that profile DTS files describe virtio-mmio probe-shape devices, and that profile configs enable upstream OF, virtio-mmio, and virtio-block probe paths:
+
+```bash
+make test-milestone3-boot-probe-contract
+```
+
+Milestone 3 does not prove `/dev/vda`, `/dev/vdb`, virtio-block request I/O, host-backed disk persistence, initramfs loading, OverlayFS root assembly, or userspace boot.
+
 ## Generated Trees
 
 The pristine upstream source is generated at:
