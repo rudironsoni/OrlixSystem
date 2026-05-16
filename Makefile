@@ -28,7 +28,7 @@ LINUX_SED ?=
 LINUX_LLVM_BIN ?= $(shell if command -v llvm-ar >/dev/null 2>&1; then dirname "$$(command -v llvm-ar)"; elif [ -x /opt/homebrew/opt/llvm/bin/llvm-ar ]; then printf '%s\n' /opt/homebrew/opt/llvm/bin; fi)
 LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
 
-.PHONY: bootstrap-linux-upstream validate-orlix-profile prepare-orlixkernel-port build-linux-kernel test-bootloader-contract test-milestone1-contract test-milestone2-boot-contract
+.PHONY: bootstrap-linux-upstream validate-orlix-profile prepare-orlixkernel-port build-linux-kernel test-bootloader-contract test-milestone1-contract test-milestone2-boot-contract test-milestone3-boot-probe-contract
 
 bootstrap-linux-upstream:
 	@set -euo pipefail; \
@@ -249,3 +249,6 @@ test-milestone1-contract:
 
 test-milestone2-boot-contract: test-bootloader-contract
 	@MAKE_BIN="$(MAKE)" tests/milestone2_boot_contract.sh
+
+test-milestone3-boot-probe-contract: test-milestone2-boot-contract
+	@MAKE_BIN="$(MAKE)" tests/milestone3_boot_probe_contract.sh
