@@ -26,4 +26,18 @@
 		current-speed = <115200>;
 		status = "okay";
 	};
+
+	virtio_base: virtio@10001000 {
+		compatible = "virtio,mmio";
+		reg = <0x0 0x10001000 0x0 0x200>;
+		interrupts = <32>;
+		status = "okay";
+	};
+
+	virtio_state: virtio@10001200 {
+		compatible = "virtio,mmio";
+		reg = <0x0 0x10001200 0x0 0x200>;
+		interrupts = <33>;
+		status = "okay";
+	};
 };
