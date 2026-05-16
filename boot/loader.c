@@ -1,11 +1,12 @@
-#include "OrlixKernel.h"
-
-__attribute__((visibility("hidden"))) int OrlixPrepareBootConfig(const struct OrlixBootConfig *config);
+#include "boot/input.h"
 
 int OrlixBoot(const struct OrlixBootConfig *config) {
-    if (OrlixPrepareBootConfig(config) != ORLIX_BOOT_STATUS_OK) {
+    struct OrlixBootInput input;
+
+    if (OrlixPrepareBootInput(config, &input) != ORLIX_BOOT_STATUS_OK) {
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
 
+    (void)input;
     return ORLIX_BOOT_STATUS_UNAVAILABLE;
 }
