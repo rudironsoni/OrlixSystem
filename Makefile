@@ -44,6 +44,7 @@ ORLIX_IOS_SIMULATOR_NAME ?= iPhone 17 Pro
 ORLIX_IOS_SIMULATOR_ID ?=
 ORLIX_IOS_SIMULATOR_DERIVED_DATA ?= $(CURDIR)/.deriveddata/OrlixSystem-sim
 ORLIX_IOS_SIMULATOR_FRAMEWORK := $(ORLIX_IOS_SIMULATOR_DERIVED_DATA)/Build/Products/Debug-iphonesimulator/OrlixKernel.framework
+ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/payload/OrlixKernelPayload.bundle
 ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework
 XCODEGEN ?= xcodegen
 XCODEBUILD_MCP ?= xcodebuildmcp
@@ -82,7 +83,7 @@ KSELFTEST_PROOF_LABEL :=
 KSELFTEST_PREREQS :=
 endif
 
-.PHONY: all setup-env build test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install xcodeproj run __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __ios-simulator-framework __ios-simulator-xcframework
+.PHONY: all setup-env build test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install xcodeproj run __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
 
 all: build
 
@@ -132,8 +133,9 @@ xcodeproj:
 	command -v "$(XCODEGEN)" >/dev/null 2>&1 || { echo "XcodeGen is required; install xcodegen or set XCODEGEN=/path/to/xcodegen" >&2; exit 1; }; \
 	"$(XCODEGEN)" generate --spec project.yml
 
-run: xcodeproj
+run: __kernel-payload
 	@set -euo pipefail; \
+	$(MAKE) xcodeproj; \
 	command -v "$(XCODEBUILD_MCP)" >/dev/null 2>&1 || { echo "XcodeBuildMCP is required; install xcodebuildmcp or set XCODEBUILD_MCP=/path/to/xcodebuildmcp" >&2; exit 1; }; \
 	selector=(); \
 	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
@@ -141,7 +143,7 @@ run: xcodeproj
 	else \
 		selector=(--simulator-name "$(ORLIX_IOS_SIMULATOR_NAME)" --use-latest-os); \
 	fi; \
-	"$(XCODEBUILD_MCP)" simulator build-and-run \
+	ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator build-and-run \
 		--project-path "$(CURDIR)/$(ORLIX_XCODE_PROJECT)" \
 		--scheme "OrlixTerminal" \
 		--configuration "Debug" \
@@ -155,6 +157,7 @@ clean:
 		Build/OrlixKernel/build \
 		Build/OrlixKernel/kunit \
 		Build/OrlixKernel/kselftest \
+		Build/OrlixKernel/payload \
 		Build/OrlixKernel/test-initramfs \
 		Build/OrlixKernel/tool-shims \
 		Build/OrlixKernel/xcframework \
@@ -550,8 +553,53 @@ __kselftest-initramfs: kselftest-install
 	plutil -lint "$$output/Info.plist" >/dev/null; \
 	echo "packaged kselftest initramfs: $$output (libc $$selected_libc)"
 
-__ios-simulator-framework: xcodeproj
+__kernel-payload: prepare
 	@set -euo pipefail; \
+	output="$(ORLIX_KERNEL_PAYLOAD_DIR)"; \
+	case "$$output" in \
+		"$(CURDIR)"/Build/OrlixKernel/payload/OrlixKernelPayload.bundle) ;; \
+		*) echo "refusing to write OrlixKernel payload outside Build/OrlixKernel/payload: $$output" >&2; exit 1 ;; \
+	esac; \
+	for path in Build Build/OrlixKernel Build/OrlixKernel/payload "$$output"; do \
+		if [ -L "$$path" ]; then echo "refusing to package OrlixKernel payload through symlinked path: $$path" >&2; exit 1; fi; \
+	done; \
+	rm -rf "$$output"; \
+	mkdir -p "$$output/arch/$(LINUX_ARCH)/boot/dts"; \
+	for dtb in appstore development; do \
+		input="$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb"; \
+		[ -s "$$input" ] || { echo "missing non-empty profile DTB: $$input" >&2; exit 1; }; \
+		cp "$$input" "$$output/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb"; \
+	done; \
+	{ \
+		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
+		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
+		printf '%s\n' '<plist version="1.0">'; \
+		printf '%s\n' '<dict>'; \
+		printf '%s\n' '    <key>CFBundleIdentifier</key>'; \
+		printf '%s\n' '    <string>org.orlix.OrlixKernelPayload</string>'; \
+		printf '%s\n' '    <key>CFBundleName</key>'; \
+		printf '%s\n' '    <string>OrlixKernelPayload</string>'; \
+		printf '%s\n' '    <key>CFBundlePackageType</key>'; \
+		printf '%s\n' '    <string>BNDL</string>'; \
+		printf '%s\n' '    <key>CFBundleShortVersionString</key>'; \
+		printf '%s\n' '    <string>0.1</string>'; \
+		printf '%s\n' '    <key>CFBundleVersion</key>'; \
+		printf '%s\n' '    <string>1</string>'; \
+		printf '%s\n' '    <key>OrlixLinuxArch</key>'; \
+		printf '%s\n' '    <string>$(LINUX_ARCH)</string>'; \
+		printf '%s\n' '    <key>OrlixLinuxVersion</key>'; \
+		printf '%s\n' '    <string>$(LINUX_VERSION)</string>'; \
+		printf '%s\n' '    <key>OrlixSelectedProfile</key>'; \
+		printf '%s\n' '    <string>$(PROFILE)</string>'; \
+		printf '%s\n' '</dict>'; \
+		printf '%s\n' '</plist>'; \
+	} > "$$output/Info.plist"; \
+	plutil -lint "$$output/Info.plist" >/dev/null; \
+	echo "packaged OrlixKernel payload: $$output (profile $(PROFILE))"
+
+__ios-simulator-framework: __kernel-payload
+	@set -euo pipefail; \
+	$(MAKE) xcodeproj; \
 	command -v "$(XCODEBUILD_MCP)" >/dev/null 2>&1 || { echo "XcodeBuildMCP is required; install xcodebuildmcp or set XCODEBUILD_MCP=/path/to/xcodebuildmcp" >&2; exit 1; }; \
 	selector=(); \
 	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
@@ -559,7 +607,7 @@ __ios-simulator-framework: xcodeproj
 	else \
 		selector=(--simulator-name "$(ORLIX_IOS_SIMULATOR_NAME)" --use-latest-os); \
 	fi; \
-	"$(XCODEBUILD_MCP)" simulator build \
+	ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator build \
 		--project-path "$(CURDIR)/$(ORLIX_XCODE_PROJECT)" \
 		--scheme "OrlixKernel" \
 		--configuration "Debug" \

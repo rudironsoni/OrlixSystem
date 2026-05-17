@@ -1,5 +1,6 @@
 #include "boot/handoff.h"
 #include "boot/payload.h"
+#include "OrlixHostAdapter/boot/resources.h"
 
 struct OrlixLinuxBootParams {
     const char *cmdline;
@@ -24,6 +25,7 @@ static int OrlixEnterLinux(const struct OrlixLinuxBootParams *params)
 {
     if (!params || !OrlixLinuxBootStringIsPresent(params->cmdline) ||
         !OrlixLinuxBootStringIsPresent(params->profile_dtb_path) ||
+        !params->dtb_base || params->dtb_size == 0 ||
         !OrlixLinuxBootStringIsPresent(params->root_device) ||
         !OrlixLinuxBootStringIsPresent(params->console_device)) {
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
@@ -46,6 +48,8 @@ __attribute__((visibility("hidden"))) int OrlixBootHandoff(
     const struct OrlixBootInput *input)
 {
     struct OrlixLinuxBootParams params = { 0 };
+    struct OrlixHostResource profile_dtb = { 0 };
+    int status;
 
     if (!input) {
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
@@ -67,10 +71,21 @@ __attribute__((visibility("hidden"))) int OrlixBootHandoff(
 
     params.cmdline = input->kernel_cmdline;
     params.profile_dtb_path = input->profile_dtb_path;
+    if (OrlixHostLoadKernelPayloadResource(params.profile_dtb_path, &profile_dtb) != 0) {
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
+    }
+    if (OrlixLoadDeviceTree(profile_dtb.data, profile_dtb.size) != 0) {
+        OrlixHostFreeResource(&profile_dtb);
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
+    }
+    params.dtb_base = profile_dtb.data;
+    params.dtb_size = profile_dtb.size;
     params.root_device = input->root_device;
     params.console_device = input->console_device;
 
-    return OrlixEnterLinux(&params);
+    status = OrlixEnterLinux(&params);
+    OrlixHostFreeResource(&profile_dtb);
+    return status;
 }
 
 #if defined(ORLIX_BOOT_TESTING)

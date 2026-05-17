@@ -33,6 +33,20 @@ targets:
         headerVisibility: public
     dependencies:
       - sdk: CoreFoundation.framework
+    postBuildScripts:
+      - name: Embed OrlixKernel Payload
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          payload="$SRCROOT/Build/OrlixKernel/payload/OrlixKernelPayload.bundle"
+          if [ ! -d "$payload" ]; then
+              echo "missing OrlixKernel payload bundle: $payload" >&2
+              echo "run: make __kernel-payload PROFILE=${ORLIX_PROFILE:-appstore}" >&2
+              exit 1
+          fi
+          destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/OrlixKernelPayload.bundle"
+          rm -rf "$destination"
+          cp -R "$payload" "$destination"
     settings:
       base:
         DEFINES_MODULE: YES

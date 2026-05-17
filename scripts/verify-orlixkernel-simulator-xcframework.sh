@@ -45,17 +45,21 @@ case "$profile" in
 esac
 
 framework="$xcframework/ios-arm64-simulator/OrlixKernel.framework"
+payload="$framework/OrlixKernelPayload.bundle"
 
 for required in \
     "$xcframework/Info.plist" \
     "$framework/Info.plist" \
-    "$framework/OrlixKernel"; do
+    "$framework/OrlixKernel" \
+    "$payload/Info.plist" \
+    "$payload/arch/$linux_arch/boot/dts/appstore.dtb" \
+    "$payload/arch/$linux_arch/boot/dts/development.dtb"; do
     if [ ! -s "$required" ]; then
         printf 'missing non-empty XCFramework input: %s\n' "$required" >&2
         exit 1
     fi
 done
 
-plutil -lint "$xcframework/Info.plist" "$framework/Info.plist" >/dev/null
+plutil -lint "$xcframework/Info.plist" "$framework/Info.plist" "$payload/Info.plist" >/dev/null
 
 printf 'verified simulator OrlixKernel XCFramework wrapper: %s (profile %s)\n' "$xcframework" "$profile"
