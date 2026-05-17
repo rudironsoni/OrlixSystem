@@ -32,6 +32,8 @@ targets:
         type: folder
         buildPhase: resources
         optional: true
+    dependencies:
+      - sdk: CoreFoundation.framework
     settings:
       base:
         DEFINES_MODULE: YES
