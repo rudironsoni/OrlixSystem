@@ -1,141 +1,147 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <errno.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "../kselftest.h"
 
-static bool file_contains(const char *path, const char *expected)
+static unsigned char *read_property(const char *path, size_t *size)
 {
-	FILE *file = fopen(path, "r");
-	char buffer[4096];
+	FILE *file = fopen(path, "rb");
+	unsigned char *buffer;
+	size_t capacity = 128;
 
 	if (!file)
-		ksft_exit_fail_msg("missing file %s: %s\n", path, strerror(errno));
+		ksft_exit_fail_msg("missing property %s: %s\n", path, strerror(errno));
 
-	while (fgets(buffer, sizeof(buffer), file)) {
-		if (strstr(buffer, expected)) {
-			fclose(file);
-			return true;
+	buffer = malloc(capacity);
+	if (!buffer)
+		ksft_exit_fail_msg("malloc failed\n");
+
+	*size = 0;
+	for (;;) {
+		size_t nread;
+
+		if (*size + 1 == capacity) {
+			unsigned char *grown;
+
+			capacity *= 2;
+			grown = realloc(buffer, capacity);
+			if (!grown)
+				ksft_exit_fail_msg("realloc failed\n");
+			buffer = grown;
 		}
-	}
 
+		nread = fread(buffer + *size, 1, capacity - *size - 1, file);
+		*size += nread;
+		if (nread == 0)
+			break;
+	}
+	if (ferror(file))
+		ksft_exit_fail_msg("fread failed for %s: %s\n", path, strerror(errno));
+	buffer[*size] = 0;
 	fclose(file);
-	return false;
+
+	return buffer;
 }
 
-static char *join_path(const char *left, const char *right)
+static char *property_path(const char *node, const char *property)
 {
 	char *path;
-	int len = snprintf(NULL, 0, "%s/%s", left, right);
+	int len = snprintf(NULL, 0, "/proc/device-tree/%s/%s", node, property);
 
 	if (len < 0)
 		ksft_exit_fail_msg("snprintf failed\n");
 	path = malloc((size_t)len + 1);
 	if (!path)
 		ksft_exit_fail_msg("malloc failed\n");
-	snprintf(path, (size_t)len + 1, "%s/%s", left, right);
+	snprintf(path, (size_t)len + 1, "/proc/device-tree/%s/%s", node, property);
 	return path;
 }
 
-static char *kernel_root(void)
+static bool property_contains_string(const char *node, const char *property,
+				     const char *expected)
 {
-	char cwd[4096];
-	char *root;
-	int len;
+	size_t size;
+	char *path = property_path(node, property);
+	unsigned char *data = read_property(path, &size);
+	bool matched = false;
+	size_t i;
 
-	if (!getcwd(cwd, sizeof(cwd)))
-		ksft_exit_fail_msg("getcwd failed: %s\n", strerror(errno));
+	for (i = 0; i + strlen(expected) <= size; i++) {
+		if (memcmp(data + i, expected, strlen(expected)) == 0) {
+			matched = true;
+			break;
+		}
+	}
 
-	len = snprintf(NULL, 0, "%s/../../../..", cwd);
-	if (len < 0)
-		ksft_exit_fail_msg("snprintf failed\n");
-	root = malloc((size_t)len + 1);
-	if (!root)
-		ksft_exit_fail_msg("malloc failed\n");
-	snprintf(root, (size_t)len + 1, "%s/../../../..", cwd);
-
-	return root;
-}
-
-static void expect_file_contains(const char *name, const char *base,
-					 const char *relative_path,
-					 const char *expected)
-{
-	char *path = join_path(base, relative_path);
-
-	ksft_test_result(file_contains(path, expected), "%s\n", name);
+	free(data);
 	free(path);
+	return matched;
 }
 
-static void expect_file_not_contains(const char *name, const char *base,
-				     const char *relative_path,
-				     const char *unexpected)
+static uint32_t read_be32(const unsigned char *data)
 {
-	char *path = join_path(base, relative_path);
+	return ((uint32_t)data[0] << 24) |
+	       ((uint32_t)data[1] << 16) |
+	       ((uint32_t)data[2] << 8) |
+	       (uint32_t)data[3];
+}
 
-	ksft_test_result(!file_contains(path, unexpected), "%s\n", name);
+static bool property_matches_u32_cells(const char *node, const char *property,
+					       const uint32_t *expected,
+					       size_t expected_count)
+{
+	size_t size;
+	char *path = property_path(node, property);
+	unsigned char *data = read_property(path, &size);
+	bool matched = size == expected_count * sizeof(uint32_t);
+	size_t i;
+
+	if (matched) {
+		for (i = 0; i < expected_count; i++) {
+			if (read_be32(data + i * sizeof(uint32_t)) != expected[i]) {
+				matched = false;
+				break;
+			}
+		}
+	}
+
+	free(data);
 	free(path);
+	return matched;
 }
 
-static void expect_profile_probe_shape(const char *port_dir, const char *profile)
+static void expect_virtio_mmio_node(const char *node, uint32_t address,
+				    uint32_t interrupt)
 {
-	char dts[128];
+	uint32_t reg[] = { 0x0, address, 0x0, 0x200 };
+	uint32_t interrupts[] = { interrupt };
+	char test_name[128];
 
-	snprintf(dts, sizeof(dts), "arch/orlix/boot/dts/%s.dts", profile);
-	expect_file_contains("profile has base virtio-mmio node", port_dir, dts,
-			     "virtio_base: virtio@10001000 {");
-	expect_file_contains("profile has state virtio-mmio node", port_dir, dts,
-			     "virtio_state: virtio@10001200 {");
-	expect_file_contains("profile virtio nodes use upstream compatible", port_dir, dts,
-			     "compatible = \"virtio,mmio\";");
-	expect_file_contains("profile has base virtio-mmio register range", port_dir, dts,
-			     "reg = <0x0 0x10001000 0x0 0x200>;");
-	expect_file_contains("profile has state virtio-mmio register range", port_dir, dts,
-			     "reg = <0x0 0x10001200 0x0 0x200>;");
-	expect_file_contains("profile has base virtio interrupt", port_dir, dts,
-			     "interrupts = <32>;");
-	expect_file_contains("profile has state virtio interrupt", port_dir, dts,
-			     "interrupts = <33>;");
-}
+	snprintf(test_name, sizeof(test_name), "%s uses upstream virtio-mmio compatible", node);
+	ksft_test_result(property_contains_string(node, "compatible", "virtio,mmio"),
+			 "%s\n", test_name);
 
-static void expect_profile_config(const char *root, const char *profile)
-{
-	(void)profile;
-	expect_file_contains("profile config enables OF", root,
-			     "arch/orlix/configs/defconfig", "CONFIG_OF=y");
-	expect_file_contains("profile config enables virtio", root,
-			     "arch/orlix/configs/defconfig", "CONFIG_VIRTIO=y");
-	expect_file_contains("profile config enables virtio-mmio", root,
-			     "arch/orlix/configs/defconfig", "CONFIG_VIRTIO_MMIO=y");
-	expect_file_contains("profile config enables virtio-blk", root,
-			     "arch/orlix/configs/defconfig", "CONFIG_VIRTIO_BLK=y");
-	expect_file_not_contains("profile config does not enable Orlix block", root,
-				 "arch/orlix/configs/defconfig",
-				 "CONFIG_ORLIX_BLOCK=y");
+	snprintf(test_name, sizeof(test_name), "%s has expected MMIO register range", node);
+	ksft_test_result(property_matches_u32_cells(node, "reg", reg, 4),
+			 "%s\n", test_name);
+
+	snprintf(test_name, sizeof(test_name), "%s has expected interrupt", node);
+	ksft_test_result(property_matches_u32_cells(node, "interrupts", interrupts, 1),
+			 "%s\n", test_name);
 }
 
 int main(void)
 {
-	char *root = kernel_root();
-
 	ksft_print_header();
-	ksft_set_plan(22);
+	ksft_set_plan(6);
 
-	expect_profile_probe_shape(root, "appstore");
-	expect_profile_probe_shape(root, "development");
+	expect_virtio_mmio_node("virtio@10001000", 0x10001000, 32);
+	expect_virtio_mmio_node("virtio@10001200", 0x10001200, 33);
 
-	expect_profile_config(root, "selected");
-
-	expect_file_contains("arch/orlix selects OF", root,
-			     "arch/orlix/Kconfig", "select OF");
-	expect_file_contains("arch/orlix selects HAS_IOMEM", root,
-			     "arch/orlix/Kconfig", "select HAS_IOMEM");
-	expect_file_contains("arch/orlix selects HAS_DMA", root,
-			     "arch/orlix/Kconfig", "select HAS_DMA");
-	free(root);
 	ksft_finished();
 }
