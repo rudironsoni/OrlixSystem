@@ -2,13 +2,14 @@
 #import <XCTest/XCTest.h>
 
 #import "OrlixKernel.h"
+#import <asm/boot.h>
 
 @interface OrlixKernelHostProofTests : XCTestCase
 @end
 
 @implementation OrlixKernelHostProofTests
 
-- (void)testBootloaderHandoffReachesHostedEntrySeamThroughProductAPI
+- (void)testBootloaderHandoffEntersHostedArchPathThroughProductAPI
 {
     struct OrlixBootConfig config = {
         .profile = ORLIX_BOOT_PROFILE_APPSTORE,
@@ -16,9 +17,13 @@
         .terminal_identifier = "orlix.test.terminal",
     };
 
+    arch_boot_reset_handoff();
+
     int status = OrlixBoot(&config);
 
     XCTAssertEqual(status, ORLIX_BOOT_STATUS_OK);
+    XCTAssertEqual(arch_boot_handoff_count(), 1);
+    XCTAssertNotEqual(arch_boot_params(), NULL);
 }
 
 - (void)testBootloaderRejectsMissingRootIdentifier
@@ -29,9 +34,12 @@
         .terminal_identifier = "orlix.test.terminal",
     };
 
+    arch_boot_reset_handoff();
+
     int status = OrlixBoot(&config);
 
     XCTAssertEqual(status, ORLIX_BOOT_STATUS_INVALID_CONFIG);
+    XCTAssertEqual(arch_boot_handoff_count(), 0);
 }
 
 - (void)testHostProofScopeLabelIsKernelDependencyOnly

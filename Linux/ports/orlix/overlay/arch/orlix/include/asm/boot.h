@@ -14,10 +14,16 @@ struct boot_params {
 	unsigned long flags;
 };
 
-void arch_boot_entry(const struct boot_params *params);
+enum orlix_arch_boot_status {
+	ORLIX_ARCH_BOOT_OK = 0,
+	ORLIX_ARCH_BOOT_INVALID_CONFIG = -1,
+};
+
+int arch_boot_entry(const struct boot_params *params);
+int arch_boot_prepare_entry(const struct boot_params *params);
 const struct boot_params *arch_boot_params(void);
 
-#if defined(CONFIG_ORLIX_BOOT_KUNIT_TEST)
+#if defined(CONFIG_ORLIX_BOOT_KUNIT_TEST) || defined(ORLIX_APP_HOSTED_BOOT)
 void arch_boot_test_record_handoff(const struct boot_params *params);
 int arch_boot_handoff_count(void);
 const struct boot_params *arch_boot_last_params(void);

@@ -28,6 +28,7 @@ targets:
       - path: OrlixHostAdapter/boot
         includes:
           - "*.c"
+      - path: Linux/ports/orlix/overlay/arch/orlix/boot/boot.c
       - path: OrlixKernel/include
         buildPhase: headers
         headerVisibility: public
@@ -56,6 +57,10 @@ targets:
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)
           - $(SRCROOT)/OrlixKernel/include
+          - $(SRCROOT)/Linux/ports/orlix/overlay/arch/orlix/include
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - ORLIX_APP_HOSTED_BOOT=1
   OrlixTerminal:
     type: application
     platform: iOS
@@ -90,6 +95,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernelHostProofTests
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/OrlixKernel/include
+          - $(SRCROOT)/Linux/ports/orlix/overlay/arch/orlix/include
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - ORLIX_APP_HOSTED_BOOT=1
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTerminal.app/OrlixTerminal
         BUNDLE_LOADER: $(TEST_HOST)
   OrlixLinuxProofOutputParserTests:

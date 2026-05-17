@@ -1,30 +1,16 @@
 #include "boot/handoff.h"
 #include "boot/payload.h"
 #include "OrlixHostAdapter/boot/resources.h"
-
-struct OrlixLinuxBootParams {
-    const char *cmdline;
-    const char *profile_dtb_path;
-    unsigned long memory_base;
-    unsigned long memory_size;
-    const void *initrd_base;
-    unsigned long initrd_size;
-    const void *dtb_base;
-    unsigned long dtb_size;
-    const char *root_device;
-    const char *console_device;
-    unsigned long flags;
-};
+#include <asm/boot.h>
 
 static int OrlixLinuxBootStringIsPresent(const char *value)
 {
     return value && value[0] != '\0';
 }
 
-static int OrlixEnterLinux(const struct OrlixLinuxBootParams *params)
+static int OrlixEnterLinux(const struct boot_params *params)
 {
     if (!params || !OrlixLinuxBootStringIsPresent(params->cmdline) ||
-        !OrlixLinuxBootStringIsPresent(params->profile_dtb_path) ||
         !params->dtb_base || params->dtb_size == 0 ||
         !OrlixLinuxBootStringIsPresent(params->root_device) ||
         !OrlixLinuxBootStringIsPresent(params->console_device)) {
@@ -32,9 +18,14 @@ static int OrlixEnterLinux(const struct OrlixLinuxBootParams *params)
     }
 
     /*
-     * OK here means the app-hosted bootloader reached a validated Linux-shaped
-     * handoff, not that Linux has reached init yet.
+     * The app-hosted build compiles arch_boot_entry() in hosted-entry mode. The
+     * normal Linux build path continues from the same arch/orlix function into
+     * start_kernel().
      */
+    if (arch_boot_entry(params) != ORLIX_ARCH_BOOT_OK) {
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
+    }
+
     return ORLIX_BOOT_STATUS_OK;
 }
 
@@ -47,7 +38,7 @@ static int has_last_handoff;
 __attribute__((visibility("hidden"))) int OrlixBootHandoff(
     const struct OrlixBootInput *input)
 {
-    struct OrlixLinuxBootParams params = { 0 };
+    struct boot_params params = { 0 };
     struct OrlixHostResource profile_dtb = { 0 };
     int status;
 
@@ -70,8 +61,7 @@ __attribute__((visibility("hidden"))) int OrlixBootHandoff(
     }
 
     params.cmdline = input->kernel_cmdline;
-    params.profile_dtb_path = input->profile_dtb_path;
-    if (OrlixHostLoadKernelPayloadResource(params.profile_dtb_path, &profile_dtb) != 0) {
+    if (OrlixHostLoadKernelPayloadResource(input->profile_dtb_path, &profile_dtb) != 0) {
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
     if (OrlixLoadDeviceTree(profile_dtb.data, profile_dtb.size) != 0) {
