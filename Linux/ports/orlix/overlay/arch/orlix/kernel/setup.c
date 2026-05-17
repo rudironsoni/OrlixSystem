@@ -1,8 +1,59 @@
 #include <linux/init.h>
+#include <linux/initrd.h>
+#include <linux/memblock.h>
+#include <linux/of_fdt.h>
 #include <linux/printk.h>
+#include <linux/string.h>
+#include <linux/types.h>
+#include <asm/boot.h>
+#include <asm/setup.h>
+
+static char command_line[COMMAND_LINE_SIZE] __initdata;
+
+static bool __init orlix_setup_devtree(const struct boot_params *params)
+{
+#if defined(CONFIG_OF_EARLY_FLATTREE)
+	if (!params || !params->dtb_base || !params->dtb_size)
+		return false;
+	if (!early_init_dt_scan((void *)params->dtb_base)) {
+		pr_err("Orlix boot handoff supplied an invalid device tree\n");
+		return false;
+	}
+
+	early_init_fdt_scan_reserved_mem();
+	unflatten_device_tree();
+	return true;
+#else
+	return false;
+#endif
+}
+
+static void __init orlix_setup_initrd(const struct boot_params *params)
+{
+#if defined(CONFIG_BLK_DEV_INITRD)
+	if (!params || !params->initrd_base || !params->initrd_size)
+		return;
+
+	initrd_start = (unsigned long)params->initrd_base;
+	initrd_end = initrd_start + params->initrd_size;
+#else
+	(void)params;
+#endif
+}
 
 void __init setup_arch(char **cmdline_p)
 {
-	(void)cmdline_p;
+	const struct boot_params *params = arch_boot_params();
+	bool dt_ready = orlix_setup_devtree(params);
+
+	if (params && params->cmdline)
+		strscpy(boot_command_line, params->cmdline, COMMAND_LINE_SIZE);
+	strscpy(command_line, boot_command_line, COMMAND_LINE_SIZE);
+	*cmdline_p = command_line;
+
+	if (!dt_ready && params && params->memory_size)
+		memblock_add(params->memory_base, params->memory_size);
+	orlix_setup_initrd(params);
+
 	pr_info("Orlix architecture setup\n");
 }

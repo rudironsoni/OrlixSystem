@@ -2,7 +2,7 @@
 #include <kunit/test.h>
 #include <asm/boot.h>
 
-static void orlix_boot_entry_records_params(struct kunit *test)
+static void orlix_boot_handoff_records_params(struct kunit *test)
 {
 	struct boot_params params = {
 		.cmdline = "console=ttyS0 root=/dev/ram0 rw orlix.profile=appstore",
@@ -16,14 +16,15 @@ static void orlix_boot_entry_records_params(struct kunit *test)
 	KUNIT_EXPECT_EQ(test, 0, arch_boot_handoff_count());
 	KUNIT_EXPECT_PTR_EQ(test, NULL, arch_boot_last_params());
 
-	arch_boot_entry(&params);
+	arch_boot_test_record_handoff(&params);
 
 	KUNIT_EXPECT_EQ(test, 1, arch_boot_handoff_count());
 	KUNIT_EXPECT_PTR_EQ(test, &params, arch_boot_last_params());
+	KUNIT_EXPECT_PTR_EQ(test, &params, arch_boot_params());
 }
 
 static struct kunit_case orlix_boot_test_cases[] = {
-	KUNIT_CASE(orlix_boot_entry_records_params),
+	KUNIT_CASE(orlix_boot_handoff_records_params),
 	{}
 };
 
