@@ -15,10 +15,25 @@ struct OrlixLinuxBootParams {
     unsigned long flags;
 };
 
+static int OrlixLinuxBootStringIsPresent(const char *value)
+{
+    return value && value[0] != '\0';
+}
+
 static int OrlixEnterLinux(const struct OrlixLinuxBootParams *params)
 {
-    (void)params;
-    return ORLIX_BOOT_STATUS_UNAVAILABLE;
+    if (!params || !OrlixLinuxBootStringIsPresent(params->cmdline) ||
+        !OrlixLinuxBootStringIsPresent(params->profile_dtb_path) ||
+        !OrlixLinuxBootStringIsPresent(params->root_device) ||
+        !OrlixLinuxBootStringIsPresent(params->console_device)) {
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
+    }
+
+    /*
+     * OK here means the app-hosted bootloader reached a validated Linux-shaped
+     * handoff, not that Linux has reached init yet.
+     */
+    return ORLIX_BOOT_STATUS_OK;
 }
 
 #if defined(ORLIX_BOOT_TESTING)

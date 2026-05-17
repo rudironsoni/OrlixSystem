@@ -8,7 +8,7 @@
 
 @implementation OrlixKernelHostProofTests
 
-- (void)testBootloaderEntrypointIsReachableThroughProductAPI
+- (void)testBootloaderHandoffReachesHostedEntrySeamThroughProductAPI
 {
     struct OrlixBootConfig config = {
         .profile = ORLIX_BOOT_PROFILE_APPSTORE,
@@ -18,7 +18,7 @@
 
     int status = OrlixBoot(&config);
 
-    XCTAssertEqual(status, ORLIX_BOOT_STATUS_UNAVAILABLE);
+    XCTAssertEqual(status, ORLIX_BOOT_STATUS_OK);
 }
 
 - (void)testBootloaderRejectsMissingRootIdentifier
