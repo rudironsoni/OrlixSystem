@@ -25,6 +25,9 @@ targets:
       - path: boot
         includes:
           - "*.c"
+      - path: OrlixHostAdapter/boot
+        includes:
+          - "*.c"
       - path: OrlixKernel/include
         buildPhase: headers
         headerVisibility: public
