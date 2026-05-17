@@ -1,7 +1,7 @@
 #ifndef ORLIX_TERMINAL_BOOT_LAUNCHER_H
 #define ORLIX_TERMINAL_BOOT_LAUNCHER_H
 
-int OrlixTerminalBootDefaultAppStore(void);
+int OrlixTerminalBootProfileNamed(const char *profile_name);
 const char *OrlixTerminalBootStatusMessage(int status);
 
 #endif

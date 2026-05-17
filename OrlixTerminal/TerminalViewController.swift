@@ -74,11 +74,69 @@ final class TerminalViewController: UIViewController {
         didStartBoot = true
 
         terminalSession.receive("OrlixTerminal\r\n")
-        terminalSession.receive("Starting Orlix bootloader with the App Store profile.\r\n")
-        let status = OrlixTerminalBootDefaultAppStore()
+        guard let profile = Self.selectedBootProfileName() else {
+            terminalSession.receive("Missing selected Orlix profile in packaged kernel payload.\r\n")
+            return
+        }
+        terminalSession.receive("Starting Orlix bootloader with the \(Self.profileDisplayName(profile)) profile.\r\n")
+        let status = profile.withCString { OrlixTerminalBootProfileNamed($0) }
         terminalSession.receive(
             String(cString: OrlixTerminalBootStatusMessage(status)) + "\r\n"
         )
+    }
+
+    private static func selectedBootProfileName() -> String? {
+        guard let kernelBundle = kernelBundle(),
+              let payloadBundle = kernelBundle.url(
+                  forResource: "OrlixKernelPayload",
+                  withExtension: "bundle"
+              )
+        else {
+            return nil
+        }
+
+        let profileURL = payloadBundle.appendingPathComponent("selected_profile.txt")
+        guard let profile = try? String(contentsOf: profileURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        else {
+            return nil
+        }
+
+        switch profile {
+        case "appstore", "development":
+            return profile
+        default:
+            return nil
+        }
+    }
+
+    private static func kernelBundle() -> Bundle? {
+        if let loadedBundle = Bundle(identifier: "org.orlix.OrlixKernel") {
+            return loadedBundle
+        }
+        if let loadedBundle = Bundle.allFrameworks.first(where: { $0.bundleIdentifier == "org.orlix.OrlixKernel" }) {
+            return loadedBundle
+        }
+        guard let frameworksURL = Bundle.main.privateFrameworksURL else {
+            return nil
+        }
+
+        let frameworkURL = frameworksURL.appendingPathComponent(
+            "OrlixKernel.framework",
+            isDirectory: true
+        )
+        return Bundle(url: frameworkURL)
+    }
+
+    private static func profileDisplayName(_ profile: String) -> String {
+        switch profile {
+        case "appstore":
+            return "App Store"
+        case "development":
+            return "development"
+        default:
+            return profile
+        }
     }
 
     private static func savedTerminalTheme() -> TerminalTheme {
