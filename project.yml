@@ -31,10 +31,6 @@ targets:
       - path: OrlixKernel/include
         buildPhase: headers
         headerVisibility: public
-      - path: Build/OrlixKernel/xcframework-input/OrlixKernelPayload.bundle
-        type: folder
-        buildPhase: resources
-        optional: true
     dependencies:
       - sdk: CoreFoundation.framework
     settings:
@@ -66,18 +62,6 @@ targets:
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/OrlixKernel/include
         SWIFT_OBJC_BRIDGING_HEADER: OrlixTerminal/OrlixTerminal-Bridging-Header.h
-  OrlixKernelPackagingTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - path: OrlixKernelPackagingTests
-    dependencies:
-      - target: OrlixTerminal
-      - target: OrlixKernel
-    settings:
-      base:
-        INFOPLIST_FILE: OrlixKernelPackagingTests/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernelPackagingTests
 schemes:
   OrlixKernel:
     build:
@@ -90,14 +74,3 @@ schemes:
     run:
       config: Debug
       executable: OrlixTerminal
-  OrlixKernelPackaging:
-    build:
-      targets:
-        OrlixKernel: all
-        OrlixTerminal: all
-        OrlixKernelPackagingTests: test
-    test:
-      config: Debug
-      gatherCoverageData: false
-      targets:
-        - name: OrlixKernelPackagingTests

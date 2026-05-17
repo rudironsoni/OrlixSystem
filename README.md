@@ -28,7 +28,7 @@ Proof is claim-promoted, not flat. Work may happen in parallel, but product clai
 5. POSIX shell environment proof
 6. Third-party package ladder: jq, curl, zsh
 
-KUnit proves kernel-internal behavior. Temporary, nolibc, or foreign-libc kselftest proves kernel-interface behavior only. mlibc tests prove OrlixMLibC. OrlixMLibC-built kselftests prove the libc-to-kernel syscall/UAPI path. Bash proves the first interactive POSIX shell environment. jq, curl, and zsh prove increasingly realistic third-party package compatibility.
+The canonical OrlixKernel proof artifact is the app-hosted OrlixKernel integration that actually runs in the Orlix app environment. A standalone `vmlinux` image is optional tooling output only for a named non-product consumer. KUnit proves kernel-internal behavior. Temporary, nolibc, or foreign-libc kselftest proves kernel-interface behavior only. mlibc tests prove OrlixMLibC. OrlixMLibC-built kselftests prove the libc-to-kernel syscall/UAPI path. Bash proves the first interactive POSIX shell environment. jq, curl, and zsh prove increasingly realistic third-party package compatibility.
 
 Do not claim product runtime readiness from KUnit, temporary kselftest, boot logs, packaging, or a host-side harness.
 
@@ -46,12 +46,7 @@ Milestone 1 build work must make this the generated port-tree step:
 make prepare-orlixkernel-port PROFILE=appstore
 ```
 
-Milestone 1 build work must make these the first honest Linux proof targets:
-
-```bash
-make build-linux-kernel PROFILE=appstore
-make build-linux-kernel PROFILE=development
-```
+Milestone 1 build work must make the app-hosted OrlixKernel integration build for the iOS destinations. Building a `vmlinux`-style image is optional and only valid when a named tooling/debug workflow consumes it.
 
 `PROFILE=appstore` is the default profile. Pass another profile only when you intentionally need it.
 
@@ -67,7 +62,7 @@ make prepare-orlixkernel-port PROFILE=appstore
 
 Milestone 2 does not prove QEMU execution, iOS execution, task switching, MMU behavior, userspace access, device binding, or root filesystem assembly.
 
-Milestone 3 XCFramework packaging proof establishes the iOS execution artifact early. It must package a real Orlix Linux artifact into `OrlixKernel.xcframework`; packaging boot stubs alone is not proof.
+Milestone 3 XCFramework packaging proof establishes the iOS execution artifact early. It must package or link the app-hosted OrlixKernel integration into the iOS host path; packaging boot stubs alone is not proof.
 
 Prepare the iOS packaging inputs with:
 
@@ -75,7 +70,7 @@ Prepare the iOS packaging inputs with:
 make prepare-ios-packaging PROFILE=appstore
 ```
 
-This builds the selected profile's Linux `vmlinux`, builds the closed profile DTBs, stages them as private framework payload resources, and generates the disposable Xcode project from `project.yml`.
+This generates the disposable Xcode project from `project.yml`. It must not make `vmlinux` a required proof artifact unless a named optional tooling workflow consumes it.
 
 For simulator-first development, run the current simulator packaging proof with:
 
@@ -83,13 +78,7 @@ For simulator-first development, run the current simulator packaging proof with:
 make proof-ios-simulator-packaging PROFILE=appstore
 ```
 
-This verifies the simulator XCFramework payload, runs the packaging XCTest, and launches `OrlixTerminal` against the packaged framework.
-
-Run only the packaging XCTest with:
-
-```bash
-make test-ios-simulator-packaging PROFILE=appstore
-```
+This verifies the simulator XCFramework wrapper shape and launches `OrlixTerminal` against the packaged framework. It is sequencing evidence only, not kernel runtime proof.
 
 Build a simulator-only `OrlixKernel.xcframework` package with:
 

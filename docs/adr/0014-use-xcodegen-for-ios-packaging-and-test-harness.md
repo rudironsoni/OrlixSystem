@@ -6,13 +6,13 @@ Accepted
 
 ## Context
 
-Orlix needs an Xcode project for iOS packaging, XCTest launch, resources, and `OrlixKernel.xcframework` creation. The repository currently has no Xcode project, workspace, `project.yml`, or Swift package manifest. Linux itself is already built by Kbuild through the repository build targets.
+Orlix needs an Xcode project for iOS packaging, XCTest launch, resources, and `OrlixKernel.xcframework` creation. The repository currently has no Xcode project, workspace, `project.yml`, or Swift package manifest. The canonical proof artifact is the app-hosted OrlixKernel integration that the iOS app actually runs.
 
-Tuist and XcodeGen could both generate the Xcode surface. Tuist would add a larger app/module build abstraction, while Orlix needs Xcode to remain a thin iOS packaging and test harness around real Linux artifacts.
+Tuist and XcodeGen could both generate the Xcode surface. Tuist would add a larger app/module build abstraction, while Orlix needs Xcode to remain a thin iOS packaging and test harness around the app-hosted OrlixKernel runtime.
 
 ## Decision
 
-Use XcodeGen for the iOS project generation surface. Kbuild remains the owner of Linux compilation; XcodeGen describes the iOS packaging, resource bundling, and XCTest host targets that consume real Orlix Linux artifacts.
+Use XcodeGen for the iOS project generation surface. XcodeGen describes the iOS packaging, resource bundling, and XCTest host targets that consume or link the app-hosted OrlixKernel integration. Optional Kbuild outputs such as `vmlinux` remain tooling artifacts only when a named workflow consumes them.
 
 Commit `project.yml` as the durable XcodeGen source of truth. Do not commit the generated `.xcodeproj` unless a concrete future toolchain constraint requires it.
 
@@ -28,11 +28,11 @@ The generated Xcode project must support both `iphoneos` and `iphonesimulator` d
 
 The initial `OrlixKernel.xcframework` slice set is `ios-arm64` for physical devices and `ios-arm64-simulator` for Apple Silicon Simulator. Intel Simulator support is not part of the initial target set.
 
-For a selected Orlix profile, both slices must wrap the same bit-identical `ARCH=orlix` Linux artifact. Destination-specific differences belong in the iOS host wrapper or `OrlixHostAdapter`, not in the Linux kernel artifact.
+For a selected Orlix profile, both slices must run the same Linux-visible kernel behavior. Destination-specific differences belong in the iOS host wrapper or `OrlixHostAdapter`, not in the Linux semantics exposed by the hosted kernel integration.
 
 ## Consequences
 
-`project.yml` must not recreate boot-stub product proof. Its packaging target must depend on a real Orlix Linux artifact for the selected profile.
+`project.yml` must not recreate boot-stub product proof. Its packaging target must depend on the app-hosted OrlixKernel integration for the selected profile.
 
 Xcode targets may run build phases that invoke repository build targets, but they must not become the source of Linux semantics or replace Kbuild proof.
 

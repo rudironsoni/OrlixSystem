@@ -56,9 +56,9 @@ Full product runtime claims must follow the claim promotion order in ADR 0017: k
 
 ## Consequences
 
-Milestone 1 is Kbuild `vmlinux` proof, not full boot or device support.
+Milestone 1 is app-hosted OrlixKernel build proof, not full boot or device support. ADR 0018 supersedes earlier wording that treated `vmlinux` as the canonical proof artifact.
 
-Milestone 3 establishes real-artifact `OrlixKernel.xcframework` packaging because iOS-hosted execution cannot advance without a packageable product artifact.
+Milestone 3 establishes app-hosted OrlixKernel packaging or linking because iOS-hosted execution cannot advance without the integration artifact the iOS app actually runs.
 
 Milestone 4 establishes iOS-hosted kernel-interface test execution before later runtime milestones claim proof. KUnit proves kernel-internal behavior, and temporary-harness kselftests prove kernel-interface behavior only.
 

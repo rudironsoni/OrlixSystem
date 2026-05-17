@@ -127,19 +127,13 @@ Orlix userspace ABI is profile-invariant. App Store, development, simulator, CI,
 
 ## Build And Proof Rule
 
-The first honest proof target is upstream Linux `vmlinux` for `ARCH=orlix`.
+The canonical OrlixKernel proof artifact is the app-hosted OrlixKernel integration that actually runs inside the Orlix app environment: OrlixKernel static library, framework, or object set plus `OrlixHostAdapter`, the iOS app host, and simulator/device execution.
 
-Required Milestone 1 proof commands are:
-
-```bash
-make prepare-orlixkernel-port PROFILE=appstore
-make build-linux-kernel PROFILE=appstore
-make build-linux-kernel PROFILE=development
-```
+Do not introduce `vmlinux` as a required Orlix artifact. A `vmlinux`-style linked image is allowed only for a named non-product consumer, such as debug-symbol inspection, Linux tooling compatibility, or a specific Kbuild/KUnit experiment. If no concrete workflow consumes it, do not generate it.
 
 `PROFILE=appstore` is the default normal profile.
 
-`OrlixKernel.xcframework` packaging must depend on a real Linux build artifact for the selected profile. Packaging boot stubs alone is not product proof.
+Packaging boot stubs alone is not product proof. Packaging is useful only when it packages or links the app-hosted OrlixKernel integration that is later launched in the iOS proof path.
 
 Work may happen in parallel, but product runtime claims must follow ADR 0017's promotion order:
 
@@ -158,8 +152,8 @@ Tests for the old local kernel prototype are migration reference only. They are 
 
 New proof must be labeled by what it proves:
 
-- Kbuild `vmlinux` proof proves upstream Linux builds for `ARCH=orlix`.
-- XCFramework packaging proof proves a real Linux artifact is packaged, not that Linux booted or ran userspace.
+- App-hosted OrlixKernel build proof proves the kernel integration artifact that the iOS app will run can be built for the selected profile and destination.
+- XCFramework or app packaging proof proves the hosted integration is packaged or linked into the iOS host, not that Linux booted or ran userspace.
 - KUnit proves OrlixKernel internal behavior.
 - Linux-accurate no-init behavior proves kernel dependency boot reached the normal init handoff without requiring libc.
 - kselftests through a temporary foreign-libc, nolibc, or other temporary harness prove kernel-interface behavior only.

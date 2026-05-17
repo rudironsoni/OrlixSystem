@@ -40,7 +40,7 @@ cd "$repo_root"
 
 vmlinux="Build/OrlixKernel/build/$profile/vmlinux"
 dtb_dir="Build/OrlixKernel/build/$profile/arch/$linux_arch/boot/dts"
-payload_parent="Build/OrlixKernel/xcframework-input"
+payload_parent="Build/OrlixKernel/vmlinux-tooling"
 payload_dir="$payload_parent/OrlixKernelPayload.bundle"
 
 if [ -L Build ] || [ -L Build/OrlixKernel ] || [ -L "$payload_parent" ] || [ -L "$payload_dir" ]; then
@@ -49,7 +49,7 @@ if [ -L Build ] || [ -L Build/OrlixKernel ] || [ -L "$payload_parent" ] || [ -L 
 fi
 
 if [ ! -f "$vmlinux" ]; then
-    printf 'missing Linux payload artifact: %s\n' "$vmlinux" >&2
+    printf 'missing optional vmlinux tooling artifact: %s\n' "$vmlinux" >&2
     exit 1
 fi
 
@@ -103,4 +103,4 @@ cat > "$payload_dir/Info.plist" <<EOF
 </plist>
 EOF
 
-printf 'staged OrlixKernel payload: %s (profile %s, vmlinux sha256 %s)\n' "$payload_dir" "$profile" "$vmlinux_hash"
+printf 'staged optional OrlixKernel vmlinux tooling payload: %s (profile %s, vmlinux sha256 %s)\n' "$payload_dir" "$profile" "$vmlinux_hash"

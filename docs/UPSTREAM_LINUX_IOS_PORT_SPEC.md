@@ -131,17 +131,11 @@ PROFILE=appstore
 
 Profile defconfigs are durable product-profile configs under `Linux/ports/orlix/configs`. The selected profile is materialized into the generated port tree in the location Kbuild expects.
 
-The first honest proof target is upstream Linux `vmlinux` for `ARCH=orlix`.
+The canonical OrlixKernel proof artifact is the app-hosted OrlixKernel integration that actually runs in the Orlix app environment: OrlixKernel static library, framework, or object set plus `OrlixHostAdapter`, the iOS app host, and simulator/device execution.
 
-Required first proof commands:
+Do not require `vmlinux` as a normal Orlix build, proof, or runtime artifact. A `vmlinux`-style linked image may exist only as optional disposable output for a named non-product consumer such as debug-symbol inspection, Linux tooling compatibility, or a specific Kbuild/KUnit experiment.
 
-```bash
-make prepare-orlixkernel-port PROFILE=appstore
-make build-linux-kernel PROFILE=appstore
-make build-linux-kernel PROFILE=development
-```
-
-`OrlixKernel.xcframework` packaging must happen early enough to support iOS-hosted kernel-interface proof and later product runtime proof, and must depend on a real Linux build artifact. Boot-stub packaging is not product proof.
+`OrlixKernel.xcframework` packaging or app linking must happen early enough to support iOS-hosted kernel-interface proof and later product runtime proof, and must carry the app-hosted OrlixKernel integration that the iOS app will actually execute. Boot-stub packaging is not product proof.
 
 The App Store and development profiles should validate the same product scope. Development may enable explicit debug and testing affordances, but it must not drift into a broader Linux-visible product shape. Milestones that claim iOS packaging, boot, runtime, or Linux behavior must validate the same XCTest suite and assertions across App Store and development profiles on both `iphoneos` and `iphonesimulator`.
 
@@ -300,9 +294,9 @@ Use them only as migration reference. Migrate useful behavior by ownership into 
 
 Proof must remain honest about what it proves.
 
-Kbuild `vmlinux` proof means upstream Linux is being built as Linux for `ARCH=orlix`.
+App-hosted OrlixKernel build proof means the kernel integration that the iOS app will execute can be built for the selected profile and iOS destination.
 
-XCFramework packaging proof means the product packages a real Linux build artifact for the selected profile. This proof is required before iOS-hosted kernel-interface execution can advance.
+XCFramework or app packaging proof means the product packages or links the hosted OrlixKernel integration for the selected profile. This proof is required before iOS-hosted kernel-interface execution can advance, but it does not prove Linux booted or ran userspace.
 
 Boot proof means the bootloader hands Linux-shaped boot inputs into `arch/orlix` and reaches the intended Linux boot stage.
 
@@ -328,9 +322,9 @@ Existing XCTest files that target `OrlixKernel/fs`, `OrlixKernel/kernel`, or `Or
 
 ## Milestones
 
-Milestone 1: Kbuild `vmlinux` Proof
+Milestone 1: App-Hosted OrlixKernel Build Proof
 
-Align `README.md`, `AGENTS.md`, the canonical spec, ADRs, source-tree generation, profile selection, and real Kbuild `vmlinux` proof for `ARCH=orlix`.
+Align `README.md`, `AGENTS.md`, the canonical spec, ADRs, source-tree generation, profile selection, and app-hosted OrlixKernel build proof for the iOS destinations.
 
 Milestone 2: Boot Entrypoint
 
@@ -338,7 +332,7 @@ Introduce the minimal bootloader entrypoint, closed profile selection, profile d
 
 Milestone 3: XCFramework Packaging
 
-Package a real Orlix Linux artifact into `OrlixKernel.xcframework` for the selected profile. Packaging boot stubs alone is not proof.
+Package or link the app-hosted OrlixKernel integration into the iOS host path for the selected profile. Packaging boot stubs alone is not proof.
 
 Milestone 4: iOS-Hosted Kernel-Interface Test Execution
 

@@ -50,13 +50,9 @@ fi
 
 for required in \
     "$framework/OrlixKernel" \
-    "$framework/Info.plist" \
-    "$framework/OrlixKernelPayload.bundle/vmlinux" \
-    "$framework/OrlixKernelPayload.bundle/vmlinux.sha256" \
-    "$framework/OrlixKernelPayload.bundle/dtbs/appstore.dtb" \
-    "$framework/OrlixKernelPayload.bundle/dtbs/development.dtb"; do
+    "$framework/Info.plist"; do
     if [ ! -s "$required" ]; then
-        printf 'missing non-empty framework payload input: %s\n' "$required" >&2
+        printf 'missing non-empty framework input: %s\n' "$required" >&2
         exit 1
     fi
 done

@@ -216,6 +216,22 @@ The requirement that the same XCTest suite and assertions pass on both `iphoneos
 
 A development order that brings up the iOS harness on `iphonesimulator` first for speed. It does not reduce the milestone proof requirement; completion still requires the same proof on both `iphoneos` and `iphonesimulator`.
 
+## App-Hosted OrlixKernel Runtime
+
+The canonical OrlixKernel product/proof artifact: the OrlixKernel static library, framework, or object set linked with `OrlixHostAdapter` and executed by the iOS app host on Simulator or device. This hosted runtime path is the source of kernel proof.
+
+## Canonical Kernel Proof Artifact
+
+The app-hosted OrlixKernel integration that actually runs inside the Orlix app environment. A standalone `vmlinux` image is not canonical proof unless a named non-product workflow consumes it.
+
+## Optional vmlinux Tooling Artifact
+
+A disposable `vmlinux`-style linked kernel image generated only for a named non-product consumer such as debug-symbol inspection, Linux tooling compatibility, or a specific Kbuild/KUnit experiment. It is not product proof, runtime proof, libc proof, package proof, or required for `headers_install`.
+
+## App-Hosted Proof Question
+
+The canonical proof question for OrlixKernel work: did the Orlix app-hosted runtime execute the Linux-shaped behavior on iOS?
+
 ## OrlixKernel XCFramework Slice Set
 
 The initial `OrlixKernel.xcframework` platform slices are `ios-arm64` for physical iOS devices and `ios-arm64-simulator` for Apple Silicon Simulator. Intel Simulator support is not part of the initial slice set.
@@ -226,15 +242,15 @@ For a selected Orlix profile, `iphoneos` and `iphonesimulator` slices wrap the s
 
 ## Selected Profile Framework Build
 
-An `OrlixKernel.xcframework` build that packages exactly one selected profile's `ARCH=orlix` Linux artifact while also bundling the closed built-in profile DTBs.
+An `OrlixKernel.xcframework` build that packages or links exactly one selected profile's app-hosted OrlixKernel integration while also bundling the closed built-in profile DTBs where needed.
 
 ## OrlixKernel Wrapper
 
-The iOS Mach-O framework or static-library surface inside each `OrlixKernel.xcframework` slice. It exposes the bootloader-shaped public API while bundling or loading the `ARCH=orlix` Linux artifact and private boot resources as payload data.
+The iOS Mach-O framework or static-library surface inside each `OrlixKernel.xcframework` slice. It exposes the bootloader-shaped public API while hosting the OrlixKernel integration and private boot resources needed by the iOS runtime path.
 
 ## Linux Payload Artifact
 
-The real `ARCH=orlix` Linux build output, initially `vmlinux`, packaged as private payload data inside or alongside the iOS wrapper. It is proof input and boot payload, not the iOS linkable framework binary.
+Private Linux-shaped boot data or generated kernel inputs consumed by the app-hosted OrlixKernel runtime. Payload data is not canonical proof by itself; proof comes from executing the hosted runtime on iOS.
 
 ## Local-Kernel XCTest Reference
 
@@ -258,11 +274,11 @@ The disposable upstream-Linux source tree after applying the Orlix port overlay 
 
 ## Real Linux Build Proof
 
-Evidence that upstream Linux is being built as Linux for `ARCH=orlix`, with `vmlinux` as the first honest proof artifact. `OrlixKernel.xcframework` packaging follows early as the iOS execution enabler, but must package a real Linux artifact rather than substitute boot stubs for Linux proof.
+Evidence that the app-hosted OrlixKernel integration for `ARCH=orlix` can be built for the selected profile and iOS destination. Standalone `vmlinux` output is optional tooling evidence only when a named non-product workflow consumes it.
 
 ## XCFramework Packaging Milestone
 
-The third milestone for the upstream-Linux iOS port. It packages a real Orlix Linux artifact into `OrlixKernel.xcframework` before iOS-hosted kernel-interface proof and later runtime proof; boot-stub packaging is not proof.
+The third milestone for the upstream-Linux iOS port. It packages or links the app-hosted OrlixKernel integration into the iOS host path before iOS-hosted kernel-interface proof and later runtime proof; boot-stub packaging is not proof.
 
 ## App Store Profile
 
@@ -392,9 +408,9 @@ Hibernation/resume is deferred beyond the first architecture milestone. Early li
 
 The upstream-Linux iOS port should be planned as a sequence of focused milestones rather than one large migration. Each milestone must produce honest Linux-shaped proof before the next layer depends on it.
 
-## Kbuild vmlinux Proof Milestone
+## App-Hosted Kernel Build Proof Milestone
 
-The first milestone for the upstream-Linux iOS port. It is limited to source-tree generation, profile selection, Kbuild `vmlinux` proof for `ARCH=orlix`, and architecture documentation/instruction alignment. Required proof includes `make prepare-orlixkernel-port PROFILE=appstore`, `make build-linux-kernel PROFILE=appstore`, and `make build-linux-kernel PROFILE=development`. It does not implement virtio, boot API redesign, root filesystem assembly, or console behavior.
+The first milestone for the upstream-Linux iOS port. It is limited to source-tree generation, profile selection, app-hosted OrlixKernel build proof for the selected iOS destinations, and architecture documentation/instruction alignment. It does not implement virtio, boot API redesign, root filesystem assembly, console behavior, or product runtime.
 
 ## Architecture Documentation Alignment
 
@@ -438,7 +454,7 @@ Old build target names such as `prepare-linux-worktree` are not preserved as com
 
 ## XCFramework Packaging Rule
 
-`OrlixKernel.xcframework` packaging is required before iOS-hosted kernel-interface proof and later runtime proof can advance and must depend on a real Linux build artifact for the selected profile. Boot-stub packaging must not masquerade as product proof.
+`OrlixKernel.xcframework` or equivalent app-hosted packaging is required before iOS-hosted kernel-interface proof and later runtime proof can advance and must package or link the hosted OrlixKernel integration for the selected profile. Boot-stub packaging must not masquerade as product proof.
 
 ## Boot-Stub Packaging
 

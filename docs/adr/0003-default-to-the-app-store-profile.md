@@ -18,7 +18,7 @@ The development profile must stay equivalent to the App Store profile except for
 
 ## Consequences
 
-Milestone 1 proof requires App Store and development profile builds.
+Milestone 1 proof requires App Store and development profile app-hosted OrlixKernel builds.
 
 Build targets and documentation must not imply development behavior is the normal product contract.
 

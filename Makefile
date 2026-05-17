@@ -20,8 +20,7 @@ ORLIX_KERNEL_HEADER ?= OrlixKernel/include/OrlixKernel.h
 ORLIX_KERNEL_PORT_DIR ?= Build/OrlixKernel/linux-$(LINUX_VERSION)-port
 ORLIX_KERNEL_BUILD_ROOT := $(CURDIR)/Build/OrlixKernel/build
 ORLIX_KERNEL_BUILD_DIR := $(ORLIX_KERNEL_BUILD_ROOT)/$(PROFILE)
-ORLIX_KERNEL_VMLINUX := $(ORLIX_KERNEL_BUILD_DIR)/vmlinux
-ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/xcframework-input/OrlixKernelPayload.bundle
+ORLIX_KERNEL_VMLINUX_TOOLING_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/vmlinux-tooling/OrlixKernelPayload.bundle
 ORLIX_KSELFTEST_INSTALL_DIR := $(CURDIR)/Build/OrlixKernel/test-initramfs/kselftest-install/$(PROFILE)
 ORLIX_TEST_INITRAMFS_DIR := $(CURDIR)/Build/OrlixKernel/test-initramfs/OrlixTestInitramfs.bundle
 ORLIX_XCODE_PROJECT ?= OrlixSystem.xcodeproj
@@ -35,13 +34,14 @@ XCODEBUILD_MCP ?= xcodebuildmcp
 ORLIX_LINUX_USERSPACE_SYSROOT ?=
 ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR ?= Build/OrlixKernel/linux-userspace-sysroot/aarch64
 ORLIX_KSELFTEST_ARCH ?= arm64
+ORLIX_VMLINUX_CONSUMER ?=
 
 LINUX_MAKE ?=
 LINUX_SED ?=
 LINUX_LLVM_BIN ?= $(shell if command -v llvm-ar >/dev/null 2>&1; then dirname "$$(command -v llvm-ar)"; elif [ -x /opt/homebrew/opt/llvm/bin/llvm-ar ]; then printf '%s\n' /opt/homebrew/opt/llvm/bin; fi)
 LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
 
-.PHONY: bootstrap-linux-upstream validate-orlix-profile prepare-orlixkernel-port build-linux-kernel stage-orlixkernel-payload bootstrap-orlix-linux-userspace-sysroot build-orlix-kselftests stage-orlix-test-initramfs generate-xcode-project prepare-ios-packaging build-ios-simulator-framework package-ios-simulator-xcframework verify-ios-simulator-xcframework test-ios-simulator-packaging run-ios-simulator-terminal proof-ios-simulator-packaging
+.PHONY: bootstrap-linux-upstream validate-orlix-profile prepare-orlixkernel-port build-linux-kernel stage-orlixkernel-payload bootstrap-orlix-linux-userspace-sysroot build-orlix-kselftests stage-orlix-test-initramfs generate-xcode-project prepare-ios-packaging build-ios-simulator-framework package-ios-simulator-xcframework verify-ios-simulator-xcframework run-ios-simulator-terminal proof-ios-simulator-packaging
 
 bootstrap-linux-upstream:
 	@set -euo pipefail; \
@@ -175,6 +175,10 @@ prepare-orlixkernel-port: validate-orlix-profile bootstrap-linux-upstream
 
 build-linux-kernel: prepare-orlixkernel-port
 	@set -euo pipefail; \
+	if [ -z "$(ORLIX_VMLINUX_CONSUMER)" ]; then \
+		echo "build-linux-kernel generates optional vmlinux tooling output; set ORLIX_VMLINUX_CONSUMER to the named non-product workflow that consumes it" >&2; \
+		exit 1; \
+	fi; \
 	linux_make="$(LINUX_MAKE)"; \
 	if [ -z "$$linux_make" ]; then linux_make="$$(command -v gmake || true)"; fi; \
 	if [ -z "$$linux_make" ]; then \
@@ -226,12 +230,13 @@ build-linux-kernel: prepare-orlixkernel-port
 	for dtb in appstore development; do \
 		[ -f "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" ] || { echo "missing profile DTB: $$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" >&2; exit 1; }; \
 	done; \
-	echo "Linux vmlinux ready: $$vmlinux (profile $(PROFILE))"
+	echo "Linux vmlinux ready: $$vmlinux (profile $(PROFILE), consumer $(ORLIX_VMLINUX_CONSUMER))"
 
-stage-orlixkernel-payload: build-linux-kernel
+stage-orlixkernel-payload: validate-orlix-profile
 	@set -euo pipefail; \
+	$(MAKE) build-linux-kernel PROFILE="$(PROFILE)" ORLIX_VMLINUX_CONSUMER="manual-vmlinux-payload-staging"; \
 	./scripts/stage-orlixkernel-payload.sh --profile "$(PROFILE)" --linux-version "$(LINUX_VERSION)" --linux-arch "$(LINUX_ARCH)"; \
-	[ -d "$(ORLIX_KERNEL_PAYLOAD_DIR)" ] || { echo "missing staged payload: $(ORLIX_KERNEL_PAYLOAD_DIR)" >&2; exit 1; }
+	[ -d "$(ORLIX_KERNEL_VMLINUX_TOOLING_PAYLOAD_DIR)" ] || { echo "missing staged payload: $(ORLIX_KERNEL_VMLINUX_TOOLING_PAYLOAD_DIR)" >&2; exit 1; }
 
 bootstrap-orlix-linux-userspace-sysroot:
 	@set -euo pipefail; \
@@ -261,7 +266,7 @@ build-orlix-kselftests: validate-orlix-profile
 	PATH="$$coreutils_dir:$${linux_llvm_bin:+$$linux_llvm_bin:}$$PATH"; \
 	export PATH; \
 	command -v clang >/dev/null 2>&1 || { echo "clang is required to build Linux kselftest artifacts" >&2; exit 1; }; \
-	$(MAKE) build-linux-kernel PROFILE="$(PROFILE)"; \
+	$(MAKE) build-linux-kernel PROFILE="$(PROFILE)" ORLIX_VMLINUX_CONSUMER="temporary-kselftest-build-tree"; \
 	rm -rf "$(ORLIX_KSELFTEST_INSTALL_DIR)"; \
 	mkdir -p "$$(dirname "$(ORLIX_KSELFTEST_INSTALL_DIR)")"; \
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)/tools/testing/selftests" \
@@ -286,11 +291,9 @@ generate-xcode-project:
 	command -v "$(XCODEGEN)" >/dev/null 2>&1 || { echo "XcodeGen is required; install xcodegen or set XCODEGEN=/path/to/xcodegen" >&2; exit 1; }; \
 	"$(XCODEGEN)" generate --spec project.yml
 
-prepare-ios-packaging: stage-orlixkernel-payload
+prepare-ios-packaging: generate-xcode-project
 	@set -euo pipefail; \
-	command -v "$(XCODEGEN)" >/dev/null 2>&1 || { echo "XcodeGen is required; install xcodegen or set XCODEGEN=/path/to/xcodegen" >&2; exit 1; }; \
-	"$(XCODEGEN)" generate --spec project.yml; \
-	echo "iOS packaging inputs ready: project.yml generated $(ORLIX_XCODE_PROJECT) and staged $(ORLIX_KERNEL_PAYLOAD_DIR)"
+	echo "iOS packaging inputs ready: project.yml generated $(ORLIX_XCODE_PROJECT)"
 
 build-ios-simulator-framework: prepare-ios-packaging
 	@set -euo pipefail; \
@@ -319,23 +322,6 @@ verify-ios-simulator-xcframework: package-ios-simulator-xcframework
 	@set -euo pipefail; \
 	./scripts/verify-orlixkernel-simulator-xcframework.sh --xcframework "$(ORLIX_KERNEL_XCFRAMEWORK)" --profile "$(PROFILE)" --linux-version "$(LINUX_VERSION)" --linux-arch "$(LINUX_ARCH)"
 
-test-ios-simulator-packaging: prepare-ios-packaging
-	@set -euo pipefail; \
-	command -v "$(XCODEBUILD_MCP)" >/dev/null 2>&1 || { echo "XcodeBuildMCP is required; install xcodebuildmcp or set XCODEBUILD_MCP=/path/to/xcodebuildmcp" >&2; exit 1; }; \
-	selector=(); \
-	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
-		selector=(--simulator-id "$(ORLIX_IOS_SIMULATOR_ID)"); \
-	else \
-		selector=(--simulator-name "$(ORLIX_IOS_SIMULATOR_NAME)" --use-latest-os); \
-	fi; \
-	"$(XCODEBUILD_MCP)" simulator test \
-		--project-path "$(CURDIR)/$(ORLIX_XCODE_PROJECT)" \
-		--scheme "OrlixKernelPackaging" \
-		--configuration "Debug" \
-		--derived-data-path "$(ORLIX_IOS_SIMULATOR_DERIVED_DATA)" \
-		"$${selector[@]}" \
-		--output json
-
 run-ios-simulator-terminal: prepare-ios-packaging
 	@set -euo pipefail; \
 	command -v "$(XCODEBUILD_MCP)" >/dev/null 2>&1 || { echo "XcodeBuildMCP is required; install xcodebuildmcp or set XCODEBUILD_MCP=/path/to/xcodebuildmcp" >&2; exit 1; }; \
@@ -353,4 +339,4 @@ run-ios-simulator-terminal: prepare-ios-packaging
 		"$${selector[@]}" \
 		--output json
 
-proof-ios-simulator-packaging: verify-ios-simulator-xcframework test-ios-simulator-packaging run-ios-simulator-terminal
+proof-ios-simulator-packaging: verify-ios-simulator-xcframework run-ios-simulator-terminal
