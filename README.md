@@ -34,116 +34,39 @@ KUnit proves kernel-internal behavior. Temporary, nolibc, or foreign-libc kselft
 
 Do not claim product runtime readiness from KUnit, temporary kselftest, boot logs, packaging, or a host-side harness.
 
-## Build And Proof Commands
+## Build And Test Commands
 
-Bootstrapping upstream Linux is the first source step:
-
-```bash
-make bootstrap-linux-upstream
-```
-
-Milestone 1 build work must make this the generated port-tree step:
+The top-level Makefile keeps a small, Linux-shaped interface:
 
 ```bash
-make prepare-orlixkernel-port PROFILE=appstore
+make setup-env
+make build
+make test
+make test type=kunit,kselftest
+make clean
 ```
 
-Milestone 1 build work must make the app-hosted OrlixKernel integration build for the iOS destinations. It must not build or require `vmlinux` as a milestone artifact.
+`make setup-env` fetches upstream Linux and generates the disposable Xcode project from `project.yml`. `make build` builds the app-hosted OrlixKernel iOS artifact. It must not build or require `vmlinux` as a normal artifact.
 
 `PROFILE=appstore` is the default profile. Pass another profile only when you intentionally need it.
 
-The development profile should match the App Store profile except for explicit debug and testing affordances. Milestones that claim iOS packaging, boot, runtime, or Linux behavior should validate the same XCTest suite and assertions across App Store and development profiles on both `iphoneos` and `iphonesimulator`.
-
-App Store, development, simulator, CI, and debug builds may produce separate artifacts, but they must not expose different Linux userspace ABIs. Installed UAPI headers, syscall numbers, struct layouts, OrlixMLibC ABI, dynamic-loader contract, package ABI, and observable Linux userspace behavior are profile-invariant.
-
-Milestone 2 boot-entrypoint proof is intentionally narrower than booting Linux. It verifies that profile DTS sources are materialized into the generated Linux port tree.
+The Linux-shaped lower-level targets are available when needed:
 
 ```bash
-make prepare-orlixkernel-port PROFILE=appstore
+make prepare PROFILE=appstore
+make headers_install PROFILE=appstore
+make kunit PROFILE=appstore
+make kselftest PROFILE=appstore libc=linux
+make kselftest PROFILE=appstore libc=orlixmlibc ORLIX_MLIBC_SYSROOT=Build/OrlixMLibC/sysroot/appstore
 ```
 
-Milestone 2 does not prove QEMU execution, iOS execution, task switching, MMU behavior, userspace access, device binding, or root filesystem assembly.
+`make prepare` materializes the generated upstream-plus-Orlix port tree and Kbuild output without requiring a standalone kernel image. `make headers_install` installs Linux UAPI headers into `Build/OrlixMLibC/kernel-headers/<profile>/include` and does not consume `vmlinux`.
 
-Milestone 3 XCFramework packaging proof establishes the iOS execution artifact early. It must package or link the app-hosted OrlixKernel integration into the iOS host path; packaging boot stubs alone is not proof.
+`make kunit` builds Linux KUnit-selected Orlix test objects. KUnit proves kernel-internal behavior only.
 
-Prepare the iOS packaging inputs with:
+`make kselftest libc=linux` uses Linux's kselftest install shape with a temporary foreign-libc sysroot under `Build/OrlixKernel/kselftest/temporary/<profile>/`. It is kernel-interface coverage only, not OrlixMLibC proof, Orlix userspace ABI proof, shell proof, package proof, or product runtime proof.
 
-```bash
-make prepare-ios-packaging PROFILE=appstore
-```
-
-This generates the disposable Xcode project from `project.yml`. It must not make `vmlinux` a required proof artifact unless a named optional tooling workflow consumes it.
-
-For simulator-first development, run the current simulator packaging proof with:
-
-```bash
-make proof-ios-simulator-packaging PROFILE=appstore
-```
-
-This verifies the simulator XCFramework wrapper shape and launches `OrlixTerminal` against the packaged framework. It is sequencing evidence only, not kernel runtime proof.
-
-Build a simulator-only `OrlixKernel.xcframework` package with:
-
-```bash
-make package-ios-simulator-xcframework PROFILE=appstore
-```
-
-Verify that simulator-only package with:
-
-```bash
-make verify-ios-simulator-xcframework PROFILE=appstore
-```
-
-Launch the simulator host app with:
-
-```bash
-make run-ios-simulator-terminal PROFILE=appstore
-```
-
-These simulator targets are sequencing aids. They do not replace the eventual `iphoneos` proof cell.
-
-Milestone 4 iOS-hosted kernel-interface test execution proves dependency behavior, not the final Orlix product runtime. KUnit proves kernel-internal behavior. Selected Linux kselftests may run through a temporary, nolibc, or foreign-libc harness as kernel-interface proof, but that temporary lane is not OrlixMLibC proof, final Orlix userspace ABI proof, shell proof, or package proof.
-
-Build temporary Orlix kselftest artifacts with Linux's kselftest build shape as kernel-interface preparatory evidence:
-
-```bash
-make build-temporary-orlix-kselftests PROFILE=appstore ORLIX_LINUX_USERSPACE_SYSROOT=Build/OrlixKernel/linux-userspace-sysroot/aarch64
-```
-
-Stage the Linux-shaped test initramfs resource for the XCTest proof host with:
-
-```bash
-make bootstrap-orlix-linux-userspace-sysroot
-make stage-temporary-orlix-test-initramfs PROFILE=appstore ORLIX_LINUX_USERSPACE_SYSROOT=Build/OrlixKernel/linux-userspace-sysroot/aarch64
-```
-
-The bootstrap target creates a disposable Debian arm64 sysroot under `Build/OrlixKernel/linux-userspace-sysroot/aarch64`. The staging target uses upstream kselftest install shape and refuses to build with the Darwin host SDK. This is labeled `temporary-kselftest-kernel-interface`; it is not Orlix userspace ABI proof. The staged resource is for the forthcoming XCTest proof host bundle, not `OrlixKernel.xcframework` product payload, and is not required for Milestone 3 packaging tests.
-
-Install Orlix UAPI headers for OrlixMLibC with:
-
-```bash
-make install-orlix-uapi-headers PROFILE=appstore
-```
-
-This runs Linux `headers_install` into `Build/OrlixMLibC/kernel-headers/<profile>/include`. It does not build or consume `vmlinux`.
-
-The future OrlixMLibC kselftest lane is separate:
-
-```bash
-make build-orlixmlibc-kselftests PROFILE=appstore ORLIX_MLIBC_SYSROOT=Build/OrlixMLibC/sysroot/appstore
-make stage-orlixmlibc-test-initramfs PROFILE=appstore ORLIX_MLIBC_SYSROOT=Build/OrlixMLibC/sysroot/appstore
-```
-
-That lane is labeled `orlixmlibc-kselftest-syscall-uapi` and requires an OrlixMLibC sysroot plus installed Orlix UAPI headers.
-
-Build Orlix KUnit artifacts with Linux Kbuild and the Orlix KUnit config as preparatory evidence:
-
-```bash
-cd Build/OrlixKernel/linux-6.12-port
-make O=../kunit-orlix ARCH=orlix defconfig
-scripts/kconfig/merge_config.sh -m -O ../kunit-orlix ../kunit-orlix/.config arch/orlix/.kunitconfig
-make O=../kunit-orlix ARCH=orlix olddefconfig arch/orlix/boot/boot_test.o
-```
+`make kselftest libc=orlixmlibc` uses a separate install path under `Build/OrlixMLibC/kselftest/<profile>/`. That lane requires an OrlixMLibC sysroot plus installed Orlix UAPI headers and is the later syscall/UAPI proof lane.
 
 Do not run kselftest or KUnit on Darwin and do not use a VM as product proof. Do not add repo-local shell or standalone C contract tests as milestone proof. Linux kernel-internal behavior belongs in KUnit. Linux kernel-interface behavior belongs in selected kselftests. Orlix userspace ABI and product runtime claims require the later ADR 0017 proof lanes.
 

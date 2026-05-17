@@ -12,4 +12,4 @@ Forbidden upstream paths:
 - `include/linux/`
 - `include/uapi/`
 
-For a patch named `example.patch`, add `Linux/ports/orlix/patches/exceptions/example.patch.md` before running `make prepare-orlixkernel-port`. The exception must explain why the upstream-path change is required and why it cannot live in the Orlix overlay.
+For a patch named `example.patch`, add `Linux/ports/orlix/patches/exceptions/example.patch.md` before running `make prepare`. The exception must explain why the upstream-path change is required and why it cannot live in the Orlix overlay.
