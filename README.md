@@ -103,10 +103,11 @@ make -C Build/OrlixKernel/linux-6.12-port/tools/testing/selftests TARGETS=orlix
 Stage the Linux-shaped test initramfs resource for the XCTest proof host with:
 
 ```bash
-make stage-orlix-test-initramfs PROFILE=appstore ORLIX_LINUX_USERSPACE_SYSROOT=/path/to/aarch64-linux-sysroot
+make bootstrap-orlix-linux-userspace-sysroot
+make stage-orlix-test-initramfs PROFILE=appstore ORLIX_LINUX_USERSPACE_SYSROOT=Build/OrlixKernel/linux-userspace-sysroot/aarch64
 ```
 
-This target uses upstream kselftest install shape and refuses to build with the Darwin host SDK. The staged resource is for the forthcoming XCTest proof host bundle, not `OrlixKernel.xcframework` product payload, and is not required for Milestone 3 packaging tests.
+The bootstrap target creates a disposable Debian arm64 sysroot under `Build/OrlixKernel/linux-userspace-sysroot/aarch64`. The staging target uses upstream kselftest install shape and refuses to build with the Darwin host SDK. The staged resource is for the forthcoming XCTest proof host bundle, not `OrlixKernel.xcframework` product payload, and is not required for Milestone 3 packaging tests.
 
 Build Orlix KUnit artifacts with Linux Kbuild and the Orlix KUnit config as preparatory evidence:
 

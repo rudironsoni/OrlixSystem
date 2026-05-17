@@ -33,6 +33,7 @@ ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.
 XCODEGEN ?= xcodegen
 XCODEBUILD_MCP ?= xcodebuildmcp
 ORLIX_LINUX_USERSPACE_SYSROOT ?=
+ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR ?= Build/OrlixKernel/linux-userspace-sysroot/aarch64
 ORLIX_KSELFTEST_ARCH ?= arm64
 
 LINUX_MAKE ?=
@@ -40,7 +41,7 @@ LINUX_SED ?=
 LINUX_LLVM_BIN ?= $(shell if command -v llvm-ar >/dev/null 2>&1; then dirname "$$(command -v llvm-ar)"; elif [ -x /opt/homebrew/opt/llvm/bin/llvm-ar ]; then printf '%s\n' /opt/homebrew/opt/llvm/bin; fi)
 LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
 
-.PHONY: bootstrap-linux-upstream validate-orlix-profile prepare-orlixkernel-port build-linux-kernel stage-orlixkernel-payload build-orlix-kselftests stage-orlix-test-initramfs generate-xcode-project prepare-ios-packaging build-ios-simulator-framework package-ios-simulator-xcframework verify-ios-simulator-xcframework test-ios-simulator-packaging run-ios-simulator-terminal proof-ios-simulator-packaging
+.PHONY: bootstrap-linux-upstream validate-orlix-profile prepare-orlixkernel-port build-linux-kernel stage-orlixkernel-payload bootstrap-orlix-linux-userspace-sysroot build-orlix-kselftests stage-orlix-test-initramfs generate-xcode-project prepare-ios-packaging build-ios-simulator-framework package-ios-simulator-xcframework verify-ios-simulator-xcframework test-ios-simulator-packaging run-ios-simulator-terminal proof-ios-simulator-packaging
 
 bootstrap-linux-upstream:
 	@set -euo pipefail; \
@@ -232,6 +233,11 @@ stage-orlixkernel-payload: build-linux-kernel
 	./scripts/stage-orlixkernel-payload.sh --profile "$(PROFILE)" --linux-version "$(LINUX_VERSION)" --linux-arch "$(LINUX_ARCH)"; \
 	[ -d "$(ORLIX_KERNEL_PAYLOAD_DIR)" ] || { echo "missing staged payload: $(ORLIX_KERNEL_PAYLOAD_DIR)" >&2; exit 1; }
 
+bootstrap-orlix-linux-userspace-sysroot:
+	@set -euo pipefail; \
+	./scripts/bootstrap-orlix-linux-userspace-sysroot.sh --output "$(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)"; \
+	[ -d "$(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)" ] || { echo "missing Linux userspace sysroot: $(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)" >&2; exit 1; }
+
 build-orlix-kselftests: validate-orlix-profile
 	@set -euo pipefail; \
 	linux_sysroot="$(ORLIX_LINUX_USERSPACE_SYSROOT)"; \
@@ -266,7 +272,7 @@ build-orlix-kselftests: validate-orlix-profile
 		LLVM=1 \
 		FORCE_TARGETS=1 \
 		USERCFLAGS="--sysroot=$$linux_sysroot" \
-		USERLDFLAGS="--sysroot=$$linux_sysroot -static" \
+		USERLDFLAGS="--sysroot=$$linux_sysroot -static -fuse-ld=lld" \
 		install; \
 	[ -s "$(ORLIX_KSELFTEST_INSTALL_DIR)/run_kselftest.sh" ] || { echo "missing installed kselftest runner" >&2; exit 1; }
 
