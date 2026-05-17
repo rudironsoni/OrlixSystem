@@ -22,6 +22,8 @@ ORLIX_KERNEL_BUILD_ROOT := $(CURDIR)/Build/OrlixKernel/build
 ORLIX_KERNEL_BUILD_DIR := $(ORLIX_KERNEL_BUILD_ROOT)/$(PROFILE)
 ORLIX_KERNEL_VMLINUX := $(ORLIX_KERNEL_BUILD_DIR)/vmlinux
 ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/xcframework-input/OrlixKernelPayload.bundle
+ORLIX_KSELFTEST_INSTALL_DIR := $(CURDIR)/Build/OrlixKernel/test-initramfs/kselftest-install/$(PROFILE)
+ORLIX_TEST_INITRAMFS_DIR := $(CURDIR)/Build/OrlixKernel/test-initramfs/OrlixTestInitramfs.bundle
 ORLIX_XCODE_PROJECT ?= OrlixSystem.xcodeproj
 ORLIX_IOS_SIMULATOR_NAME ?= iPhone 17 Pro
 ORLIX_IOS_SIMULATOR_ID ?=
@@ -30,13 +32,15 @@ ORLIX_IOS_SIMULATOR_FRAMEWORK := $(ORLIX_IOS_SIMULATOR_DERIVED_DATA)/Build/Produ
 ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework
 XCODEGEN ?= xcodegen
 XCODEBUILD_MCP ?= xcodebuildmcp
+ORLIX_LINUX_USERSPACE_SYSROOT ?=
+ORLIX_KSELFTEST_ARCH ?= arm64
 
 LINUX_MAKE ?=
 LINUX_SED ?=
 LINUX_LLVM_BIN ?= $(shell if command -v llvm-ar >/dev/null 2>&1; then dirname "$$(command -v llvm-ar)"; elif [ -x /opt/homebrew/opt/llvm/bin/llvm-ar ]; then printf '%s\n' /opt/homebrew/opt/llvm/bin; fi)
 LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
 
-.PHONY: bootstrap-linux-upstream validate-orlix-profile prepare-orlixkernel-port build-linux-kernel stage-orlixkernel-payload generate-xcode-project prepare-ios-packaging build-ios-simulator-framework package-ios-simulator-xcframework verify-ios-simulator-xcframework test-ios-simulator-packaging run-ios-simulator-terminal proof-ios-simulator-packaging
+.PHONY: bootstrap-linux-upstream validate-orlix-profile prepare-orlixkernel-port build-linux-kernel stage-orlixkernel-payload build-orlix-kselftests stage-orlix-test-initramfs generate-xcode-project prepare-ios-packaging build-ios-simulator-framework package-ios-simulator-xcframework verify-ios-simulator-xcframework test-ios-simulator-packaging run-ios-simulator-terminal proof-ios-simulator-packaging
 
 bootstrap-linux-upstream:
 	@set -euo pipefail; \
@@ -227,6 +231,49 @@ stage-orlixkernel-payload: build-linux-kernel
 	@set -euo pipefail; \
 	./scripts/stage-orlixkernel-payload.sh --profile "$(PROFILE)" --linux-version "$(LINUX_VERSION)" --linux-arch "$(LINUX_ARCH)"; \
 	[ -d "$(ORLIX_KERNEL_PAYLOAD_DIR)" ] || { echo "missing staged payload: $(ORLIX_KERNEL_PAYLOAD_DIR)" >&2; exit 1; }
+
+build-orlix-kselftests: validate-orlix-profile
+	@set -euo pipefail; \
+	linux_sysroot="$(ORLIX_LINUX_USERSPACE_SYSROOT)"; \
+	if [ -z "$$linux_sysroot" ]; then \
+		echo "ORLIX_LINUX_USERSPACE_SYSROOT is required to build Linux kselftest artifacts for the test initramfs" >&2; \
+		exit 1; \
+	fi; \
+	case "$$linux_sysroot" in /*) ;; *) linux_sysroot="$(CURDIR)/$$linux_sysroot" ;; esac; \
+	[ -d "$$linux_sysroot" ] || { echo "missing Linux userspace sysroot: $$linux_sysroot" >&2; exit 1; }; \
+	linux_make="$(LINUX_MAKE)"; \
+	if [ -z "$$linux_make" ]; then linux_make="$$(command -v gmake || true)"; fi; \
+	if [ -z "$$linux_make" ]; then \
+		echo "GNU Make >= 4.0 is required by Linux kselftest; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; \
+		exit 1; \
+	fi; \
+	linux_llvm_bin="$(LINUX_LLVM_BIN)"; \
+	coreutils_dir=""; \
+	if readlink -e / >/dev/null 2>&1; then coreutils_dir="$$(dirname "$$(command -v readlink)")"; \
+	elif [ -x /opt/homebrew/opt/coreutils/libexec/gnubin/readlink ]; then coreutils_dir=/opt/homebrew/opt/coreutils/libexec/gnubin; \
+	else echo "GNU readlink is required by kselftest install; install coreutils" >&2; exit 1; fi; \
+	PATH="$$coreutils_dir:$${linux_llvm_bin:+$$linux_llvm_bin:}$$PATH"; \
+	export PATH; \
+	command -v clang >/dev/null 2>&1 || { echo "clang is required to build Linux kselftest artifacts" >&2; exit 1; }; \
+	$(MAKE) build-linux-kernel PROFILE="$(PROFILE)"; \
+	rm -rf "$(ORLIX_KSELFTEST_INSTALL_DIR)"; \
+	mkdir -p "$$(dirname "$(ORLIX_KSELFTEST_INSTALL_DIR)")"; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)/tools/testing/selftests" \
+		O="$(ORLIX_KERNEL_BUILD_DIR)" \
+		TARGETS=orlix \
+		KSFT_INSTALL_PATH="$(ORLIX_KSELFTEST_INSTALL_DIR)" \
+		ARCH="$(ORLIX_KSELFTEST_ARCH)" \
+		LLVM=1 \
+		FORCE_TARGETS=1 \
+		USERCFLAGS="--sysroot=$$linux_sysroot" \
+		USERLDFLAGS="--sysroot=$$linux_sysroot -static" \
+		install; \
+	[ -s "$(ORLIX_KSELFTEST_INSTALL_DIR)/run_kselftest.sh" ] || { echo "missing installed kselftest runner" >&2; exit 1; }
+
+stage-orlix-test-initramfs: build-orlix-kselftests
+	@set -euo pipefail; \
+	./scripts/stage-orlix-test-initramfs.sh --profile "$(PROFILE)" --linux-version "$(LINUX_VERSION)" --linux-arch "$(LINUX_ARCH)" --kselftest-install "$(ORLIX_KSELFTEST_INSTALL_DIR)" --output "$(ORLIX_TEST_INITRAMFS_DIR)"; \
+	[ -d "$(ORLIX_TEST_INITRAMFS_DIR)" ] || { echo "missing staged test initramfs resource: $(ORLIX_TEST_INITRAMFS_DIR)" >&2; exit 1; }
 
 generate-xcode-project:
 	@set -euo pipefail; \
