@@ -519,7 +519,9 @@ __macho-linux-archive: __prepare-kbuild
 __macho-start-kernel-dependency-probe: __prepare-kbuild
 	@set -euo pipefail; \
 	cc="$(ORLIX_MACHO_CC)"; \
+	nm_cmd="$(ORLIX_MACHO_NM)"; \
 	command -v "$$cc" >/dev/null 2>&1 || { echo "clang is required for start_kernel dependency probe; set ORLIX_MACHO_CC=/path/to/clang" >&2; exit 1; }; \
+	command -v "$$nm_cmd" >/dev/null 2>&1 || { echo "nm is required for start_kernel dependency probe; set ORLIX_MACHO_NM=/path/to/nm" >&2; exit 1; }; \
 	probe_dir="$(ORLIX_KERNEL_MACHO_ROOT)/probes/start_kernel"; \
 	mkdir -p "$$probe_dir"; \
 	log="$$probe_dir/compile.log"; \
@@ -530,6 +532,9 @@ __macho-start-kernel-dependency-probe: __prepare-kbuild
 	set -e; \
 	if [ "$$rc" -eq 0 ]; then \
 		printf '%s\n' 'compiled' > "$$status"; \
+		rm -f "$$probe_dir/blockers.txt"; \
+		"$$nm_cmd" -gU "$$probe_dir/init_main.o" > "$$probe_dir/symbols.txt"; \
+		grep -q '_start_kernel' "$$probe_dir/symbols.txt" || { echo "start_kernel dependency probe missing _start_kernel symbol" >&2; exit 1; }; \
 		echo "start_kernel dependency probe compiled init/main.c: $$probe_dir/init_main.o"; \
 	else \
 		printf 'blocked rc=%s\n' "$$rc" > "$$status"; \
