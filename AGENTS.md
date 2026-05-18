@@ -234,3 +234,4 @@ Durable architecture decisions live in:
 Resolved glossary terms live in:
 
 - `CONTEXT.md`
+- If using XcodeBuildMCP, use the installed XcodeBuildMCP skill before calling XcodeBuildMCP tools.
