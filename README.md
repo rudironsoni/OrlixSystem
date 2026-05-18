@@ -64,6 +64,8 @@ make clean
 
 `make setup-env` fetches upstream Linux and generates the disposable Xcode project from `project.yml`. `make build` exercises the current component build hooks: it builds the app-hosted OrlixKernel iOS artifact path and runs placeholder hooks for components that are not implemented yet. It does not build a real OrlixMLibC sysroot, prove terminal runtime behavior, or build or require `vmlinux` as a normal artifact.
 
+The Linux compile lane emits per-profile, per-platform OrlixKernel static archives under `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`. Xcode links the matching archive into `OrlixKernel.framework`, and framework slices are packaged into `OrlixKernel.xcframework`.
+
 `PROFILE=appstore` is the default profile. Pass another profile only when you intentionally need it.
 
 Use variables for scope instead of target-name variants: `PROFILE=...`, `type=...`, and `libc=...`. Proof labels are emitted inside artifacts and logs; they are not public Make targets.

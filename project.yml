@@ -53,14 +53,17 @@ targets:
         INFOPLIST_FILE: OrlixKernel/Sources/Support/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernel
         PRODUCT_NAME: OrlixKernel
+        ORLIX_PROFILE: appstore
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/OrlixKernel/Sources
           - $(SRCROOT)/OrlixKernel/Sources/include
+          # Temporary arch boot seam include only. Do not add generic Linux
+          # or generated Kbuild include roots to Xcode targets.
           - $(SRCROOT)/OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/include
           - $(SRCROOT)/OrlixHostAdapter/Sources
         OTHER_LDFLAGS:
           - $(inherited)
-          - $(SRCROOT)/Build/OrlixKernel/macho/selected/$(PLATFORM_NAME)/liborlixlinux.a
+          - $(SRCROOT)/Build/OrlixKernel/$(ORLIX_PROFILE)/$(PLATFORM_NAME)/OrlixKernel.a
         GCC_PREPROCESSOR_DEFINITIONS:
           - $(inherited)
           - ORLIX_APP_HOSTED_BOOT=1
@@ -98,7 +101,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernelHostProofTests
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/OrlixKernel/Sources/include
-          - $(SRCROOT)/OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/include
         GCC_PREPROCESSOR_DEFINITIONS:
           - $(inherited)
           - ORLIX_APP_HOSTED_BOOT=1

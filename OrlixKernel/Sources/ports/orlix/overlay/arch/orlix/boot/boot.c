@@ -2,7 +2,10 @@
 #include <asm/boot.h>
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
-#include "OrlixHostAdapter/boot/kernel_entry.h"
+typedef void (*OrlixHostKernelEntrypoint)(void);
+
+OrlixHostKernelEntrypoint OrlixHostResolveStartKernel(void);
+
 #define __init
 #else
 #include <linux/init.h>

@@ -29,15 +29,15 @@ ORLIX_KERNEL_BUILD_ROOT := $(CURDIR)/Build/OrlixKernel/build
 ORLIX_KERNEL_BUILD_DIR := $(ORLIX_KERNEL_BUILD_ROOT)/$(PROFILE)
 ORLIX_KERNEL_ELF_EXPERIMENT_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/experiments/kbuild-elf-object-set/$(PROFILE)
 ORLIX_KERNEL_ELF_EXPERIMENT_OBJECT_SET := $(ORLIX_KERNEL_ELF_EXPERIMENT_BUILD_DIR)/vmlinux.o
-ORLIX_KERNEL_MACHO_ROOT := $(CURDIR)/Build/OrlixKernel/macho/$(PROFILE)
-ORLIX_KERNEL_MACHO_SELECTED_ROOT := $(CURDIR)/Build/OrlixKernel/macho/selected
-ORLIX_KERNEL_MACHO_MANIFEST := $(ORLIX_KERNEL_MACHO_ROOT)/linux-object-manifest.txt
-ORLIX_KERNEL_MACHO_DEVICE_DIR := $(ORLIX_KERNEL_MACHO_ROOT)/iphoneos
-ORLIX_KERNEL_MACHO_SIMULATOR_DIR := $(ORLIX_KERNEL_MACHO_ROOT)/iphonesimulator
-ORLIX_KERNEL_MACHO_ARCHIVE_NAME := liborlixlinux.a
-ORLIX_MACHO_IOS_TARGET := arm64-apple-ios
-ORLIX_MACHO_IOS_SIMULATOR_TARGET := arm64-apple-ios-simulator
-ORLIX_MACHO_LINUX_SOURCES := arch/$(LINUX_ARCH)/boot/boot.c
+ORLIX_KERNEL_ARCHIVE_ROOT := $(CURDIR)/Build/OrlixKernel/$(PROFILE)
+ORLIX_KERNEL_ARCHIVE_MANIFEST := $(ORLIX_KERNEL_ARCHIVE_ROOT)/linux-object-manifest.txt
+ORLIX_KERNEL_DEVICE_ARCHIVE_DIR := $(ORLIX_KERNEL_ARCHIVE_ROOT)/iphoneos
+ORLIX_KERNEL_SIMULATOR_ARCHIVE_DIR := $(ORLIX_KERNEL_ARCHIVE_ROOT)/iphonesimulator
+ORLIX_KERNEL_ARCHIVE_NAME := OrlixKernel.a
+ORLIX_KERNEL_PROBE_ROOT := $(CURDIR)/Build/OrlixKernel/probes/$(PROFILE)
+ORLIX_IOS_TARGET := arm64-apple-ios
+ORLIX_IOS_SIMULATOR_TARGET := arm64-apple-ios-simulator
+ORLIX_KERNEL_LINUX_SOURCES := arch/$(LINUX_ARCH)/boot/boot.c
 ORLIX_KUNIT_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/kunit/$(PROFILE)
 ORLIX_TEMPORARY_KSELFTEST_INSTALL_DIR := $(CURDIR)/Build/OrlixKernel/kselftest/temporary/$(PROFILE)
 ORLIX_TEMPORARY_TEST_INITRAMFS_DIR := $(CURDIR)/Build/OrlixKernel/test-initramfs/temporary/$(PROFILE)/OrlixTestInitramfs.bundle
@@ -98,7 +98,7 @@ KSELFTEST_PROOF_LABEL :=
 KSELFTEST_PREREQS :=
 endif
 
-.PHONY: all setup-env build build-linux-mach-o test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install kbuild-elf-object-set-experiment xcodeproj run macho-linux-build-probes __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __macho-section-probe __macho-linux-archive __macho-start-kernel-dependency-probe __macho-start-kernel-link-probe __macho-framework-symbol-probe __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
+.PHONY: all setup-env build build-linux-mach-o test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install kbuild-elf-object-set-experiment xcodeproj run macho-linux-build-probes __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __macho-section-probe __macho-linux-archive __verify-linux-macho-header-discipline __verify-xcodegen-linux-boundary __macho-start-kernel-dependency-probe __macho-start-kernel-link-probe __macho-framework-symbol-probe __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
 
 all: build
 
@@ -120,7 +120,7 @@ setup-env: __bootstrap-linux-upstream xcodeproj
 
 build: __ios-simulator-xcframework
 
-build-linux-mach-o: __macho-section-probe __macho-linux-archive
+build-linux-mach-o: __macho-section-probe __macho-linux-archive __verify-linux-macho-header-discipline
 
 prepare scripts dtbs: __prepare-kbuild
 
@@ -149,7 +149,8 @@ test:
 xcodeproj:
 	@set -euo pipefail; \
 	command -v "$(XCODEGEN)" >/dev/null 2>&1 || { echo "XcodeGen is required; install xcodegen or set XCODEGEN=/path/to/xcodegen" >&2; exit 1; }; \
-	"$(XCODEGEN)" generate --spec project.yml
+	"$(XCODEGEN)" generate --spec project.yml; \
+	$(MAKE) __verify-xcodegen-linux-boundary
 
 run: __kernel-payload
 	@set -euo pipefail; \
@@ -175,8 +176,10 @@ clean:
 		Build/OrlixKernel/build \
 		Build/OrlixKernel/kunit \
 		Build/OrlixKernel/kselftest \
-		Build/OrlixKernel/macho \
+		Build/OrlixKernel/appstore \
+		Build/OrlixKernel/development \
 		Build/OrlixKernel/payload \
+		Build/OrlixKernel/probes \
 		Build/OrlixKernel/test-initramfs \
 		Build/OrlixKernel/tool-shims \
 		Build/OrlixKernel/xcframework \
@@ -446,13 +449,13 @@ __macho-section-probe: __validate-profile
 	otool_cmd="$(ORLIX_MACHO_OTOOL)"; \
 	command -v "$$cc" >/dev/null 2>&1 || { echo "clang is required for Mach-O section probe; set ORLIX_MACHO_CC=/path/to/clang" >&2; exit 1; }; \
 	command -v "$$otool_cmd" >/dev/null 2>&1 || { echo "otool is required for Mach-O section probe; set ORLIX_MACHO_OTOOL=/path/to/otool" >&2; exit 1; }; \
-	probe_dir="$(ORLIX_KERNEL_MACHO_ROOT)/probes/section"; \
-	for path in Build/OrlixKernel/macho "$(ORLIX_KERNEL_MACHO_ROOT)" "$$probe_dir"; do \
+	probe_dir="$(ORLIX_KERNEL_PROBE_ROOT)/macho-section"; \
+	for path in Build/OrlixKernel/probes "$(ORLIX_KERNEL_PROBE_ROOT)" "$$probe_dir"; do \
 		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked Mach-O probe path: $$path" >&2; exit 1; fi; \
 	done; \
 	mkdir -p "$$probe_dir"; \
 	probe_obj="$$probe_dir/section_probe.o"; \
-	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_MACHO_IOS_SIMULATOR_TARGET)" -isysroot / -ffreestanding -fno-builtin -fno-stack-protector -fno-objc-arc -nostdinc -c tools/investigations/macho-linux-build/section_probe.c -o "$$probe_obj"; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_IOS_SIMULATOR_TARGET)" -isysroot / -ffreestanding -fno-builtin -fno-stack-protector -fno-objc-arc -nostdinc -c tools/investigations/macho-linux-build/section_probe.c -o "$$probe_obj"; \
 	"$$otool_cmd" -l "$$probe_obj" > "$$probe_dir/otool.txt"; \
 	grep -q 'sectname __init' "$$probe_dir/otool.txt" || { echo "Mach-O section probe missing __init section" >&2; exit 1; }; \
 	grep -q 'sectname __initdata' "$$probe_dir/otool.txt" || { echo "Mach-O section probe missing __initdata section" >&2; exit 1; }; \
@@ -470,32 +473,35 @@ __macho-linux-archive: __prepare-kbuild
 	command -v "$$cc" >/dev/null 2>&1 || { echo "clang is required for Mach-O Linux builds; set ORLIX_MACHO_CC=/path/to/clang" >&2; exit 1; }; \
 	command -v "$$ar_cmd" >/dev/null 2>&1 || { echo "llvm-ar is required for Mach-O Linux archives; set ORLIX_MACHO_AR=/path/to/llvm-ar" >&2; exit 1; }; \
 	command -v "$$nm_cmd" >/dev/null 2>&1 || { echo "nm is required to verify Mach-O Linux symbols; set ORLIX_MACHO_NM=/path/to/nm" >&2; exit 1; }; \
-	root="$(ORLIX_KERNEL_MACHO_ROOT)"; \
-	case "$$root" in "$(CURDIR)"/Build/OrlixKernel/macho/*) ;; *) echo "refusing to write Mach-O Linux archive outside Build/OrlixKernel/macho: $$root" >&2; exit 1 ;; esac; \
-	selected_root="$(ORLIX_KERNEL_MACHO_SELECTED_ROOT)"; \
-	for path in Build/OrlixKernel/macho "$$root" "$$selected_root"; do \
+	root="$(ORLIX_KERNEL_ARCHIVE_ROOT)"; \
+	case "$$root" in "$(CURDIR)"/Build/OrlixKernel/$(PROFILE)) ;; *) echo "refusing to write OrlixKernel archive outside Build/OrlixKernel/$(PROFILE): $$root" >&2; exit 1 ;; esac; \
+	for path in Build/OrlixKernel "$$root"; do \
 		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked Mach-O Linux path: $$path" >&2; exit 1; fi; \
 	done; \
 	mkdir -p "$$root"; \
-	{ for src_rel in $(ORLIX_MACHO_LINUX_SOURCES); do printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; done; } > "$(ORLIX_KERNEL_MACHO_MANIFEST)"; \
+	{ for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; done; } > "$(ORLIX_KERNEL_ARCHIVE_MANIFEST)"; \
 	compile_slice() { \
 		platform="$$1"; \
 		target="$$2"; \
 		output_dir="$$root/$$platform"; \
 		obj_dir="$$output_dir/objects"; \
-		archive="$$output_dir/$(ORLIX_KERNEL_MACHO_ARCHIVE_NAME)"; \
+		archive="$$output_dir/$(ORLIX_KERNEL_ARCHIVE_NAME)"; \
 		rm -rf "$$output_dir"; \
 		mkdir -p "$$obj_dir"; \
 		objs=(); \
-		for src_rel in $(ORLIX_MACHO_LINUX_SOURCES); do \
+		for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do \
 			src="$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; \
 			[ -s "$$src" ] || { echo "missing Mach-O Linux source: $$src" >&2; exit 1; }; \
 			obj_name="$${src_rel//\//_}.o"; \
 			obj="$$obj_dir/$$obj_name"; \
 			dep="$$obj_dir/$${obj_name%.o}.d"; \
-			/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x c -ffreestanding -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -DORLIX_APP_HOSTED_BOOT=1 -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/kconfig.h" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -I"$(CURDIR)/OrlixKernel/Sources" -I"$(CURDIR)/OrlixHostAdapter/Sources" -I"$(CURDIR)" -MMD -MF "$$dep" -c "$$src" -o "$$obj"; \
+			/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x c -ffreestanding -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -DORLIX_APP_HOSTED_BOOT=1 -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/kconfig.h" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -MMD -MF "$$dep" -c "$$src" -o "$$obj"; \
 			if grep -E '(/Applications/|/Library/Developer/CommandLineTools/SDKs/|/System/Library/Frameworks|/usr/include)' "$$dep"; then \
 				echo "Mach-O Linux object included a host SDK or libc header: $$dep" >&2; \
+				exit 1; \
+			fi; \
+			if grep -E '(OrlixHostAdapter/Sources|OrlixKernel/Sources/include|OrlixKernel/Sources/boot|OrlixMLibC/Sources|Build/OrlixMLibC/sysroot|/usr/local/include|/opt/homebrew/include)' "$$dep"; then \
+				echo "Mach-O Linux object included host, OrlixMLibC, or product headers: $$dep" >&2; \
 				exit 1; \
 			fi; \
 			objs+=("$$obj"); \
@@ -507,14 +513,63 @@ __macho-linux-archive: __prepare-kbuild
 		grep -q '_arch_boot_params' "$$output_dir/symbols.txt" || { echo "Mach-O Linux archive missing _arch_boot_params: $$archive" >&2; exit 1; }; \
 		echo "built Mach-O Linux archive: $$archive ($$target)"; \
 	}; \
-	compile_slice iphoneos "$(ORLIX_MACHO_IOS_TARGET)"; \
-	compile_slice iphonesimulator "$(ORLIX_MACHO_IOS_SIMULATOR_TARGET)"; \
-	rm -rf "$$selected_root"; \
-	for platform in iphoneos iphonesimulator; do \
-		mkdir -p "$$selected_root/$$platform"; \
-		cp "$$root/$$platform/$(ORLIX_KERNEL_MACHO_ARCHIVE_NAME)" "$$selected_root/$$platform/$(ORLIX_KERNEL_MACHO_ARCHIVE_NAME)"; \
+	compile_slice iphoneos "$(ORLIX_IOS_TARGET)"; \
+	compile_slice iphonesimulator "$(ORLIX_IOS_SIMULATOR_TARGET)"; \
+	echo "wrote OrlixKernel archive manifest: $(ORLIX_KERNEL_ARCHIVE_MANIFEST)"
+
+__verify-linux-macho-header-discipline:
+	@set -euo pipefail; \
+	shopt -s nullglob; \
+	deps=("$(ORLIX_KERNEL_ARCHIVE_ROOT)"/*/objects/*.d); \
+	if [ "$${#deps[@]}" -eq 0 ]; then \
+		echo "missing Mach-O Linux dependency files under $(ORLIX_KERNEL_ARCHIVE_ROOT)" >&2; \
+		exit 1; \
+	fi; \
+	for dep in "$${deps[@]}"; do \
+		if grep -E '(/Applications/|/Library/Developer/CommandLineTools/SDKs/|/System/Library/Frameworks|/usr/include)' "$$dep"; then \
+			echo "Mach-O Linux dependency file includes Apple SDK or host libc headers: $$dep" >&2; \
+			exit 1; \
+		fi; \
+		if grep -E '(OrlixHostAdapter/Sources|OrlixKernel/Sources/include|OrlixKernel/Sources/boot|OrlixMLibC/Sources|Build/OrlixMLibC/sysroot|/usr/local/include|/opt/homebrew/include)' "$$dep"; then \
+			echo "Mach-O Linux dependency file includes host, OrlixMLibC, or product headers: $$dep" >&2; \
+			exit 1; \
+		fi; \
 	done; \
-	echo "wrote Mach-O Linux object manifest: $(ORLIX_KERNEL_MACHO_MANIFEST)"
+	echo "verified Mach-O Linux header discipline: $(ORLIX_KERNEL_ARCHIVE_ROOT)"
+
+__verify-xcodegen-linux-boundary:
+	@set -euo pipefail; \
+	project="$(ORLIX_XCODE_PROJECT)"; \
+	[ -d "$$project" ] || { echo "missing generated Xcode project: $$project" >&2; exit 1; }; \
+	if grep -R 'OrlixKernel/Sources/upstream/linux-6.12' "$$project"; then \
+		echo "generated Xcode project references upstream Linux source" >&2; \
+		exit 1; \
+	fi; \
+	if grep -R 'Build/OrlixKernel/linux-6.12-port' "$$project"; then \
+		echo "generated Xcode project references disposable Linux port source" >&2; \
+		exit 1; \
+	fi; \
+	if grep -R 'OrlixKernel/Sources/ports/orlix/overlay/.*\.c' "$$project"; then \
+		echo "generated Xcode project references Linux overlay C source" >&2; \
+		exit 1; \
+	fi; \
+	if grep -R 'Build/OrlixKernel/build' "$$project"; then \
+		echo "generated Xcode project references Linux Kbuild output" >&2; \
+		exit 1; \
+	fi; \
+	if grep -R 'Build/OrlixKernel/.*/objects' "$$project"; then \
+		echo "generated Xcode project references Mach-O Linux object files" >&2; \
+		exit 1; \
+	fi; \
+	if grep -R 'Build/OrlixKernel/probes' "$$project"; then \
+		echo "generated Xcode project references OrlixKernel probe outputs" >&2; \
+		exit 1; \
+	fi; \
+	if grep -R 'Build/OrlixMLibC/kernel-headers' "$$project"; then \
+		echo "generated Xcode project references installed OrlixMLibC UAPI headers" >&2; \
+		exit 1; \
+	fi; \
+	echo "verified generated Xcode project does not compile Linux-owned sources"
 
 __macho-start-kernel-dependency-probe: __prepare-kbuild
 	@set -euo pipefail; \
@@ -522,12 +577,12 @@ __macho-start-kernel-dependency-probe: __prepare-kbuild
 	nm_cmd="$(ORLIX_MACHO_NM)"; \
 	command -v "$$cc" >/dev/null 2>&1 || { echo "clang is required for start_kernel dependency probe; set ORLIX_MACHO_CC=/path/to/clang" >&2; exit 1; }; \
 	command -v "$$nm_cmd" >/dev/null 2>&1 || { echo "nm is required for start_kernel dependency probe; set ORLIX_MACHO_NM=/path/to/nm" >&2; exit 1; }; \
-	probe_dir="$(ORLIX_KERNEL_MACHO_ROOT)/probes/start_kernel"; \
+	probe_dir="$(ORLIX_KERNEL_PROBE_ROOT)/macho-start-kernel"; \
 	mkdir -p "$$probe_dir"; \
 	log="$$probe_dir/compile.log"; \
 	status="$$probe_dir/status.txt"; \
 	set +e; \
-	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_MACHO_IOS_SIMULATOR_TARGET)" -isysroot / -x c -ffreestanding -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/kconfig.h" -include "$(CURDIR)/tools/investigations/macho-linux-build/macho_section_probe_compat.h" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -MMD -MF "$$probe_dir/init_main.d" -c "$(ORLIX_KERNEL_PORT_DIR)/init/main.c" -o "$$probe_dir/init_main.o" > "$$log" 2>&1; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_IOS_SIMULATOR_TARGET)" -isysroot / -x c -ffreestanding -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/kconfig.h" -include "$(CURDIR)/tools/investigations/macho-linux-build/macho_section_probe_compat.h" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -MMD -MF "$$probe_dir/init_main.d" -c "$(ORLIX_KERNEL_PORT_DIR)/init/main.c" -o "$$probe_dir/init_main.o" > "$$log" 2>&1; \
 	rc="$$?"; \
 	set -e; \
 	if [ "$$rc" -eq 0 ]; then \
@@ -549,18 +604,18 @@ __macho-start-kernel-link-probe: __macho-start-kernel-dependency-probe __macho-l
 	nm_cmd="$(ORLIX_MACHO_NM)"; \
 	command -v "$$cc" >/dev/null 2>&1 || { echo "clang is required for start_kernel link probe; set ORLIX_MACHO_CC=/path/to/clang" >&2; exit 1; }; \
 	command -v "$$nm_cmd" >/dev/null 2>&1 || { echo "nm is required for start_kernel link probe; set ORLIX_MACHO_NM=/path/to/nm" >&2; exit 1; }; \
-	probe_dir="$(ORLIX_KERNEL_MACHO_ROOT)/probes/start_kernel"; \
+	probe_dir="$(ORLIX_KERNEL_PROBE_ROOT)/macho-start-kernel"; \
 	status="$$probe_dir/link-status.txt"; \
 	log="$$probe_dir/link.log"; \
 	object="$$probe_dir/init_main.o"; \
 	bounds_object="$$probe_dir/section_bounds.o"; \
-	archive="$(ORLIX_KERNEL_MACHO_SIMULATOR_DIR)/$(ORLIX_KERNEL_MACHO_ARCHIVE_NAME)"; \
+	archive="$(ORLIX_KERNEL_SIMULATOR_ARCHIVE_DIR)/$(ORLIX_KERNEL_ARCHIVE_NAME)"; \
 	output="$$probe_dir/start_kernel_link.dylib"; \
 	[ -s "$$object" ] || { echo "missing compiled start_kernel probe object: $$object" >&2; exit 1; }; \
 	[ -s "$$archive" ] || { echo "missing Mach-O Linux simulator archive: $$archive" >&2; exit 1; }; \
-	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_MACHO_IOS_SIMULATOR_TARGET)" -isysroot / -ffreestanding -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -c tools/investigations/macho-linux-build/start_kernel_section_bounds.c -o "$$bounds_object"; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_IOS_SIMULATOR_TARGET)" -isysroot / -ffreestanding -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -c tools/investigations/macho-linux-build/start_kernel_section_bounds.c -o "$$bounds_object"; \
 	set +e; \
-	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_MACHO_IOS_SIMULATOR_TARGET)" -isysroot / -dynamiclib -nostdlib -Wl,-undefined,error "$$object" "$$bounds_object" "$$archive" -o "$$output" > "$$log" 2>&1; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_IOS_SIMULATOR_TARGET)" -isysroot / -dynamiclib -nostdlib -Wl,-undefined,error "$$object" "$$bounds_object" "$$archive" -o "$$output" > "$$log" 2>&1; \
 	rc="$$?"; \
 	set -e; \
 	if [ "$$rc" -eq 0 ]; then \
@@ -583,10 +638,10 @@ __macho-framework-symbol-probe:
 	nm_cmd="$(ORLIX_MACHO_NM)"; \
 	framework_binary="$(ORLIX_IOS_SIMULATOR_FRAMEWORK)/OrlixKernel"; \
 	[ -s "$$framework_binary" ] || { echo "missing OrlixKernel framework binary: $$framework_binary" >&2; exit 1; }; \
-	mkdir -p "$(ORLIX_KERNEL_MACHO_SIMULATOR_DIR)"; \
-	"$$nm_cmd" -gU "$$framework_binary" > "$(ORLIX_KERNEL_MACHO_SIMULATOR_DIR)/framework-symbols.txt"; \
-	grep -q '_arch_boot_entry' "$(ORLIX_KERNEL_MACHO_SIMULATOR_DIR)/framework-symbols.txt" || { echo "OrlixKernel.framework missing _arch_boot_entry" >&2; exit 1; }; \
-	grep -q '_arch_boot_params' "$(ORLIX_KERNEL_MACHO_SIMULATOR_DIR)/framework-symbols.txt" || { echo "OrlixKernel.framework missing _arch_boot_params" >&2; exit 1; }; \
+	mkdir -p "$(ORLIX_KERNEL_PROBE_ROOT)"; \
+	"$$nm_cmd" -gU "$$framework_binary" > "$(ORLIX_KERNEL_PROBE_ROOT)/framework-symbols.txt"; \
+	grep -q '_arch_boot_entry' "$(ORLIX_KERNEL_PROBE_ROOT)/framework-symbols.txt" || { echo "OrlixKernel.framework missing _arch_boot_entry" >&2; exit 1; }; \
+	grep -q '_arch_boot_params' "$(ORLIX_KERNEL_PROBE_ROOT)/framework-symbols.txt" || { echo "OrlixKernel.framework missing _arch_boot_params" >&2; exit 1; }; \
 	echo "verified Mach-O Linux symbols in OrlixKernel.framework: $$framework_binary"
 
 __linux-userspace-sysroot:

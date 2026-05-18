@@ -162,6 +162,14 @@ A `vmlinux`-style artifact may exist only as an optional developer/debug artifac
 
 `OrlixKernel.xcframework` packaging or app linking must happen early enough to support iOS-hosted kernel-interface proof and later product runtime proof, and must carry the app-hosted OrlixKernel integration that the iOS app will actually execute. Boot-stub packaging is not product proof.
 
+The Linux compile lane emits per-profile, per-platform OrlixKernel static archives:
+
+```text
+Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a
+```
+
+Xcode links the matching archive into `OrlixKernel.framework`, and the framework slices are packaged into `OrlixKernel.xcframework`. Investigation and probe outputs may use explicit Mach-O probe names under `Build/OrlixKernel/probes/`, but the normal framework link input uses the product-named archive path.
+
 The App Store and development profiles should validate the same product scope. Development may enable explicit debug and testing affordances, but it must not drift into a broader Linux-visible product shape. Milestones that claim iOS packaging, boot, runtime, or Linux behavior must validate the same XCTest suite and assertions across App Store and development profiles on both `iphoneos` and `iphonesimulator`.
 
 Orlix userspace ABI is profile-invariant. App Store, development, simulator, CI, and debug builds may produce separate artifacts, but installed UAPI headers, syscall numbers, errno values, signal ABI, ioctl payloads, userspace-visible struct layouts, OrlixMLibC ABI, dynamic-loader contract, package ABI, and observable Linux userspace behavior must remain the same. Profile-specific paths, signing, diagnostics, tracing, assertions, host mediation, and test knobs are allowed only when they do not alter product ABI. Profile ABI drift is release-blocking.

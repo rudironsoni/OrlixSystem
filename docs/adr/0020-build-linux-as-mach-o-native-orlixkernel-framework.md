@@ -72,6 +72,6 @@ Unsupported section classes may be stubbed only when the selected first slice ca
 
 ## Initial Build Slice
 
-The first Mach-O-native lane prepares the generated Orlix Linux port tree from `OrlixKernel/Sources/upstream` and `OrlixKernel/Sources/ports/orlix`, runs Kbuild preparation and DTB generation, compiles selected Linux-owned `arch/orlix` source from the generated tree with iOS Mach-O target triples, archives those objects as `liborlixlinux.a`, links the simulator archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
+The first Mach-O-native lane prepares the generated Orlix Linux port tree from `OrlixKernel/Sources/upstream` and `OrlixKernel/Sources/ports/orlix`, runs Kbuild preparation and DTB generation, compiles selected Linux-owned `arch/orlix` source from the generated tree with iOS Mach-O target triples, archives those objects as `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`, links the matching archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
 
 The first slice does not compile or link real upstream `init/main.c` successfully. A dependency probe records the first blockers. `start_kernel()` remains unavailable until the real upstream Linux provider can be compiled and linked as Mach-O.
