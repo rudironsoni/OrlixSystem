@@ -284,6 +284,8 @@ The dependency-proof path where an iOS host app or XCTest target launches `Orlix
 
 The early kselftest lane installed under `Build/OrlixKernel/kselftest/temporary/<profile>/` and staged with `proof_lane=temporary-kselftest-kernel-interface`. It may use a foreign Linux libc, bootstrap Debian arm64 sysroot, or nolibc-style harness. It is not OrlixMLibC proof, Orlix userspace ABI proof, package proof, or product runtime proof.
 
+`scripts/bootstrap-orlix-linux-userspace-sysroot.sh` is temporary infrastructure for the `kselftest libc=linux` kernel-interface lane. It must not feed product packaging, OrlixMLibC, package builds, or final userspace ABI proof. It must be retired or bypassed once the OrlixMLibC kselftest lane is usable.
+
 ## OrlixMLibC Kselftest Syscall/UAPI Lane
 
 The later kselftest lane installed under `Build/OrlixMLibC/kselftest/<profile>/` and staged with `proof_lane=orlixmlibc-kselftest-syscall-uapi`. It requires an OrlixMLibC sysroot plus installed Orlix UAPI headers and proves selected OrlixMLibC-to-OrlixKernel syscall/UAPI behavior.
