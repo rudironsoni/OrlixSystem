@@ -98,7 +98,7 @@ KSELFTEST_PROOF_LABEL :=
 KSELFTEST_PREREQS :=
 endif
 
-.PHONY: all setup-env build build-linux-mach-o test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install kbuild-elf-object-set-experiment xcodeproj run macho-linux-build-probes __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __macho-section-probe __macho-linux-archive __verify-linux-macho-header-discipline __verify-xcodegen-linux-boundary __macho-start-kernel-dependency-probe __macho-start-kernel-link-probe __macho-framework-symbol-probe __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
+.PHONY: all setup-env build build-linux-mach-o test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install kbuild-elf-object-set-experiment xcodeproj run macho-linux-build-probes __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __macho-section-probe __macho-linux-archive __verify-linux-macho-header-discipline __verify-xcodegen-linux-boundary __macho-start-kernel-dependency-probe __macho-start-kernel-link-probe __macho-framework-symbol-probe __macho-section-export-policy-probe __lint __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
 
 all: build
 
@@ -538,38 +538,24 @@ __verify-linux-macho-header-discipline:
 	echo "verified Mach-O Linux header discipline: $(ORLIX_KERNEL_ARCHIVE_ROOT)"
 
 __verify-xcodegen-linux-boundary:
+	@./scripts/lint-orlix-xcodegen-boundary.sh --project "$(ORLIX_XCODE_PROJECT)"
+
+__macho-section-export-policy-probe:
+	@tools/investigations/orlix-mach-o-sections/run-probe.sh \
+		--profile "$(PROFILE)" \
+		--cc "$(ORLIX_MACHO_CC)" \
+		--otool "$(ORLIX_MACHO_OTOOL)" \
+		--target "$(ORLIX_IOS_SIMULATOR_TARGET)" \
+		--output "$(ORLIX_KERNEL_PROBE_ROOT)/orlix-mach-o-sections"
+
+__lint: __macho-section-export-policy-probe
 	@set -euo pipefail; \
-	project="$(ORLIX_XCODE_PROJECT)"; \
-	[ -d "$$project" ] || { echo "missing generated Xcode project: $$project" >&2; exit 1; }; \
-	if grep -R 'OrlixKernel/Sources/upstream/linux-6.12' "$$project"; then \
-		echo "generated Xcode project references upstream Linux source" >&2; \
-		exit 1; \
-	fi; \
-	if grep -R 'Build/OrlixKernel/linux-6.12-port' "$$project"; then \
-		echo "generated Xcode project references disposable Linux port source" >&2; \
-		exit 1; \
-	fi; \
-	if grep -R 'OrlixKernel/Sources/ports/orlix/overlay/.*\.c' "$$project"; then \
-		echo "generated Xcode project references Linux overlay C source" >&2; \
-		exit 1; \
-	fi; \
-	if grep -R 'Build/OrlixKernel/build' "$$project"; then \
-		echo "generated Xcode project references Linux Kbuild output" >&2; \
-		exit 1; \
-	fi; \
-	if grep -R 'Build/OrlixKernel/.*/objects' "$$project"; then \
-		echo "generated Xcode project references Mach-O Linux object files" >&2; \
-		exit 1; \
-	fi; \
-	if grep -R 'Build/OrlixKernel/probes' "$$project"; then \
-		echo "generated Xcode project references OrlixKernel probe outputs" >&2; \
-		exit 1; \
-	fi; \
-	if grep -R 'Build/OrlixMLibC/kernel-headers' "$$project"; then \
-		echo "generated Xcode project references installed OrlixMLibC UAPI headers" >&2; \
-		exit 1; \
-	fi; \
-	echo "verified generated Xcode project does not compile Linux-owned sources"
+	./scripts/lint-orlix-header-boundaries.sh --profile "$(PROFILE)" --archive-root "$(ORLIX_KERNEL_ARCHIVE_ROOT)"; \
+	./scripts/lint-orlix-uapi-boundaries.sh --profile "$(PROFILE)" --headers "$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)/include"; \
+	./scripts/lint-orlix-xcodegen-boundary.sh --project "$(ORLIX_XCODE_PROJECT)"; \
+	./scripts/lint-orlix-macho-sections.sh --profile "$(PROFILE)" --archive-root "$(ORLIX_KERNEL_ARCHIVE_ROOT)" --otool "$(ORLIX_MACHO_OTOOL)"; \
+	./scripts/lint-orlix-symbols.sh --framework-binary "$(ORLIX_IOS_SIMULATOR_FRAMEWORK)/OrlixKernel" --nm "$(ORLIX_MACHO_NM)"; \
+	./scripts/lint-orlix-linux-source-manifest.sh --profile "$(PROFILE)" --manifest "$(ORLIX_KERNEL_ARCHIVE_MANIFEST)" --reasons "OrlixKernel/Sources/ports/orlix/macho-source-reasons.tsv"
 
 __macho-start-kernel-dependency-probe: __prepare-kbuild
 	@set -euo pipefail; \

@@ -1,0 +1,3 @@
+# Product Mach-O Linux source manifest reasons.
+# Format: source<TAB>reason
+arch/orlix/boot/boot.c	blocker=arch_boot_entry; reason=app-hosted OrlixBoot handoff into arch-owned Linux boot seam
