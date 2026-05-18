@@ -22,4 +22,4 @@ The serial-style console is available for early, debug, or fallback use.
 
 Virtio-console is the normal interactive direction where upstream Linux behavior fits.
 
-`arch/orlix` may provide a minimal early console before normal console drivers register.
+`arch/orlix` code from `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix` may provide a minimal early console before normal console drivers register.

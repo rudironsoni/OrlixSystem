@@ -12,7 +12,7 @@ Linux already has upstream virtio device classes for many virtual-device needs.
 
 ## Decision
 
-Orlix will use upstream Linux virtio device classes wherever they fit. Orlix-specific code supplies transport and backend mechanics. Upstream Linux drivers own Linux-visible device behavior.
+Orlix will use upstream Linux virtio device classes wherever they fit. Orlix-specific code under `OrlixKernel/Sources/ports/orlix/overlay/drivers/orlix` supplies transport and backend mechanics. Upstream Linux drivers own Linux-visible device behavior.
 
 ## Consequences
 

@@ -10,12 +10,27 @@ OrlixKernel is Linux. It does not provide a shell, libc, package manager, public
 
 Orlix has four important source areas:
 
-- `Linux/upstream/linux-6.12` is generated upstream Linux source. Treat it as read-only input.
-- `Linux/ports/orlix` is where durable Orlix Linux port inputs live.
-- `OrlixMLibC` is the top-level component for the mlibc-based Orlix userspace C library.
-- `OrlixHostAdapter` is where private iOS and Darwin mechanics live.
+- `OrlixKernel/Sources/upstream/linux-6.12` is generated upstream Linux source. Treat it as read-only input.
+- `OrlixKernel/Sources/ports/orlix` is where durable Orlix Linux port inputs live.
+- `OrlixMLibC/Sources` is the top-level component area for the mlibc-based Orlix userspace C library.
+- `OrlixHostAdapter/Sources` is where private iOS and Darwin mechanics live.
 
-The old local kernel implementation under `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` is not the target architecture. Do not add new Linux subsystem behavior there. Useful behavior should be migrated by ownership into upstream Linux-native paths, then those directories should disappear.
+Project source and test roots are organized consistently:
+
+```text
+OrlixKernel/Sources
+OrlixKernel/Tests
+OrlixHostAdapter/Sources
+OrlixHostAdapter/Tests
+OrlixMLibC/Sources
+OrlixMLibC/Tests
+OrlixTerminal/Sources
+OrlixTerminal/Tests
+```
+
+Each project has its own `Makefile`; the top-level `Makefile` orchestrates calls into those project Makefiles.
+
+Legacy local-kernel prototype code is quarantined under `LegacyOrlix/`. It is not the target architecture and is not product proof. Do not add new Linux subsystem behavior there or restore `OrlixKernel/fs`, `OrlixKernel/kernel`, or `OrlixKernel/runtime`. Useful behavior should be migrated by ownership into upstream Linux-native paths.
 
 ## Proof Model
 
@@ -36,7 +51,7 @@ Do not claim product runtime readiness from KUnit, temporary kselftest, boot log
 
 ## Build And Test Commands
 
-The top-level Makefile keeps a small, Linux-shaped interface:
+The top-level Makefile keeps a small, Linux-shaped interface and delegates to `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`:
 
 ```bash
 make help
@@ -75,7 +90,7 @@ Do not run kselftest or KUnit on Darwin and do not use a VM as product proof. Do
 
 Both `iphoneos` and `iphonesimulator` are iOS proof destinations. Milestones must validate the same scope on both.
 
-XCTest suites are organized under `Tests/XCTest/`. `OrlixKernelHostProofTests` launches the bootloader-shaped product API, `OrlixLinuxProofOutputParserTests` parses Linux-native KUnit and kselftest output fixtures, and `OrlixHostAdapterTests` covers narrow host mechanics. They do not own Linux subsystem assertions.
+XCTest suites are organized under project-local test trees. `OrlixKernel/Tests/XCTest/OrlixKernelHostProofTests` launches the bootloader-shaped product API, `OrlixKernel/Tests/XCTest/OrlixLinuxProofOutputParserTests` parses Linux-native KUnit and kselftest output fixtures under `OrlixKernel/Tests/Fixtures`, and `OrlixHostAdapter/Tests/XCTest/OrlixHostAdapterTests` covers narrow host mechanics. Future OrlixMLibC and OrlixTerminal tests belong under `OrlixMLibC/Tests` and `OrlixTerminal/Tests`. They do not own Linux subsystem assertions.
 
 Milestone 5 boot-to-virtio-probe proof keeps the dependency chain honest. It verifies that generated profile DTS files describe virtio-mmio probe-shape devices, that the selected generated profile defconfig enables upstream OF, virtio-mmio, and virtio-block probe paths, and that Orlix architecture boot handoff state is covered by kernel dependency or kernel-interface proof.
 
@@ -86,7 +101,7 @@ Milestone 5 does not prove `/dev/vda`, `/dev/vdb`, virtio-block request I/O, hos
 The pristine upstream source is generated at:
 
 ```text
-Linux/upstream/linux-6.12
+OrlixKernel/Sources/upstream/linux-6.12
 ```
 
 The disposable upstream-plus-Orlix port tree is generated at:
@@ -95,14 +110,14 @@ The disposable upstream-plus-Orlix port tree is generated at:
 Build/OrlixKernel/linux-6.12-port
 ```
 
-If a change should survive regeneration, put it in `Linux/ports/orlix`, not in a generated tree.
+If a change should survive regeneration, put it in `OrlixKernel/Sources/ports/orlix`, not in a generated tree.
 
 ## Port Inputs
 
 Durable Orlix Linux port inputs live under:
 
 ```text
-Linux/ports/orlix/
+OrlixKernel/Sources/ports/orlix/
   overlay/
   patches/
   configs/

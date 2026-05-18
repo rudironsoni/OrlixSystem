@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The repository contains a local kernel prototype under `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime`. That direction requires Orlix to reimplement Linux core subsystems locally.
+The repository historically contained an active local kernel prototype under `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime`. That material is now quarantined under `LegacyOrlix/`, because that direction requires Orlix to reimplement Linux core subsystems locally.
 
 The product goal is real Linux userspace compatibility inside an iOS app boundary.
 
@@ -20,6 +20,6 @@ When upstream Linux already provides the surface or implementation approach for 
 
 New Linux subsystem behavior must not be added to the local prototype tree.
 
-Useful behavior from the prototype may be migrated by ownership into upstream Linux-native paths, `arch/orlix`, Linux drivers, boot code, or host-adapter seams.
+Useful behavior from the prototype may be migrated by ownership into upstream Linux-native paths under `OrlixKernel/Sources/ports/orlix/overlay`, `OrlixKernel/Sources/boot`, Linux drivers, or `OrlixHostAdapter/Sources` seams.
 
-The end state has no `OrlixKernel/fs`, `OrlixKernel/kernel`, or `OrlixKernel/runtime` directories.
+The active product tree has no `OrlixKernel/fs`, `OrlixKernel/kernel`, or `OrlixKernel/runtime` directories. Legacy reference material is quarantined under `LegacyOrlix/` until migrated or intentionally retired.

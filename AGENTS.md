@@ -40,16 +40,27 @@ Upstream Linux owns Linux core behavior:
 - syscall semantics
 - exec and interpreter behavior
 
+Project-local source and test roots are fixed:
+
+- `OrlixKernel/Sources`
+- `OrlixKernel/Tests`
+- `OrlixHostAdapter/Sources`
+- `OrlixHostAdapter/Tests`
+- `OrlixMLibC/Sources`
+- `OrlixMLibC/Tests`
+- `OrlixTerminal/Sources`
+- `OrlixTerminal/Tests`
+
 Durable Orlix Linux port inputs live under:
 
-- `Linux/ports/orlix/overlay/arch/orlix`
-- `Linux/ports/orlix/overlay/drivers/orlix`
-- `Linux/ports/orlix/configs`
-- `Linux/ports/orlix/patches`
+- `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix`
+- `OrlixKernel/Sources/ports/orlix/overlay/drivers/orlix`
+- `OrlixKernel/Sources/ports/orlix/configs`
+- `OrlixKernel/Sources/ports/orlix/patches`
 
 Generated upstream source is read-only input:
 
-- `Linux/upstream/linux-6.12`
+- `OrlixKernel/Sources/upstream/linux-6.12`
 
 Generated Orlix port source is disposable:
 
@@ -57,11 +68,23 @@ Generated Orlix port source is disposable:
 
 Host mechanics live only in:
 
-- `OrlixHostAdapter`
+- `OrlixHostAdapter/Sources`
 
 Orlix userspace libc inputs live under:
 
-- `OrlixMLibC`
+- `OrlixMLibC/Sources`
+
+Orlix userspace libc tests live under:
+
+- `OrlixMLibC/Tests`
+
+The iOS host app lives under:
+
+- `OrlixTerminal/Sources`
+
+The iOS host app tests live under:
+
+- `OrlixTerminal/Tests`
 
 Generated OrlixMLibC and userspace artifacts are disposable:
 
@@ -69,13 +92,13 @@ Generated OrlixMLibC and userspace artifacts are disposable:
 
 The public product header lives in:
 
-- `OrlixKernel/include`
+- `OrlixKernel/Sources/include`
 
 ## Local Kernel Prototype Rule
 
-`OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` are not target implementation paths.
+Legacy local-kernel prototype code lives under `LegacyOrlix/`. It is not a target implementation path.
 
-Do not add new Linux subsystem behavior there. Read those directories only as migration reference. Useful behavior must move by ownership into upstream Linux, `arch/orlix`, Linux-native drivers, boot code, or host-adapter seams. The end state has no `OrlixKernel/fs`, `OrlixKernel/kernel`, or `OrlixKernel/runtime` directories.
+Do not add new Linux subsystem behavior there. Read `LegacyOrlix/` only as migration reference. Useful behavior must move by ownership into upstream Linux, `arch/orlix`, Linux-native drivers, boot code, or host-adapter seams. `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` must not reappear.
 
 ## Virtio-First Rule
 
@@ -133,7 +156,7 @@ Linux kernel internal helper sources are not libc permission slips. Add them to 
 
 ## OrlixMLibC Rule
 
-`OrlixMLibC` is a top-level component, not part of the Linux kernel port. It tracks upstream mlibc through generated/read-only upstream input plus durable Orlix sysdeps, configs, and patches.
+`OrlixMLibC` is a top-level component, not part of the Linux kernel port. It tracks upstream mlibc through generated/read-only upstream input plus durable Orlix sysdeps, configs, and patches under `OrlixMLibC/Sources`. Its tests live under `OrlixMLibC/Tests`.
 
 OrlixMLibC may have an Orlix sysdeps identity only where mlibc needs an OS-port hook. It must call Linux-shaped syscalls and expose glibc/musl source-compatible Linux behavior. Do not add an Orlix-specific application ABI.
 
@@ -166,7 +189,7 @@ Do not claim product runtime readiness from KUnit, temporary kselftest, no-init 
 
 ## Make Target Rule
 
-The top-level Makefile's public interface must stay small and Linux-shaped. Prefer conventional targets such as `build`, `prepare`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, and `test`.
+There is one Makefile per project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`. The top-level `Makefile` orchestrates those project Makefiles and keeps its public interface small and Linux-shaped. Prefer conventional targets such as `build`, `prepare`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, and `test`.
 
 Select Orlix-specific scope with variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=linux` or `libc=orlixmlibc`. Do not add user-facing milestone, proof-lane, or artifact-path targets such as `proof-*`, `build-temporary-*`, `stage-temporary-*`, or `test-all`; proof labels belong in artifact metadata and logs.
 
@@ -176,10 +199,10 @@ Tests for the old local kernel prototype are migration reference only. They are 
 
 Target test ownership is split by proof lane:
 
-- KUnit lives in Linux-owned overlay paths such as `Linux/ports/orlix/overlay/arch/orlix/**/<owner>_test.c` and `Linux/ports/orlix/overlay/drivers/orlix/**/<owner>_test.c`, selected by `Linux/ports/orlix/overlay/arch/orlix/.kunitconfig`.
-- kselftest lives under `Linux/ports/orlix/overlay/tools/testing/selftests/orlix/` and must run through upstream kselftest install plus `run_kselftest.sh -c orlix`.
-- XCTest lives under `Tests/XCTest/` and owns iOS host launch, packaging, output collection, parser behavior, and narrow `OrlixHostAdapter` mechanics only.
-- Local prototype tests live only under `Tests/MigrationReference/LocalKernelPrototype/` until migrated or deleted.
+- KUnit lives in Linux-owned overlay paths such as `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/**/<owner>_test.c` and `OrlixKernel/Sources/ports/orlix/overlay/drivers/orlix/**/<owner>_test.c`, selected by `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`.
+- kselftest lives under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/` and must run through upstream kselftest install plus `run_kselftest.sh -c orlix`.
+- XCTest lives under project-local `Tests/XCTest/` trees: `OrlixKernel/Tests/XCTest`, `OrlixHostAdapter/Tests/XCTest`, `OrlixMLibC/Tests/XCTest` when needed, and `OrlixTerminal/Tests/XCTest` when needed. XCTest owns iOS host launch, packaging, output collection, parser behavior, and narrow `OrlixHostAdapter` mechanics only.
+- Local prototype tests live only under `LegacyOrlix/Tests/MigrationReference/LocalKernelPrototype/` until migrated or deleted.
 
 Temporary kselftests use `Build/OrlixKernel/kselftest/temporary/<profile>/` and the proof label `temporary-kselftest-kernel-interface`. OrlixMLibC-built kselftests use `Build/OrlixMLibC/kselftest/<profile>/` and the proof label `orlixmlibc-kselftest-syscall-uapi`.
 

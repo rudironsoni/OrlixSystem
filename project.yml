@@ -22,13 +22,13 @@ targets:
     type: framework
     platform: iOS
     sources:
-      - path: boot
+      - path: OrlixKernel/Sources/boot
         includes:
           - "*.c"
-      - path: OrlixHostAdapter/boot
+      - path: OrlixHostAdapter/Sources/OrlixHostAdapter/boot
         includes:
           - "*.c"
-      - path: OrlixKernel/include
+      - path: OrlixKernel/Sources/include
         buildPhase: headers
         headerVisibility: public
     dependencies:
@@ -50,13 +50,14 @@ targets:
     settings:
       base:
         DEFINES_MODULE: YES
-        INFOPLIST_FILE: OrlixKernel/Support/Info.plist
+        INFOPLIST_FILE: OrlixKernel/Sources/Support/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernel
         PRODUCT_NAME: OrlixKernel
         HEADER_SEARCH_PATHS:
-          - $(SRCROOT)
-          - $(SRCROOT)/OrlixKernel/include
-          - $(SRCROOT)/Linux/ports/orlix/overlay/arch/orlix/include
+          - $(SRCROOT)/OrlixKernel/Sources
+          - $(SRCROOT)/OrlixKernel/Sources/include
+          - $(SRCROOT)/OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/include
+          - $(SRCROOT)/OrlixHostAdapter/Sources
         OTHER_LDFLAGS:
           - $(inherited)
           - $(SRCROOT)/Build/OrlixKernel/macho/selected/$(PLATFORM_NAME)/liborlixlinux.a
@@ -67,7 +68,7 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: OrlixTerminal
+      - path: OrlixTerminal/Sources
     dependencies:
       - target: OrlixKernel
         embed: true
@@ -77,17 +78,17 @@ targets:
           - GhosttyTheme
     settings:
       base:
-        INFOPLIST_FILE: OrlixTerminal/Info.plist
+        INFOPLIST_FILE: OrlixTerminal/Sources/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixTerminal
         PRODUCT_NAME: OrlixTerminal
         HEADER_SEARCH_PATHS:
-          - $(SRCROOT)/OrlixKernel/include
-        SWIFT_OBJC_BRIDGING_HEADER: OrlixTerminal/OrlixTerminal-Bridging-Header.h
+          - $(SRCROOT)/OrlixKernel/Sources/include
+        SWIFT_OBJC_BRIDGING_HEADER: OrlixTerminal/Sources/OrlixTerminal-Bridging-Header.h
   OrlixKernelHostProofTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: Tests/XCTest/OrlixKernelHostProofTests
+      - path: OrlixKernel/Tests/XCTest/OrlixKernelHostProofTests
     dependencies:
       - target: OrlixTerminal
       - target: OrlixKernel
@@ -96,8 +97,8 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernelHostProofTests
         HEADER_SEARCH_PATHS:
-          - $(SRCROOT)/OrlixKernel/include
-          - $(SRCROOT)/Linux/ports/orlix/overlay/arch/orlix/include
+          - $(SRCROOT)/OrlixKernel/Sources/include
+          - $(SRCROOT)/OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/include
         GCC_PREPROCESSOR_DEFINITIONS:
           - $(inherited)
           - ORLIX_APP_HOSTED_BOOT=1
@@ -107,10 +108,12 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: Tests/XCTest/OrlixLinuxProofOutputParserTests
-      - path: Tests/Fixtures/KUnit
+      - path: OrlixKernel/Tests/XCTest/OrlixLinuxProofOutputParserTests
+      - path: OrlixKernel/Tests/Fixtures/KUnit
+        type: folder
         buildPhase: resources
-      - path: Tests/Fixtures/Kselftest
+      - path: OrlixKernel/Tests/Fixtures/Kselftest
+        type: folder
         buildPhase: resources
     dependencies:
       - target: OrlixTerminal
@@ -124,7 +127,7 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: Tests/XCTest/OrlixHostAdapterTests
+      - path: OrlixHostAdapter/Tests/XCTest/OrlixHostAdapterTests
     dependencies:
       - target: OrlixTerminal
       - target: OrlixKernel

@@ -2,11 +2,11 @@
 
 ## Local Kernel Prototype
 
-The current `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` implementation tree. It is not part of the target architecture. Its useful behavior must be migrated into upstream Linux-native extension points under `arch/orlix`, `Linux/ports/orlix/overlay`, and `drivers/orlix`; after migration, these directories should no longer exist.
+The quarantined implementation tree under `LegacyOrlix/OrlixKernel/`. It is not part of the target architecture. Its useful behavior must be migrated into upstream Linux-native extension points under `arch/orlix`, `OrlixKernel/Sources/ports/orlix/overlay`, and `drivers/orlix`; `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` must not reappear.
 
 ## No-New-Local-Kernel-Work Rule
 
-No new Linux subsystem behavior should be added to `OrlixKernel/fs`, `OrlixKernel/kernel`, or `OrlixKernel/runtime`. Migration may read from these directories for behavior reference, but target work belongs in upstream Linux, `arch/orlix`, Linux-native drivers, boot, or host-adapter seams.
+No new Linux subsystem behavior should be added to `LegacyOrlix/` or restored under `OrlixKernel/fs`, `OrlixKernel/kernel`, or `OrlixKernel/runtime`. Migration may read from legacy directories for behavior reference, but target work belongs in upstream Linux, `arch/orlix`, Linux-native drivers, boot, or host-adapter seams.
 
 ## Test Migration Rule
 
@@ -254,7 +254,7 @@ Private Linux-shaped boot data or generated kernel inputs consumed by the app-ho
 
 ## Local-Kernel XCTest Reference
 
-The quarantined coverage under `Tests/MigrationReference/LocalKernelPrototype/` for the old `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` prototype. It is migration reference only; Linux subsystem assertions should move to KUnit or kselftest, while retained XCTest should cover iOS-hosted Orlix launch, Linux test-output collection, packaging, or narrow host mechanics.
+The quarantined coverage under `LegacyOrlix/Tests/MigrationReference/LocalKernelPrototype/` for the old local kernel prototype. It is migration reference only; Linux subsystem assertions should move to KUnit or kselftest, while retained XCTest should cover iOS-hosted Orlix launch, Linux test-output collection, packaging, or narrow host mechanics.
 
 ## iOS-Hosted Kernel-Interface Test Execution
 
@@ -270,7 +270,7 @@ The later kselftest lane installed under `Build/OrlixMLibC/kselftest/<profile>/`
 
 ## XCTest Proof Topology
 
-The iOS proof harness under `Tests/XCTest/`: `OrlixKernelHostProofTests`, `OrlixLinuxProofOutputParserTests`, and `OrlixHostAdapterTests`. XCTest launches or observes the hosted runtime, validates packaging and host mechanics, and parses Linux-native output. It does not own Linux subsystem assertions.
+The iOS proof harness under project-local `Tests/XCTest/` trees: `OrlixKernelHostProofTests`, `OrlixLinuxProofOutputParserTests`, and `OrlixHostAdapterTests`. XCTest launches or observes the hosted runtime, validates packaging and host mechanics, and parses Linux-native output. It does not own Linux subsystem assertions.
 
 ## Ownership-Based Migration
 
@@ -350,7 +350,7 @@ A closed product-profile choice exposed through the bootloader entrypoint. Suppo
 
 ## Profile Defconfig
 
-A durable Orlix product-profile configuration stored under `Linux/ports/orlix/configs/`. During port-tree generation, the selected profile is materialized into Kbuild's expected architecture config location for the generated tree.
+A durable Orlix product-profile configuration stored under `OrlixKernel/Sources/ports/orlix/configs/`. During port-tree generation, the selected profile is materialized into Kbuild's expected architecture config location for the generated tree.
 
 ## Bootloader Entrypoint
 
@@ -590,7 +590,7 @@ A profile-selected set of Linux-shaped boot artifacts, especially device tree da
 
 ## Profile Device Tree
 
-The static Linux-shaped device tree source for an Orlix profile. Durable profile device trees live under the Orlix architecture overlay, for example `Linux/ports/orlix/overlay/arch/orlix/boot/dts/appstore.dts`, and the bootloader supplies dynamic boot-time values.
+The static Linux-shaped device tree source for an Orlix profile. Durable profile device trees live under the Orlix architecture overlay, for example `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/boot/dts/appstore.dts`, and the bootloader supplies dynamic boot-time values.
 
 ## Bundled Profile DTB
 

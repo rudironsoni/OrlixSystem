@@ -20,4 +20,4 @@ No custom Orlix execution policy layer is introduced unless a concrete constrain
 
 The App Store profile may use curated, signed, profile-approved repositories.
 
-Unavoidable iOS memory mechanics are adapted through `arch/orlix` host seams, not virtio or package metadata in the kernel.
+Unavoidable iOS memory mechanics are adapted through `arch/orlix` host seams and `OrlixHostAdapter/Sources`, not virtio or package metadata in the kernel.

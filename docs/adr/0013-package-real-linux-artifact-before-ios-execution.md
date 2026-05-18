@@ -24,9 +24,9 @@ Packaging proof is separate from execution proof: it proves the product artifact
 
 Packaging multiple profile-specific hosted integrations into one framework would blur proof and increase product surface. Build separate framework artifacts when a different profile kernel integration is needed.
 
-The public API lives in the iOS wrapper. Private product resources carry the hosted kernel integration inputs and bundled built-in profile DTBs.
+The public API lives in the iOS wrapper header under `OrlixKernel/Sources/include`. Private product resources carry the hosted kernel integration inputs and bundled built-in profile DTBs.
 
-The test initramfs belongs to the XCTest host app bundle. It may be addressed through an opaque resource identifier during tests, but it is not part of the product framework contract.
+The test initramfs belongs to the XCTest host app bundle and owning project `Tests` tree. It may be addressed through an opaque resource identifier during tests, but it is not part of the product framework contract.
 
 The product initramfs is a later root-assembly artifact and remains separate from the test initramfs. Do not introduce profile-specific initramfs variants unless a concrete future requirement forces them.
 

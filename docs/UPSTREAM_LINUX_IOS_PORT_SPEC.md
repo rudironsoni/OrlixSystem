@@ -22,7 +22,7 @@ Correct names:
 - Architecture port: `arch/orlix`
 - Orlix driver subtree: `drivers/orlix`
 - Host mediation: `OrlixHostAdapter`
-- Bootloader: `boot`
+- Bootloader: `OrlixKernel/Sources/boot`
 
 Do not invent names such as `orlixios`, `LinuxOrlix`, `OrlixRuntime`, `OrlixHostKit`, runtime facade, kernel API facade, or entry layer.
 
@@ -84,10 +84,23 @@ Kernel-visible HostAdapter contracts must remain freestanding and Linux-shaped. 
 
 ## Source And Build Model
 
+Project-owned source and test roots are:
+
+```text
+OrlixKernel/Sources
+OrlixKernel/Tests
+OrlixHostAdapter/Sources
+OrlixHostAdapter/Tests
+OrlixMLibC/Sources
+OrlixMLibC/Tests
+OrlixTerminal/Sources
+OrlixTerminal/Tests
+```
+
 Upstream Linux source is generated input:
 
 ```text
-Linux/upstream/linux-6.12
+OrlixKernel/Sources/upstream/linux-6.12
 ```
 
 The generated upstream tree is read-only. Durable Orlix changes do not go there.
@@ -95,7 +108,7 @@ The generated upstream tree is read-only. Durable Orlix changes do not go there.
 Durable Orlix port inputs live under:
 
 ```text
-Linux/ports/orlix/
+OrlixKernel/Sources/ports/orlix/
   overlay/
   patches/
   configs/
@@ -107,9 +120,9 @@ The disposable upstream-plus-Orlix port tree is:
 Build/OrlixKernel/linux-<version>-port
 ```
 
-If a change must survive regeneration, move it back to `Linux/ports/orlix`.
+If a change must survive regeneration, move it back to `OrlixKernel/Sources/ports/orlix`.
 
-`OrlixMLibC` is a top-level component in this repository. It tracks upstream mlibc through generated/read-only upstream input plus durable Orlix sysdeps, configs, and patches under `OrlixMLibC/`.
+`OrlixMLibC` is a top-level component in this repository. It tracks upstream mlibc through generated/read-only upstream input plus durable Orlix sysdeps, configs, and patches under `OrlixMLibC/Sources/`. Its tests live under `OrlixMLibC/Tests/`.
 
 OrlixMLibC consumes kernel UAPI only through the standard Linux `headers_install` output for `ARCH=orlix`. That disposable artifact lives under:
 
@@ -131,9 +144,9 @@ Normal builds default to:
 PROFILE=appstore
 ```
 
-Profile defconfigs are durable product-profile configs under `Linux/ports/orlix/configs`. The selected profile is materialized into the generated port tree in the location Kbuild expects.
+Profile defconfigs are durable product-profile configs under `OrlixKernel/Sources/ports/orlix/configs`. The selected profile is materialized into the generated port tree in the location Kbuild expects.
 
-The repository Makefile is the command surface for repeatable local orchestration. Its public targets should stay small and Linux-shaped: `all`, `build`, `setup-env`, `prepare`, `scripts`, `dtbs`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, `test`, `clean`, `mrproper`, `xcodeproj`, and `run`.
+The repository Makefile is the command surface for repeatable local orchestration. It delegates to one Makefile per top-level project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`. The top-level public targets stay small and Linux-shaped: `all`, `build`, `setup-env`, `prepare`, `scripts`, `dtbs`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, `test`, `clean`, `mrproper`, `xcodeproj`, and `run`.
 
 When Linux has a conventional target name, use that name. Orlix-specific dimensions should be variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=linux` or `libc=orlixmlibc`, not new target names. Do not add milestone, proof-lane, or artifact-path names such as `build-temporary-*`, `stage-temporary-*`, `proof-kernel-*`, or `proof-ios-*` as normal user-facing targets.
 
@@ -179,7 +192,7 @@ The bootloader receives app-level identifiers, resolves them through `OrlixHostA
 Profile boot data is device-tree-shaped. Static profile device trees live under:
 
 ```text
-Linux/ports/orlix/overlay/arch/orlix/boot/dts/
+OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/boot/dts/
 ```
 
 Do not invent a custom Orlix `.boot` template format. Use device tree data, `/chosen`, kernel command line defaults, and normal Linux boot mechanisms.
@@ -278,7 +291,7 @@ Unavoidable iOS memory mechanics are adapted through narrow `arch/orlix` seams i
 - app lifecycle notifications
 - terminal and transport backends
 
-HostAdapter implementation files may use host libc and platform APIs privately. Headers and contracts visible to Linux-owned code must expose only Orlix-defined opaque handles, primitive scalar values, and explicit status enums.
+HostAdapter implementation files under `OrlixHostAdapter/Sources` may use host libc and platform APIs privately. Headers and contracts visible to Linux-owned code must expose only Orlix-defined opaque handles, primitive scalar values, and explicit status enums.
 
 `OrlixHostAdapter` must not become a public libc surface, syscall interposition layer, package manager, Linux policy layer, or Linux ABI provider.
 
@@ -296,11 +309,11 @@ Future saved-image support should use Linux hibernation/resume semantics. Hibern
 
 ## Local Kernel Prototype Migration
 
-`OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` are the local kernel prototype. They are not target architecture paths.
+`LegacyOrlix/` contains the quarantined local kernel prototype and old migration-reference tests. It is not a target architecture path.
 
 No new Linux subsystem behavior belongs there.
 
-Use them only as migration reference. Migrate useful behavior by ownership into upstream Linux-native paths, `arch/orlix`, `drivers/orlix`, boot code, or host-adapter seams. Delete remaining prototype directories when equivalent target paths exist or the behavior is intentionally dropped.
+Use it only as migration reference. Migrate useful behavior by ownership into upstream Linux-native paths, `arch/orlix`, `drivers/orlix`, boot code, or host-adapter seams. Delete remaining prototype material when equivalent target paths exist or the behavior is intentionally dropped. `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` must not reappear.
 
 ## Proof Model
 
@@ -330,15 +343,15 @@ The test kernel may enable Linux debugfs and `CONFIG_KUNIT_DEBUGFS` for per-suit
 
 Old local-kernel tests are migration reference. They are not proof of the target architecture.
 
-Existing XCTest files that target `OrlixKernel/fs`, `OrlixKernel/kernel`, or `OrlixKernel/runtime` are local-kernel migration reference. Retained XCTest should either launch packaged Orlix Linux and collect Linux test output or test narrow `OrlixHostAdapter` host mechanics. Linux subsystem assertions belong in KUnit or kselftest.
+XCTest files quarantined under `LegacyOrlix/Tests/MigrationReference/LocalKernelPrototype/` are local-kernel migration reference. Retained XCTest should either launch packaged Orlix Linux and collect Linux test output or test narrow `OrlixHostAdapter` host mechanics. Linux subsystem assertions belong in KUnit or kselftest.
 
-Durable KUnit tests live in the Linux port overlay next to Linux-owned code and are selected by `Linux/ports/orlix/overlay/arch/orlix/.kunitconfig`. The repository entry point is `make kunit` or `make test type=kunit`.
+Durable KUnit tests live in the Linux port overlay next to Linux-owned code and are selected by `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`. The repository entry point is `make kunit` or `make test type=kunit`.
 
-Durable kselftests live under `Linux/ports/orlix/overlay/tools/testing/selftests/orlix/` and run through upstream kselftest install plus `run_kselftest.sh -c orlix`. The repository entry point is `make kselftest`, `make kselftest-install`, or `make test type=kselftest`.
+Durable kselftests live under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/` and run through upstream kselftest install plus `run_kselftest.sh -c orlix`. The repository entry point is `make kselftest`, `make kselftest-install`, or `make test type=kselftest`.
 
 Temporary kselftests and OrlixMLibC-built kselftests must use separate install and packaging paths while sharing the same Linux-shaped Make target. Select the temporary lane with `libc=linux`; it installs under `Build/OrlixKernel/kselftest/temporary/<profile>/` and carries `proof_lane=temporary-kselftest-kernel-interface` metadata. Select the OrlixMLibC lane with `libc=orlixmlibc`; it installs under `Build/OrlixMLibC/kselftest/<profile>/` and carries `proof_lane=orlixmlibc-kselftest-syscall-uapi` metadata.
 
-XCTest targets live under `Tests/XCTest/` and are limited to app-hosted launch, packaging, proof-output collection, parser behavior, and narrow host-adapter mechanics. XCTest must not replace KUnit, kselftest, OrlixMLibC tests, or package proof as the owner of Linux-visible assertions.
+XCTest targets live under project-local `Tests/XCTest/` trees such as `OrlixKernel/Tests/XCTest` and `OrlixHostAdapter/Tests/XCTest`. Future OrlixMLibC and OrlixTerminal XCTest targets belong under `OrlixMLibC/Tests/XCTest` and `OrlixTerminal/Tests/XCTest`. XCTest is limited to app-hosted launch, packaging, proof-output collection, parser behavior, and narrow host-adapter mechanics. XCTest must not replace KUnit, kselftest, OrlixMLibC tests, or package proof as the owner of Linux-visible assertions.
 
 ## Milestones
 
@@ -382,7 +395,7 @@ Add virtio-rng, virtio-net, and external directory mounts through virtio-fs or 9
 
 Milestone 10: OrlixMLibC Libc Proof
 
-Build OrlixMLibC from the top-level component, consume installed Orlix UAPI headers generated by Linux `headers_install`, and pass mlibc's own tests for the Orlix sysdeps layer. This milestone does not prove package compatibility by itself.
+Build OrlixMLibC from `OrlixMLibC/Sources`, consume installed Orlix UAPI headers generated by Linux `headers_install`, and pass mlibc's own tests under `OrlixMLibC/Tests` for the Orlix sysdeps layer. This milestone does not prove package compatibility by itself.
 
 Milestone 11: OrlixMLibC Syscall/UAPI Proof
 
@@ -398,4 +411,4 @@ Build and run unpatched third-party packages as Orlix Linux userspace binaries i
 
 Final cleanup:
 
-Delete remaining `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` after migration or intentional retirement.
+Delete remaining `LegacyOrlix/` material after migration or intentional retirement. `OrlixKernel/fs`, `OrlixKernel/kernel`, and `OrlixKernel/runtime` should stay absent.

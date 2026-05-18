@@ -26,7 +26,7 @@ The test initramfs collects KUnit output before running kselftest. Built-in KUni
 
 The iOS-hosted test kernel may enable Linux debugfs and `CONFIG_KUNIT_DEBUGFS` as explicit test affordances so the test initramfs can read per-suite KTAP from `/sys/kernel/debug/kunit/<suite>/results`. Kernel-log collection remains the primary boot-time KUnit path.
 
-Orlix KUnit suite selection follows upstream KUnit surface conventions through the committed `arch/orlix/.kunitconfig`. kselftest coverage lives under `tools/testing/selftests/orlix`.
+Orlix KUnit suite selection follows upstream KUnit surface conventions through the committed `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`. kselftest coverage lives under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix`.
 
 kselftest binaries should be staged for the test initramfs through the upstream kselftest install shape, not by ad hoc copying, unless the upstream install path is temporarily blocked.
 
@@ -40,7 +40,7 @@ Orlix follows upstream kselftest timeout semantics. Do not add a `settings` file
 
 The XCTest proof runner should not pass `run_kselftest.sh --override-timeout` initially. Add a runner override only when the controlled iOS proof environment shows a concrete need.
 
-Repo-local shell scripts and standalone C contract tests are not milestone proof for Orlix. Existing local-kernel XCTest files are migration reference unless they are rewritten as an iOS-hosted Orlix Linux harness or narrow `OrlixHostAdapter` host-mechanics tests.
+Repo-local shell scripts and standalone C contract tests are not milestone proof for Orlix. Existing local-kernel XCTest files under `LegacyOrlix/Tests/MigrationReference/LocalKernelPrototype/` are migration reference unless they are rewritten as an iOS-hosted Orlix Linux harness under an owning project `Tests` tree or narrow `OrlixHostAdapter/Tests` host-mechanics tests.
 
 The port will be planned and executed as focused milestones because later layers must not depend on untested claims from earlier layers.
 

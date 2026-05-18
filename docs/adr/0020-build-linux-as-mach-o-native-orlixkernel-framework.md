@@ -31,12 +31,12 @@ During bring-up, `start_kernel()` may remain unavailable and `OrlixBoot()` may r
 
 ## Consequences
 
-- Linux source remains upstream Linux plus Orlix overlay, patch, and config inputs.
+- Linux source remains upstream Linux under `OrlixKernel/Sources/upstream` plus Orlix overlay, patch, and config inputs under `OrlixKernel/Sources/ports/orlix`.
 - The product link format is Mach-O, not ELF.
 - Kbuild remains source, config, and generation truth where useful, but the product artifact is not `vmlinux`.
 - Linux UAPI headers still come from standard `headers_install`.
 - `OrlixKernel.framework` must not include Darwin, Foundation, POSIX host, libc, MLibC, musl, or glibc headers in Linux-owned code.
-- Host mechanics stay behind `OrlixHostAdapter`.
+- Host mechanics stay behind `OrlixHostAdapter/Sources`.
 - iOS slices must preserve one Linux userspace ABI.
 - `vmlinux`, `vmlinux.o`, and ELF payloads may appear only in explicit non-product experiments.
 - Product proof language remains limited to app-hosted kernel dependency proof until real `start_kernel()` executes.
@@ -72,6 +72,6 @@ Unsupported section classes may be stubbed only when the selected first slice ca
 
 ## Initial Build Slice
 
-The first Mach-O-native lane prepares the generated Orlix Linux port tree, runs Kbuild preparation and DTB generation, compiles selected Linux-owned `arch/orlix` source from the generated tree with iOS Mach-O target triples, archives those objects as `liborlixlinux.a`, links the simulator archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
+The first Mach-O-native lane prepares the generated Orlix Linux port tree from `OrlixKernel/Sources/upstream` and `OrlixKernel/Sources/ports/orlix`, runs Kbuild preparation and DTB generation, compiles selected Linux-owned `arch/orlix` source from the generated tree with iOS Mach-O target triples, archives those objects as `liborlixlinux.a`, links the simulator archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
 
 The first slice does not compile or link real upstream `init/main.c` successfully. A dependency probe records the first blockers. `start_kernel()` remains unavailable until the real upstream Linux provider can be compiled and linked as Mach-O.

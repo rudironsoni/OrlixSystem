@@ -26,8 +26,8 @@ Milestones that claim iOS packaging, boot, runtime, or Linux behavior must valid
 
 Test-only configuration overlays may be applied to both App Store and development proof builds to enable KUnit, kselftest support, KUnit debugfs, and related proof affordances. These overlays must not redefine the normal product profile configs.
 
-Orlix KUnit selections and KUnit-specific affordances live in the committed `arch/orlix/.kunitconfig`, matching upstream KUnit practice. Broader proof-only config fragments may be added later only when a non-KUnit proof affordance needs one.
+Orlix KUnit selections and KUnit-specific affordances live in the committed `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`, matching upstream KUnit practice. Broader proof-only config fragments may be added later only when a non-KUnit proof affordance needs one.
 
-Proof builds for both App Store and development merge the selected profile defconfig with `arch/orlix/.kunitconfig`. Normal product builds do not include that merge.
+Proof builds for both App Store and development merge the selected profile defconfig with `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`. Normal product builds do not include that merge.
 
 Only App Store and development profiles are supported.
