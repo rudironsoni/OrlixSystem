@@ -98,7 +98,7 @@ KSELFTEST_PROOF_LABEL :=
 KSELFTEST_PREREQS :=
 endif
 
-.PHONY: all setup-env build build-linux-mach-o test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install kbuild-elf-object-set-experiment xcodeproj run macho-linux-build-probes __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __macho-section-probe __macho-linux-archive __macho-start-kernel-dependency-probe __macho-framework-symbol-probe __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
+.PHONY: all setup-env build build-linux-mach-o test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install kbuild-elf-object-set-experiment xcodeproj run macho-linux-build-probes __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __macho-section-probe __macho-linux-archive __macho-start-kernel-dependency-probe __macho-start-kernel-link-probe __macho-framework-symbol-probe __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
 
 all: build
 
@@ -543,7 +543,38 @@ __macho-start-kernel-dependency-probe: __prepare-kbuild
 		echo "start_kernel dependency probe blocked; see $$probe_dir/blockers.txt"; \
 	fi
 
-macho-linux-build-probes: __macho-section-probe __macho-linux-archive __macho-start-kernel-dependency-probe
+__macho-start-kernel-link-probe: __macho-start-kernel-dependency-probe __macho-linux-archive
+	@set -euo pipefail; \
+	cc="$(ORLIX_MACHO_CC)"; \
+	nm_cmd="$(ORLIX_MACHO_NM)"; \
+	command -v "$$cc" >/dev/null 2>&1 || { echo "clang is required for start_kernel link probe; set ORLIX_MACHO_CC=/path/to/clang" >&2; exit 1; }; \
+	command -v "$$nm_cmd" >/dev/null 2>&1 || { echo "nm is required for start_kernel link probe; set ORLIX_MACHO_NM=/path/to/nm" >&2; exit 1; }; \
+	probe_dir="$(ORLIX_KERNEL_MACHO_ROOT)/probes/start_kernel"; \
+	status="$$probe_dir/link-status.txt"; \
+	log="$$probe_dir/link.log"; \
+	object="$$probe_dir/init_main.o"; \
+	archive="$(ORLIX_KERNEL_MACHO_SIMULATOR_DIR)/$(ORLIX_KERNEL_MACHO_ARCHIVE_NAME)"; \
+	output="$$probe_dir/start_kernel_link.dylib"; \
+	[ -s "$$object" ] || { echo "missing compiled start_kernel probe object: $$object" >&2; exit 1; }; \
+	[ -s "$$archive" ] || { echo "missing Mach-O Linux simulator archive: $$archive" >&2; exit 1; }; \
+	set +e; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$(ORLIX_MACHO_IOS_SIMULATOR_TARGET)" -isysroot / -dynamiclib -nostdlib -Wl,-undefined,error "$$object" "$$archive" -o "$$output" > "$$log" 2>&1; \
+	rc="$$?"; \
+	set -e; \
+	if [ "$$rc" -eq 0 ]; then \
+		printf '%s\n' 'linked' > "$$status"; \
+		rm -f "$$probe_dir/link-blockers.txt"; \
+		"$$nm_cmd" -gU "$$output" > "$$probe_dir/link-symbols.txt"; \
+		grep -q '_start_kernel' "$$probe_dir/link-symbols.txt" || { echo "start_kernel link probe missing _start_kernel symbol" >&2; exit 1; }; \
+		echo "start_kernel link probe linked: $$output"; \
+	else \
+		printf 'blocked rc=%s\n' "$$rc" > "$$status"; \
+		awk '/^  "_/ { gsub(/^  "/, ""); gsub(/".*/, ""); print; count++; if (count >= 80) exit }' "$$log" > "$$probe_dir/link-blockers.txt"; \
+		if [ ! -s "$$probe_dir/link-blockers.txt" ]; then sed -n '1,80p' "$$log" > "$$probe_dir/link-blockers.txt"; fi; \
+		echo "start_kernel link probe blocked; see $$probe_dir/link-blockers.txt"; \
+	fi
+
+macho-linux-build-probes: __macho-section-probe __macho-linux-archive __macho-start-kernel-dependency-probe __macho-start-kernel-link-probe
 
 __macho-framework-symbol-probe:
 	@set -euo pipefail; \
