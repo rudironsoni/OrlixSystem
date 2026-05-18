@@ -115,6 +115,18 @@ Use narrow owner seams:
 
 Virtio is for virtual devices. It is not the path for Linux MM policy, syscall semantics, task model, or executable-memory decisions.
 
+## No Libc In Kernel Or Host Adapter Rule
+
+`OrlixKernel` and `OrlixHostAdapter` must not own, embed, implement, expose, shim, or link a userspace libc. This includes OrlixMLibC, mlibc, musl, glibc, Darwin libc compatibility layers, libc sysdeps, libc startup code, dynamic-loader behavior, errno/signal wrappers, stdio, malloc-family allocators, pthreads, resolver behavior, locale, or package/runtime facade behavior.
+
+`OrlixKernel` is freestanding upstream Linux plus the Orlix Linux port. Linux-owned code must not include Apple SDK, Darwin, Foundation, POSIX host, libc, OrlixMLibC, mlibc, musl, or glibc headers. Do not add libc-shaped helper APIs to make kernel code compile.
+
+`OrlixHostAdapter` may provide only narrow host mechanics required by `arch/orlix` and `drivers/orlix`. It must not translate Linux syscalls into host libc calls, emulate libc services, provide an application ABI, or become a userspace runtime.
+
+OrlixMLibC is the only libc component. It lives under `OrlixMLibC`, consumes Linux UAPI through `headers_install`, and communicates with OrlixKernel only through Linux-shaped syscall and UAPI behavior.
+
+Linux kernel internal helper sources are not libc permission slips. Add them to product Mach-O builds only when they are required kernel dependencies with an audited symbol/export policy and no host-libc dependency.
+
 ## OrlixMLibC Rule
 
 `OrlixMLibC` is a top-level component, not part of the Linux kernel port. It tracks upstream mlibc through generated/read-only upstream input plus durable Orlix sysdeps, configs, and patches.
