@@ -6,7 +6,7 @@ HOSTADAPTER_MAKE := $(MAKE) -f OrlixHostAdapter/Makefile
 MLIBC_MAKE := $(MAKE) -f OrlixMLibC/Makefile
 TERMINAL_MAKE := $(MAKE) -f OrlixTerminal/Makefile
 
-.PHONY: all help setup-env build build-linux-mach-o prepare scripts dtbs headers_install kunit kselftest kselftest-install test lint xcodeproj run clean mrproper
+.PHONY: all help setup-env build prepare scripts dtbs headers_install kunit kselftest kselftest-install test xcodeproj run clean mrproper
 
 all: build
 
@@ -28,13 +28,7 @@ build:
 	@$(MLIBC_MAKE) build
 	@$(TERMINAL_MAKE) build
 
-build-linux-mach-o prepare scripts dtbs kunit kselftest kselftest-install test:
-	@$(KERNEL_MAKE) $@
-
-lint:
-	@$(KERNEL_MAKE) __lint
-
-__%:
+prepare scripts dtbs kunit kselftest kselftest-install test:
 	@$(KERNEL_MAKE) $@
 
 headers_install:

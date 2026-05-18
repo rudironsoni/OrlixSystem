@@ -54,11 +54,13 @@ Mach-O-native Linux is not a C-file recompilation exercise. Linux linker-section
 - exception tables: need Mach-O section preservation and lookup boundaries before fault-table users are enabled.
 - alternatives if used: need explicit section preservation and patching policy, or those features must remain disabled for the slice.
 - linker-defined start/stop symbols: require a Mach-O linker convention or generated symbol table; ELF `__start_*` and `__stop_*` assumptions cannot be copied blindly.
-- alignment requirements: section and symbol alignment must be checked in Mach-O object and archive probes before dependent Linux code is enabled.
+- alignment requirements: section and symbol alignment must be checked before dependent Linux code is enabled.
 - BSS clearing: must be owned by the Mach-O app-hosted entry path or proven already handled for the linked slice.
 - early memory layout: must be owned by `arch/orlix` and narrow host seams; it cannot be inferred from ELF image layout.
 
 Unsupported section classes may be stubbed only when the selected first slice cannot reach them, and each stubbed class must be documented as a blocker.
+
+`lib/cmdline.c` cannot enter the product archive yet because upstream Linux section/export metadata requires an accepted `arch/orlix` Mach-O section policy. Generic `__section` remapping and product-lane `__DISABLE_EXPORTS` are not accepted policy.
 
 ## Rejected Alternatives
 
@@ -74,4 +76,4 @@ Unsupported section classes may be stubbed only when the selected first slice ca
 
 The first Mach-O-native lane prepares the generated Orlix Linux port tree from `OrlixKernel/Sources/upstream` and `OrlixKernel/Sources/ports/orlix`, runs Kbuild preparation and DTB generation, compiles selected Linux-owned `arch/orlix` source from the generated tree with iOS Mach-O target triples, archives those objects as `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`, links the matching archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
 
-The first slice does not compile or link real upstream `init/main.c` successfully. A dependency probe records the first blockers. `start_kernel()` remains unavailable until the real upstream Linux provider can be compiled and linked as Mach-O.
+The first slice does not compile or link real upstream `init/main.c` successfully. `start_kernel()` remains unavailable until the real upstream Linux provider can be compiled and linked as Mach-O.

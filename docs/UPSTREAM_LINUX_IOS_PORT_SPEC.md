@@ -168,7 +168,7 @@ The Linux compile lane emits per-profile, per-platform OrlixKernel static archiv
 Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a
 ```
 
-Xcode links the matching archive into `OrlixKernel.framework`, and the framework slices are packaged into `OrlixKernel.xcframework`. Investigation and probe outputs may use explicit Mach-O probe names under `Build/OrlixKernel/probes/`, but the normal framework link input uses the product-named archive path.
+Xcode links the matching archive into `OrlixKernel.framework`, and the framework slices are packaged into `OrlixKernel.xcframework`. The normal framework link input uses the product-named archive path.
 
 The App Store and development profiles should validate the same product scope. Development may enable explicit debug and testing affordances, but it must not drift into a broader Linux-visible product shape. Milestones that claim iOS packaging, boot, runtime, or Linux behavior must validate the same XCTest suite and assertions across App Store and development profiles on both `iphoneos` and `iphonesimulator`.
 

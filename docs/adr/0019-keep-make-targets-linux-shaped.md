@@ -12,7 +12,7 @@ Earlier wording and transitional scripts risked turning proof lane names, artifa
 
 ## Decision
 
-Keep the top-level Makefile's public targets small and Linux-shaped. The top-level Makefile delegates to `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`. The normal public targets are `all`, `setup-env`, `build`, `build-linux-mach-o`, `test`, `prepare`, `scripts`, `dtbs`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, `xcodeproj`, `run`, `clean`, and `mrproper`.
+Keep the top-level Makefile's public targets small and Linux-shaped. The top-level Makefile delegates to `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`. The normal public targets are `all`, `setup-env`, `build`, `test`, `prepare`, `scripts`, `dtbs`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, `xcodeproj`, `run`, `clean`, and `mrproper`.
 
 Use variables for Orlix-specific scope. `PROFILE=appstore` selects the normal profile, `type=kunit,kselftest` selects test classes for `make test`, and `libc=linux` or `libc=orlixmlibc` selects the kselftest libc lane.
 
@@ -20,7 +20,7 @@ Proof labels are artifact metadata and log markers, not public Make targets. Lab
 
 Project Makefiles may use private implementation targets, but normal documentation and user workflows should point to the Linux-shaped public targets on the top-level Makefile.
 
-Explicit non-product experiment targets may exist when their name states that they are experiments. They must not be dependencies of normal build, run, test, kselftest, headers_install, xcodeproj, payload, or framework packaging paths.
+Non-product investigations belong in ADRs or explicitly approved scratch space, not in normal Make targets or repository-owned probe directories.
 
 ## Consequences
 
