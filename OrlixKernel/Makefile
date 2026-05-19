@@ -64,6 +64,7 @@ LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
 ORLIX_KERNEL_CC ?= clang
 ORLIX_KERNEL_AR ?= llvm-ar
 ORLIX_KERNEL_NM ?= nm
+ORLIX_KERNEL_OTOOL ?= otool
 
 TEST_TYPES := $(strip $(subst $(comma),$(space),$(type)))
 
@@ -429,12 +430,14 @@ __kernel-archive: __prepare-kbuild
 	cc="$(ORLIX_KERNEL_CC)"; \
 	ar_cmd="$(ORLIX_KERNEL_AR)"; \
 	nm_cmd="$(ORLIX_KERNEL_NM)"; \
+	otool_cmd="$(ORLIX_KERNEL_OTOOL)"; \
 	linux_llvm_bin="$(LINUX_LLVM_BIN)"; \
 	PATH="$${linux_llvm_bin:+$$linux_llvm_bin:}$$PATH"; \
 	export PATH; \
 	command -v "$$cc" >/dev/null 2>&1 || { echo "clang is required for OrlixKernel archive builds; set ORLIX_KERNEL_CC=/path/to/clang" >&2; exit 1; }; \
 	command -v "$$ar_cmd" >/dev/null 2>&1 || { echo "llvm-ar is required for OrlixKernel archives; set ORLIX_KERNEL_AR=/path/to/llvm-ar" >&2; exit 1; }; \
 	command -v "$$nm_cmd" >/dev/null 2>&1 || { echo "nm is required to verify OrlixKernel archive symbols; set ORLIX_KERNEL_NM=/path/to/nm" >&2; exit 1; }; \
+	command -v "$$otool_cmd" >/dev/null 2>&1 || { echo "otool is required to verify OrlixKernel archive contracts; set ORLIX_KERNEL_OTOOL=/path/to/otool" >&2; exit 1; }; \
 	root="$(ORLIX_KERNEL_ARCHIVE_ROOT)"; \
 	case "$$root" in "$(CURDIR)"/Build/OrlixKernel/$(PROFILE)) ;; *) echo "refusing to write OrlixKernel archive outside Build/OrlixKernel/$(PROFILE): $$root" >&2; exit 1 ;; esac; \
 	for path in Build/OrlixKernel "$$root"; do \
@@ -442,11 +445,39 @@ __kernel-archive: __prepare-kbuild
 	done; \
 	mkdir -p "$$root"; \
 	{ for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; done; } > "$(ORLIX_KERNEL_ARCHIVE_MANIFEST)"; \
+	verify_kernel_archive_contract() { \
+		obj="$$1"; \
+		contract_dir="$$2"; \
+		obj_base="$$(basename "$$obj")"; \
+		sections="$$contract_dir/$$obj_base.sections.txt"; \
+		symbols="$$contract_dir/$$obj_base.symbols.txt"; \
+		undefined="$$contract_dir/$$obj_base.undefined.txt"; \
+		unsupported_sections='sectname (\.init\.text|\.init\.data|\.init\.setup|\.initcall[^[:space:]]*\.init|\.data\.\.percpu|__ksymtab[^[:space:]]*|__kcrctab[^[:space:]]*|\.export_symbol|\.discard[^[:space:]]*|__ex_table|\.ex_table|\.exception[^[:space:]]*|\.data\.\.ro_after_init|__jump_table)'; \
+		unsupported_symbols='(^|[[:space:]])_+(__ksymtab|__kcrctab|__start___ksymtab|__stop___ksymtab|__start___kcrctab|__stop___kcrctab|__start_ro_after_init|__end_ro_after_init|__per_cpu_start|__per_cpu_end|__ex_table)([[:space:]]|$$)'; \
+		unsupported_undefined='(^|[[:space:]])_+__(start|stop)_'; \
+		mkdir -p "$$contract_dir"; \
+		"$$otool_cmd" -l "$$obj" > "$$sections"; \
+		"$$nm_cmd" -m "$$obj" > "$$symbols"; \
+		"$$nm_cmd" -u "$$obj" > "$$undefined" 2>/dev/null || true; \
+		if grep -E "$$unsupported_sections" "$$sections"; then \
+			echo "OrlixKernel product object requires unsupported Linux section semantics: $$obj" >&2; \
+			exit 1; \
+		fi; \
+		if grep -E "$$unsupported_symbols" "$$symbols"; then \
+			echo "OrlixKernel product object requires unsupported Linux section/export symbols: $$obj" >&2; \
+			exit 1; \
+		fi; \
+		if grep -E "$$unsupported_undefined" "$$undefined"; then \
+			echo "OrlixKernel product object has unresolved Linux section boundary dependency: $$obj" >&2; \
+			exit 1; \
+		fi; \
+	}; \
 	compile_slice() { \
 		platform="$$1"; \
 		target="$$2"; \
 		output_dir="$$root/$$platform"; \
 		obj_dir="$$output_dir/objects"; \
+		contract_dir="$$output_dir/archive-contract"; \
 		archive="$$output_dir/$(ORLIX_KERNEL_ARCHIVE_NAME)"; \
 		rm -rf "$$output_dir"; \
 		mkdir -p "$$obj_dir"; \
@@ -466,6 +497,7 @@ __kernel-archive: __prepare-kbuild
 				echo "Linux object included host, OrlixMLibC, or product headers: $$dep" >&2; \
 				exit 1; \
 			fi; \
+			verify_kernel_archive_contract "$$obj" "$$contract_dir"; \
 			objs+=("$$obj"); \
 		done; \
 		"$$ar_cmd" rcs "$$archive" "$${objs[@]}"; \
