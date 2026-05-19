@@ -166,7 +166,14 @@ run: __kernel-payload
 
 clean:
 	@set -euo pipefail; \
+	port_dir="$(ORLIX_KERNEL_PORT_DIR)"; \
+	expected_port_dir="Build/OrlixKernel/linux-$(LINUX_VERSION)-port"; \
+	if [ "$$port_dir" != "$$expected_port_dir" ]; then \
+		echo "Orlix kernel port tree must be $$expected_port_dir: $$port_dir" >&2; \
+		exit 1; \
+	fi; \
 	for path in \
+		"$$port_dir" \
 		Build/OrlixKernel/build \
 		Build/OrlixKernel/kunit \
 		Build/OrlixKernel/kselftest \
@@ -187,7 +194,8 @@ clean:
 
 mrproper: clean
 	@set -euo pipefail; \
-	for path in Build .deriveddata OrlixSystem.xcodeproj OrlixKernel/Sources/upstream; do \
+	if [ -L .cache ]; then echo "refusing to remove Linux clone cache through symlinked parent: .cache" >&2; exit 1; fi; \
+	for path in Build .deriveddata OrlixSystem.xcodeproj OrlixKernel/Sources/upstream .cache/linux-clone; do \
 		if [ -L "$$path" ]; then echo "refusing to remove symlinked path: $$path" >&2; exit 1; fi; \
 		rm -rf "$$path"; \
 	done; \
@@ -268,7 +276,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 		echo "Orlix kernel port tree must not equal upstream directory: $$port_dir" >&2; \
 		exit 1; \
 	fi; \
-	for path in Build Build/OrlixKernel; do \
+	for path in Build Build/OrlixKernel "$$port_dir"; do \
 		if [ -L "$$path" ]; then echo "refusing to use symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
 	[ -d "$$overlay_dir" ] || { echo "missing Linux overlay directory: $$overlay_dir" >&2; exit 1; }; \
