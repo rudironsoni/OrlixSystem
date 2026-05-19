@@ -336,10 +336,19 @@ __prepare-kbuild: __prepare-port
 	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
 	rm -rf "$$build_dir"; \
 	mkdir -p "$$build_dir"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" mrproper defconfig prepare scripts dtbs; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" mrproper defconfig prepare scripts dtbs arch/$(LINUX_ARCH)/kernel/vmlinux.lds; \
 	for dtb in appstore development; do \
 		[ -f "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" ] || { echo "missing profile DTB: $$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" >&2; exit 1; }; \
 	done; \
+	linker_script="$$build_dir/arch/$(LINUX_ARCH)/kernel/vmlinux.lds"; \
+	[ -s "$$linker_script" ] || { echo "missing generated Orlix Kbuild linker script: $$linker_script" >&2; exit 1; }; \
+	for pattern in '.init.text' '.init.data' '__init_begin = .;' '__init_end = .;' '__setup_start = .;' '__setup_end = .;' '__initcall_start = .;' '__initcall_end = .;' '__start_ro_after_init = .;' '__end_ro_after_init = .;' '__bss_start = .;' '__bss_stop = .;' '/DISCARD/ : {' '*(.discard)' '*(.export_symbol)' '.data..percpu'; do \
+		if ! grep -F -q "$$pattern" "$$linker_script"; then \
+			echo "generated Orlix Kbuild linker script missing Linux section pattern: $$pattern" >&2; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "verified Orlix Kbuild linker script: $$linker_script"; \
 	echo "prepared Orlix Kbuild output without a standalone image: $$build_dir (profile $(PROFILE))"
 
 __headers-install: __prepare-kbuild
