@@ -6,10 +6,12 @@ typedef void (*OrlixHostKernelEntrypoint)(void);
 
 OrlixHostKernelEntrypoint OrlixHostResolveStartKernel(void);
 
-#define __init
+#define __orlix_boot_init
 #else
 #include <linux/init.h>
 #include <linux/start_kernel.h>
+
+#define __orlix_boot_init __init
 #endif
 
 static const struct boot_params *last_boot_params;
@@ -38,7 +40,7 @@ int arch_boot_prepare_entry(const struct boot_params *params)
 	return ORLIX_ARCH_BOOT_OK;
 }
 
-int __init arch_boot_entry(const struct boot_params *params)
+int __orlix_boot_init arch_boot_entry(const struct boot_params *params)
 {
 #if defined(ORLIX_APP_HOSTED_BOOT)
 	OrlixHostKernelEntrypoint start_kernel_entry;
