@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <asm/boot.h>
-
-#if defined(ORLIX_APP_HOSTED_BOOT)
-typedef void (*OrlixHostKernelEntrypoint)(void);
-
-OrlixHostKernelEntrypoint OrlixHostResolveStartKernel(void);
-
-#define __orlix_boot_init
-#else
 #include <linux/init.h>
 #include <linux/start_kernel.h>
 
+#if defined(ORLIX_APP_HOSTED_BOOT)
+#define __orlix_boot_init
+#else
 #define __orlix_boot_init __init
 #endif
 
@@ -42,23 +37,12 @@ int arch_boot_prepare_entry(const struct boot_params *params)
 
 int __orlix_boot_init arch_boot_entry(const struct boot_params *params)
 {
-#if defined(ORLIX_APP_HOSTED_BOOT)
-	OrlixHostKernelEntrypoint start_kernel_entry;
-#endif
 	int status = arch_boot_prepare_entry(params);
 
 	if (status != ORLIX_ARCH_BOOT_OK)
 		return status;
-#if defined(ORLIX_APP_HOSTED_BOOT)
-	start_kernel_entry = OrlixHostResolveStartKernel();
 
-	if (!start_kernel_entry)
-		return ORLIX_ARCH_BOOT_UNAVAILABLE;
-
-	start_kernel_entry();
-#else
 	start_kernel();
-#endif
 
 	return ORLIX_ARCH_BOOT_OK;
 }
