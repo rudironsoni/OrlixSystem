@@ -106,6 +106,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/filesystems.c \
 	fs/libfs.c \
 	fs/open.c \
+	fs/pnode.c \
 	fs/super.c \
 	fs/proc/generic.c \
 	fs/proc/inode.c \
