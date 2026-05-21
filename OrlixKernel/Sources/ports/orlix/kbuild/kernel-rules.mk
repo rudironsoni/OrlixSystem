@@ -34,7 +34,41 @@ ORLIX_KERNEL_SIMULATOR_ARCHIVE_DIR := $(ORLIX_KERNEL_ARCHIVE_ROOT)/iphonesimulat
 ORLIX_KERNEL_ARCHIVE_NAME := OrlixKernel.a
 ORLIX_IOS_TARGET := arm64-apple-ios
 ORLIX_IOS_SIMULATOR_TARGET := arm64-apple-ios-simulator
-ORLIX_KERNEL_LINUX_SOURCES := arch/$(LINUX_ARCH)/boot/boot.c arch/$(LINUX_ARCH)/kernel/setup.c init/main.c
+ORLIX_KERNEL_LINUX_SOURCES := \
+	arch/$(LINUX_ARCH)/boot/boot.c \
+	arch/$(LINUX_ARCH)/kernel/setup.c \
+	init/version.c \
+	init/main.c \
+	init/init_task.c \
+	init/initramfs.c \
+	kernel/params.c \
+	kernel/panic.c \
+	kernel/printk/printk.c \
+	kernel/kallsyms.c \
+	lib/string.c \
+	lib/string_helpers.c \
+	lib/vsprintf.c \
+	lib/ctype.c \
+	lib/cmdline.c \
+	lib/kstrtox.c \
+	lib/bitmap.c \
+	lib/find_bit.c \
+	lib/hexdump.c \
+	lib/uuid.c \
+	lib/errname.c \
+	lib/siphash.c \
+	lib/seq_buf.c \
+	kernel/time/timeconv.c \
+	mm/memblock.c \
+	drivers/of/fdt.c \
+	lib/fdt.c \
+	lib/fdt_ro.c \
+	lib/fdt_wip.c \
+	lib/fdt_sw.c \
+	lib/fdt_rw.c \
+	lib/fdt_strerror.c \
+	lib/fdt_empty_tree.c \
+	lib/fdt_addresses.c
 ORLIX_KUNIT_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/kunit/$(PROFILE)
 ORLIX_TEMPORARY_KSELFTEST_INSTALL_DIR := $(CURDIR)/Build/OrlixKernel/kselftest/temporary/$(PROFILE)
 ORLIX_TEMPORARY_TEST_INITRAMFS_DIR := $(CURDIR)/Build/OrlixKernel/test-initramfs/temporary/$(PROFILE)/OrlixTestInitramfs.bundle
@@ -449,6 +483,17 @@ __kernel-archive: __prepare-kbuild
 	done; \
 	mkdir -p "$$root"; \
 	$(call orlix_product_adapter_prepare); \
+	mkdir -p "$(ORLIX_KERNEL_BUILD_DIR)/init"; \
+	build_version="$${KBUILD_BUILD_VERSION:-$$(cd "$(ORLIX_KERNEL_BUILD_DIR)" && "$(CURDIR)/$(ORLIX_KERNEL_PORT_DIR)/scripts/build-version")}"; \
+	build_timestamp="$${KBUILD_BUILD_TIMESTAMP:-$$(LC_ALL=C date)}"; \
+	smp_flag=""; \
+	preempt_flag=""; \
+	if grep -q '^CONFIG_SMP=y$$' "$(ORLIX_KERNEL_BUILD_DIR)/.config"; then smp_flag="SMP"; fi; \
+	if grep -q '^CONFIG_PREEMPT_BUILD=y$$' "$(ORLIX_KERNEL_BUILD_DIR)/.config"; then preempt_flag="PREEMPT"; fi; \
+	if grep -q '^CONFIG_PREEMPT_DYNAMIC=y$$' "$(ORLIX_KERNEL_BUILD_DIR)/.config"; then preempt_flag="PREEMPT_DYNAMIC"; fi; \
+	if grep -q '^CONFIG_PREEMPT_RT=y$$' "$(ORLIX_KERNEL_BUILD_DIR)/.config"; then preempt_flag="PREEMPT_RT"; fi; \
+	uts_version="$$(printf '#%s %s %s %s' "$$build_version" "$$smp_flag" "$$preempt_flag" "$$build_timestamp" | cut -b -64)"; \
+	printf '#define UTS_VERSION "%s"\n' "$$uts_version" > "$(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h"; \
 	{ for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; done; } > "$(ORLIX_KERNEL_ARCHIVE_MANIFEST)"; \
 	$(call orlix_product_adapter_verify_object_contract) \
 	$(call orlix_product_adapter_generate_boundaries) \
@@ -470,7 +515,12 @@ __kernel-archive: __prepare-kbuild
 			obj_name="$${src_rel//\//_}.o"; \
 			obj="$$obj_dir/$$obj_name"; \
 			dep="$$obj_dir/$${obj_name%.o}.d"; \
-			/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x c -ffreestanding $(ORLIX_PRODUCT_ADAPTER_CFLAGS) -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -DORLIX_APP_HOSTED_BOOT=1 -DKBUILD_MODNAME=\"$$kbuild_name\" -DKBUILD_BASENAME=\"$$kbuild_name\" -DKBUILD_MODFILE=\"$$src_rel\" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/kconfig.h" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -MMD -MF "$$dep" -c "$$src" -o "$$obj"; \
+			extra_cflags=""; \
+			case "$$src_rel" in \
+				init/version.c) extra_cflags="-include $(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h" ;; \
+				lib/fdt*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/scripts/dtc/libfdt" ;; \
+			esac; \
+			/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x c -ffreestanding $(ORLIX_PRODUCT_ADAPTER_CFLAGS) -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -DORLIX_APP_HOSTED_BOOT=1 -DKBUILD_MODNAME=\"$$kbuild_name\" -DKBUILD_BASENAME=\"$$kbuild_name\" -DKBUILD_MODFILE=\"$$src_rel\" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/kconfig.h" $$extra_cflags -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -MMD -MF "$$dep" -c "$$src" -o "$$obj"; \
 			if grep -E '(/Applications/|/Library/Developer/CommandLineTools/SDKs/|/System/Library/Frameworks|/usr/include)' "$$dep"; then \
 				echo "Linux object included a host SDK or libc header: $$dep" >&2; \
 				exit 1; \

@@ -8,13 +8,19 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__text \
 	__TEXT,__cstring \
 	__TEXT,__const \
+	__TEXT,__literal4 \
+	__TEXT,__literal8 \
+	__TEXT,__literal16 \
 	__TEXT,__init_text \
 	__TEXT,__init_rodata \
 	__TEXT,__ref_text \
+	__TEXT,__sched_text \
 	__DATA,__data \
+	__DATA,__const \
 	__DATA,__bss \
 	__DATA,__common \
 	__DATA,__init_data \
+	__DATA,__init_tinfo \
 	__DATA,__init_setup \
 	__DATA,__param \
 	__DATA,__data_once \
@@ -25,6 +31,8 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__DATA,__discard_addr \
 	__DATA,__export_symbol \
 	__DATA,__modinfo \
+	__DATA,__modver \
+	__DATA,__note \
 	__DATA,__orlix_bnd \
 	__DATA,__initcall_e \
 	__DATA,__initcall0 \
@@ -62,7 +70,8 @@ for path in "$(ORLIX_KERNEL_BUILD_DIR)" "$$adapter_root" "$$adapter_include"; do
 	if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked product adapter path: $$path" >&2; exit 1; fi; \
 done; \
 rm -rf "$$adapter_root"; \
-mkdir -p "$$adapter_include/linux"; \
+	mkdir -p "$$adapter_include/linux"; \
+	mkdir -p "$$adapter_include/linux/sched"; \
 $(call orlix_product_adapter_validate_linux_truth); \
 $(call orlix_product_adapter_validate_macho_projection); \
 $(call orlix_product_adapter_generate_headers)
@@ -80,7 +89,11 @@ for required in \
 	"$$linux_root/include/linux/compiler.h" \
 	"$$linux_root/include/linux/export.h" \
 	"$$linux_root/include/linux/cache.h" \
+	"$$linux_root/include/linux/elfnote.h" \
+	"$$linux_root/include/linux/init_task.h" \
 	"$$linux_root/include/linux/percpu-defs.h" \
+	"$$linux_root/include/linux/sched/debug.h" \
+	"$$linux_root/include/linux/syscalls.h" \
 	"$$linux_root/include/asm-generic/percpu.h" \
 	"$$linux_root/include/asm-generic/vmlinux.lds.h" \
 	"$$linux_root/scripts/mod/modpost.c" \
@@ -98,7 +111,11 @@ require_text "$$linux_root/include/linux/moduleparam.h" 'extern const struct ker
 require_text "$$linux_root/include/linux/compiler.h" '__section(".discard.addressable")'; \
 require_text "$$linux_root/include/linux/export.h" '.section ".export_symbol","a"'; \
 require_text "$$linux_root/include/linux/cache.h" '__section(".data..ro_after_init")'; \
+require_text "$$linux_root/include/linux/elfnote.h" '__attribute__((section(".note." name),'; \
+require_text "$$linux_root/include/linux/init_task.h" '__section(".data..init_thread_info")'; \
 require_text "$$linux_root/include/linux/percpu-defs.h" 'PER_CPU_BASE_SECTION'; \
+require_text "$$linux_root/include/linux/sched/debug.h" '__section(".sched.text")'; \
+require_text "$$linux_root/include/linux/syscalls.h" '__attribute__((alias(__stringify(__se_sys##name))))'; \
 require_text "$$linux_root/include/asm-generic/percpu.h" '#ifndef PER_CPU_BASE_SECTION'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define COMMON_DISCARDS'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.discard.*)'; \
@@ -110,6 +127,7 @@ for pattern in \
 	'.init.text' '.init.data' '.init.rodata' '.ref.text' '.init.setup' \
 	'__setup_start = .;' '__setup_end = .;' '__init_begin = .;' '__init_end = .;' \
 	'__initcall_start = .;' '__initcall_end = .;' '__param' '.data.once' '.data..ro_after_init' \
+	'.data..init_thread_info' '.sched.text' \
 	'/DISCARD/ : {' '*(.discard)' '*(.discard.*)' '*(.export_symbol)' '*(.modinfo)'; do \
 	require_text "$$lds" "$$pattern"; \
 done; \
@@ -144,7 +162,11 @@ cp "$$linux_root/include/linux/moduleparam.h" "$$adapter_include/linux/modulepar
 cp "$$linux_root/include/linux/compiler.h" "$$adapter_include/linux/compiler.h"; \
 cp "$$linux_root/include/linux/export.h" "$$adapter_include/linux/export.h"; \
 cp "$$linux_root/include/linux/cache.h" "$$adapter_include/linux/cache.h"; \
+cp "$$linux_root/include/linux/elfnote.h" "$$adapter_include/linux/elfnote.h"; \
+cp "$$linux_root/include/linux/init_task.h" "$$adapter_include/linux/init_task.h"; \
 cp "$$linux_root/include/linux/percpu-defs.h" "$$adapter_include/linux/percpu-defs.h"; \
+cp "$$linux_root/include/linux/sched/debug.h" "$$adapter_include/linux/sched/debug.h"; \
+cp "$$linux_root/include/linux/syscalls.h" "$$adapter_include/linux/syscalls.h"; \
 cp "$$linux_root/include/linux/once_lite.h" "$$adapter_include/linux/once_lite.h"; \
 replace_once "$$adapter_include/linux/init.h" '__section(".init.text")' '__section("__TEXT,__init_text")'; \
 replace_once "$$adapter_include/linux/init.h" '__section(".init.data")' '__section("__DATA,__init_data")'; \
@@ -156,10 +178,14 @@ perl -0pi -e 'my $$defs = join("\n", q{#define __orlix_product_initcall_section_
 replace_once "$$adapter_include/linux/compiler.h" '__section(".discard.addressable")' '__section("__DATA,__discard_addr")'; \
 replace_once "$$adapter_include/linux/export.h" '.section ".export_symbol","a"' '.section __DATA,__export_symbol'; \
 replace_once "$$adapter_include/linux/cache.h" '__section(".data..ro_after_init")' '__section("__DATA,__ro_after_init")'; \
+replace_once "$$adapter_include/linux/elfnote.h" '__attribute__((section(".note." name),' '__attribute__((section("__DATA,__note"),'; \
+replace_once "$$adapter_include/linux/init_task.h" '__section(".data..init_thread_info")' '__section("__DATA,__init_tinfo")'; \
 replace_once "$$adapter_include/linux/moduleparam.h" '__section(".modinfo")' '__section("__DATA,__modinfo")'; \
 replace_once "$$adapter_include/linux/moduleparam.h" '__section("__param")' '__section("__DATA,__param")'; \
 replace_once "$$adapter_include/linux/once_lite.h" '__section(".data.once")' '__section("__DATA,__data_once")'; \
 replace_once "$$adapter_include/linux/percpu-defs.h" '__section(".discard")' '__section("__DATA,__discard")'; \
+replace_once "$$adapter_include/linux/sched/debug.h" '__section(".sched.text")' '__section("__TEXT,__sched_text")'; \
+perl -0pi -e 'my $$cast = s/#define __SC_ARGS\(t, a\)\ta\n/#define __SC_ARGS(t, a)\ta\n#define __SC_LONG_CAST(t, a) (__typeof(__builtin_choose_expr(__TYPE_IS_LL(t), 0LL, 0L)))(a)\n/; die "failed to insert Orlix syscall cast helper\n" unless $$cast == 1; my $$alias = s/asmlinkage long sys##name\(__MAP\(x,__SC_DECL,__VA_ARGS__\)\)\s*\\\n\t\t__attribute__\(\(alias\(__stringify\(__se_sys##name\)\)\)\);\s*\\/asmlinkage long __se_sys##name(__MAP(x,__SC_LONG,__VA_ARGS__));\t\\\n\tasmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__));\t\\\n\tasmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__))\t\\\n\t{\t\t\t\t\t\t\t\t\\\n\t\treturn __se_sys##name(__MAP(x,__SC_LONG_CAST,__VA_ARGS__));\\\n\t}\t\t\t\t\t\t\t\t\\/; die "failed to replace Linux syscall alias for Mach-O\n" unless $$alias == 1;' "$$adapter_include/linux/syscalls.h"; \
 perl -0pi -e 's/#define PER_CPU_SHARED_ALIGNED_SECTION "\.\.shared_aligned"/#define PER_CPU_SHARED_ALIGNED_SECTION ""/g; s/#define PER_CPU_ALIGNED_SECTION "\.\.shared_aligned"/#define PER_CPU_ALIGNED_SECTION ""/g;' "$$adapter_include/linux/percpu-defs.h"; \
 echo "generated Orlix product adapter headers: $$adapter_include"
 endef
@@ -230,6 +256,39 @@ orlix_product_adapter_generate_boundaries() { \
 		symbol="$$1"; \
 		if undefined_symbol_present "$$symbol"; then emit_label "$$symbol"; fi; \
 	}; \
+	initcall_cursor=""; \
+	first_present_initcall_section() { \
+		for section in "$${@}"; do \
+			if section_present __DATA "$$section"; then printf '%s' "$$section"; return 0; fi; \
+		done; \
+		return 1; \
+	}; \
+	last_present_initcall_section() { \
+		last=""; \
+		for section in "$${@}"; do \
+			if section_present __DATA "$$section"; then last="$$section"; fi; \
+		done; \
+		[ -n "$$last" ] || return 1; \
+		printf '%s' "$$last"; \
+	}; \
+	emit_initcall_group_boundary() { \
+		symbol="$$1"; shift; \
+		first="$$(first_present_initcall_section "$${@}" || true)"; \
+		if [ -n "$$first" ]; then \
+			emit_alias "$$symbol" "$$(section_label start __DATA "$$first")"; \
+			last="$$(last_present_initcall_section "$${@}")"; \
+			initcall_cursor="$$(section_label end __DATA "$$last")"; \
+		elif [ -n "$$initcall_cursor" ]; then \
+			emit_alias "$$symbol" "$$initcall_cursor"; \
+		else \
+			emit_label "$$symbol"; \
+			initcall_cursor="$$symbol"; \
+		fi; \
+	}; \
+	emit_initcall_end_boundary() { \
+		symbol="$$1"; \
+		if [ -n "$$initcall_cursor" ]; then emit_alias "$$symbol" "$$initcall_cursor"; else emit_label "$$symbol"; initcall_cursor="$$symbol"; fi; \
+	}; \
 	mkdir -p "$$(dirname "$$boundary_src")"; \
 	{ \
 		printf '%s\n' '/* generated Build-only product-link boundary glue for the Mach-O OrlixKernel product */'; \
@@ -237,18 +296,31 @@ orlix_product_adapter_generate_boundaries() { \
 		printf '%s\n' '.section __DATA,__orlix_bnd'; \
 		printf '%s\n' '.p2align 3'; \
 		printf '%s\n' '/* __init_begin/__init_end are conservative until init-memory reclaim semantics exist. */'; \
+		emit_section_pair_if_needed __stext __etext __TEXT __text; \
+		emit_section_pair_if_needed __sinittext __einittext __TEXT __init_text; \
 		emit_empty_pair_if_needed ___init_begin ___init_end; \
 		emit_section_pair_if_needed ___setup_start ___setup_end __DATA __init_setup; \
-		if section_name_matches '^__initcall|^__con_initcall$$'; then \
-			echo "initcall Mach-O sections are present but Orlix product adapter ordering policy is not implemented yet" >&2; \
-			exit 1; \
+		if section_name_matches '^__initcall' || undefined_symbol_present ___initcall_start || undefined_symbol_present ___initcall_end; then \
+			emit_initcall_group_boundary ___initcall_start __initcall_e; \
+			emit_initcall_group_boundary ___initcall0_start __initcall0 __initcall0s; \
+			emit_initcall_group_boundary ___initcall1_start __initcall1 __initcall1s; \
+			emit_initcall_group_boundary ___initcall2_start __initcall2 __initcall2s; \
+			emit_initcall_group_boundary ___initcall3_start __initcall3 __initcall3s; \
+			emit_initcall_group_boundary ___initcall4_start __initcall4 __initcall4s; \
+			emit_initcall_group_boundary ___initcall5_start __initcall5 __initcall5s __initcallrf __initcallrfs; \
+			emit_initcall_group_boundary ___initcall6_start __initcall6 __initcall6s; \
+			emit_initcall_group_boundary ___initcall7_start __initcall7 __initcall7s; \
+			emit_initcall_end_boundary ___initcall_end; \
+		else \
+			for symbol in ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end; do emit_symbol_if_needed "$$symbol"; done; \
 		fi; \
-		for symbol in ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end; do emit_symbol_if_needed "$$symbol"; done; \
+		emit_section_pair_if_needed ___con_initcall_start ___con_initcall_end __DATA __con_initcall; \
 		emit_section_pair_if_needed ___start_once ___end_once __DATA __data_once; \
 		emit_section_pair_if_needed ___start_ro_after_init ___end_ro_after_init __DATA __ro_after_init; \
 		emit_section_pair_if_needed ___per_cpu_start ___per_cpu_end __DATA __percpu; \
 		if undefined_symbol_present ___bss_start || undefined_symbol_present ___bss_stop; then if section_present __DATA __bss && ! section_present __DATA __common; then emit_section_pair ___bss_start ___bss_stop __DATA __bss; else emit_empty_pair ___bss_start ___bss_stop; fi; fi; \
 		emit_section_pair_if_needed ___start___param ___stop___param __DATA __param; \
+		emit_section_pair_if_needed ___start___modver ___stop___modver __DATA __modver; \
 		emit_section_pair_if_needed ___start___ksymtab ___stop___ksymtab __DATA __ksymtab; \
 		emit_section_pair_if_needed ___start___kcrctab ___stop___kcrctab __DATA __kcrctab; \
 		emit_section_pair_if_needed ___start___ex_table ___stop___ex_table __DATA __ex_table; \
