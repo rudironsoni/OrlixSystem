@@ -52,6 +52,9 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/printk/printk.c \
 	kernel/printk/printk_safe.c \
 	kernel/umh.c \
+	kernel/ucount.c \
+	kernel/user.c \
+	kernel/user_namespace.c \
 	kernel/kallsyms.c \
 	lib/string.c \
 	lib/string_helpers.c \
