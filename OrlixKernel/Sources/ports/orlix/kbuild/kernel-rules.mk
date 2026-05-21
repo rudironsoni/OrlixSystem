@@ -62,6 +62,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/uuid.c \
 	lib/errname.c \
 	lib/crc32.c \
+	lib/debug_locks.c \
 	lib/siphash.c \
 	lib/seq_buf.c \
 	lib/sort.c \
