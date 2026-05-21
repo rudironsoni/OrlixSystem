@@ -78,12 +78,14 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/bust_spinlocks.c \
 	lib/crc32.c \
 	lib/debug_locks.c \
+	lib/lockref.c \
 	lib/siphash.c \
 	lib/seq_buf.c \
 	lib/sort.c \
 	kernel/time/time.c \
 	kernel/time/timeconv.c \
 	mm/maccess.c \
+	mm/list_lru.c \
 	mm/memblock.c \
 	drivers/base/devres.c \
 	drivers/of/base.c \
