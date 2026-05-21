@@ -44,20 +44,24 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/params.c \
 	kernel/panic.c \
 	kernel/printk/printk.c \
+	kernel/printk/printk_safe.c \
 	kernel/kallsyms.c \
 	lib/string.c \
 	lib/string_helpers.c \
+	lib/ratelimit.c \
 	lib/vsprintf.c \
 	lib/ctype.c \
 	lib/cmdline.c \
 	lib/kstrtox.c \
 	lib/bitmap.c \
 	lib/find_bit.c \
+	lib/hweight.c \
 	lib/hexdump.c \
 	lib/uuid.c \
 	lib/errname.c \
 	lib/siphash.c \
 	lib/seq_buf.c \
+	kernel/time/time.c \
 	kernel/time/timeconv.c \
 	mm/memblock.c \
 	drivers/of/fdt.c \
@@ -381,10 +385,12 @@ __prepare-kbuild: __prepare-port
 	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
 	rm -rf "$$build_dir"; \
 	mkdir -p "$$build_dir"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" mrproper defconfig prepare scripts dtbs arch/$(LINUX_ARCH)/kernel/vmlinux.lds; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" mrproper defconfig prepare scripts dtbs arch/$(LINUX_ARCH)/kernel/vmlinux.lds drivers/of/empty_root.dtb.o usr/initramfs_data.o; \
 	for dtb in appstore development; do \
 		[ -f "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" ] || { echo "missing profile DTB: $$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" >&2; exit 1; }; \
 	done; \
+	[ -s "$$build_dir/drivers/of/empty_root.dtb" ] || { echo "missing generated empty-root DTB: $$build_dir/drivers/of/empty_root.dtb" >&2; exit 1; }; \
+	[ -s "$$build_dir/usr/initramfs_inc_data" ] || { echo "missing generated initramfs input: $$build_dir/usr/initramfs_inc_data" >&2; exit 1; }; \
 	linker_script="$$build_dir/arch/$(LINUX_ARCH)/kernel/vmlinux.lds"; \
 	[ -s "$$linker_script" ] || { echo "missing generated Orlix Kbuild linker script: $$linker_script" >&2; exit 1; }; \
 	echo "verified Orlix Kbuild linker script: $$linker_script"; \
@@ -496,6 +502,7 @@ __kernel-archive: __prepare-kbuild
 	printf '#define UTS_VERSION "%s"\n' "$$uts_version" > "$(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h"; \
 	{ for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; done; } > "$(ORLIX_KERNEL_ARCHIVE_MANIFEST)"; \
 	$(call orlix_product_adapter_verify_object_contract) \
+	$(call orlix_product_adapter_generate_payloads) \
 	$(call orlix_product_adapter_generate_boundaries) \
 	compile_slice() { \
 		platform="$$1"; \
@@ -532,6 +539,7 @@ __kernel-archive: __prepare-kbuild
 			orlix_product_adapter_verify_object_contract "$$obj"; \
 			objs+=("$$obj"); \
 		done; \
+		orlix_product_adapter_generate_payloads "$$platform" "$$target"; \
 		orlix_product_adapter_generate_boundaries "$$platform" "$$target" "$${objs[@]}"; \
 		"$$ar_cmd" rcs "$$archive" "$${objs[@]}"; \
 		[ -s "$$archive" ] || { echo "missing OrlixKernel archive: $$archive" >&2; exit 1; }; \

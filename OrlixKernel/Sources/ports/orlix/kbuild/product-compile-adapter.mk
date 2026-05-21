@@ -1,8 +1,9 @@
 ORLIX_PRODUCT_ADAPTER_ROOT := $(ORLIX_KERNEL_BUILD_DIR)/orlix-product-compile-adapter
 ORLIX_PRODUCT_ADAPTER_INCLUDE := $(ORLIX_PRODUCT_ADAPTER_ROOT)/include
 ORLIX_PRODUCT_ADAPTER_CFLAGS := -O2 -fshort-wchar -DPER_CPU_BASE_SECTION=\"__DATA,__percpu\" -I"$(ORLIX_PRODUCT_ADAPTER_INCLUDE)"
+ORLIX_PRODUCT_PAYLOAD_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-payloads.o
 ORLIX_PRODUCT_BOUNDARY_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-boundaries.o
-ORLIX_PRODUCT_BOUNDARY_OBJECTS := $(ORLIX_PRODUCT_BOUNDARY_OBJECT)
+ORLIX_PRODUCT_BOUNDARY_OBJECTS := $(ORLIX_PRODUCT_PAYLOAD_OBJECT) $(ORLIX_PRODUCT_BOUNDARY_OBJECT)
 
 ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__text \
@@ -15,12 +16,14 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__init_rodata \
 	__TEXT,__ref_text \
 	__TEXT,__sched_text \
+	__TEXT,__dtb_init \
 	__DATA,__data \
 	__DATA,__const \
 	__DATA,__bss \
 	__DATA,__common \
 	__DATA,__init_data \
 	__DATA,__init_tinfo \
+	__DATA,__init_ramfs \
 	__DATA,__init_setup \
 	__DATA,__param \
 	__DATA,__data_once \
@@ -96,6 +99,8 @@ for required in \
 	"$$linux_root/include/linux/syscalls.h" \
 	"$$linux_root/include/asm-generic/percpu.h" \
 	"$$linux_root/include/asm-generic/vmlinux.lds.h" \
+	"$$linux_root/drivers/of/Makefile" \
+	"$$linux_root/usr/Makefile" \
 	"$$linux_root/scripts/mod/modpost.c" \
 	"$$linux_root/scripts/link-vmlinux.sh"; do \
 	[ -s "$$required" ] || { echo "missing Linux truth input: $$required" >&2; exit 1; }; \
@@ -120,8 +125,12 @@ require_text "$$linux_root/include/asm-generic/percpu.h" '#ifndef PER_CPU_BASE_S
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define COMMON_DISCARDS'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.discard.*)'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)'; \
-require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define INIT_CALLS'; \
-require_text "$$linux_root/scripts/mod/modpost.c" 'EXPORT_SYMBOL'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define INIT_CALLS'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__initramfs_start = .;'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(.init.ramfs))'; \
+	require_text "$$linux_root/drivers/of/Makefile" 'empty_root.dtb.o'; \
+	require_text "$$linux_root/usr/Makefile" 'obj-$$(CONFIG_BLK_DEV_INITRD) := initramfs_data.o'; \
+	require_text "$$linux_root/scripts/mod/modpost.c" 'EXPORT_SYMBOL'; \
 require_text "$$linux_root/scripts/link-vmlinux.sh" 'vmlinux.o'; \
 for pattern in \
 	'.init.text' '.init.data' '.init.rodata' '.ref.text' '.init.setup' \
@@ -187,7 +196,45 @@ replace_once "$$adapter_include/linux/percpu-defs.h" '__section(".discard")' '__
 replace_once "$$adapter_include/linux/sched/debug.h" '__section(".sched.text")' '__section("__TEXT,__sched_text")'; \
 perl -0pi -e 'my $$cast = s/#define __SC_ARGS\(t, a\)\ta\n/#define __SC_ARGS(t, a)\ta\n#define __SC_LONG_CAST(t, a) (__typeof(__builtin_choose_expr(__TYPE_IS_LL(t), 0LL, 0L)))(a)\n/; die "failed to insert Orlix syscall cast helper\n" unless $$cast == 1; my $$alias = s/asmlinkage long sys##name\(__MAP\(x,__SC_DECL,__VA_ARGS__\)\)\s*\\\n\t\t__attribute__\(\(alias\(__stringify\(__se_sys##name\)\)\)\);\s*\\/asmlinkage long __se_sys##name(__MAP(x,__SC_LONG,__VA_ARGS__));\t\\\n\tasmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__));\t\\\n\tasmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__))\t\\\n\t{\t\t\t\t\t\t\t\t\\\n\t\treturn __se_sys##name(__MAP(x,__SC_LONG_CAST,__VA_ARGS__));\\\n\t}\t\t\t\t\t\t\t\t\\/; die "failed to replace Linux syscall alias for Mach-O\n" unless $$alias == 1;' "$$adapter_include/linux/syscalls.h"; \
 perl -0pi -e 's/#define PER_CPU_SHARED_ALIGNED_SECTION "\.\.shared_aligned"/#define PER_CPU_SHARED_ALIGNED_SECTION ""/g; s/#define PER_CPU_ALIGNED_SECTION "\.\.shared_aligned"/#define PER_CPU_ALIGNED_SECTION ""/g;' "$$adapter_include/linux/percpu-defs.h"; \
-echo "generated Orlix product adapter headers: $$adapter_include"
+	echo "generated Orlix product adapter headers: $$adapter_include"
+endef
+
+define orlix_product_adapter_generate_payloads
+orlix_product_adapter_generate_payloads() { \
+	platform="$$1"; \
+	target="$$2"; \
+	payload_src="$(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-payloads.S"; \
+	payload_obj="$(ORLIX_PRODUCT_PAYLOAD_OBJECT)"; \
+	empty_root_dtb="$(ORLIX_KERNEL_BUILD_DIR)/drivers/of/empty_root.dtb"; \
+	initramfs_data="$(ORLIX_KERNEL_BUILD_DIR)/usr/initramfs_inc_data"; \
+	[ -s "$$empty_root_dtb" ] || { echo "missing generated Linux empty-root DTB: $$empty_root_dtb" >&2; exit 1; }; \
+	[ -s "$$initramfs_data" ] || { echo "missing generated Linux initramfs input: $$initramfs_data" >&2; exit 1; }; \
+	initramfs_size="$$(wc -c < "$$initramfs_data" | tr -d '[:space:]')"; \
+	{ \
+		printf '%s\n' '/* generated Build-only Mach-O wrappers for Linux-generated payload inputs */'; \
+		printf '%s\n' '.section __TEXT,__dtb_init'; \
+		printf '%s\n' '.p2align 3'; \
+		printf '%s\n' '.globl ___dtb_empty_root_begin'; \
+		printf '%s\n' '___dtb_empty_root_begin:'; \
+		printf '.incbin "%s"\n' "$$empty_root_dtb"; \
+		printf '%s\n' '.globl ___dtb_empty_root_end'; \
+		printf '%s\n' '___dtb_empty_root_end:'; \
+		printf '%s\n' '.p2align 3'; \
+		printf '%s\n' '.section __DATA,__init_ramfs'; \
+		printf '%s\n' '.p2align 2'; \
+		printf '%s\n' '.globl ___initramfs_start'; \
+		printf '%s\n' '___initramfs_start:'; \
+		printf '.incbin "%s"\n' "$$initramfs_data"; \
+		printf '%s\n' '.p2align 3'; \
+		printf '%s\n' '.globl ___initramfs_size'; \
+		printf '%s\n' '___initramfs_size:'; \
+		printf '.quad %s\n' "$$initramfs_size"; \
+	} > "$$payload_src"; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$payload_src" -o "$$payload_obj"; \
+	orlix_product_adapter_verify_object_contract "$$payload_obj"; \
+	objs+=("$$payload_obj"); \
+	echo "generated Orlix product payload object: $$payload_obj ($$platform)"; \
+};
 endef
 
 define orlix_product_adapter_verify_object_contract
