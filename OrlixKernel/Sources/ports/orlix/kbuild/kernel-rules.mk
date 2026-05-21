@@ -93,6 +93,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/of/of_reserved_mem.c \
 	drivers/of/property.c \
 	fs/d_path.c \
+	fs/namei.c \
 	fs/file.c \
 	fs/file_table.c \
 	fs/open.c \
