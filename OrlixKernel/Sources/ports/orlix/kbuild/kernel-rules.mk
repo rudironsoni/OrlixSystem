@@ -106,6 +106,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/fs_parser.c \
 	fs/fs_struct.c \
 	fs/filesystems.c \
+	fs/init.c \
 	fs/libfs.c \
 	fs/mnt_idmapping.c \
 	fs/open.c \
