@@ -72,6 +72,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	mm/memblock.c \
 	drivers/of/fdt.c \
 	drivers/of/of_reserved_mem.c \
+	fs/seq_file.c \
 	lib/fdt.c \
 	lib/fdt_ro.c \
 	lib/fdt_wip.c \
