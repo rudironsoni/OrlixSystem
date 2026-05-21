@@ -79,6 +79,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/of/kobj.c \
 	drivers/of/of_reserved_mem.c \
 	drivers/of/property.c \
+	fs/d_path.c \
 	fs/seq_file.c \
 	lib/fdt.c \
 	lib/fdt_ro.c \
