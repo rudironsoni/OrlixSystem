@@ -102,6 +102,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/file.c \
 	fs/file_table.c \
 	fs/fs_context.c \
+	fs/fs_pin.c \
 	fs/fs_parser.c \
 	fs/filesystems.c \
 	fs/libfs.c \
