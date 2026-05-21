@@ -81,6 +81,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/of/of_reserved_mem.c \
 	drivers/of/property.c \
 	fs/d_path.c \
+	fs/open.c \
 	fs/seq_file.c \
 	lib/fdt.c \
 	lib/fdt_ro.c \
