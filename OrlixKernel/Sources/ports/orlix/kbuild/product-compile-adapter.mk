@@ -77,6 +77,7 @@ done; \
 rm -rf "$$adapter_root"; \
 	mkdir -p "$$adapter_include/linux"; \
 	mkdir -p "$$adapter_include/linux/sched"; \
+	mkdir -p "$$adapter_root/source/lib"; \
 	mkdir -p "$$adapter_root/source/drivers/of"; \
 $(call orlix_product_adapter_validate_linux_truth); \
 $(call orlix_product_adapter_validate_macho_projection); \
@@ -137,6 +138,9 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/drivers/of/of_reserved_mem.c" '__used __section("__reservedmem_of_table_end");'; \
 	require_text "$$linux_root/drivers/of/Makefile" 'empty_root.dtb.o'; \
 	require_text "$$linux_root/usr/Makefile" 'obj-$$(CONFIG_BLK_DEV_INITRD) := initramfs_data.o'; \
+	require_text "$$linux_root/lib/crc32.c" 'u32 __pure crc32_le_base(u32, unsigned char const *, size_t) __alias(crc32_le);'; \
+	require_text "$$linux_root/lib/crc32.c" 'u32 __pure __crc32c_le_base(u32, unsigned char const *, size_t) __alias(__crc32c_le);'; \
+	require_text "$$linux_root/lib/crc32.c" 'u32 __pure crc32_be_base(u32, unsigned char const *, size_t) __alias(crc32_be);'; \
 	require_text "$$linux_root/scripts/mod/modpost.c" 'EXPORT_SYMBOL'; \
 require_text "$$linux_root/scripts/link-vmlinux.sh" 'vmlinux.o'; \
 for pattern in \
@@ -209,7 +213,11 @@ endef
 define orlix_product_adapter_generate_sources
 adapter_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)"; \
 linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
+cp "$$linux_root/lib/crc32.c" "$$adapter_root/source/lib/crc32.c"; \
 cp "$$linux_root/drivers/of/of_reserved_mem.c" "$$adapter_root/source/drivers/of/of_reserved_mem.c"; \
+replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure crc32_le_base(u32, unsigned char const *, size_t) __alias(crc32_le);' 'u32 __pure crc32_le_base(u32 crc, unsigned char const *p, size_t len) { return crc32_le(crc, p, len); }'; \
+replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure __crc32c_le_base(u32, unsigned char const *, size_t) __alias(__crc32c_le);' 'u32 __pure __crc32c_le_base(u32 crc, unsigned char const *p, size_t len) { return __crc32c_le(crc, p, len); }'; \
+replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure crc32_be_base(u32, unsigned char const *, size_t) __alias(crc32_be);' 'u32 __pure crc32_be_base(u32 crc, unsigned char const *p, size_t len) { return crc32_be(crc, p, len); }'; \
 replace_once "$$adapter_root/source/drivers/of/of_reserved_mem.c" '__used __section("__reservedmem_of_table_end");' '__used __section("__DATA,__rmem_end");'; \
 echo "generated Orlix product adapter sources: $$adapter_root/source"
 endef
@@ -219,6 +227,7 @@ orlix_product_adapter_source_for() { \
 	src_rel="$$1"; \
 	case "$$src_rel" in \
 		drivers/of/of_reserved_mem.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/drivers/of/of_reserved_mem.c" ;; \
+		lib/crc32.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/lib/crc32.c" ;; \
 		*) printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel" ;; \
 	esac; \
 };
