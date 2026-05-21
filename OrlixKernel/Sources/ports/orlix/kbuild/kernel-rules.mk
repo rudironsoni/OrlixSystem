@@ -87,6 +87,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	mm/maccess.c \
 	mm/list_lru.c \
 	mm/memblock.c \
+	mm/util.c \
 	drivers/base/devres.c \
 	drivers/of/base.c \
 	drivers/of/cpu.c \
