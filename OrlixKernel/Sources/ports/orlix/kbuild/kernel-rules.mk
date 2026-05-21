@@ -70,6 +70,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/time/time.c \
 	kernel/time/timeconv.c \
 	mm/memblock.c \
+	drivers/of/base.c \
 	drivers/of/fdt.c \
 	drivers/of/of_reserved_mem.c \
 	fs/seq_file.c \
