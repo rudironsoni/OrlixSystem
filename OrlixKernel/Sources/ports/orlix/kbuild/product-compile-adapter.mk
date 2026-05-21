@@ -130,6 +130,8 @@ require_text "$$linux_root/include/asm-generic/percpu.h" '#ifndef PER_CPU_BASE_S
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define COMMON_DISCARDS'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.discard.*)'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__start_rodata = .;'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__end_rodata = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define INIT_CALLS'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__initramfs_start = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(.init.ramfs))'; \
@@ -146,6 +148,7 @@ require_text "$$linux_root/scripts/link-vmlinux.sh" 'vmlinux.o'; \
 for pattern in \
 	'.init.text' '.init.data' '.init.rodata' '.ref.text' '.init.setup' \
 	'__setup_start = .;' '__setup_end = .;' '__init_begin = .;' '__init_end = .;' \
+	'__start_rodata = .;' '__end_rodata = .;' \
 	'__initcall_start = .;' '__initcall_end = .;' '__param' '.data.once' '.data..ro_after_init' \
 	'.data..init_thread_info' '.sched.text' '__reservedmem_of_table = .;' 'KEEP(*(__reservedmem_of_table_end))' \
 	'/DISCARD/ : {' '*(.discard)' '*(.discard.*)' '*(.export_symbol)' '*(.modinfo)'; do \
@@ -333,6 +336,13 @@ orlix_product_adapter_generate_boundaries() { \
 		start_symbol="$$1"; end_symbol="$$2"; segment="$$3"; section="$$4"; \
 		if undefined_symbol_present "$$start_symbol" || undefined_symbol_present "$$end_symbol"; then emit_section_pair "$$start_symbol" "$$end_symbol" "$$segment" "$$section"; fi; \
 	}; \
+	emit_required_section_pair_if_needed() { \
+		start_symbol="$$1"; end_symbol="$$2"; segment="$$3"; section="$$4"; \
+		if undefined_symbol_present "$$start_symbol" || undefined_symbol_present "$$end_symbol"; then \
+			section_present "$$segment" "$$section" || { echo "requested Linux boundary $$start_symbol/$$end_symbol has no Mach-O projection section $$segment,$$section" >&2; exit 1; }; \
+			emit_section_pair "$$start_symbol" "$$end_symbol" "$$segment" "$$section"; \
+		fi; \
+	}; \
 	emit_symbol_if_needed() { \
 		symbol="$$1"; \
 		if undefined_symbol_present "$$symbol"; then emit_label "$$symbol"; fi; \
@@ -385,6 +395,7 @@ orlix_product_adapter_generate_boundaries() { \
 		printf '%s\n' '.p2align 3'; \
 		printf '%s\n' '/* __init_begin/__init_end are conservative until init-memory reclaim semantics exist. */'; \
 		emit_section_pair_if_needed __stext __etext __TEXT __text; \
+		emit_required_section_pair_if_needed ___start_rodata ___end_rodata __TEXT __const; \
 		emit_section_pair_if_needed __sinittext __einittext __TEXT __init_text; \
 		emit_empty_pair_if_needed ___init_begin ___init_end; \
 		emit_section_pair_if_needed ___setup_start ___setup_end __DATA __init_setup; \
@@ -417,7 +428,7 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___start___bug_table ___stop___bug_table __DATA __bug_table; \
 	} > "$$boundary_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$boundary_src" -o "$$boundary_obj"; \
-	for symbol in ___init_begin ___init_end ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
+	for symbol in ___init_begin ___init_end ___start_rodata ___end_rodata ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
 	objs+=("$$boundary_obj"); \
 	echo "generated Orlix product boundary object: $$boundary_obj"; \
 };
