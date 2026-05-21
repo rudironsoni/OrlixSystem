@@ -36,6 +36,8 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__DATA,__modinfo \
 	__DATA,__modver \
 	__DATA,__note \
+	__DATA,__rmem_tbl \
+	__DATA,__rmem_end \
 	__DATA,__orlix_bnd \
 	__DATA,__initcall_e \
 	__DATA,__initcall0 \
@@ -75,9 +77,11 @@ done; \
 rm -rf "$$adapter_root"; \
 	mkdir -p "$$adapter_include/linux"; \
 	mkdir -p "$$adapter_include/linux/sched"; \
+	mkdir -p "$$adapter_root/source/drivers/of"; \
 $(call orlix_product_adapter_validate_linux_truth); \
 $(call orlix_product_adapter_validate_macho_projection); \
-$(call orlix_product_adapter_generate_headers)
+$(call orlix_product_adapter_generate_headers); \
+$(call orlix_product_adapter_generate_sources)
 endef
 
 define orlix_product_adapter_validate_linux_truth
@@ -128,6 +132,9 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define INIT_CALLS'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__initramfs_start = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(.init.ramfs))'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'RESERVEDMEM_OF_TABLES()'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(__##name##_of_table_end))'; \
+	require_text "$$linux_root/drivers/of/of_reserved_mem.c" '__used __section("__reservedmem_of_table_end");'; \
 	require_text "$$linux_root/drivers/of/Makefile" 'empty_root.dtb.o'; \
 	require_text "$$linux_root/usr/Makefile" 'obj-$$(CONFIG_BLK_DEV_INITRD) := initramfs_data.o'; \
 	require_text "$$linux_root/scripts/mod/modpost.c" 'EXPORT_SYMBOL'; \
@@ -136,7 +143,7 @@ for pattern in \
 	'.init.text' '.init.data' '.init.rodata' '.ref.text' '.init.setup' \
 	'__setup_start = .;' '__setup_end = .;' '__init_begin = .;' '__init_end = .;' \
 	'__initcall_start = .;' '__initcall_end = .;' '__param' '.data.once' '.data..ro_after_init' \
-	'.data..init_thread_info' '.sched.text' \
+	'.data..init_thread_info' '.sched.text' '__reservedmem_of_table = .;' 'KEEP(*(__reservedmem_of_table_end))' \
 	'/DISCARD/ : {' '*(.discard)' '*(.discard.*)' '*(.export_symbol)' '*(.modinfo)'; do \
 	require_text "$$lds" "$$pattern"; \
 done; \
@@ -197,6 +204,24 @@ replace_once "$$adapter_include/linux/sched/debug.h" '__section(".sched.text")' 
 perl -0pi -e 'my $$cast = s/#define __SC_ARGS\(t, a\)\ta\n/#define __SC_ARGS(t, a)\ta\n#define __SC_LONG_CAST(t, a) (__typeof(__builtin_choose_expr(__TYPE_IS_LL(t), 0LL, 0L)))(a)\n/; die "failed to insert Orlix syscall cast helper\n" unless $$cast == 1; my $$alias = s/asmlinkage long sys##name\(__MAP\(x,__SC_DECL,__VA_ARGS__\)\)\s*\\\n\t\t__attribute__\(\(alias\(__stringify\(__se_sys##name\)\)\)\);\s*\\/asmlinkage long __se_sys##name(__MAP(x,__SC_LONG,__VA_ARGS__));\t\\\n\tasmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__));\t\\\n\tasmlinkage long sys##name(__MAP(x,__SC_DECL,__VA_ARGS__))\t\\\n\t{\t\t\t\t\t\t\t\t\\\n\t\treturn __se_sys##name(__MAP(x,__SC_LONG_CAST,__VA_ARGS__));\\\n\t}\t\t\t\t\t\t\t\t\\/; die "failed to replace Linux syscall alias for Mach-O\n" unless $$alias == 1;' "$$adapter_include/linux/syscalls.h"; \
 perl -0pi -e 's/#define PER_CPU_SHARED_ALIGNED_SECTION "\.\.shared_aligned"/#define PER_CPU_SHARED_ALIGNED_SECTION ""/g; s/#define PER_CPU_ALIGNED_SECTION "\.\.shared_aligned"/#define PER_CPU_ALIGNED_SECTION ""/g;' "$$adapter_include/linux/percpu-defs.h"; \
 	echo "generated Orlix product adapter headers: $$adapter_include"
+endef
+
+define orlix_product_adapter_generate_sources
+adapter_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)"; \
+linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
+cp "$$linux_root/drivers/of/of_reserved_mem.c" "$$adapter_root/source/drivers/of/of_reserved_mem.c"; \
+replace_once "$$adapter_root/source/drivers/of/of_reserved_mem.c" '__used __section("__reservedmem_of_table_end");' '__used __section("__DATA,__rmem_end");'; \
+echo "generated Orlix product adapter sources: $$adapter_root/source"
+endef
+
+define orlix_product_adapter_source_resolver
+orlix_product_adapter_source_for() { \
+	src_rel="$$1"; \
+	case "$$src_rel" in \
+		drivers/of/of_reserved_mem.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/drivers/of/of_reserved_mem.c" ;; \
+		*) printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel" ;; \
+	esac; \
+};
 endef
 
 define orlix_product_adapter_generate_payloads
@@ -303,6 +328,13 @@ orlix_product_adapter_generate_boundaries() { \
 		symbol="$$1"; \
 		if undefined_symbol_present "$$symbol"; then emit_label "$$symbol"; fi; \
 	}; \
+	emit_reservedmem_table_if_needed() { \
+		if undefined_symbol_present ___reservedmem_of_table; then \
+			if section_present __DATA __rmem_tbl; then emit_alias ___reservedmem_of_table "$$(section_label start __DATA __rmem_tbl)"; \
+			elif section_present __DATA __rmem_end; then emit_alias ___reservedmem_of_table "$$(section_label start __DATA __rmem_end)"; \
+			else emit_label ___reservedmem_of_table; fi; \
+		fi; \
+	}; \
 	initcall_cursor=""; \
 	first_present_initcall_section() { \
 		for section in "$${@}"; do \
@@ -368,6 +400,7 @@ orlix_product_adapter_generate_boundaries() { \
 		if undefined_symbol_present ___bss_start || undefined_symbol_present ___bss_stop; then if section_present __DATA __bss && ! section_present __DATA __common; then emit_section_pair ___bss_start ___bss_stop __DATA __bss; else emit_empty_pair ___bss_start ___bss_stop; fi; fi; \
 		emit_section_pair_if_needed ___start___param ___stop___param __DATA __param; \
 		emit_section_pair_if_needed ___start___modver ___stop___modver __DATA __modver; \
+		emit_reservedmem_table_if_needed; \
 		emit_section_pair_if_needed ___start___ksymtab ___stop___ksymtab __DATA __ksymtab; \
 		emit_section_pair_if_needed ___start___kcrctab ___stop___kcrctab __DATA __kcrctab; \
 		emit_section_pair_if_needed ___start___ex_table ___stop___ex_table __DATA __ex_table; \

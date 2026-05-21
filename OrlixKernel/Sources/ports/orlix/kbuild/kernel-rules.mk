@@ -65,6 +65,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/time/timeconv.c \
 	mm/memblock.c \
 	drivers/of/fdt.c \
+	drivers/of/of_reserved_mem.c \
 	lib/fdt.c \
 	lib/fdt_ro.c \
 	lib/fdt_wip.c \
@@ -502,6 +503,7 @@ __kernel-archive: __prepare-kbuild
 	printf '#define UTS_VERSION "%s"\n' "$$uts_version" > "$(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h"; \
 	{ for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; done; } > "$(ORLIX_KERNEL_ARCHIVE_MANIFEST)"; \
 	$(call orlix_product_adapter_verify_object_contract) \
+	$(call orlix_product_adapter_source_resolver) \
 	$(call orlix_product_adapter_generate_payloads) \
 	$(call orlix_product_adapter_generate_boundaries) \
 	compile_slice() { \
@@ -514,7 +516,7 @@ __kernel-archive: __prepare-kbuild
 		mkdir -p "$$obj_dir"; \
 		objs=(); \
 		for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do \
-			src="$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; \
+			src="$$(orlix_product_adapter_source_for "$$src_rel")"; \
 			[ -s "$$src" ] || { echo "missing Linux source: $$src" >&2; exit 1; }; \
 			kbuild_name="$${src_rel##*/}"; \
 			kbuild_name="$${kbuild_name%.c}"; \
@@ -525,6 +527,7 @@ __kernel-archive: __prepare-kbuild
 			extra_cflags=""; \
 			case "$$src_rel" in \
 				init/version.c) extra_cflags="-include $(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h" ;; \
+				drivers/of/of_reserved_mem.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/drivers/of" ;; \
 				lib/fdt*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/scripts/dtc/libfdt" ;; \
 			esac; \
 			/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x c -ffreestanding $(ORLIX_PRODUCT_ADAPTER_CFLAGS) -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -DORLIX_APP_HOSTED_BOOT=1 -DKBUILD_MODNAME=\"$$kbuild_name\" -DKBUILD_BASENAME=\"$$kbuild_name\" -DKBUILD_MODFILE=\"$$src_rel\" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/kconfig.h" $$extra_cflags -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -MMD -MF "$$dep" -c "$$src" -o "$$obj"; \
