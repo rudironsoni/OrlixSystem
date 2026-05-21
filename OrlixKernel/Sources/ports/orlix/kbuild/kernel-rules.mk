@@ -60,6 +60,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/hweight.c \
 	lib/hexdump.c \
 	lib/uuid.c \
+	lib/iov_iter.c \
 	lib/errname.c \
 	lib/bust_spinlocks.c \
 	lib/crc32.c \
