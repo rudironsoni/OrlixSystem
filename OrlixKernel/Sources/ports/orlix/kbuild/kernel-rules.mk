@@ -72,6 +72,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/sort.c \
 	kernel/time/time.c \
 	kernel/time/timeconv.c \
+	mm/maccess.c \
 	mm/memblock.c \
 	drivers/of/base.c \
 	drivers/of/cpu.c \
