@@ -51,6 +51,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/panic.c \
 	kernel/printk/printk.c \
 	kernel/printk/printk_safe.c \
+	kernel/sched/build_utility.c \
 	kernel/umh.c \
 	kernel/ucount.c \
 	kernel/user.c \

@@ -29,6 +29,7 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__DATA,__data_once \
 	__DATA,__ro_after_init \
 	__DATA,__ref_data \
+	__DATA,__cacheline \
 	__DATA,__percpu \
 	__DATA,__discard \
 	__DATA,__discard_addr \
@@ -201,6 +202,7 @@ perl -0pi -e 'my $$defs = join("\n", q{#define __orlix_product_initcall_section_
 replace_once "$$adapter_include/linux/compiler.h" '__section(".discard.addressable")' '__section("__DATA,__discard_addr")'; \
 replace_once "$$adapter_include/linux/export.h" '.section ".export_symbol","a"' '.section __DATA,__export_symbol'; \
 replace_once "$$adapter_include/linux/cache.h" '__section(".data..ro_after_init")' '__section("__DATA,__ro_after_init")'; \
+replace_once "$$adapter_include/linux/cache.h" '__section__(".data..cacheline_aligned")' '__section__("__DATA,__cacheline")'; \
 replace_once "$$adapter_include/linux/elfnote.h" '__attribute__((section(".note." name),' '__attribute__((section("__DATA,__note"),'; \
 replace_once "$$adapter_include/linux/init_task.h" '__section(".data..init_thread_info")' '__section("__DATA,__init_tinfo")'; \
 replace_once "$$adapter_include/linux/moduleparam.h" '__section(".modinfo")' '__section("__DATA,__modinfo")'; \
