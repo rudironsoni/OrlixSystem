@@ -92,6 +92,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/of/kobj.c \
 	drivers/of/of_reserved_mem.c \
 	drivers/of/property.c \
+	fs/dcache.c \
 	fs/d_path.c \
 	fs/namei.c \
 	fs/file.c \
