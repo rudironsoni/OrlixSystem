@@ -142,12 +142,14 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/hexdump.c \
 	lib/uuid.c \
 	lib/iov_iter.c \
+	lib/scatterlist.c \
 	lib/timerqueue.c \
 	lib/maple_tree.c \
 	lib/idr.c \
 	lib/extable.c \
 	lib/irq_regs.c \
 	lib/argv_split.c \
+	lib/list_sort.c \
 	lib/radix-tree.c \
 	lib/rbtree.c \
 	lib/xarray.c \
@@ -174,8 +176,11 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/lockref.c \
 	lib/logic_pio.c \
 	lib/siphash.c \
+	lib/plist.c \
 	lib/seq_buf.c \
 	lib/sort.c \
+	lib/sbitmap.c \
+	lib/flex_proportions.c \
 	kernel/time/alarmtimer.c \
 	kernel/time/clockevents.c \
 	kernel/time/clocksource.c \
@@ -249,6 +254,36 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	mm/swapfile.c \
 	mm/swap_slots.c \
 	mm/dmapool.c \
+	block/bdev.c \
+	block/fops.c \
+	block/bio.c \
+	block/elevator.c \
+	block/blk-core.c \
+	block/blk-sysfs.c \
+	block/blk-flush.c \
+	block/blk-settings.c \
+	block/blk-ioc.c \
+	block/blk-map.c \
+	block/blk-merge.c \
+	block/blk-timeout.c \
+	block/blk-lib.c \
+	block/blk-mq.c \
+	block/blk-mq-tag.c \
+	block/blk-stat.c \
+	block/blk-mq-sysfs.c \
+	block/blk-mq-cpumap.c \
+	block/blk-mq-sched.c \
+	block/ioctl.c \
+	block/genhd.c \
+	block/ioprio.c \
+	block/badblocks.c \
+	block/partitions/core.c \
+	block/partitions/msdos.c \
+	block/partitions/efi.c \
+	block/blk-rq-qos.c \
+	block/disk-events.c \
+	block/blk-ia-ranges.c \
+	block/early-lookup.c \
 	drivers/base/component.c \
 	drivers/base/core.c \
 	drivers/base/bus.c \
