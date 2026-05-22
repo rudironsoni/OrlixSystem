@@ -4,7 +4,8 @@ ORLIX_PRODUCT_ADAPTER_CFLAGS := -O2 -fshort-wchar -DPER_CPU_BASE_SECTION=\"__DAT
 ORLIX_PRODUCT_PAYLOAD_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-payloads.o
 ORLIX_PRODUCT_BOUNDARY_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-boundaries.o
 ORLIX_PRODUCT_KALLSYMS_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-kallsyms.o
-ORLIX_PRODUCT_BOUNDARY_OBJECTS := $(ORLIX_PRODUCT_PAYLOAD_OBJECT) $(ORLIX_PRODUCT_BOUNDARY_OBJECT) $(ORLIX_PRODUCT_KALLSYMS_OBJECT)
+ORLIX_PRODUCT_ORDER_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-section-order.o
+ORLIX_PRODUCT_BOUNDARY_OBJECTS := $(ORLIX_PRODUCT_ORDER_OBJECT) $(ORLIX_PRODUCT_PAYLOAD_OBJECT) $(ORLIX_PRODUCT_BOUNDARY_OBJECT) $(ORLIX_PRODUCT_KALLSYMS_OBJECT)
 
 ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__text \
@@ -121,6 +122,7 @@ for required in \
 	"$$linux_root/include/linux/linkage.h" \
 	"$$linux_root/include/linux/module.h" \
 	"$$linux_root/include/linux/moduleparam.h" \
+	"$$linux_root/include/linux/of.h" \
 	"$$linux_root/include/linux/compiler.h" \
 	"$$linux_root/include/linux/compiler_types.h" \
 	"$$linux_root/include/linux/export.h" \
@@ -183,6 +185,7 @@ require_text "$$linux_root/include/linux/cache.h" '__section(".data..ro_after_in
 	require_text "$$linux_root/include/linux/mmdebug.h" '__section(".data.once")'; \
 	require_text "$$linux_root/include/linux/module.h" '__section("__modver")'; \
 	require_text "$$linux_root/include/linux/once.h" '__section(".data.once")'; \
+	require_text "$$linux_root/include/linux/of.h" '__used __section("__" #table "_of_table")'; \
 	require_text "$$linux_root/include/linux/percpu-defs.h" 'PER_CPU_BASE_SECTION'; \
 	require_text "$$linux_root/include/linux/sched/debug.h" '__section(".sched.text")'; \
 	require_text "$$linux_root/include/linux/sched/debug.h" 'extern char __sched_text_start[], __sched_text_end[];'; \
@@ -314,6 +317,7 @@ cp "$$linux_root/include/linux/init.h" "$$adapter_include/linux/init.h"; \
 cp "$$linux_root/include/linux/linkage.h" "$$adapter_include/linux/linkage.h"; \
 cp "$$linux_root/include/linux/module.h" "$$adapter_include/linux/module.h"; \
 cp "$$linux_root/include/linux/moduleparam.h" "$$adapter_include/linux/moduleparam.h"; \
+cp "$$linux_root/include/linux/of.h" "$$adapter_include/linux/of.h"; \
 cp "$$linux_root/include/linux/compiler.h" "$$adapter_include/linux/compiler.h"; \
 cp "$$linux_root/include/linux/compiler_types.h" "$$adapter_include/linux/compiler_types.h"; \
 cp "$$linux_root/include/linux/export.h" "$$adapter_include/linux/export.h"; \
@@ -359,6 +363,7 @@ replace_once "$$adapter_include/linux/module.h" '__section("__modver")' '__secti
 replace_once "$$adapter_include/linux/moduleparam.h" '__section(".modinfo")' '__section("__DATA,__modinfo")'; \
 replace_once "$$adapter_include/linux/moduleparam.h" '__section("__param")' '__section("__DATA,__param")'; \
 replace_all "$$adapter_include/linux/once.h" '__section(".data.once")' '__section("__DATA,__data_once")'; \
+perl -0pi -e 'my $$inserted = s/\n#if defined\(CONFIG_OF\) && !defined\(MODULE\)\n/\n#define __orlix_product_of_table_section_reservedmem "__DATA,__rmem_tbl"\n#define __orlix_product_of_table_section(table) __orlix_product_of_table_section_##table\n\n#if defined(CONFIG_OF) \&\& !defined(MODULE)\n/; die "failed to insert Orlix OF section table map\n" unless $$inserted == 1; my $$section = s/__used __section\("__" #table "_of_table"\)/__used __section(__orlix_product_of_table_section(table))/; die "failed to replace Linux OF declaration section for Mach-O\n" unless $$section == 1;' "$$adapter_include/linux/of.h"; \
 replace_once "$$adapter_include/linux/once_lite.h" '__section(".data.once")' '__section("__DATA,__data_once")'; \
 replace_once "$$adapter_include/linux/percpu-defs.h" '__section(".discard")' '__section("__DATA,__discard")'; \
 replace_once "$$adapter_include/linux/sched/debug.h" '__section(".sched.text")' '__section("__TEXT,__sched_text")'; \
@@ -459,6 +464,37 @@ orlix_product_adapter_verify_object_contract() { \
 	if "$$otool_cmd" -l "$$obj" | grep -E 'segname \.(init|exit|ref|discard|export_symbol|modinfo)'; then echo "Orlix product object leaked GNU/Linux section spelling into Mach-O segment: $$obj" >&2; exit 1; fi; \
 	if "$$otool_cmd" -l "$$obj" | grep -E 'sectname \.(init|exit|ref|discard|export_symbol|modinfo)'; then echo "Orlix product object leaked GNU/Linux section spelling into Mach-O section: $$obj" >&2; exit 1; fi; \
 	if "$$nm_cmd" -m "$$obj" | grep -E '(^|[[:space:]])_+(__DISABLE_EXPORTS|HAVE_ARCH_COMPILER_H)([[:space:]]|$$)'; then echo "Orlix product object uses forbidden adapter escape symbol: $$obj" >&2; exit 1; fi; \
+};
+endef
+
+define orlix_product_adapter_generate_ordering
+orlix_product_adapter_generate_ordering() { \
+	platform="$$1"; \
+	target="$$2"; \
+	shift 2; \
+	product_objects=("$${@}"); \
+	order_src="$(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-section-order.S"; \
+	order_obj="$(ORLIX_PRODUCT_ORDER_OBJECT)"; \
+	section_names="$$(for obj in "$${product_objects[@]}"; do "$$otool_cmd" -l "$$obj" | awk '/sectname / { section=$$2; next } /segname / { segment=$$2; if (section != "") print segment "," section; section="" }'; done | sort -u)"; \
+	section_present() { \
+		segment="$$1"; section="$$2"; \
+		printf '%s\n' "$$section_names" | awk -v needle="$$segment,$$section" '$$0 == needle { found = 1 } END { exit found ? 0 : 1 }'; \
+	}; \
+	order_needed=0; \
+	for section in __sched_stop __sched_dl __sched_rt __sched_fair __sched_ext __sched_idle; do \
+		if section_present __DATA "$$section"; then order_needed=1; fi; \
+	done; \
+	if [ "$$order_needed" -eq 0 ]; then return 0; fi; \
+	{ \
+		printf '%s\n' '/* generated Build-only Mach-O section-order projection for Linux linker-script ordered classes */'; \
+		for section in __sched_stop __sched_dl __sched_rt __sched_fair __sched_ext __sched_idle; do \
+			if section_present __DATA "$$section"; then printf '.section __DATA,%s\n' "$$section"; fi; \
+		done; \
+	} > "$$order_src"; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$order_src" -o "$$order_obj"; \
+	orlix_product_adapter_verify_object_contract "$$order_obj"; \
+	objs=("$$order_obj" "$${objs[@]}"); \
+	echo "generated Orlix product section-order object: $$order_obj ($$platform)"; \
 };
 endef
 
@@ -687,16 +723,10 @@ orlix_product_adapter_generate_boundaries() { \
 		symbol="$$1"; \
 		if [ -n "$$initcall_cursor" ]; then emit_alias "$$symbol" "$$initcall_cursor"; else emit_label "$$symbol"; initcall_cursor="$$symbol"; fi; \
 	}; \
-	emit_product_section_ordering() { \
-		for section in __sched_stop __sched_dl __sched_rt __sched_fair __sched_ext __sched_idle; do \
-			if section_present __DATA "$$section"; then printf '.section __DATA,%s\n' "$$section"; fi; \
-		done; \
-	}; \
 	mkdir -p "$$(dirname "$$boundary_src")"; \
 	{ \
 		printf '%s\n' '/* generated Build-only product-link boundary glue for the Mach-O OrlixKernel product */'; \
 		printf '%s\n' '/* Only undefined Linux linker-script boundary symbols requested by the current object set are emitted. */'; \
-		emit_product_section_ordering; \
 		printf '%s\n' '.section __DATA,__orlix_bnd'; \
 		printf '%s\n' '.p2align 3'; \
 		printf '%s\n' '/* __init_begin/__init_end are conservative until init-memory reclaim semantics exist. */'; \
@@ -747,7 +777,27 @@ orlix_product_adapter_generate_boundaries() { \
 	} > "$$boundary_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$boundary_src" -o "$$boundary_obj"; \
 	for symbol in _jiffies _init_stack _init_thread_union ___start_init_stack ___end_init_stack __sdata __edata ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___start_builtin_fw ___end_builtin_fw ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___modver ___stop___modver ___start_notes ___stop_notes ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
-	objs=("$$boundary_obj" "$${objs[@]}"); \
+	objs+=("$$boundary_obj"); \
 	echo "generated Orlix product boundary object: $$boundary_obj"; \
+};
+endef
+
+define orlix_product_adapter_finalize_archive
+orlix_product_adapter_finalize_archive() { \
+	platform="$$1"; \
+	target="$$2"; \
+	archive="$$3"; \
+	shift 3; \
+	product_objects=("$${@}"); \
+	[ "$${#product_objects[@]}" -gt 0 ] || { echo "cannot finalize OrlixKernel archive without product objects" >&2; exit 1; }; \
+	link_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)/linked-$$platform"; \
+	rm -rf "$$link_root"; \
+	mkdir -p "$$link_root"; \
+	objects_rsp="$$link_root/objects.rsp"; \
+	linked_obj="$$link_root/orlix-product-kernel.o"; \
+	printf '%s\n' "$${product_objects[@]}" > "$$objects_rsp"; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -nostdlib -Wl,-r -Wl,-o,"$$linked_obj" @"$$objects_rsp"; \
+	orlix_product_adapter_verify_object_contract "$$linked_obj"; \
+	"$$ar_cmd" rcs "$$archive" "$$linked_obj"; \
 };
 endef

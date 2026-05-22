@@ -36,6 +36,7 @@ ORLIX_IOS_TARGET := arm64-apple-ios
 ORLIX_IOS_SIMULATOR_TARGET := arm64-apple-ios-simulator
 ORLIX_KERNEL_LINUX_SOURCES := \
 	arch/$(LINUX_ARCH)/boot/boot.c \
+	arch/$(LINUX_ARCH)/kernel/cpuinfo.c \
 	arch/$(LINUX_ARCH)/kernel/irq.c \
 	arch/$(LINUX_ARCH)/kernel/process.c \
 	arch/$(LINUX_ARCH)/kernel/ptrace.c \
@@ -117,6 +118,9 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/cgroup/freezer.c \
 	kernel/cgroup/namespace.c \
 	kernel/cgroup/rstat.c \
+	kernel/dma/direct.c \
+	kernel/dma/coherent.c \
+	kernel/dma/mapping.c \
 	kernel/bpf/core.c \
 	kernel/rcu/sync.c \
 	kernel/rcu/srcutiny.c \
@@ -773,6 +777,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/proc/root.c \
 	fs/proc/util.c \
 	fs/seq_file.c \
+	fs/exportfs/expfs.c \
 	lib/fdt.c \
 	lib/fdt_ro.c \
 	lib/fdt_wip.c \
@@ -1215,8 +1220,10 @@ __kernel-archive: __prepare-kbuild
 	$(call orlix_product_adapter_verify_object_contract) \
 	$(call orlix_product_adapter_source_resolver) \
 	$(call orlix_product_adapter_generate_payloads) \
+	$(call orlix_product_adapter_generate_ordering) \
 	$(call orlix_product_adapter_generate_boundaries) \
 	$(call orlix_product_adapter_generate_kallsyms) \
+	$(call orlix_product_adapter_finalize_archive) \
 	compile_slice() { \
 		platform="$$1"; \
 		target="$$2"; \
@@ -1257,9 +1264,10 @@ __kernel-archive: __prepare-kbuild
 			objs+=("$$obj"); \
 		done; \
 		orlix_product_adapter_generate_payloads "$$platform" "$$target"; \
+		orlix_product_adapter_generate_ordering "$$platform" "$$target" "$${objs[@]}"; \
 		orlix_product_adapter_generate_boundaries "$$platform" "$$target" "$${objs[@]}"; \
 		orlix_product_adapter_generate_kallsyms "$$platform" "$$target" "$${objs[@]}"; \
-		"$$ar_cmd" rcs "$$archive" "$${objs[@]}"; \
+		orlix_product_adapter_finalize_archive "$$platform" "$$target" "$$archive" "$${objs[@]}"; \
 		[ -s "$$archive" ] || { echo "missing OrlixKernel archive: $$archive" >&2; exit 1; }; \
 		"$$nm_cmd" -gU "$$archive" > "$$output_dir/symbols.txt"; \
 		grep -q '_arch_boot_entry' "$$output_dir/symbols.txt" || { echo "OrlixKernel archive missing _arch_boot_entry: $$archive" >&2; exit 1; }; \
