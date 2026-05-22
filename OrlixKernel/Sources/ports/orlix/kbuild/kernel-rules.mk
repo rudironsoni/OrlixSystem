@@ -57,6 +57,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/pid.c \
 	kernel/pid_namespace.c \
 	kernel/signal.c \
+	kernel/sys.c \
 	kernel/printk/printk.c \
 	kernel/printk/printk_safe.c \
 	kernel/sched/build_utility.c \
@@ -64,6 +65,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/ucount.c \
 	kernel/user.c \
 	kernel/user_namespace.c \
+	kernel/utsname.c \
 	kernel/kallsyms.c \
 	security/commoncap.c \
 	lib/string.c \
