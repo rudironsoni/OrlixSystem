@@ -417,6 +417,27 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/tty/vt/defkeymap.c \
 	drivers/tty/vt/consolemap.c \
 	drivers/tty/vt/consolemap_deftbl.c \
+	drivers/video/console/dummycon.c \
+	drivers/input/input.c \
+	drivers/input/input-compat.c \
+	drivers/input/input-mt.c \
+	drivers/input/input-poller.c \
+	drivers/input/ff-core.c \
+	drivers/input/touchscreen.c \
+	drivers/input/ff-memless.c \
+	drivers/input/vivaldi-fmap.c \
+	drivers/input/keyboard/atkbd.c \
+	drivers/input/serio/serio.c \
+	drivers/input/serio/serport.c \
+	drivers/input/serio/libps2.c \
+	drivers/input/mouse/psmouse-base.c \
+	drivers/input/mouse/synaptics.c \
+	drivers/input/mouse/focaltech.c \
+	drivers/input/mouse/alps.c \
+	drivers/input/mouse/byd.c \
+	drivers/input/mouse/logips2pp.c \
+	drivers/input/mouse/cypress_ps2.c \
+	drivers/input/mouse/trackpoint.c \
 	drivers/of/base.c \
 	drivers/of/cpu.c \
 	drivers/of/device.c \
