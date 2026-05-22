@@ -118,6 +118,7 @@ for required in \
 	"$$linux_root/include/linux/syscalls.h" \
 	"$$linux_root/include/asm-generic/percpu.h" \
 	"$$linux_root/include/asm-generic/vmlinux.lds.h" \
+	"$$linux_root/arch/$(LINUX_ARCH)/kernel/vmlinux.lds.S" \
 	"$$linux_root/kernel/sched/sched.h" \
 	"$$linux_root/drivers/of/Makefile" \
 	"$$linux_root/usr/Makefile" \
@@ -167,6 +168,7 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__sched_text_end = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'RESERVEDMEM_OF_TABLES()'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(__##name##_of_table_end))'; \
+	require_text "$$linux_root/arch/$(LINUX_ARCH)/kernel/vmlinux.lds.S" 'jiffies = jiffies_64;'; \
 	require_text "$$linux_root/kernel/sched/sched.h" '__section("__" #name "_sched_class")'; \
 	require_text "$$linux_root/drivers/of/of_reserved_mem.c" '__used __section("__reservedmem_of_table_end");'; \
 	require_text "$$linux_root/drivers/of/Makefile" 'empty_root.dtb.o'; \
@@ -178,6 +180,7 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 require_text "$$linux_root/scripts/link-vmlinux.sh" 'vmlinux.o'; \
 for pattern in \
 	'.init.text' '.init.data' '.init.rodata' '.ref.text' '.init.setup' \
+	'jiffies = jiffies_64;' \
 	'__setup_start = .;' '__setup_end = .;' '__init_begin = .;' '__init_end = .;' \
 	'__start_rodata = .;' '__end_rodata = .;' \
 	'__sched_class_highest = .;' '*(__fair_sched_class)' '__sched_class_lowest = .;' \
@@ -454,6 +457,7 @@ orlix_product_adapter_generate_boundaries() { \
 		printf '%s\n' '.p2align 3'; \
 		printf '%s\n' '/* __init_begin/__init_end are conservative until init-memory reclaim semantics exist. */'; \
 		emit_section_pair_if_needed __stext __etext __TEXT __text; \
+		if undefined_symbol_present _jiffies; then emit_alias _jiffies _jiffies_64; fi; \
 		emit_section_pair_if_needed ___cpuidle_text_start ___cpuidle_text_end __TEXT __cpuidle_text; \
 		emit_section_pair_if_needed ___irqentry_text_start ___irqentry_text_end __TEXT __irqentry_text; \
 		emit_section_pair_if_needed ___noinstr_text_start ___noinstr_text_end __TEXT __noinstr_text; \
@@ -493,7 +497,7 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___start___bug_table ___stop___bug_table __DATA __bug_table; \
 	} > "$$boundary_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$boundary_src" -o "$$boundary_obj"; \
-	for symbol in ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
+	for symbol in _jiffies ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
 	objs+=("$$boundary_obj"); \
 	echo "generated Orlix product boundary object: $$boundary_obj"; \
 };

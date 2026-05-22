@@ -37,6 +37,7 @@ ORLIX_IOS_SIMULATOR_TARGET := arm64-apple-ios-simulator
 ORLIX_KERNEL_LINUX_SOURCES := \
 	arch/$(LINUX_ARCH)/boot/boot.c \
 	arch/$(LINUX_ARCH)/kernel/setup.c \
+	arch/$(LINUX_ARCH)/kernel/time.c \
 	arch/$(LINUX_ARCH)/mm/delay.c \
 	init/version.c \
 	init/main.c \
@@ -109,8 +110,23 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/siphash.c \
 	lib/seq_buf.c \
 	lib/sort.c \
+	kernel/time/alarmtimer.c \
+	kernel/time/clockevents.c \
+	kernel/time/clocksource.c \
+	kernel/time/hrtimer.c \
+	kernel/time/itimer.c \
+	kernel/time/jiffies.c \
+	kernel/time/ntp.c \
+	kernel/time/posix-clock.c \
+	kernel/time/posix-cpu-timers.c \
+	kernel/time/posix-timers.c \
+	kernel/time/tick-common.c \
 	kernel/time/time.c \
 	kernel/time/timeconv.c \
+	kernel/time/timecounter.c \
+	kernel/time/timekeeping.c \
+	kernel/time/timer.c \
+	kernel/time/timer_list.c \
 	mm/maccess.c \
 	mm/list_lru.c \
 	mm/memblock.c \
