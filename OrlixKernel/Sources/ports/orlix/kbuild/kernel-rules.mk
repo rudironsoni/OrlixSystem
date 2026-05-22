@@ -58,6 +58,11 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/pid_namespace.c \
 	kernel/signal.c \
 	kernel/sys.c \
+	kernel/locking/mutex.c \
+	kernel/locking/semaphore.c \
+	kernel/locking/rwsem.c \
+	kernel/locking/percpu-rwsem.c \
+	kernel/locking/rtmutex_api.c \
 	kernel/printk/printk.c \
 	kernel/printk/printk_safe.c \
 	kernel/sched/build_utility.c \
