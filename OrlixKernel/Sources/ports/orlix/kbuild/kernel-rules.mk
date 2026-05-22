@@ -381,6 +381,39 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/coredump.c \
 	fs/drop_caches.c \
 	fs/sysctls.c \
+	io_uring/io_uring.c \
+	io_uring/opdef.c \
+	io_uring/kbuf.c \
+	io_uring/rsrc.c \
+	io_uring/notif.c \
+	io_uring/tctx.c \
+	io_uring/filetable.c \
+	io_uring/rw.c \
+	io_uring/net.c \
+	io_uring/poll.c \
+	io_uring/eventfd.c \
+	io_uring/uring_cmd.c \
+	io_uring/openclose.c \
+	io_uring/sqpoll.c \
+	io_uring/xattr.c \
+	io_uring/nop.c \
+	io_uring/fs.c \
+	io_uring/splice.c \
+	io_uring/sync.c \
+	io_uring/msg_ring.c \
+	io_uring/advise.c \
+	io_uring/epoll.c \
+	io_uring/statx.c \
+	io_uring/timeout.c \
+	io_uring/fdinfo.c \
+	io_uring/cancel.c \
+	io_uring/waitid.c \
+	io_uring/register.c \
+	io_uring/truncate.c \
+	io_uring/memmap.c \
+	io_uring/io-wq.c \
+	io_uring/futex.c \
+	io_uring/napi.c \
 	fs/kernfs/dir.c \
 	fs/kernfs/file.c \
 	fs/kernfs/inode.c \
