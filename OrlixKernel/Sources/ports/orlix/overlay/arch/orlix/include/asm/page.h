@@ -20,6 +20,9 @@
 
 struct page;
 
+extern phys_addr_t orlix_phys_ram_base;
+#define ARCH_PFN_OFFSET		PFN_DOWN(orlix_phys_ram_base)
+
 #define clear_page(page)		memset((page), 0, PAGE_SIZE)
 #define copy_page(to, from)	memcpy((to), (from), PAGE_SIZE)
 

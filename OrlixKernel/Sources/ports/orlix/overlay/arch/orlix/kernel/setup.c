@@ -6,6 +6,7 @@
 #include <linux/string.h>
 #include <linux/types.h>
 #include <asm/boot.h>
+#include <asm/pgtable.h>
 #include <asm/setup.h>
 
 static char command_line[COMMAND_LINE_SIZE] __initdata;
@@ -79,6 +80,7 @@ void __init setup_arch(char **cmdline_p)
 	if (!dt_ready && params && params->memory_size)
 		memblock_add(params->memory_base, params->memory_size);
 	orlix_setup_initrd(params);
+	paging_init();
 
 	pr_info("Orlix architecture setup\n");
 }
