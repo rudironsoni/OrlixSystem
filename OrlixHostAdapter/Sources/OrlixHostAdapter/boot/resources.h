@@ -10,6 +10,10 @@ __attribute__((visibility("hidden"))) int OrlixHostLoadKernelPayloadResource(
     const char *resource,
     struct OrlixHostResource *loaded);
 
+__attribute__((visibility("hidden"))) int OrlixHostLoadRootImageResource(
+    const char *identifier,
+    struct OrlixHostResource *loaded);
+
 __attribute__((visibility("hidden"))) void OrlixHostFreeResource(
     struct OrlixHostResource *resource);
 

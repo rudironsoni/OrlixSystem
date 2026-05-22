@@ -4,6 +4,18 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+static const char *OrlixHostRootImageResourceForIdentifier(const char *identifier)
+{
+    if (!identifier) {
+        return 0;
+    }
+    if (strcmp(identifier, "orlix.bundle.rootfs") == 0) {
+        return "rootfs/initramfs.cpio.gz";
+    }
+    return 0;
+}
 
 static int OrlixHostCopyPayloadRootPath(char *path, size_t path_size)
 {
@@ -122,6 +134,19 @@ __attribute__((visibility("hidden"))) int OrlixHostLoadKernelPayloadResource(
     }
 
     return OrlixHostReadResourceFile(path, loaded);
+}
+
+__attribute__((visibility("hidden"))) int OrlixHostLoadRootImageResource(
+    const char *identifier,
+    struct OrlixHostResource *loaded)
+{
+    const char *resource = OrlixHostRootImageResourceForIdentifier(identifier);
+
+    if (!resource) {
+        return -1;
+    }
+
+    return OrlixHostLoadKernelPayloadResource(resource, loaded);
 }
 
 __attribute__((visibility("hidden"))) void OrlixHostFreeResource(

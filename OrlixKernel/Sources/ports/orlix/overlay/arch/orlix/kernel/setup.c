@@ -67,6 +67,15 @@ static void __init orlix_setup_initrd(const struct boot_params *params)
 #endif
 }
 
+#if defined(ORLIX_APP_HOSTED_BOOT) && defined(CONFIG_BLK_DEV_INITRD)
+void __init free_initrd_mem(unsigned long start, unsigned long end)
+{
+	/* Hosted initrd bytes are app resources, not Linux memblock pages. */
+	(void)start;
+	(void)end;
+}
+#endif
+
 void __init setup_arch(char **cmdline_p)
 {
 	const struct boot_params *params = arch_boot_params();

@@ -41,6 +41,7 @@ __attribute__((visibility("hidden"))) int OrlixBootHandoff(
 {
     struct boot_params params = { 0 };
     struct OrlixHostResource profile_dtb = { 0 };
+    struct OrlixHostResource root_image = { 0 };
     int status;
 
     if (!input) {
@@ -65,16 +66,29 @@ __attribute__((visibility("hidden"))) int OrlixBootHandoff(
     if (OrlixHostLoadKernelPayloadResource(input->profile_dtb_path, &profile_dtb) != 0) {
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
+    if (OrlixHostLoadRootImageResource(input->root_image_identifier, &root_image) != 0) {
+        OrlixHostFreeResource(&profile_dtb);
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
+    }
     if (OrlixLoadDeviceTree(profile_dtb.data, profile_dtb.size) != 0) {
+        OrlixHostFreeResource(&root_image);
+        OrlixHostFreeResource(&profile_dtb);
+        return ORLIX_BOOT_STATUS_INVALID_CONFIG;
+    }
+    if (OrlixLoadInitrd(root_image.data, root_image.size) != 0) {
+        OrlixHostFreeResource(&root_image);
         OrlixHostFreeResource(&profile_dtb);
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
     params.dtb_base = profile_dtb.data;
     params.dtb_size = profile_dtb.size;
+    params.initrd_base = root_image.data;
+    params.initrd_size = root_image.size;
     params.root_device = input->root_device;
     params.console_device = input->console_device;
 
     status = OrlixEnterLinux(&params);
+    OrlixHostFreeResource(&root_image);
     OrlixHostFreeResource(&profile_dtb);
     return status;
 }
