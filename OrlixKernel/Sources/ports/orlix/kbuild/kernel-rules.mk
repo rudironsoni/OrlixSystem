@@ -164,6 +164,13 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/crypto/chacha.c \
 	lib/crypto/blake2s.c \
 	lib/crypto/blake2s-generic.c \
+	lib/math/div64.c \
+	lib/math/gcd.c \
+	lib/math/lcm.c \
+	lib/math/int_log.c \
+	lib/math/int_pow.c \
+	lib/math/int_sqrt.c \
+	lib/math/reciprocal_div.c \
 	lib/lockref.c \
 	lib/logic_pio.c \
 	lib/siphash.c \
