@@ -50,6 +50,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/cpu.c \
 	kernel/exit.c \
 	kernel/notifier.c \
+	kernel/nsproxy.c \
 	kernel/groups.c \
 	kernel/params.c \
 	kernel/panic.c \
