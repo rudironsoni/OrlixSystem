@@ -620,17 +620,29 @@ orlix_product_adapter_generate_boundaries() { \
 	}; \
 	emit_init_stack_if_needed() { \
 		if undefined_symbol_present _init_stack || undefined_symbol_present _init_thread_union || undefined_symbol_present ___start_init_stack || undefined_symbol_present ___end_init_stack; then \
-			printf '%s\n' '.section __DATA,__init_tinfo'; \
-			printf '%s\n' '.p2align 14'; \
-			printf '%s\n' '.globl ___start_init_stack'; \
-			printf '%s\n' '___start_init_stack:'; \
-			printf '%s\n' '.globl _init_thread_union'; \
-			printf '%s\n' '_init_thread_union:'; \
-			printf '%s\n' '.globl _init_stack'; \
-			printf '%s\n' '_init_stack:'; \
-			printf '.space %s\n' "$$thread_size"; \
-			printf '%s\n' '.globl ___end_init_stack'; \
-			printf '%s\n' '___end_init_stack:'; \
+			if section_present __DATA __init_tinfo; then \
+				init_stack_start="$$(section_label start __DATA __init_tinfo)"; \
+				emit_alias ___start_init_stack "$$init_stack_start"; \
+				emit_alias _init_thread_union "$$init_stack_start"; \
+				emit_alias _init_stack "$$init_stack_start"; \
+				printf '%s\n' '.section __DATA,__init_tinfo'; \
+				printf '%s\n' '.p2align 14'; \
+				printf '%s\n' '.globl ___end_init_stack'; \
+				printf '%s\n' '___end_init_stack:'; \
+				printf '.space %s\n' "$$thread_size"; \
+			else \
+				printf '%s\n' '.section __DATA,__init_tinfo'; \
+				printf '%s\n' '.p2align 14'; \
+				printf '%s\n' '.globl ___start_init_stack'; \
+				printf '%s\n' '___start_init_stack:'; \
+				printf '%s\n' '.globl _init_thread_union'; \
+				printf '%s\n' '_init_thread_union:'; \
+				printf '%s\n' '.globl _init_stack'; \
+				printf '%s\n' '_init_stack:'; \
+				printf '.space %s\n' "$$thread_size"; \
+				printf '%s\n' '.globl ___end_init_stack'; \
+				printf '%s\n' '___end_init_stack:'; \
+			fi; \
 			printf '%s\n' '.section __DATA,__orlix_bnd'; \
 			printf '%s\n' '.p2align 3'; \
 		fi; \

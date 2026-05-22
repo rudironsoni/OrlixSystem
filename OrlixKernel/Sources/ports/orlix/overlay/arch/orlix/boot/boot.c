@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <asm/boot.h>
 #include <asm/page.h>
+#include <asm/thread_info.h>
 #include <linux/init.h>
 #include <linux/start_kernel.h>
 
@@ -16,6 +17,29 @@ static struct boot_params app_hosted_boot_params;
 
 static const struct boot_params *last_boot_params;
 static int boot_handoff_count;
+
+#if defined(ORLIX_APP_HOSTED_BOOT)
+extern unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)];
+
+static __attribute__((noreturn)) void arch_boot_start_kernel(void)
+{
+	unsigned long stack_top = (unsigned long)init_stack + THREAD_SIZE;
+	void (*entry)(void) = start_kernel;
+
+	asm volatile("mov sp, %0\n"
+		     "blr %1\n"
+		     "brk #0\n"
+		     :
+		     : "r" (stack_top), "r" (entry)
+		     : "memory");
+	__builtin_unreachable();
+}
+#else
+static void arch_boot_start_kernel(void)
+{
+	start_kernel();
+}
+#endif
 
 static const struct boot_params *
 arch_boot_materialize_handoff(const struct boot_params *params)
@@ -62,7 +86,7 @@ int __orlix_boot_init arch_boot_entry(const struct boot_params *params)
 	if (status != ORLIX_ARCH_BOOT_OK)
 		return status;
 
-	start_kernel();
+	arch_boot_start_kernel();
 
 	return ORLIX_ARCH_BOOT_OK;
 }
