@@ -109,6 +109,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/ucount.c \
 	kernel/user.c \
 	kernel/user_namespace.c \
+	kernel/utsname_sysctl.c \
 	kernel/utsname.c \
 	kernel/workqueue.c \
 	kernel/cgroup/cgroup.c \
@@ -260,6 +261,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/nlattr.c \
 	lib/devres.c \
 	lib/checksum.c \
+	lib/win_minmax.c \
 	lib/dynamic_queue_limits.c \
 	lib/net_utils.c \
 	lib/dim/dim.c \
@@ -394,6 +396,18 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/base/firmware_loader/builtin/main.c \
 	drivers/char/random.c \
 	drivers/net/loopback.c \
+	drivers/tty/tty_io.c \
+	drivers/tty/n_tty.c \
+	drivers/tty/tty_ioctl.c \
+	drivers/tty/tty_ldisc.c \
+	drivers/tty/tty_buffer.c \
+	drivers/tty/tty_port.c \
+	drivers/tty/tty_mutex.c \
+	drivers/tty/tty_ldsem.c \
+	drivers/tty/tty_baudrate.c \
+	drivers/tty/tty_jobctrl.c \
+	drivers/tty/n_null.c \
+	drivers/tty/pty.c \
 	drivers/of/base.c \
 	drivers/of/cpu.c \
 	drivers/of/device.c \
@@ -470,6 +484,13 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/sysctls.c \
 	fs/ramfs/inode.c \
 	fs/ramfs/file-mmu.c \
+	fs/iomap/trace.c \
+	fs/iomap/iter.c \
+	fs/iomap/buffered-io.c \
+	fs/iomap/direct-io.c \
+	fs/iomap/fiemap.c \
+	fs/iomap/seek.c \
+	fs/iomap/swapfile.c \
 	io_uring/io_uring.c \
 	io_uring/opdef.c \
 	io_uring/kbuf.c \
@@ -695,7 +716,29 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/sysfs/symlink.c \
 	fs/proc/generic.c \
 	fs/proc/inode.c \
+	fs/proc/task_mmu.c \
+	fs/proc/base.c \
+	fs/proc/array.c \
+	fs/proc/fd.c \
+	fs/proc/cmdline.c \
+	fs/proc/consoles.c \
+	fs/proc/cpuinfo.c \
+	fs/proc/devices.c \
+	fs/proc/interrupts.c \
+	fs/proc/loadavg.c \
+	fs/proc/meminfo.c \
+	fs/proc/stat.c \
+	fs/proc/uptime.c \
+	fs/proc/version.c \
+	fs/proc/softirqs.c \
+	fs/proc/namespaces.c \
+	fs/proc/self.c \
+	fs/proc/thread_self.c \
 	fs/proc/proc_sysctl.c \
+	fs/proc/proc_net.c \
+	fs/proc/proc_tty.c \
+	fs/proc/kmsg.c \
+	fs/proc/page.c \
 	fs/proc/root.c \
 	fs/proc/util.c \
 	fs/seq_file.c \
@@ -1161,6 +1204,7 @@ __kernel-archive: __prepare-kbuild
 			case "$$src_rel" in \
 				init/version.c) extra_cflags="-include $(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h" ;; \
 				drivers/of/of_reserved_mem.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/drivers/of" ;; \
+				fs/iomap/trace.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/fs/iomap" ;; \
 				kernel/sched/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/kernel/sched" ;; \
 				lib/crc32.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/lib -I$(ORLIX_KERNEL_BUILD_DIR)/lib" ;; \
 				lib/fdt*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/scripts/dtc/libfdt" ;; \
