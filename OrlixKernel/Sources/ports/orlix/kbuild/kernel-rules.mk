@@ -80,6 +80,11 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/user_namespace.c \
 	kernel/utsname.c \
 	kernel/workqueue.c \
+	kernel/cgroup/cgroup.c \
+	kernel/cgroup/cgroup-v1.c \
+	kernel/cgroup/freezer.c \
+	kernel/cgroup/namespace.c \
+	kernel/cgroup/rstat.c \
 	kernel/rcu/sync.c \
 	kernel/rcu/srcutiny.c \
 	kernel/rcu/tiny.c \
