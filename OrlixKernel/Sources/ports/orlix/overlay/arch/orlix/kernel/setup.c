@@ -10,6 +10,31 @@
 
 static char command_line[COMMAND_LINE_SIZE] __initdata;
 
+#if defined(ORLIX_APP_HOSTED_BOOT)
+static bool orlix_boot_memory_added __initdata;
+
+static void __init orlix_add_boot_memory(const struct boot_params *params)
+{
+	if (!params || !params->memory_size || orlix_boot_memory_added)
+		return;
+
+	memblock_add(params->memory_base, params->memory_size);
+	orlix_boot_memory_added = true;
+}
+
+void __init early_init_dt_add_memory_arch(u64 base, u64 size)
+{
+	const struct boot_params *params = arch_boot_params();
+
+	if (params && params->memory_size) {
+		orlix_add_boot_memory(params);
+		return;
+	}
+
+	memblock_add(base, size);
+}
+#endif
+
 static bool __init orlix_setup_devtree(const struct boot_params *params)
 {
 #if defined(CONFIG_OF_EARLY_FLATTREE)

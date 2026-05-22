@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <asm/boot.h>
+#include <asm/page.h>
 #include <linux/init.h>
 #include <linux/start_kernel.h>
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
 #define __orlix_boot_init
+static unsigned long app_hosted_boot_memory[(64UL * 1024 * 1024) /
+					    sizeof(unsigned long)]
+	__aligned(PAGE_SIZE);
+static struct boot_params app_hosted_boot_params;
 #else
 #define __orlix_boot_init __init
 #endif
@@ -12,9 +17,24 @@
 static const struct boot_params *last_boot_params;
 static int boot_handoff_count;
 
+static const struct boot_params *
+arch_boot_materialize_handoff(const struct boot_params *params)
+{
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	app_hosted_boot_params = *params;
+	if (!app_hosted_boot_params.memory_size) {
+		app_hosted_boot_params.memory_base = __pa(app_hosted_boot_memory);
+		app_hosted_boot_params.memory_size = sizeof(app_hosted_boot_memory);
+	}
+	return &app_hosted_boot_params;
+#else
+	return params;
+#endif
+}
+
 static void arch_boot_record_handoff(const struct boot_params *params)
 {
-	last_boot_params = params;
+	last_boot_params = arch_boot_materialize_handoff(params);
 	boot_handoff_count++;
 }
 
