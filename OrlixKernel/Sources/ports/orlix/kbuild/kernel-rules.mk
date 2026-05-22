@@ -110,6 +110,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/namei.c \
 	fs/file.c \
 	fs/file_table.c \
+	fs/fcntl.c \
 	fs/fs_context.c \
 	fs/fs_pin.c \
 	fs/fs_parser.c \
