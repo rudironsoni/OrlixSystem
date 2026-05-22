@@ -126,6 +126,16 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/regset.c \
 	kernel/ksyms_common.c \
 	kernel/up.c \
+	ipc/util.c \
+	ipc/msgutil.c \
+	ipc/msg.c \
+	ipc/sem.c \
+	ipc/shm.c \
+	ipc/syscall.c \
+	ipc/ipc_sysctl.c \
+	ipc/mqueue.c \
+	ipc/namespace.c \
+	ipc/mq_sysctl.c \
 	security/commoncap.c \
 	lib/is_single_threaded.c \
 	lib/kobject_uevent.c \
