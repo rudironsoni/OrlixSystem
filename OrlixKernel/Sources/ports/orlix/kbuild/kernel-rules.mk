@@ -98,6 +98,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/of/of_reserved_mem.c \
 	drivers/of/property.c \
 	fs/anon_inodes.c \
+	fs/attr.c \
 	fs/dcache.c \
 	fs/d_path.c \
 	fs/inode.c \
