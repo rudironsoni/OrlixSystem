@@ -36,6 +36,7 @@ ORLIX_IOS_TARGET := arm64-apple-ios
 ORLIX_IOS_SIMULATOR_TARGET := arm64-apple-ios-simulator
 ORLIX_KERNEL_LINUX_SOURCES := \
 	arch/$(LINUX_ARCH)/boot/boot.c \
+	arch/$(LINUX_ARCH)/kernel/irq.c \
 	arch/$(LINUX_ARCH)/kernel/setup.c \
 	arch/$(LINUX_ARCH)/kernel/time.c \
 	arch/$(LINUX_ARCH)/mm/delay.c \
@@ -52,6 +53,15 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/cpu.c \
 	kernel/exit.c \
 	kernel/irq_work.c \
+	kernel/irq/irqdesc.c \
+	kernel/irq/handle.c \
+	kernel/irq/manage.c \
+	kernel/irq/spurious.c \
+	kernel/irq/resend.c \
+	kernel/irq/chip.c \
+	kernel/irq/dummychip.c \
+	kernel/irq/devres.c \
+	kernel/irq/proc.c \
 	kernel/kthread.c \
 	kernel/notifier.c \
 	kernel/nsproxy.c \
