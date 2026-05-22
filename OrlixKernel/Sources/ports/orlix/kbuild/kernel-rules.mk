@@ -49,6 +49,8 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	init/init_task.c \
 	init/calibrate.c \
 	init/initramfs.c \
+	init/do_mounts.c \
+	init/do_mounts_initrd.c \
 	kernel/exec_domain.c \
 	kernel/fork.c \
 	kernel/async.c \
@@ -194,6 +196,14 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/siphash.c \
 	lib/plist.c \
 	lib/seq_buf.c \
+	lib/decompress.c \
+	lib/decompress_inflate.c \
+	lib/decompress_bunzip2.c \
+	lib/decompress_unlzma.c \
+	lib/decompress_unxz.c \
+	lib/decompress_unlzo.c \
+	lib/decompress_unlz4.c \
+	lib/decompress_unzstd.c \
 	lib/sort.c \
 	lib/sbitmap.c \
 	lib/flex_proportions.c \

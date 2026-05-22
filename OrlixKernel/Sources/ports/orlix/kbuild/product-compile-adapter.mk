@@ -49,6 +49,7 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__DATA,__export_symbol \
 	__DATA,__modinfo \
 	__DATA,__modver \
+	__DATA,__builtin_fw \
 	__DATA,__note \
 	__DATA,__rmem_tbl \
 	__DATA,__rmem_end \
@@ -130,10 +131,12 @@ for required in \
 	"$$linux_root/include/asm-generic/percpu.h" \
 	"$$linux_root/include/asm-generic/vmlinux.lds.h" \
 	"$$linux_root/arch/$(LINUX_ARCH)/kernel/vmlinux.lds.S" \
+	"$$linux_root/init/Makefile" \
 	"$$linux_root/kernel/sched/sched.h" \
 	"$$linux_root/mm/internal.h" \
 	"$$linux_root/drivers/of/Makefile" \
 	"$$linux_root/usr/Makefile" \
+	"$$linux_root/lib/Makefile" \
 	"$$linux_root/lib/crypto/blake2s-generic.c" \
 	"$$linux_root/scripts/mod/modpost.c" \
 	"$$linux_root/scripts/link-vmlinux.sh"; do \
@@ -191,12 +194,20 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__sched_text_end = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'RESERVEDMEM_OF_TABLES()'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(__##name##_of_table_end))'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '* [_sdata, _edata] is the data section'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'BOUNDED_SECTION_PRE_LABEL(.builtin_fw, _builtin_fw, __start, __end)'; \
 	require_text "$$linux_root/arch/$(LINUX_ARCH)/kernel/vmlinux.lds.S" 'jiffies = jiffies_64;'; \
+	require_text "$$linux_root/init/Makefile" 'obj-$$(CONFIG_BLK_DEV_INITRD)   += initramfs.o'; \
+	require_text "$$linux_root/init/Makefile" 'mounts-$$(CONFIG_BLK_DEV_INITRD)	+= do_mounts_initrd.o'; \
 	require_text "$$linux_root/kernel/sched/sched.h" '__section("__" #name "_sched_class")'; \
 	require_text "$$linux_root/mm/internal.h" '__section(".data.once")'; \
 	require_text "$$linux_root/drivers/of/of_reserved_mem.c" '__used __section("__reservedmem_of_table_end");'; \
 	require_text "$$linux_root/drivers/of/Makefile" 'empty_root.dtb.o'; \
 	require_text "$$linux_root/usr/Makefile" 'obj-$$(CONFIG_BLK_DEV_INITRD) := initramfs_data.o'; \
+	require_text "$$linux_root/lib/Makefile" 'lib-y := ctype.o string.o vsprintf.o cmdline.o \'; \
+	require_text "$$linux_root/lib/Makefile" 'is_single_threaded.o plist.o decompress.o kobject_uevent.o \'; \
+	require_text "$$linux_root/lib/Makefile" 'lib-$$(CONFIG_DECOMPRESS_GZIP) += decompress_inflate.o'; \
+	require_text "$$linux_root/lib/Makefile" 'lib-$$(CONFIG_DECOMPRESS_ZSTD) += decompress_unzstd.o'; \
 	require_text "$$linux_root/lib/crypto/blake2s-generic.c" 'void blake2s_compress(struct blake2s_state *state, const u8 *block,'; \
 	require_text "$$linux_root/lib/crypto/blake2s-generic.c" '__weak __alias(blake2s_compress_generic);'; \
 	require_text "$$linux_root/lib/crc32.c" 'u32 __pure crc32_le_base(u32, unsigned char const *, size_t) __alias(crc32_le);'; \
@@ -210,6 +221,7 @@ for pattern in \
 	'jiffies = jiffies_64;' \
 	'__setup_start = .;' '__setup_end = .;' '__init_begin = .;' '__init_end = .;' \
 	'__start_rodata = .;' '__end_rodata = .;' \
+	'_sdata = .;' '_edata = .;' '.builtin_fw' '__start_builtin_fw = .;' '__end_builtin_fw = .;' \
 	'__start_notes = .;' 'KEEP(*(.note.*))' '__stop_notes = .;' \
 	'__sched_class_highest = .;' '*(__fair_sched_class)' '__sched_class_lowest = .;' \
 	'*(.noinstr.text)' '*(.cpuidle.text)' \
@@ -401,26 +413,21 @@ orlix_product_adapter_generate_boundaries() { \
 	boundary_src="$(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-boundaries.S"; \
 	boundary_obj="$(ORLIX_PRODUCT_BOUNDARY_OBJECT)"; \
 	[ "$${#product_objects[@]}" -gt 0 ] || { echo "cannot generate product boundaries without product objects" >&2; exit 1; }; \
+	present_sections="$$(for candidate in "$${product_objects[@]}"; do "$$otool_cmd" -l "$$candidate" | awk '/sectname / { section=$$2; next } /segname / { if (section != "") print $$2 "," section; section="" }'; done | LC_ALL=C sort -u)"; \
+	present_section_names="$$(printf '%s\n' "$$present_sections" | awk -F, 'NF == 2 { print $$2 }' | LC_ALL=C sort -u)"; \
+	undefined_symbols="$$(for candidate in "$${product_objects[@]}"; do "$$nm_cmd" -u "$$candidate" | awk 'NF { print $$NF }'; done | LC_ALL=C sort -u)"; \
+	list_has_line() { list="$$1"; needle="$$2"; printf '%s\n' "$$list" | awk -v needle="$$needle" '$$0 == needle { found = 1 } END { exit found ? 0 : 1 }'; }; \
 	section_present() { \
 		segment="$$1"; section="$$2"; \
-		for candidate in "$${product_objects[@]}"; do \
-			if "$$otool_cmd" -l "$$candidate" | awk -v segment="$$segment" -v section="$$section" '/sectname / { seen_section=$$2; next } /segname / { if (seen_section == section && $$2 == segment) found = 1; seen_section="" } END { exit found ? 0 : 1 }'; then return 0; fi; \
-		done; \
-		return 1; \
+		list_has_line "$$present_sections" "$$segment,$$section"; \
 	}; \
 	section_name_matches() { \
 		expr="$$1"; \
-		for candidate in "$${product_objects[@]}"; do \
-			if "$$otool_cmd" -l "$$candidate" | awk -v expr="$$expr" '/sectname / { if ($$2 ~ expr) found = 1 } END { exit found ? 0 : 1 }'; then return 0; fi; \
-		done; \
-		return 1; \
+		printf '%s\n' "$$present_section_names" | awk -v expr="$$expr" '$$0 ~ expr { found = 1 } END { exit found ? 0 : 1 }'; \
 	}; \
 	undefined_symbol_present() { \
 		symbol="$$1"; \
-		for candidate in "$${product_objects[@]}"; do \
-			if "$$nm_cmd" -u "$$candidate" | awk -v symbol="$$symbol" '$$NF == symbol { found = 1 } END { exit found ? 0 : 1 }'; then return 0; fi; \
-		done; \
-		return 1; \
+		list_has_line "$$undefined_symbols" "$$symbol"; \
 	}; \
 	section_label() { kind="$$1"; segment="$$2"; section="$$3"; printf 'section$$%s$$%s$$%s' "$$kind" "$$segment" "$$section"; }; \
 	emit_label() { symbol="$$1"; printf '.globl %s\n%s:\n' "$$symbol" "$$symbol"; }; \
@@ -475,6 +482,18 @@ orlix_product_adapter_generate_boundaries() { \
 			fi; \
 		fi; \
 	}; \
+	emit_data_range_if_needed() { \
+		if undefined_symbol_present __sdata || undefined_symbol_present __edata; then \
+			if section_present __TEXT __const && section_present __DATA __data; then \
+				emit_alias __sdata "$$(section_label start __TEXT __const)"; \
+				emit_alias __edata "$$(section_label end __DATA __data)"; \
+			elif section_present __DATA __data; then \
+				emit_section_pair __sdata __edata __DATA __data; \
+			else \
+				emit_empty_pair __sdata __edata; \
+			fi; \
+		fi; \
+	}; \
 	initcall_cursor=""; \
 	first_present_initcall_section() { \
 		for section in "$${@}"; do \
@@ -517,6 +536,7 @@ orlix_product_adapter_generate_boundaries() { \
 		printf '%s\n' '/* __init_begin/__init_end are conservative until init-memory reclaim semantics exist. */'; \
 		emit_section_pair_if_needed __stext __etext __TEXT __text; \
 		if undefined_symbol_present _jiffies; then emit_alias _jiffies _jiffies_64; fi; \
+		emit_data_range_if_needed; \
 		emit_section_pair_if_needed ___cpuidle_text_start ___cpuidle_text_end __TEXT __cpuidle_text; \
 		emit_section_pair_if_needed ___irqentry_text_start ___irqentry_text_end __TEXT __irqentry_text; \
 		emit_section_pair_if_needed ___noinstr_text_start ___noinstr_text_end __TEXT __noinstr_text; \
@@ -544,6 +564,7 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___con_initcall_start ___con_initcall_end __DATA __con_initcall; \
 		emit_section_pair_if_needed ___start_once ___end_once __DATA __data_once; \
 		emit_section_pair_if_needed ___start_ro_after_init ___end_ro_after_init __DATA __ro_after_init; \
+		emit_section_pair_if_needed ___start_builtin_fw ___end_builtin_fw __DATA __builtin_fw; \
 		emit_section_pair_if_needed ___per_cpu_start ___per_cpu_end __DATA __percpu; \
 		if undefined_symbol_present ___bss_start || undefined_symbol_present ___bss_stop; then if section_present __DATA __bss && ! section_present __DATA __common; then emit_section_pair ___bss_start ___bss_stop __DATA __bss; else emit_empty_pair ___bss_start ___bss_stop; fi; fi; \
 		emit_section_pair_if_needed ___start___param ___stop___param __DATA __param; \
@@ -557,7 +578,7 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___start___bug_table ___stop___bug_table __DATA __bug_table; \
 	} > "$$boundary_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$boundary_src" -o "$$boundary_obj"; \
-	for symbol in _jiffies ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___modver ___stop___modver ___start_notes ___stop_notes ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
+	for symbol in _jiffies __sdata __edata ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___start_builtin_fw ___end_builtin_fw ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___modver ___stop___modver ___start_notes ___stop_notes ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
 	objs+=("$$boundary_obj"); \
 	echo "generated Orlix product boundary object: $$boundary_obj"; \
 };
