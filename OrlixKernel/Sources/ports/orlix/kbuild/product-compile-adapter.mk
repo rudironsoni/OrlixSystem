@@ -3,7 +3,8 @@ ORLIX_PRODUCT_ADAPTER_INCLUDE := $(ORLIX_PRODUCT_ADAPTER_ROOT)/include
 ORLIX_PRODUCT_ADAPTER_CFLAGS := -O2 -fshort-wchar -DPER_CPU_BASE_SECTION=\"__DATA,__percpu\" -I"$(ORLIX_PRODUCT_ADAPTER_INCLUDE)"
 ORLIX_PRODUCT_PAYLOAD_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-payloads.o
 ORLIX_PRODUCT_BOUNDARY_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-boundaries.o
-ORLIX_PRODUCT_BOUNDARY_OBJECTS := $(ORLIX_PRODUCT_PAYLOAD_OBJECT) $(ORLIX_PRODUCT_BOUNDARY_OBJECT)
+ORLIX_PRODUCT_KALLSYMS_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-kallsyms.o
+ORLIX_PRODUCT_BOUNDARY_OBJECTS := $(ORLIX_PRODUCT_PAYLOAD_OBJECT) $(ORLIX_PRODUCT_BOUNDARY_OBJECT) $(ORLIX_PRODUCT_KALLSYMS_OBJECT)
 
 ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__text \
@@ -94,6 +95,7 @@ done; \
 rm -rf "$$adapter_root"; \
 	mkdir -p "$$adapter_include/linux"; \
 	mkdir -p "$$adapter_include/linux/sched"; \
+	mkdir -p "$$adapter_include/asm"; \
 	mkdir -p "$$adapter_include/net"; \
 	mkdir -p "$$adapter_root/source/lib"; \
 	mkdir -p "$$adapter_root/source/lib/crypto"; \
@@ -131,8 +133,11 @@ for required in \
 	"$$linux_root/include/linux/sched/debug.h" \
 	"$$linux_root/include/linux/syscalls.h" \
 	"$$linux_root/include/net/net_debug.h" \
+	"$$linux_root/arch/$(LINUX_ARCH)/include/uapi/asm/bitsperlong.h" \
 	"$$linux_root/include/asm-generic/percpu.h" \
+	"$$linux_root/include/asm-generic/bitsperlong.h" \
 	"$$linux_root/include/asm-generic/vmlinux.lds.h" \
+	"$$linux_root/include/uapi/asm-generic/bitsperlong.h" \
 	"$$linux_root/arch/$(LINUX_ARCH)/kernel/vmlinux.lds.S" \
 	"$$linux_root/init/Makefile" \
 	"$$linux_root/kernel/sched/sched.h" \
@@ -182,7 +187,12 @@ require_text "$$linux_root/include/linux/cache.h" '__section(".data..ro_after_in
 	require_text "$$linux_root/include/linux/sched/debug.h" 'extern char __sched_text_start[], __sched_text_end[];'; \
 	require_text "$$linux_root/include/linux/syscalls.h" '__attribute__((alias(__stringify(__se_sys##name))))'; \
 	require_text "$$linux_root/include/net/net_debug.h" '__section(".data.once")'; \
+	require_text "$$linux_root/arch/$(LINUX_ARCH)/include/uapi/asm/bitsperlong.h" '#define __BITS_PER_LONG 64'; \
+	require_text "$$linux_root/arch/$(LINUX_ARCH)/include/uapi/asm/bitsperlong.h" '#include <asm-generic/bitsperlong.h>'; \
 	require_text "$$linux_root/include/asm-generic/percpu.h" '#ifndef PER_CPU_BASE_SECTION'; \
+	require_text "$$linux_root/include/asm-generic/bitsperlong.h" '#define BITS_PER_LONG 64'; \
+	require_text "$$linux_root/include/asm-generic/bitsperlong.h" '#include <uapi/asm-generic/bitsperlong.h>'; \
+	require_text "$$linux_root/include/uapi/asm-generic/bitsperlong.h" '#ifndef __BITS_PER_LONG'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define COMMON_DISCARDS'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.discard.*)'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)'; \
@@ -240,6 +250,11 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/lib/crc32.c" 'u32 __pure crc32_be_base(u32, unsigned char const *, size_t) __alias(crc32_be);'; \
 	require_text "$$linux_root/scripts/mod/modpost.c" 'EXPORT_SYMBOL'; \
 require_text "$$linux_root/scripts/link-vmlinux.sh" 'vmlinux.o'; \
+require_text "$$linux_root/scripts/link-vmlinux.sh" 'scripts/kallsyms $${kallsymopt} "$${1}" > "$${2}.S"'; \
+require_text "$$linux_root/scripts/kallsyms.c" 'Usage: kallsyms [--all-symbols] [--absolute-percpu] in.map > out.S'; \
+require_text "$$linux_root/scripts/kallsyms.c" 'printf("\t.section .rodata, \"a\"\n");'; \
+require_text "$$linux_root/scripts/kallsyms.c" 'output_label("kallsyms_num_syms");'; \
+require_text "$$linux_root/scripts/kallsyms.c" 'output_label("kallsyms_relative_base");'; \
 for pattern in \
 	'.init.text' '.init.data' '.init.rodata' '.ref.text' '.init.setup' \
 	'.exit.text' '.exit.data' '.exitcall.exit' \
@@ -309,6 +324,7 @@ cp "$$linux_root/include/linux/percpu-defs.h" "$$adapter_include/linux/percpu-de
 cp "$$linux_root/include/linux/sched/debug.h" "$$adapter_include/linux/sched/debug.h"; \
 cp "$$linux_root/include/linux/syscalls.h" "$$adapter_include/linux/syscalls.h"; \
 cp "$$linux_root/include/linux/once_lite.h" "$$adapter_include/linux/once_lite.h"; \
+cp "$$linux_root/include/asm-generic/bitsperlong.h" "$$adapter_include/asm/bitsperlong.h"; \
 cp "$$linux_root/include/net/net_debug.h" "$$adapter_include/net/net_debug.h"; \
 replace_once "$$adapter_include/linux/init.h" '__section(".init.text")' '__section("__TEXT,__init_text")'; \
 replace_once "$$adapter_include/linux/init.h" '__section(".init.data")' '__section("__DATA,__init_data")'; \
@@ -440,6 +456,72 @@ orlix_product_adapter_verify_object_contract() { \
 	if "$$otool_cmd" -l "$$obj" | grep -E 'segname \.(init|exit|ref|discard|export_symbol|modinfo)'; then echo "Orlix product object leaked GNU/Linux section spelling into Mach-O segment: $$obj" >&2; exit 1; fi; \
 	if "$$otool_cmd" -l "$$obj" | grep -E 'sectname \.(init|exit|ref|discard|export_symbol|modinfo)'; then echo "Orlix product object leaked GNU/Linux section spelling into Mach-O section: $$obj" >&2; exit 1; fi; \
 	if "$$nm_cmd" -m "$$obj" | grep -E '(^|[[:space:]])_+(__DISABLE_EXPORTS|HAVE_ARCH_COMPILER_H)([[:space:]]|$$)'; then echo "Orlix product object uses forbidden adapter escape symbol: $$obj" >&2; exit 1; fi; \
+};
+endef
+
+define orlix_product_adapter_generate_kallsyms
+orlix_product_adapter_generate_kallsyms() { \
+	platform="$$1"; \
+	target="$$2"; \
+	shift 2; \
+	product_objects=("$${@}"); \
+	[ "$${#product_objects[@]}" -gt 0 ] || { echo "cannot generate product kallsyms without product objects" >&2; exit 1; }; \
+	linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
+	config="$(ORLIX_KERNEL_BUILD_DIR)/.config"; \
+	kallsyms_tool="$(ORLIX_KERNEL_BUILD_DIR)/scripts/kallsyms"; \
+	[ -x "$$kallsyms_tool" ] || { echo "missing Linux kallsyms generator: $$kallsyms_tool" >&2; exit 1; }; \
+	kallsyms_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)/kallsyms-$$platform"; \
+	rm -rf "$$kallsyms_root"; \
+	mkdir -p "$$kallsyms_root"; \
+	objects_rsp="$$kallsyms_root/objects.rsp"; \
+	merged_obj="$$kallsyms_root/orlix-product-kallsyms-input.o"; \
+	sysmap="$$kallsyms_root/System.map"; \
+	linux_asm="$$kallsyms_root/orlix-product-kallsyms-linux.S"; \
+	kallsyms_src="$$kallsyms_root/orlix-product-kallsyms.S"; \
+	kallsyms_obj="$(ORLIX_PRODUCT_KALLSYMS_OBJECT)"; \
+	printf '%s\n' "$${product_objects[@]}" > "$$objects_rsp"; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -nostdlib -Wl,-r -Wl,-o,"$$merged_obj" @"$$objects_rsp"; \
+	section_bounds() { \
+		wanted_segment="$$1"; wanted_section="$$2"; \
+		"$$otool_cmd" -l "$$merged_obj" | awk -v wanted_segment="$$wanted_segment" -v wanted_section="$$wanted_section" '/sectname / { section=$$2; next } /segname / { segment=$$2; next } /addr / { addr=$$2; next } /size / { size=$$2; if (segment == wanted_segment && section == wanted_section) { print addr, size; found=1; exit } } END { exit found ? 0 : 1 }'; \
+	}; \
+	hex_norm() { perl -e 'printf "%016x\n", hex($$ARGV[0])' "$$1"; }; \
+	hex_sum() { perl -e 'printf "%016x\n", hex($$ARGV[0]) + hex($$ARGV[1])' "$$1" "$$2"; }; \
+	text_bounds="$$(section_bounds __TEXT __text)"; \
+	init_text_bounds="$$(section_bounds __TEXT __init_text)"; \
+	[ -n "$$text_bounds" ] || { echo "cannot generate kallsyms without __TEXT,__text in product image" >&2; exit 1; }; \
+	[ -n "$$init_text_bounds" ] || { echo "cannot generate kallsyms without __TEXT,__init_text in product image" >&2; exit 1; }; \
+	text_addr="$${text_bounds%% *}"; text_size="$${text_bounds##* }"; \
+	init_text_addr="$${init_text_bounds%% *}"; init_text_size="$${init_text_bounds##* }"; \
+	text_start="$$(hex_norm "$$text_addr")"; text_end="$$(hex_sum "$$text_addr" "$$text_size")"; \
+	init_text_start="$$(hex_norm "$$init_text_addr")"; init_text_end="$$(hex_sum "$$init_text_addr" "$$init_text_size")"; \
+	percpu_bounds="$$(section_bounds __DATA __percpu || true)"; \
+	{ \
+		printf '%s T _text\n' "$$text_start"; \
+		printf '%s T _stext\n' "$$text_start"; \
+		printf '%s T _etext\n' "$$text_end"; \
+		printf '%s T _sinittext\n' "$$init_text_start"; \
+		printf '%s T _einittext\n' "$$init_text_end"; \
+		if [ -n "$$percpu_bounds" ]; then \
+			percpu_addr="$${percpu_bounds%% *}"; percpu_size="$${percpu_bounds##* }"; \
+			printf '%s D __per_cpu_start\n' "$$(hex_norm "$$percpu_addr")"; \
+			printf '%s D __per_cpu_end\n' "$$(hex_sum "$$percpu_addr" "$$percpu_size")"; \
+		fi; \
+		"$$nm_cmd" -n "$$merged_obj" | awk 'NF >= 3 && $$1 ~ /^[0-9A-Fa-f]+$$/ && $$2 ~ /^[A-Za-z]$$/ { name=$$3; if (name ~ /^ltmp[0-9]+$$/ || name ~ /^l[_.]/) next; sub(/^_/, "", name); print $$1, $$2, name }'; \
+	} | LC_ALL=C sort -k1,1 -k3,3 | sed -f "$$linux_root/scripts/mksysmap" > "$$sysmap"; \
+	grep -q ' _text$$' "$$sysmap" || { echo "generated kallsyms System.map missing _text" >&2; exit 1; }; \
+	grep -q ' _stext$$' "$$sysmap" || { echo "generated kallsyms System.map missing _stext" >&2; exit 1; }; \
+	grep -q ' _etext$$' "$$sysmap" || { echo "generated kallsyms System.map missing _etext" >&2; exit 1; }; \
+	kallsyms_flags=""; \
+	if grep -q '^CONFIG_KALLSYMS_ALL=y$$' "$$config"; then kallsyms_flags="$$kallsyms_flags --all-symbols"; fi; \
+	if grep -q '^CONFIG_KALLSYMS_ABSOLUTE_PERCPU=y$$' "$$config"; then kallsyms_flags="$$kallsyms_flags --absolute-percpu"; fi; \
+	"$$kallsyms_tool" $$kallsyms_flags "$$sysmap" > "$$linux_asm"; \
+	perl -pe 's/^\t\.section \.rodata, "a"$$/\t.section __TEXT,__const/; s/^\.globl (kallsyms_[A-Za-z0-9_]+)/.globl _$$1/; s/^(kallsyms_[A-Za-z0-9_]+):/_$$1:/; s/\bPTR\t_text\b/PTR\t__text/g;' "$$linux_asm" > "$$kallsyms_src"; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler-with-cpp -ffreestanding $(ORLIX_PRODUCT_ADAPTER_CFLAGS) -fno-builtin -nostdinc -D__KERNEL__ -include "linux/kconfig.h" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -c "$$kallsyms_src" -o "$$kallsyms_obj"; \
+	orlix_product_adapter_verify_object_contract "$$kallsyms_obj"; \
+	for symbol in _kallsyms_num_syms _kallsyms_names _kallsyms_markers _kallsyms_token_table _kallsyms_token_index _kallsyms_offsets _kallsyms_relative_base _kallsyms_seqs_of_names; do "$$nm_cmd" -m "$$kallsyms_obj" | grep -F -q "$$symbol" || { echo "product kallsyms object missing symbol: $$symbol" >&2; exit 1; }; done; \
+	objs+=("$$kallsyms_obj"); \
+	echo "generated Orlix product kallsyms object: $$kallsyms_obj ($$platform)"; \
 };
 endef
 
@@ -593,6 +675,7 @@ orlix_product_adapter_generate_boundaries() { \
 		printf '%s\n' '.p2align 3'; \
 		printf '%s\n' '/* __init_begin/__init_end are conservative until init-memory reclaim semantics exist. */'; \
 		emit_init_stack_if_needed; \
+		if section_present __TEXT __text; then emit_alias __text "$$(section_label start __TEXT __text)"; fi; \
 		emit_section_pair_if_needed __stext __etext __TEXT __text; \
 		if undefined_symbol_present _jiffies; then emit_alias _jiffies _jiffies_64; fi; \
 		emit_data_range_if_needed; \

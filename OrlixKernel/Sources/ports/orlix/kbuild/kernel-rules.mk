@@ -1216,6 +1216,7 @@ __kernel-archive: __prepare-kbuild
 	$(call orlix_product_adapter_source_resolver) \
 	$(call orlix_product_adapter_generate_payloads) \
 	$(call orlix_product_adapter_generate_boundaries) \
+	$(call orlix_product_adapter_generate_kallsyms) \
 	compile_slice() { \
 		platform="$$1"; \
 		target="$$2"; \
@@ -1257,6 +1258,7 @@ __kernel-archive: __prepare-kbuild
 		done; \
 		orlix_product_adapter_generate_payloads "$$platform" "$$target"; \
 		orlix_product_adapter_generate_boundaries "$$platform" "$$target" "$${objs[@]}"; \
+		orlix_product_adapter_generate_kallsyms "$$platform" "$$target" "$${objs[@]}"; \
 		"$$ar_cmd" rcs "$$archive" "$${objs[@]}"; \
 		[ -s "$$archive" ] || { echo "missing OrlixKernel archive: $$archive" >&2; exit 1; }; \
 		"$$nm_cmd" -gU "$$archive" > "$$output_dir/symbols.txt"; \
