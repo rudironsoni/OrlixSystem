@@ -60,6 +60,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/cred.c \
 	kernel/cpu.c \
 	kernel/exit.c \
+	kernel/iomem.c \
 	kernel/irq_work.c \
 	kernel/irq/irqdesc.c \
 	kernel/irq/handle.c \
