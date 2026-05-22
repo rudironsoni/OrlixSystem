@@ -48,6 +48,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/cred.c \
 	kernel/cpu.c \
 	kernel/notifier.c \
+	kernel/groups.c \
 	kernel/params.c \
 	kernel/panic.c \
 	kernel/printk/printk.c \
