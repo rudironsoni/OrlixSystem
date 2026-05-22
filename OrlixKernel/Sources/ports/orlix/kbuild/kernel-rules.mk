@@ -68,6 +68,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/utsname.c \
 	kernel/kallsyms.c \
 	security/commoncap.c \
+	lib/is_single_threaded.c \
 	lib/string.c \
 	lib/string_helpers.c \
 	lib/strncpy_from_user.c \
@@ -114,6 +115,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/bad_inode.c \
 	fs/dcache.c \
 	fs/d_path.c \
+	fs/exec.c \
 	fs/inode.c \
 	fs/namespace.c \
 	fs/namei.c \
@@ -137,6 +139,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/read_write.c \
 	fs/stat.c \
 	fs/super.c \
+	fs/utimes.c \
 	fs/xattr.c \
 	fs/proc/generic.c \
 	fs/proc/inode.c \
