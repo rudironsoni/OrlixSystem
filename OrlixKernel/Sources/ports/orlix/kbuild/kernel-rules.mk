@@ -456,6 +456,10 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/of/platform.c \
 	drivers/of/property.c \
 	drivers/of/address.c \
+	drivers/virtio/virtio.c \
+	drivers/virtio/virtio_ring.c \
+	drivers/virtio/virtio_anchor.c \
+	drivers/virtio/virtio_mmio.c \
 	fs/anon_inodes.c \
 	fs/attr.c \
 	fs/bad_inode.c \
