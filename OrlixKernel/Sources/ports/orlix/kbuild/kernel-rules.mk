@@ -122,18 +122,30 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/cmdline.c \
 	lib/kstrtox.c \
 	lib/bitmap.c \
+	lib/bitmap-str.c \
 	lib/find_bit.c \
 	lib/hweight.c \
 	lib/hexdump.c \
 	lib/uuid.c \
 	lib/iov_iter.c \
+	lib/timerqueue.c \
+	lib/maple_tree.c \
 	lib/idr.c \
+	lib/extable.c \
+	lib/irq_regs.c \
+	lib/argv_split.c \
 	lib/radix-tree.c \
 	lib/rbtree.c \
 	lib/xarray.c \
 	lib/errname.c \
 	lib/bust_spinlocks.c \
+	lib/kasprintf.c \
+	lib/llist.c \
+	lib/percpu-refcount.c \
+	lib/refcount.c \
+	lib/errseq.c \
 	lib/crc32.c \
+	lib/dec_and_lock.c \
 	lib/debug_locks.c \
 	lib/lockref.c \
 	lib/siphash.c \
