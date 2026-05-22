@@ -124,6 +124,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/locks.c \
 	fs/mnt_idmapping.c \
 	fs/open.c \
+	fs/pipe.c \
 	fs/pnode.c \
 	fs/read_write.c \
 	fs/stat.c \
