@@ -52,6 +52,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/params.c \
 	kernel/panic.c \
 	kernel/pid.c \
+	kernel/pid_namespace.c \
 	kernel/printk/printk.c \
 	kernel/printk/printk_safe.c \
 	kernel/sched/build_utility.c \
