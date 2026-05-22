@@ -117,6 +117,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/open.c \
 	fs/pnode.c \
 	fs/read_write.c \
+	fs/stat.c \
 	fs/super.c \
 	fs/proc/generic.c \
 	fs/proc/inode.c \
