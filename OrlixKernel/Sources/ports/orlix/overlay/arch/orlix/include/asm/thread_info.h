@@ -30,12 +30,11 @@ struct thread_info {
 	.preempt_count	= INIT_PREEMPT_COUNT,		\
 }
 
+extern struct thread_info *orlix_current_thread_info;
+
 static inline struct thread_info *current_thread_info(void)
 {
-	unsigned long sp;
-
-	asm volatile("mov %0, sp" : "=r" (sp));
-	return (struct thread_info *)(sp & ~(THREAD_SIZE - 1));
+	return orlix_current_thread_info;
 }
 
 #endif /* !__ASSEMBLY__ */

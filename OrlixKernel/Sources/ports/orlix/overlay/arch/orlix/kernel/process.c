@@ -8,6 +8,8 @@
 #include <asm/processor.h>
 #include <asm/ptrace.h>
 
+struct thread_info *orlix_current_thread_info = &init_thread_info;
+
 void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 {
 	memset(regs, 0, sizeof(*regs));
