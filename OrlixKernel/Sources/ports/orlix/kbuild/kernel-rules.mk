@@ -123,6 +123,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/read_write.c \
 	fs/stat.c \
 	fs/super.c \
+	fs/xattr.c \
 	fs/proc/generic.c \
 	fs/proc/inode.c \
 	fs/proc/proc_sysctl.c \
