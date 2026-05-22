@@ -65,6 +65,9 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/locking/rtmutex_api.c \
 	kernel/printk/printk.c \
 	kernel/printk/printk_safe.c \
+	kernel/sched/core.c \
+	kernel/sched/fair.c \
+	kernel/sched/build_policy.c \
 	kernel/sched/build_utility.c \
 	kernel/umh.c \
 	kernel/ucount.c \
@@ -614,6 +617,7 @@ __kernel-archive: __prepare-kbuild
 			case "$$src_rel" in \
 				init/version.c) extra_cflags="-include $(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h" ;; \
 				drivers/of/of_reserved_mem.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/drivers/of" ;; \
+				kernel/sched/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/kernel/sched" ;; \
 				lib/crc32.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/lib -I$(ORLIX_KERNEL_BUILD_DIR)/lib" ;; \
 				lib/fdt*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/scripts/dtc/libfdt" ;; \
 			esac; \

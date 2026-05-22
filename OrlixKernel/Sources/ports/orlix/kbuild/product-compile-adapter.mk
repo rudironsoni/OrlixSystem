@@ -16,6 +16,8 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__init_rodata \
 	__TEXT,__ref_text \
 	__TEXT,__sched_text \
+	__TEXT,__noinstr_text \
+	__TEXT,__cpuidle_text \
 	__TEXT,__dtb_init \
 	__DATA,__data \
 	__DATA,__const \
@@ -28,6 +30,12 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__DATA,__param \
 	__DATA,__data_once \
 	__DATA,__ro_after_init \
+	__DATA,__sched_stop \
+	__DATA,__sched_dl \
+	__DATA,__sched_rt \
+	__DATA,__sched_fair \
+	__DATA,__sched_ext \
+	__DATA,__sched_idle \
 	__DATA,__ref_data \
 	__DATA,__cacheline \
 	__DATA,__percpu \
@@ -80,6 +88,7 @@ rm -rf "$$adapter_root"; \
 	mkdir -p "$$adapter_include/linux/sched"; \
 	mkdir -p "$$adapter_root/source/lib"; \
 	mkdir -p "$$adapter_root/source/drivers/of"; \
+	mkdir -p "$$adapter_root/source/kernel/sched"; \
 $(call orlix_product_adapter_validate_linux_truth); \
 $(call orlix_product_adapter_validate_macho_projection); \
 $(call orlix_product_adapter_generate_headers); \
@@ -96,6 +105,7 @@ for required in \
 	"$$linux_root/include/linux/init.h" \
 	"$$linux_root/include/linux/moduleparam.h" \
 	"$$linux_root/include/linux/compiler.h" \
+	"$$linux_root/include/linux/compiler_types.h" \
 	"$$linux_root/include/linux/export.h" \
 	"$$linux_root/include/linux/cache.h" \
 	"$$linux_root/include/linux/elfnote.h" \
@@ -105,6 +115,7 @@ for required in \
 	"$$linux_root/include/linux/syscalls.h" \
 	"$$linux_root/include/asm-generic/percpu.h" \
 	"$$linux_root/include/asm-generic/vmlinux.lds.h" \
+	"$$linux_root/kernel/sched/sched.h" \
 	"$$linux_root/drivers/of/Makefile" \
 	"$$linux_root/usr/Makefile" \
 	"$$linux_root/scripts/mod/modpost.c" \
@@ -120,12 +131,15 @@ require_text "$$linux_root/include/linux/init.h" 'extern initcall_entry_t __init
 require_text "$$linux_root/include/linux/moduleparam.h" '__used __section("__param")'; \
 require_text "$$linux_root/include/linux/moduleparam.h" 'extern const struct kernel_param __start___param[], __stop___param[];'; \
 require_text "$$linux_root/include/linux/compiler.h" '__section(".discard.addressable")'; \
+require_text "$$linux_root/include/linux/compiler_types.h" '#define noinstr __noinstr_section(".noinstr.text")'; \
+require_text "$$linux_root/include/linux/compiler_types.h" '#define __cpuidle __noinstr_section(".cpuidle.text")'; \
 require_text "$$linux_root/include/linux/export.h" '.section ".export_symbol","a"'; \
 require_text "$$linux_root/include/linux/cache.h" '__section(".data..ro_after_init")'; \
 require_text "$$linux_root/include/linux/elfnote.h" '__attribute__((section(".note." name),'; \
 require_text "$$linux_root/include/linux/init_task.h" '__section(".data..init_thread_info")'; \
 require_text "$$linux_root/include/linux/percpu-defs.h" 'PER_CPU_BASE_SECTION'; \
 require_text "$$linux_root/include/linux/sched/debug.h" '__section(".sched.text")'; \
+require_text "$$linux_root/include/linux/sched/debug.h" 'extern char __sched_text_start[], __sched_text_end[];'; \
 require_text "$$linux_root/include/linux/syscalls.h" '__attribute__((alias(__stringify(__se_sys##name))))'; \
 require_text "$$linux_root/include/asm-generic/percpu.h" '#ifndef PER_CPU_BASE_SECTION'; \
 require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define COMMON_DISCARDS'; \
@@ -136,8 +150,15 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define INIT_CALLS'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__initramfs_start = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(.init.ramfs))'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__sched_class_highest = .;'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(__fair_sched_class)'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.noinstr.text)'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.cpuidle.text)'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__sched_text_start = .;'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__sched_text_end = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'RESERVEDMEM_OF_TABLES()'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(__##name##_of_table_end))'; \
+	require_text "$$linux_root/kernel/sched/sched.h" '__section("__" #name "_sched_class")'; \
 	require_text "$$linux_root/drivers/of/of_reserved_mem.c" '__used __section("__reservedmem_of_table_end");'; \
 	require_text "$$linux_root/drivers/of/Makefile" 'empty_root.dtb.o'; \
 	require_text "$$linux_root/usr/Makefile" 'obj-$$(CONFIG_BLK_DEV_INITRD) := initramfs_data.o'; \
@@ -150,8 +171,10 @@ for pattern in \
 	'.init.text' '.init.data' '.init.rodata' '.ref.text' '.init.setup' \
 	'__setup_start = .;' '__setup_end = .;' '__init_begin = .;' '__init_end = .;' \
 	'__start_rodata = .;' '__end_rodata = .;' \
+	'__sched_class_highest = .;' '*(__fair_sched_class)' '__sched_class_lowest = .;' \
+	'*(.noinstr.text)' '*(.cpuidle.text)' \
 	'__initcall_start = .;' '__initcall_end = .;' '__param' '.data.once' '.data..ro_after_init' \
-	'.data..init_thread_info' '.sched.text' '__reservedmem_of_table = .;' 'KEEP(*(__reservedmem_of_table_end))' \
+	'.data..init_thread_info' '.sched.text' '__sched_text_start = .;' '__sched_text_end = .;' '__reservedmem_of_table = .;' 'KEEP(*(__reservedmem_of_table_end))' \
 	'/DISCARD/ : {' '*(.discard)' '*(.discard.*)' '*(.export_symbol)' '*(.modinfo)'; do \
 	require_text "$$lds" "$$pattern"; \
 done; \
@@ -184,6 +207,7 @@ replace_once() { \
 cp "$$linux_root/include/linux/init.h" "$$adapter_include/linux/init.h"; \
 cp "$$linux_root/include/linux/moduleparam.h" "$$adapter_include/linux/moduleparam.h"; \
 cp "$$linux_root/include/linux/compiler.h" "$$adapter_include/linux/compiler.h"; \
+cp "$$linux_root/include/linux/compiler_types.h" "$$adapter_include/linux/compiler_types.h"; \
 cp "$$linux_root/include/linux/export.h" "$$adapter_include/linux/export.h"; \
 cp "$$linux_root/include/linux/cache.h" "$$adapter_include/linux/cache.h"; \
 cp "$$linux_root/include/linux/elfnote.h" "$$adapter_include/linux/elfnote.h"; \
@@ -200,6 +224,8 @@ replace_once "$$adapter_include/linux/init.h" '__section(".ref.data")' '__sectio
 replace_once "$$adapter_include/linux/init.h" '__section(".init.setup")' '__section("__DATA,__init_setup")'; \
 perl -0pi -e 'my $$defs = join("\n", q{#define __orlix_product_initcall_section_early "__DATA,__initcall_e"}, q{#define __orlix_product_initcall_section_con "__DATA,__con_initcall"}, q{#define __orlix_product_initcall_section_0 "__DATA,__initcall0"}, q{#define __orlix_product_initcall_section_0s "__DATA,__initcall0s"}, q{#define __orlix_product_initcall_section_1 "__DATA,__initcall1"}, q{#define __orlix_product_initcall_section_1s "__DATA,__initcall1s"}, q{#define __orlix_product_initcall_section_2 "__DATA,__initcall2"}, q{#define __orlix_product_initcall_section_2s "__DATA,__initcall2s"}, q{#define __orlix_product_initcall_section_3 "__DATA,__initcall3"}, q{#define __orlix_product_initcall_section_3s "__DATA,__initcall3s"}, q{#define __orlix_product_initcall_section_4 "__DATA,__initcall4"}, q{#define __orlix_product_initcall_section_4s "__DATA,__initcall4s"}, q{#define __orlix_product_initcall_section_5 "__DATA,__initcall5"}, q{#define __orlix_product_initcall_section_5s "__DATA,__initcall5s"}, q{#define __orlix_product_initcall_section_rootfs "__DATA,__initcallrf"}, q{#define __orlix_product_initcall_section_rootfss "__DATA,__initcallrfs"}, q{#define __orlix_product_initcall_section_6 "__DATA,__initcall6"}, q{#define __orlix_product_initcall_section_6s "__DATA,__initcall6s"}, q{#define __orlix_product_initcall_section_7 "__DATA,__initcall7"}, q{#define __orlix_product_initcall_section_7s "__DATA,__initcall7s"}) . "\n"; my $$inserted = s/\n#ifdef CONFIG_LTO_CLANG\n/\n$$defs\n#ifdef CONFIG_LTO_CLANG\n/; die "failed to insert Orlix initcall section map\n" unless $$inserted == 1; my $$section_defs = s/#define __initcall_section\(__sec, __iid\)\s*\\\n\t(?:#__sec "\.init\.\." #__iid|#__sec "\.init")/#define __initcall_section(__sec, __iid) __sec/g; die "expected two Linux initcall section definitions, found $$section_defs\n" unless $$section_defs == 2; my $$initcalls = s/\.initcall##id/__orlix_product_initcall_section_##id/g; die "expected one initcall token-paste replacement, found $$initcalls\n" unless $$initcalls == 1; my $$con = s/\.con_initcall/__orlix_product_initcall_section_con/g; die "expected one console initcall replacement, found $$con\n" unless $$con == 1;' "$$adapter_include/linux/init.h"; \
 replace_once "$$adapter_include/linux/compiler.h" '__section(".discard.addressable")' '__section("__DATA,__discard_addr")'; \
+replace_once "$$adapter_include/linux/compiler_types.h" '#define noinstr __noinstr_section(".noinstr.text")' '#define noinstr __noinstr_section("__TEXT,__noinstr_text")'; \
+replace_once "$$adapter_include/linux/compiler_types.h" '#define __cpuidle __noinstr_section(".cpuidle.text")' '#define __cpuidle __noinstr_section("__TEXT,__cpuidle_text")'; \
 replace_once "$$adapter_include/linux/export.h" '.section ".export_symbol","a"' '.section __DATA,__export_symbol'; \
 replace_once "$$adapter_include/linux/cache.h" '__section(".data..ro_after_init")' '__section("__DATA,__ro_after_init")'; \
 replace_once "$$adapter_include/linux/cache.h" '__section__(".data..cacheline_aligned")' '__section__("__DATA,__cacheline")'; \
@@ -220,10 +246,13 @@ adapter_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)"; \
 linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
 cp "$$linux_root/lib/crc32.c" "$$adapter_root/source/lib/crc32.c"; \
 cp "$$linux_root/drivers/of/of_reserved_mem.c" "$$adapter_root/source/drivers/of/of_reserved_mem.c"; \
+for sched_src in core.c fair.c build_policy.c build_utility.c; do cp "$$linux_root/kernel/sched/$$sched_src" "$$adapter_root/source/kernel/sched/$$sched_src"; done; \
+cp "$$linux_root/kernel/sched/sched.h" "$$adapter_root/source/kernel/sched/sched.h"; \
 replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure crc32_le_base(u32, unsigned char const *, size_t) __alias(crc32_le);' 'u32 __pure crc32_le_base(u32 crc, unsigned char const *p, size_t len) { return crc32_le(crc, p, len); }'; \
 replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure __crc32c_le_base(u32, unsigned char const *, size_t) __alias(__crc32c_le);' 'u32 __pure __crc32c_le_base(u32 crc, unsigned char const *p, size_t len) { return __crc32c_le(crc, p, len); }'; \
 replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure crc32_be_base(u32, unsigned char const *, size_t) __alias(crc32_be);' 'u32 __pure crc32_be_base(u32 crc, unsigned char const *p, size_t len) { return crc32_be(crc, p, len); }'; \
 replace_once "$$adapter_root/source/drivers/of/of_reserved_mem.c" '__used __section("__reservedmem_of_table_end");' '__used __section("__DATA,__rmem_end");'; \
+replace_once "$$adapter_root/source/kernel/sched/sched.h" '__section("__" #name "_sched_class")' '__section("__DATA,__sched_" #name)'; \
 echo "generated Orlix product adapter sources: $$adapter_root/source"
 endef
 
@@ -232,6 +261,7 @@ orlix_product_adapter_source_for() { \
 	src_rel="$$1"; \
 	case "$$src_rel" in \
 		drivers/of/of_reserved_mem.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/drivers/of/of_reserved_mem.c" ;; \
+		kernel/sched/core.c|kernel/sched/fair.c|kernel/sched/build_policy.c|kernel/sched/build_utility.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/$$src_rel" ;; \
 		lib/crc32.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/lib/crc32.c" ;; \
 		*) printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel" ;; \
 	esac; \
@@ -356,6 +386,20 @@ orlix_product_adapter_generate_boundaries() { \
 			else emit_label ___reservedmem_of_table; fi; \
 		fi; \
 	}; \
+	emit_sched_class_range_if_needed() { \
+		if undefined_symbol_present ___sched_class_highest || undefined_symbol_present ___sched_class_lowest; then \
+			first=""; last=""; \
+			for section in __sched_stop __sched_dl __sched_rt __sched_fair __sched_ext __sched_idle; do \
+				if section_present __DATA "$$section"; then [ -n "$$first" ] || first="$$section"; last="$$section"; fi; \
+			done; \
+			if [ -n "$$first" ]; then \
+				emit_alias ___sched_class_highest "$$(section_label start __DATA "$$first")"; \
+				emit_alias ___sched_class_lowest "$$(section_label end __DATA "$$last")"; \
+			else \
+				emit_empty_pair ___sched_class_highest ___sched_class_lowest; \
+			fi; \
+		fi; \
+	}; \
 	initcall_cursor=""; \
 	first_present_initcall_section() { \
 		for section in "$${@}"; do \
@@ -397,7 +441,11 @@ orlix_product_adapter_generate_boundaries() { \
 		printf '%s\n' '.p2align 3'; \
 		printf '%s\n' '/* __init_begin/__init_end are conservative until init-memory reclaim semantics exist. */'; \
 		emit_section_pair_if_needed __stext __etext __TEXT __text; \
+		emit_section_pair_if_needed ___cpuidle_text_start ___cpuidle_text_end __TEXT __cpuidle_text; \
+		emit_section_pair_if_needed ___noinstr_text_start ___noinstr_text_end __TEXT __noinstr_text; \
+		emit_section_pair_if_needed ___sched_text_start ___sched_text_end __TEXT __sched_text; \
 		emit_required_section_pair_if_needed ___start_rodata ___end_rodata __TEXT __const; \
+		emit_sched_class_range_if_needed; \
 		emit_section_pair_if_needed __sinittext __einittext __TEXT __init_text; \
 		emit_empty_pair_if_needed ___init_begin ___init_end; \
 		emit_section_pair_if_needed ___setup_start ___setup_end __DATA __init_setup; \
@@ -430,7 +478,7 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___start___bug_table ___stop___bug_table __DATA __bug_table; \
 	} > "$$boundary_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$boundary_src" -o "$$boundary_obj"; \
-	for symbol in ___init_begin ___init_end ___start_rodata ___end_rodata ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
+	for symbol in ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
 	objs+=("$$boundary_obj"); \
 	echo "generated Orlix product boundary object: $$boundary_obj"; \
 };
