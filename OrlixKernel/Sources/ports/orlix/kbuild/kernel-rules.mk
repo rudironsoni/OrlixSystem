@@ -90,8 +90,12 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/rcu/tiny.c \
 	kernel/rcu/update.c \
 	kernel/kallsyms.c \
+	kernel/ksysfs.c \
 	security/commoncap.c \
 	lib/is_single_threaded.c \
+	lib/kobject_uevent.c \
+	lib/kobject.c \
+	lib/klist.c \
 	lib/string.c \
 	lib/string_helpers.c \
 	lib/strncpy_from_user.c \
@@ -141,7 +145,28 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	mm/memblock.c \
 	mm/memfd.c \
 	mm/util.c \
+	drivers/base/component.c \
+	drivers/base/core.c \
+	drivers/base/bus.c \
+	drivers/base/dd.c \
+	drivers/base/syscore.c \
+	drivers/base/driver.c \
+	drivers/base/class.c \
+	drivers/base/platform.c \
+	drivers/base/cpu.c \
+	drivers/base/firmware.c \
+	drivers/base/init.c \
+	drivers/base/map.c \
 	drivers/base/devres.c \
+	drivers/base/attribute_container.c \
+	drivers/base/transport_class.c \
+	drivers/base/topology.c \
+	drivers/base/container.c \
+	drivers/base/property.c \
+	drivers/base/cacheinfo.c \
+	drivers/base/swnode.c \
+	drivers/base/firmware_loader/main.c \
+	drivers/base/firmware_loader/builtin/main.c \
 	drivers/of/base.c \
 	drivers/of/cpu.c \
 	drivers/of/fdt.c \

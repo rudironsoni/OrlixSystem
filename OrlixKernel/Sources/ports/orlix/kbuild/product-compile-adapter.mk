@@ -15,6 +15,7 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__init_text \
 	__TEXT,__init_rodata \
 	__TEXT,__ref_text \
+	__TEXT,__exit_text \
 	__TEXT,__sched_text \
 	__TEXT,__noinstr_text \
 	__TEXT,__cpuidle_text \
@@ -29,6 +30,8 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__DATA,__init_tinfo \
 	__DATA,__init_ramfs \
 	__DATA,__init_setup \
+	__DATA,__exit_data \
+	__DATA,__exitcall \
 	__DATA,__param \
 	__DATA,__data_once \
 	__DATA,__ro_after_init \
@@ -131,6 +134,9 @@ require_text "$$linux_root/include/linux/init.h" '__section(".init.text")'; \
 require_text "$$linux_root/include/linux/init.h" '__section(".init.data")'; \
 require_text "$$linux_root/include/linux/init.h" '__section(".init.rodata")'; \
 require_text "$$linux_root/include/linux/init.h" '__section(".ref.text")'; \
+require_text "$$linux_root/include/linux/init.h" '__section(".exit.text")'; \
+require_text "$$linux_root/include/linux/init.h" '__section(".exit.data")'; \
+require_text "$$linux_root/include/linux/init.h" '__section(".exitcall.exit")'; \
 require_text "$$linux_root/include/linux/init.h" 'extern initcall_entry_t __initcall_start[];'; \
 require_text "$$linux_root/include/linux/moduleparam.h" '__used __section("__param")'; \
 require_text "$$linux_root/include/linux/moduleparam.h" 'extern const struct kernel_param __start___param[], __stop___param[];'; \
@@ -156,6 +162,7 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '#define INIT_CALLS'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__initramfs_start = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'KEEP(*(.init.ramfs))'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'BOUNDED_SECTION_BY(.note.*, _notes)'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__sched_class_highest = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(__fair_sched_class)'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.noinstr.text)'; \
@@ -180,9 +187,11 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 require_text "$$linux_root/scripts/link-vmlinux.sh" 'vmlinux.o'; \
 for pattern in \
 	'.init.text' '.init.data' '.init.rodata' '.ref.text' '.init.setup' \
+	'.exit.text' '.exit.data' '.exitcall.exit' \
 	'jiffies = jiffies_64;' \
 	'__setup_start = .;' '__setup_end = .;' '__init_begin = .;' '__init_end = .;' \
 	'__start_rodata = .;' '__end_rodata = .;' \
+	'__start_notes = .;' 'KEEP(*(.note.*))' '__stop_notes = .;' \
 	'__sched_class_highest = .;' '*(__fair_sched_class)' '__sched_class_lowest = .;' \
 	'*(.noinstr.text)' '*(.cpuidle.text)' \
 	'__irqentry_text_start = .;' '*(.irqentry.text)' '__softirqentry_text_start = .;' '*(.softirqentry.text)' \
@@ -235,6 +244,9 @@ replace_once "$$adapter_include/linux/init.h" '__section(".init.data")' '__secti
 replace_once "$$adapter_include/linux/init.h" '__section(".init.rodata")' '__section("__TEXT,__init_rodata")'; \
 replace_once "$$adapter_include/linux/init.h" '__section(".ref.text")' '__section("__TEXT,__ref_text")'; \
 replace_once "$$adapter_include/linux/init.h" '__section(".ref.data")' '__section("__DATA,__ref_data")'; \
+replace_once "$$adapter_include/linux/init.h" '__section(".exit.text")' '__section("__TEXT,__exit_text")'; \
+replace_once "$$adapter_include/linux/init.h" '__section(".exit.data")' '__section("__DATA,__exit_data")'; \
+replace_once "$$adapter_include/linux/init.h" '__section(".exitcall.exit")' '__section("__DATA,__exitcall")'; \
 replace_once "$$adapter_include/linux/init.h" '__section(".init.setup")' '__section("__DATA,__init_setup")'; \
 perl -0pi -e 'my $$defs = join("\n", q{#define __orlix_product_initcall_section_early "__DATA,__initcall_e"}, q{#define __orlix_product_initcall_section_con "__DATA,__con_initcall"}, q{#define __orlix_product_initcall_section_0 "__DATA,__initcall0"}, q{#define __orlix_product_initcall_section_0s "__DATA,__initcall0s"}, q{#define __orlix_product_initcall_section_1 "__DATA,__initcall1"}, q{#define __orlix_product_initcall_section_1s "__DATA,__initcall1s"}, q{#define __orlix_product_initcall_section_2 "__DATA,__initcall2"}, q{#define __orlix_product_initcall_section_2s "__DATA,__initcall2s"}, q{#define __orlix_product_initcall_section_3 "__DATA,__initcall3"}, q{#define __orlix_product_initcall_section_3s "__DATA,__initcall3s"}, q{#define __orlix_product_initcall_section_4 "__DATA,__initcall4"}, q{#define __orlix_product_initcall_section_4s "__DATA,__initcall4s"}, q{#define __orlix_product_initcall_section_5 "__DATA,__initcall5"}, q{#define __orlix_product_initcall_section_5s "__DATA,__initcall5s"}, q{#define __orlix_product_initcall_section_rootfs "__DATA,__initcallrf"}, q{#define __orlix_product_initcall_section_rootfss "__DATA,__initcallrfs"}, q{#define __orlix_product_initcall_section_6 "__DATA,__initcall6"}, q{#define __orlix_product_initcall_section_6s "__DATA,__initcall6s"}, q{#define __orlix_product_initcall_section_7 "__DATA,__initcall7"}, q{#define __orlix_product_initcall_section_7s "__DATA,__initcall7s"}) . "\n"; my $$inserted = s/\n#ifdef CONFIG_LTO_CLANG\n/\n$$defs\n#ifdef CONFIG_LTO_CLANG\n/; die "failed to insert Orlix initcall section map\n" unless $$inserted == 1; my $$section_defs = s/#define __initcall_section\(__sec, __iid\)\s*\\\n\t(?:#__sec "\.init\.\." #__iid|#__sec "\.init")/#define __initcall_section(__sec, __iid) __sec/g; die "expected two Linux initcall section definitions, found $$section_defs\n" unless $$section_defs == 2; my $$initcalls = s/\.initcall##id/__orlix_product_initcall_section_##id/g; die "expected one initcall token-paste replacement, found $$initcalls\n" unless $$initcalls == 1; my $$con = s/\.con_initcall/__orlix_product_initcall_section_con/g; die "expected one console initcall replacement, found $$con\n" unless $$con == 1;' "$$adapter_include/linux/init.h"; \
 replace_once "$$adapter_include/linux/compiler.h" '__section(".discard.addressable")' '__section("__DATA,__discard_addr")'; \
@@ -489,6 +501,7 @@ orlix_product_adapter_generate_boundaries() { \
 		if undefined_symbol_present ___bss_start || undefined_symbol_present ___bss_stop; then if section_present __DATA __bss && ! section_present __DATA __common; then emit_section_pair ___bss_start ___bss_stop __DATA __bss; else emit_empty_pair ___bss_start ___bss_stop; fi; fi; \
 		emit_section_pair_if_needed ___start___param ___stop___param __DATA __param; \
 		emit_section_pair_if_needed ___start___modver ___stop___modver __DATA __modver; \
+		emit_section_pair_if_needed ___start_notes ___stop_notes __DATA __note; \
 		emit_reservedmem_table_if_needed; \
 		emit_section_pair_if_needed ___start___ksymtab ___stop___ksymtab __DATA __ksymtab; \
 		emit_section_pair_if_needed ___start___kcrctab ___stop___kcrctab __DATA __kcrctab; \
@@ -497,7 +510,7 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___start___bug_table ___stop___bug_table __DATA __bug_table; \
 	} > "$$boundary_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$boundary_src" -o "$$boundary_obj"; \
-	for symbol in _jiffies ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
+	for symbol in _jiffies ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___modver ___stop___modver ___start_notes ___stop_notes ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
 	objs+=("$$boundary_obj"); \
 	echo "generated Orlix product boundary object: $$boundary_obj"; \
 };
