@@ -44,6 +44,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	init/init_task.c \
 	init/calibrate.c \
 	init/initramfs.c \
+	kernel/exec_domain.c \
 	kernel/fork.c \
 	kernel/async.c \
 	kernel/capability.c \
@@ -54,13 +55,18 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/kthread.c \
 	kernel/notifier.c \
 	kernel/nsproxy.c \
+	kernel/resource.c \
+	kernel/sysctl.c \
+	kernel/ptrace.c \
 	kernel/groups.c \
+	kernel/extable.c \
 	kernel/params.c \
 	kernel/panic.c \
 	kernel/pid.c \
 	kernel/pid_namespace.c \
 	kernel/signal.c \
 	kernel/sys.c \
+	kernel/sys_ni.c \
 	kernel/locking/mutex.c \
 	kernel/locking/semaphore.c \
 	kernel/locking/rwsem.c \
@@ -91,6 +97,12 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/rcu/update.c \
 	kernel/kallsyms.c \
 	kernel/ksysfs.c \
+	kernel/reboot.c \
+	kernel/range.c \
+	kernel/smpboot.c \
+	kernel/regset.c \
+	kernel/ksyms_common.c \
+	kernel/up.c \
 	security/commoncap.c \
 	lib/is_single_threaded.c \
 	lib/kobject_uevent.c \

@@ -108,6 +108,7 @@ linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
 [ -s "$$lds" ] || { echo "missing generated Orlix linker script: $$lds" >&2; exit 1; }; \
 for required in \
 	"$$linux_root/include/linux/init.h" \
+	"$$linux_root/include/linux/linkage.h" \
 	"$$linux_root/include/linux/moduleparam.h" \
 	"$$linux_root/include/linux/compiler.h" \
 	"$$linux_root/include/linux/compiler_types.h" \
@@ -138,6 +139,8 @@ require_text "$$linux_root/include/linux/init.h" '__section(".exit.text")'; \
 require_text "$$linux_root/include/linux/init.h" '__section(".exit.data")'; \
 require_text "$$linux_root/include/linux/init.h" '__section(".exitcall.exit")'; \
 require_text "$$linux_root/include/linux/init.h" 'extern initcall_entry_t __initcall_start[];'; \
+require_text "$$linux_root/include/linux/linkage.h" '#define cond_syscall(x)	asm('; \
+require_text "$$linux_root/include/linux/linkage.h" '".weak " __stringify(x) "\n\t"'; \
 require_text "$$linux_root/include/linux/moduleparam.h" '__used __section("__param")'; \
 require_text "$$linux_root/include/linux/moduleparam.h" 'extern const struct kernel_param __start___param[], __stop___param[];'; \
 require_text "$$linux_root/include/linux/compiler.h" '__section(".discard.addressable")'; \
@@ -227,6 +230,7 @@ replace_once() { \
 	mv "$$tmp" "$$file"; \
 }; \
 cp "$$linux_root/include/linux/init.h" "$$adapter_include/linux/init.h"; \
+cp "$$linux_root/include/linux/linkage.h" "$$adapter_include/linux/linkage.h"; \
 cp "$$linux_root/include/linux/moduleparam.h" "$$adapter_include/linux/moduleparam.h"; \
 cp "$$linux_root/include/linux/compiler.h" "$$adapter_include/linux/compiler.h"; \
 cp "$$linux_root/include/linux/compiler_types.h" "$$adapter_include/linux/compiler_types.h"; \
@@ -248,6 +252,7 @@ replace_once "$$adapter_include/linux/init.h" '__section(".exit.text")' '__secti
 replace_once "$$adapter_include/linux/init.h" '__section(".exit.data")' '__section("__DATA,__exit_data")'; \
 replace_once "$$adapter_include/linux/init.h" '__section(".exitcall.exit")' '__section("__DATA,__exitcall")'; \
 replace_once "$$adapter_include/linux/init.h" '__section(".init.setup")' '__section("__DATA,__init_setup")'; \
+perl -0pi -e 'my $$changed = s/#define cond_syscall\(x\)\s+asm\(\s*\\\n\t"\.weak " __stringify\(x\) "\\n\\t"\s*\\\n\t"\.set  " __stringify\(x\) ","\s*\\\n\t\t __stringify\(sys_ni_syscall\)\)/#define cond_syscall(x) asmlinkage long x(void) __attribute__((weak)); asmlinkage long x(void) { return sys_ni_syscall(); }/; die "failed to replace Linux cond_syscall for Mach-O\n" unless $$changed == 1;' "$$adapter_include/linux/linkage.h"; \
 perl -0pi -e 'my $$defs = join("\n", q{#define __orlix_product_initcall_section_early "__DATA,__initcall_e"}, q{#define __orlix_product_initcall_section_con "__DATA,__con_initcall"}, q{#define __orlix_product_initcall_section_0 "__DATA,__initcall0"}, q{#define __orlix_product_initcall_section_0s "__DATA,__initcall0s"}, q{#define __orlix_product_initcall_section_1 "__DATA,__initcall1"}, q{#define __orlix_product_initcall_section_1s "__DATA,__initcall1s"}, q{#define __orlix_product_initcall_section_2 "__DATA,__initcall2"}, q{#define __orlix_product_initcall_section_2s "__DATA,__initcall2s"}, q{#define __orlix_product_initcall_section_3 "__DATA,__initcall3"}, q{#define __orlix_product_initcall_section_3s "__DATA,__initcall3s"}, q{#define __orlix_product_initcall_section_4 "__DATA,__initcall4"}, q{#define __orlix_product_initcall_section_4s "__DATA,__initcall4s"}, q{#define __orlix_product_initcall_section_5 "__DATA,__initcall5"}, q{#define __orlix_product_initcall_section_5s "__DATA,__initcall5s"}, q{#define __orlix_product_initcall_section_rootfs "__DATA,__initcallrf"}, q{#define __orlix_product_initcall_section_rootfss "__DATA,__initcallrfs"}, q{#define __orlix_product_initcall_section_6 "__DATA,__initcall6"}, q{#define __orlix_product_initcall_section_6s "__DATA,__initcall6s"}, q{#define __orlix_product_initcall_section_7 "__DATA,__initcall7"}, q{#define __orlix_product_initcall_section_7s "__DATA,__initcall7s"}) . "\n"; my $$inserted = s/\n#ifdef CONFIG_LTO_CLANG\n/\n$$defs\n#ifdef CONFIG_LTO_CLANG\n/; die "failed to insert Orlix initcall section map\n" unless $$inserted == 1; my $$section_defs = s/#define __initcall_section\(__sec, __iid\)\s*\\\n\t(?:#__sec "\.init\.\." #__iid|#__sec "\.init")/#define __initcall_section(__sec, __iid) __sec/g; die "expected two Linux initcall section definitions, found $$section_defs\n" unless $$section_defs == 2; my $$initcalls = s/\.initcall##id/__orlix_product_initcall_section_##id/g; die "expected one initcall token-paste replacement, found $$initcalls\n" unless $$initcalls == 1; my $$con = s/\.con_initcall/__orlix_product_initcall_section_con/g; die "expected one console initcall replacement, found $$con\n" unless $$con == 1;' "$$adapter_include/linux/init.h"; \
 replace_once "$$adapter_include/linux/compiler.h" '__section(".discard.addressable")' '__section("__DATA,__discard_addr")'; \
 replace_once "$$adapter_include/linux/compiler_types.h" '#define noinstr __noinstr_section(".noinstr.text")' '#define noinstr __noinstr_section("__TEXT,__noinstr_text")'; \
