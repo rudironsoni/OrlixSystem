@@ -419,6 +419,51 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	io_uring/io-wq.c \
 	io_uring/futex.c \
 	io_uring/napi.c \
+	net/devres.c \
+	net/socket.c \
+	net/sysctl_net.c \
+	net/core/sock.c \
+	net/core/request_sock.c \
+	net/core/skbuff.c \
+	net/core/datagram.c \
+	net/core/stream.c \
+	net/core/scm.c \
+	net/core/gen_stats.c \
+	net/core/gen_estimator.c \
+	net/core/net_namespace.c \
+	net/core/secure_seq.c \
+	net/core/flow_dissector.c \
+	net/core/sysctl_net_core.c \
+	net/core/dev.c \
+	net/core/dev_addr_lists.c \
+	net/core/dst.c \
+	net/core/netevent.c \
+	net/core/neighbour.c \
+	net/core/rtnetlink.c \
+	net/core/utils.c \
+	net/core/link_watch.c \
+	net/core/filter.c \
+	net/core/sock_diag.c \
+	net/core/dev_ioctl.c \
+	net/core/tso.c \
+	net/core/sock_reuseport.c \
+	net/core/fib_notifier.c \
+	net/core/xdp.c \
+	net/core/flow_offload.c \
+	net/core/gro.c \
+	net/core/netdev-genl.c \
+	net/core/netdev-genl-gen.c \
+	net/core/gso.c \
+	net/core/net-sysfs.c \
+	net/core/hotdata.c \
+	net/core/netdev_rx_queue.c \
+	net/core/net-procfs.c \
+	net/core/of_net.c \
+	net/core/dst_cache.c \
+	net/core/gro_cells.c \
+	net/netlink/af_netlink.c \
+	net/netlink/genetlink.c \
+	net/netlink/policy.c \
 	fs/kernfs/dir.c \
 	fs/kernfs/file.c \
 	fs/kernfs/inode.c \
