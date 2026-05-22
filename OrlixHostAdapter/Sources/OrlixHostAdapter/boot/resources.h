@@ -14,7 +14,7 @@ __attribute__((visibility("hidden"))) int OrlixHostLoadRootImageResource(
     const char *identifier,
     struct OrlixHostResource *loaded);
 
-__attribute__((visibility("hidden"))) int OrlixHostSelectRootBlockImage(
+__attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
     const char *identifier);
 
 __attribute__((visibility("hidden"))) int orlix_host_block_capacity(

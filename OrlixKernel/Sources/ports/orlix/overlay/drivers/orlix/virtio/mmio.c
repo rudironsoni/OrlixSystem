@@ -21,8 +21,7 @@
 #define ORLIX_VIRTIO_MMIO_QUEUE_COUNT 1
 #define ORLIX_VIRTIO_MMIO_QUEUE_SIZE 16
 #define ORLIX_VIRTIO_MMIO_BLOCK_SECTOR_SIZE 512ULL
-#define ORLIX_VIRTIO_BLK_FEATURES \
-	((1ULL << VIRTIO_F_VERSION_1) | (1ULL << VIRTIO_BLK_F_RO))
+#define ORLIX_VIRTIO_BLK_BASE_FEATURES (1ULL << VIRTIO_F_VERSION_1)
 
 struct orlix_virtio_mmio_queue {
 	u32 num;
@@ -38,6 +37,8 @@ struct orlix_virtio_mmio_slot {
 	unsigned int irq;
 	u32 device_id;
 	unsigned int host_block_device;
+	bool read_only;
+	const char *device_identifier;
 	u32 status;
 	u32 interrupt_status;
 	u32 device_features_sel;
@@ -54,8 +55,16 @@ static struct orlix_virtio_mmio_slot orlix_virtio_mmio_slots[] = {
 		.irq = 32,
 		.device_id = VIRTIO_ID_BLOCK,
 		.host_block_device = 0,
+		.read_only = true,
+		.device_identifier = "orlix-base-block0",
 	},
-	{ .base = 0x10001200UL, .irq = 33 },
+	{
+		.base = 0x10001200UL,
+		.irq = 33,
+		.device_id = VIRTIO_ID_BLOCK,
+		.host_block_device = 1,
+		.device_identifier = "orlix-state-block1",
+	},
 };
 
 static struct orlix_virtio_mmio_slot *
@@ -103,7 +112,8 @@ static u64 orlix_virtio_mmio_device_features(
 	if (!orlix_virtio_mmio_block_capacity(slot, &sectors))
 		return 0;
 
-	return ORLIX_VIRTIO_BLK_FEATURES;
+	return ORLIX_VIRTIO_BLK_BASE_FEATURES |
+	       (slot->read_only ? (1ULL << VIRTIO_BLK_F_RO) : 0);
 }
 
 static void *orlix_virtio_mmio_guest_ptr(u64 address, u32 length)
@@ -176,7 +186,7 @@ static u8 orlix_virtio_mmio_process_block_data(
 		if (!(flags & VRING_DESC_F_WRITE))
 			return VIRTIO_BLK_S_IOERR;
 		memset(buffer, 0, length);
-		strscpy(buffer, "orlix-root-block0", length);
+		strscpy(buffer, slot->device_identifier, length);
 		*written += length;
 		return VIRTIO_BLK_S_OK;
 	default:

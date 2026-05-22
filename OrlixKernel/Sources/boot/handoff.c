@@ -61,7 +61,7 @@ __attribute__((visibility("hidden"))) int OrlixBootHandoff(
     if (OrlixSelectRootImage(input->root_image_identifier) != 0) {
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
-    if (OrlixHostSelectRootBlockImage(input->root_image_identifier) != 0) {
+    if (OrlixHostSelectBootBlockImages(input->root_image_identifier) != 0) {
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
 
