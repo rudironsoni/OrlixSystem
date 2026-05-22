@@ -4,6 +4,7 @@
 	compatible = "orlix,appstore", "orlix";
 	#address-cells = <2>;
 	#size-cells = <2>;
+	interrupt-parent = <&intc>;
 
 	chosen {
 		bootargs = "console=ttyS0 rw orlix.profile=appstore";
@@ -25,6 +26,12 @@
 		clock-frequency = <1843200>;
 		current-speed = <115200>;
 		status = "okay";
+	};
+
+	intc: interrupt-controller {
+		compatible = "orlix,host-intc";
+		interrupt-controller;
+		#interrupt-cells = <1>;
 	};
 
 	virtio_base: virtio@10001000 {

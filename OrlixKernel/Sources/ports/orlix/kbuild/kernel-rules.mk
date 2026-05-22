@@ -68,6 +68,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/irq/manage.c \
 	kernel/irq/spurious.c \
 	kernel/irq/resend.c \
+	kernel/irq/irqdomain.c \
 	kernel/irq/chip.c \
 	kernel/irq/dummychip.c \
 	kernel/irq/devres.c \
@@ -460,6 +461,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/of/platform.c \
 	drivers/of/property.c \
 	drivers/of/address.c \
+	drivers/of/irq.c \
 	drivers/orlix/virtio/mmio.c \
 	drivers/virtio/virtio.c \
 	drivers/virtio/virtio_ring.c \
