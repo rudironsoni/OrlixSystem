@@ -49,6 +49,8 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/cred.c \
 	kernel/cpu.c \
 	kernel/exit.c \
+	kernel/irq_work.c \
+	kernel/kthread.c \
 	kernel/notifier.c \
 	kernel/nsproxy.c \
 	kernel/groups.c \
@@ -69,11 +71,14 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/sched/fair.c \
 	kernel/sched/build_policy.c \
 	kernel/sched/build_utility.c \
+	kernel/softirq.c \
+	kernel/task_work.c \
 	kernel/umh.c \
 	kernel/ucount.c \
 	kernel/user.c \
 	kernel/user_namespace.c \
 	kernel/utsname.c \
+	kernel/workqueue.c \
 	kernel/kallsyms.c \
 	security/commoncap.c \
 	lib/is_single_threaded.c \

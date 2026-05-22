@@ -18,6 +18,8 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__sched_text \
 	__TEXT,__noinstr_text \
 	__TEXT,__cpuidle_text \
+	__TEXT,__irqentry_text \
+	__TEXT,__softirq_text \
 	__TEXT,__dtb_init \
 	__DATA,__data \
 	__DATA,__const \
@@ -110,6 +112,7 @@ for required in \
 	"$$linux_root/include/linux/cache.h" \
 	"$$linux_root/include/linux/elfnote.h" \
 	"$$linux_root/include/linux/init_task.h" \
+	"$$linux_root/include/linux/interrupt.h" \
 	"$$linux_root/include/linux/percpu-defs.h" \
 	"$$linux_root/include/linux/sched/debug.h" \
 	"$$linux_root/include/linux/syscalls.h" \
@@ -137,6 +140,8 @@ require_text "$$linux_root/include/linux/export.h" '.section ".export_symbol","a
 require_text "$$linux_root/include/linux/cache.h" '__section(".data..ro_after_init")'; \
 require_text "$$linux_root/include/linux/elfnote.h" '__attribute__((section(".note." name),'; \
 require_text "$$linux_root/include/linux/init_task.h" '__section(".data..init_thread_info")'; \
+require_text "$$linux_root/include/linux/interrupt.h" '# define __irq_entry	 __section(".irqentry.text")'; \
+require_text "$$linux_root/include/linux/interrupt.h" '#define __softirq_entry  __section(".softirqentry.text")'; \
 require_text "$$linux_root/include/linux/percpu-defs.h" 'PER_CPU_BASE_SECTION'; \
 require_text "$$linux_root/include/linux/sched/debug.h" '__section(".sched.text")'; \
 require_text "$$linux_root/include/linux/sched/debug.h" 'extern char __sched_text_start[], __sched_text_end[];'; \
@@ -154,6 +159,10 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(__fair_sched_class)'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.noinstr.text)'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.cpuidle.text)'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__irqentry_text_start = .;'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.irqentry.text)'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__softirqentry_text_start = .;'; \
+	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.softirqentry.text)'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__sched_text_start = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '__sched_text_end = .;'; \
 	require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" 'RESERVEDMEM_OF_TABLES()'; \
@@ -173,6 +182,7 @@ for pattern in \
 	'__start_rodata = .;' '__end_rodata = .;' \
 	'__sched_class_highest = .;' '*(__fair_sched_class)' '__sched_class_lowest = .;' \
 	'*(.noinstr.text)' '*(.cpuidle.text)' \
+	'__irqentry_text_start = .;' '*(.irqentry.text)' '__softirqentry_text_start = .;' '*(.softirqentry.text)' \
 	'__initcall_start = .;' '__initcall_end = .;' '__param' '.data.once' '.data..ro_after_init' \
 	'.data..init_thread_info' '.sched.text' '__sched_text_start = .;' '__sched_text_end = .;' '__reservedmem_of_table = .;' 'KEEP(*(__reservedmem_of_table_end))' \
 	'/DISCARD/ : {' '*(.discard)' '*(.discard.*)' '*(.export_symbol)' '*(.modinfo)'; do \
@@ -212,6 +222,7 @@ cp "$$linux_root/include/linux/export.h" "$$adapter_include/linux/export.h"; \
 cp "$$linux_root/include/linux/cache.h" "$$adapter_include/linux/cache.h"; \
 cp "$$linux_root/include/linux/elfnote.h" "$$adapter_include/linux/elfnote.h"; \
 cp "$$linux_root/include/linux/init_task.h" "$$adapter_include/linux/init_task.h"; \
+cp "$$linux_root/include/linux/interrupt.h" "$$adapter_include/linux/interrupt.h"; \
 cp "$$linux_root/include/linux/percpu-defs.h" "$$adapter_include/linux/percpu-defs.h"; \
 cp "$$linux_root/include/linux/sched/debug.h" "$$adapter_include/linux/sched/debug.h"; \
 cp "$$linux_root/include/linux/syscalls.h" "$$adapter_include/linux/syscalls.h"; \
@@ -231,6 +242,8 @@ replace_once "$$adapter_include/linux/cache.h" '__section(".data..ro_after_init"
 replace_once "$$adapter_include/linux/cache.h" '__section__(".data..cacheline_aligned")' '__section__("__DATA,__cacheline")'; \
 replace_once "$$adapter_include/linux/elfnote.h" '__attribute__((section(".note." name),' '__attribute__((section("__DATA,__note"),'; \
 replace_once "$$adapter_include/linux/init_task.h" '__section(".data..init_thread_info")' '__section("__DATA,__init_tinfo")'; \
+replace_once "$$adapter_include/linux/interrupt.h" '# define __irq_entry	 __section(".irqentry.text")' '# define __irq_entry	 __section("__TEXT,__irqentry_text")'; \
+replace_once "$$adapter_include/linux/interrupt.h" '#define __softirq_entry  __section(".softirqentry.text")' '#define __softirq_entry  __section("__TEXT,__softirq_text")'; \
 replace_once "$$adapter_include/linux/moduleparam.h" '__section(".modinfo")' '__section("__DATA,__modinfo")'; \
 replace_once "$$adapter_include/linux/moduleparam.h" '__section("__param")' '__section("__DATA,__param")'; \
 replace_once "$$adapter_include/linux/once_lite.h" '__section(".data.once")' '__section("__DATA,__data_once")'; \
@@ -442,8 +455,10 @@ orlix_product_adapter_generate_boundaries() { \
 		printf '%s\n' '/* __init_begin/__init_end are conservative until init-memory reclaim semantics exist. */'; \
 		emit_section_pair_if_needed __stext __etext __TEXT __text; \
 		emit_section_pair_if_needed ___cpuidle_text_start ___cpuidle_text_end __TEXT __cpuidle_text; \
+		emit_section_pair_if_needed ___irqentry_text_start ___irqentry_text_end __TEXT __irqentry_text; \
 		emit_section_pair_if_needed ___noinstr_text_start ___noinstr_text_end __TEXT __noinstr_text; \
 		emit_section_pair_if_needed ___sched_text_start ___sched_text_end __TEXT __sched_text; \
+		emit_section_pair_if_needed ___softirqentry_text_start ___softirqentry_text_end __TEXT __softirq_text; \
 		emit_required_section_pair_if_needed ___start_rodata ___end_rodata __TEXT __const; \
 		emit_sched_class_range_if_needed; \
 		emit_section_pair_if_needed __sinittext __einittext __TEXT __init_text; \
@@ -478,7 +493,7 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___start___bug_table ___stop___bug_table __DATA __bug_table; \
 	} > "$$boundary_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$boundary_src" -o "$$boundary_obj"; \
-	for symbol in ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
+	for symbol in ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
 	objs+=("$$boundary_obj"); \
 	echo "generated Orlix product boundary object: $$boundary_obj"; \
 };
