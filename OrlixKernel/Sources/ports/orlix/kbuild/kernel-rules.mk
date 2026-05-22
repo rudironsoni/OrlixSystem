@@ -179,6 +179,16 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/super.c \
 	fs/utimes.c \
 	fs/xattr.c \
+	fs/kernfs/dir.c \
+	fs/kernfs/file.c \
+	fs/kernfs/inode.c \
+	fs/kernfs/mount.c \
+	fs/kernfs/symlink.c \
+	fs/sysfs/dir.c \
+	fs/sysfs/file.c \
+	fs/sysfs/group.c \
+	fs/sysfs/mount.c \
+	fs/sysfs/symlink.c \
 	fs/proc/generic.c \
 	fs/proc/inode.c \
 	fs/proc/proc_sysctl.c \
