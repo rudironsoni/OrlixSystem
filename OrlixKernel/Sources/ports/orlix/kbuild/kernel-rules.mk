@@ -235,6 +235,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/anon_inodes.c \
 	fs/attr.c \
 	fs/bad_inode.c \
+	fs/char_dev.c \
 	fs/dcache.c \
 	fs/d_path.c \
 	fs/exec.c \
