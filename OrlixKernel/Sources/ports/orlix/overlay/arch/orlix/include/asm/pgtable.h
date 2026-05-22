@@ -8,15 +8,22 @@
 #include <asm/page.h>
 #include <asm/processor.h>
 
-#define PMD_SHIFT	(PAGE_SHIFT + 9)
+/*
+ * Orlix uses unsigned long page-table entries.  Derive the number of index
+ * bits from PAGE_SHIFT so level geometry stays correct for both 4K and 16K
+ * pages.
+ */
+#define ORLIX_PGTABLE_INDEX_BITS	(PAGE_SHIFT - 3)
+
+#define PMD_SHIFT	(PAGE_SHIFT + ORLIX_PGTABLE_INDEX_BITS)
 #define PMD_SIZE	(1UL << PMD_SHIFT)
 #define PMD_MASK	(~(PMD_SIZE - 1))
 
-#define PUD_SHIFT	(PMD_SHIFT + 9)
+#define PUD_SHIFT	(PMD_SHIFT + ORLIX_PGTABLE_INDEX_BITS)
 #define PUD_SIZE	(1UL << PUD_SHIFT)
 #define PUD_MASK	(~(PUD_SIZE - 1))
 
-#define PGDIR_SHIFT	(PUD_SHIFT + 9)
+#define PGDIR_SHIFT	(PUD_SHIFT + ORLIX_PGTABLE_INDEX_BITS)
 #define PGDIR_SIZE	(1UL << PGDIR_SHIFT)
 #define PGDIR_MASK	(~(PGDIR_SIZE - 1))
 
