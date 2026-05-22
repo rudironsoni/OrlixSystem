@@ -6,7 +6,7 @@
 	#size-cells = <2>;
 
 	chosen {
-		bootargs = "console=ttyS0 root=/dev/ram0 rw orlix.profile=appstore";
+		bootargs = "console=ttyS0 rw orlix.profile=appstore";
 		stdout-path = "serial0:115200n8";
 	};
 

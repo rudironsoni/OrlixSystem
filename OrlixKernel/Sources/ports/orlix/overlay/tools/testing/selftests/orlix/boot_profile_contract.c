@@ -75,8 +75,8 @@ int main(void)
 	ksft_test_result(profile != NULL, "cmdline selects a supported Orlix profile\n");
 	ksft_test_result(contains_string(cmdline, "console=ttyS0"),
 			 "cmdline selects the Orlix serial console\n");
-	ksft_test_result(contains_string(cmdline, "root=/dev/ram0"),
-			 "cmdline selects the initramfs root device\n");
+	ksft_test_result(!contains_string(cmdline, "root=/dev/ram0"),
+			 "cmdline does not select an absent ram block root\n");
 	ksft_test_result(profile && contains_string(bootargs, profile),
 			 "live device tree bootargs match the selected profile\n");
 	ksft_test_result(contains_dt_string(compatible, "orlix"),

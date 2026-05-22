@@ -6,7 +6,7 @@
 	#size-cells = <2>;
 
 	chosen {
-		bootargs = "console=ttyS0 root=/dev/ram0 rw debug ignore_loglevel orlix.profile=development";
+		bootargs = "console=ttyS0 rw debug ignore_loglevel orlix.profile=development";
 		stdout-path = "serial0:115200n8";
 	};
 
