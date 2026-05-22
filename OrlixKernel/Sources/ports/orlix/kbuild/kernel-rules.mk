@@ -179,6 +179,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/uuid.c \
 	lib/iov_iter.c \
 	lib/scatterlist.c \
+	lib/sg_pool.c \
 	lib/timerqueue.c \
 	lib/maple_tree.c \
 	lib/idr.c \
@@ -367,6 +368,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	block/blk-mq-sysfs.c \
 	block/blk-mq-cpumap.c \
 	block/blk-mq-sched.c \
+	block/blk-mq-virtio.c \
 	block/ioctl.c \
 	block/genhd.c \
 	block/ioprio.c \
@@ -401,6 +403,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/base/devtmpfs.c \
 	drivers/base/firmware_loader/main.c \
 	drivers/base/firmware_loader/builtin/main.c \
+	drivers/block/virtio_blk.c \
 	drivers/char/mem.c \
 	drivers/char/random.c \
 	drivers/net/loopback.c \
