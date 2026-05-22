@@ -80,6 +80,10 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/user_namespace.c \
 	kernel/utsname.c \
 	kernel/workqueue.c \
+	kernel/rcu/sync.c \
+	kernel/rcu/srcutiny.c \
+	kernel/rcu/tiny.c \
+	kernel/rcu/update.c \
 	kernel/kallsyms.c \
 	security/commoncap.c \
 	lib/is_single_threaded.c \
