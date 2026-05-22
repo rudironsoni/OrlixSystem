@@ -116,6 +116,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/mnt_idmapping.c \
 	fs/open.c \
 	fs/pnode.c \
+	fs/read_write.c \
 	fs/super.c \
 	fs/proc/generic.c \
 	fs/proc/inode.c \
