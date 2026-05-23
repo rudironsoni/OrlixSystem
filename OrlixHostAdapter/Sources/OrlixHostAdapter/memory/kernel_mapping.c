@@ -27,10 +27,10 @@ static vm_size_t OrlixHostRoundPageLength(unsigned long length)
     return (requested + page_size - 1) & ~(page_size - 1);
 }
 
-__attribute__((visibility("hidden"))) int orlix_host_kernel_map_page(
-    unsigned long target_address,
-    const void *source_page,
-    unsigned long length)
+static int OrlixHostMapPageWithProtection(unsigned long target_address,
+                                          const void *source_page,
+                                          unsigned long length,
+                                          vm_prot_t requested_protection)
 {
     vm_address_t target = (vm_address_t)target_address;
     vm_prot_t current_protection = VM_PROT_NONE;
@@ -56,12 +56,23 @@ __attribute__((visibility("hidden"))) int orlix_host_kernel_map_page(
         return -1;
     }
 
+    if (requested_protection != VM_PROT_NONE) {
+        status = vm_protect(mach_task_self(),
+                            target,
+                            (vm_size_t)length,
+                            false,
+                            requested_protection);
+        if (status != KERN_SUCCESS) {
+            (void)vm_deallocate(mach_task_self(), target, (vm_size_t)length);
+            return -1;
+        }
+    }
+
     return 0;
 }
 
-__attribute__((visibility("hidden"))) void orlix_host_kernel_unmap_pages(
-    unsigned long target_address,
-    unsigned long length)
+static void OrlixHostUnmapPages(unsigned long target_address,
+                                unsigned long length)
 {
     if (target_address == 0 || length == 0) {
         return;
@@ -70,6 +81,53 @@ __attribute__((visibility("hidden"))) void orlix_host_kernel_unmap_pages(
     (void)vm_deallocate(mach_task_self(),
                         (vm_address_t)target_address,
                         (vm_size_t)length);
+}
+
+__attribute__((visibility("hidden"))) int orlix_host_kernel_map_page(
+    unsigned long target_address,
+    const void *source_page,
+    unsigned long length)
+{
+    return OrlixHostMapPageWithProtection(target_address,
+                                          source_page,
+                                          length,
+                                          VM_PROT_NONE);
+}
+
+__attribute__((visibility("hidden"))) void orlix_host_kernel_unmap_pages(
+    unsigned long target_address,
+    unsigned long length)
+{
+    OrlixHostUnmapPages(target_address, length);
+}
+
+__attribute__((visibility("hidden"))) int orlix_host_user_map_page(
+    unsigned long target_address,
+    const void *source_page,
+    unsigned long length,
+    int writable,
+    int executable)
+{
+    vm_prot_t protection = VM_PROT_READ;
+
+    if (writable) {
+        protection |= VM_PROT_WRITE;
+    }
+    if (executable) {
+        protection |= VM_PROT_EXECUTE;
+    }
+
+    return OrlixHostMapPageWithProtection(target_address,
+                                          source_page,
+                                          length,
+                                          protection);
+}
+
+__attribute__((visibility("hidden"))) void orlix_host_user_unmap_pages(
+    unsigned long target_address,
+    unsigned long length)
+{
+    OrlixHostUnmapPages(target_address, length);
 }
 
 __attribute__((visibility("hidden"))) void *orlix_host_ioremap(

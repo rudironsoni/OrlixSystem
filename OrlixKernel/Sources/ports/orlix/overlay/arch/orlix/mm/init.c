@@ -8,8 +8,10 @@
 #include <linux/mmzone.h>
 #include <linux/pgtable.h>
 #include <linux/pfn.h>
+#include <linux/sched.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
+#include <asm/ptrace.h>
 #include <internal/asm/host_memory.h>
 
 pgd_t swapper_pg_dir[PTRS_PER_PGD] __page_aligned_bss;
@@ -115,5 +117,80 @@ void arch_sync_kernel_mappings(unsigned long start, unsigned long end)
 			panic("Orlix: failed to synchronize hosted kernel mapping %#lx\n",
 			      address);
 	}
+}
+
+static int orlix_sync_user_page(struct mm_struct *mm,
+				struct vm_area_struct *vma,
+				unsigned long address)
+{
+	unsigned int fault_flags = (vma->vm_flags & VM_WRITE) ? FAULT_FLAG_WRITE : 0;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
+	pte_t entry;
+	void *source;
+
+	if (fixup_user_fault(mm, address, fault_flags, NULL))
+		goto unmap;
+
+	pgd = pgd_offset(mm, address);
+	if (pgd_none(*pgd) || pgd_bad(*pgd))
+		goto unmap;
+
+	p4d = p4d_offset(pgd, address);
+	if (p4d_none(*p4d) || p4d_bad(*p4d))
+		goto unmap;
+
+	pud = pud_offset(p4d, address);
+	if (pud_none(*pud) || pud_bad(*pud))
+		goto unmap;
+
+	pmd = pmd_offset(pud, address);
+	if (pmd_none(*pmd) || pmd_bad(*pmd))
+		goto unmap;
+
+	pte = pte_offset_kernel(pmd, address);
+	entry = READ_ONCE(*pte);
+	if (!pte_present(entry))
+		goto unmap;
+
+	source = __va(PFN_PHYS(pte_pfn(entry)));
+	return orlix_host_user_map_page(address, source, PAGE_SIZE,
+				       !!pte_write(entry),
+				       !!(pte_val(entry) & _PAGE_EXEC));
+
+unmap:
+	orlix_host_user_unmap_pages(address, PAGE_SIZE);
+	return 0;
+}
+
+void orlix_sync_current_user_mappings(struct pt_regs *regs)
+{
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma;
+	struct vma_iterator vmi;
+
+	if (!mm)
+		panic("Orlix: current task has no user mm for pc %#llx\n",
+		      regs->pc);
+
+	vma_iter_init(&vmi, mm, 0);
+	mmap_read_lock(mm);
+	for_each_vma(vmi, vma) {
+		unsigned long address;
+		unsigned long start = PAGE_ALIGN(vma->vm_start);
+		unsigned long end = vma->vm_end & PAGE_MASK;
+
+		for (address = start; address < end; address += PAGE_SIZE) {
+			if (orlix_sync_user_page(mm, vma, address)) {
+				mmap_read_unlock(mm);
+				panic("Orlix: failed to synchronize hosted user mapping %#lx\n",
+				      address);
+			}
+		}
+	}
+	mmap_read_unlock(mm);
 }
 #endif

@@ -10,6 +10,17 @@ __attribute__((visibility("hidden"))) void orlix_host_kernel_unmap_pages(
     unsigned long target_address,
     unsigned long length);
 
+__attribute__((visibility("hidden"))) int orlix_host_user_map_page(
+    unsigned long target_address,
+    const void *source_page,
+    unsigned long length,
+    int writable,
+    int executable);
+
+__attribute__((visibility("hidden"))) void orlix_host_user_unmap_pages(
+    unsigned long target_address,
+    unsigned long length);
+
 __attribute__((visibility("hidden"))) void *orlix_host_ioremap(
     unsigned long physical_address,
     unsigned long length);

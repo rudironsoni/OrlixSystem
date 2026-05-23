@@ -6,15 +6,22 @@
 #include <linux/string.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
+#include <linux/panic.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
 
 struct thread_info *orlix_current_thread_info = &init_thread_info;
 
 asmlinkage void ret_from_fork(void);
+asmlinkage void orlix_ret_from_fork_user(struct pt_regs *regs);
 extern struct task_struct *orlix_cpu_switch_context(struct orlix_cpu_context *prev,
 						    struct orlix_cpu_context *next,
 						    struct task_struct *last);
+#if defined(ORLIX_APP_HOSTED_BOOT)
+void orlix_sync_current_user_mappings(struct pt_regs *regs);
+static __noreturn void orlix_hosted_enter_user(unsigned long pc,
+					       unsigned long sp);
+#endif
 
 asm(
 ".p2align 2\n"
@@ -45,11 +52,37 @@ asm(
 "	cbz	x19, 1f\n"
 "	mov	x0, x20\n"
 "	blr	x19\n"
-"	mov	x0, #0\n"
-"	bl	_do_exit\n"
 "1:\n"
+"	mov	x0, sp\n"
+"	bl	_orlix_ret_from_fork_user\n"
 "	brk	#0\n"
 );
+
+#if defined(ORLIX_APP_HOSTED_BOOT)
+static __noreturn void orlix_hosted_enter_user(unsigned long pc,
+					       unsigned long sp)
+{
+	asm volatile(
+	"	mov	sp, %0\n"
+	"	br	%1\n"
+	:
+	: "r"(sp), "r"(pc)
+	: "memory");
+	unreachable();
+}
+#endif
+
+asmlinkage void orlix_ret_from_fork_user(struct pt_regs *regs)
+{
+	if (!user_mode(regs))
+		do_exit(0);
+
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	orlix_sync_current_user_mappings(regs);
+	orlix_hosted_enter_user(regs->pc, regs->sp);
+#endif
+	panic("Orlix: user return requires hosted entry support\n");
+}
 
 void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 {
