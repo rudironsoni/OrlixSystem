@@ -9,6 +9,7 @@ final class TerminalViewController: UIViewController {
 
     private var didStartBoot = false
     private let bootQueue = DispatchQueue(label: "org.orlix.terminal.boot", qos: .userInitiated)
+    private let hostConsolePipe = Pipe()
     private lazy var terminalView = TerminalView(frame: .zero)
     private lazy var terminalSession = InMemoryTerminalSession(
         write: { _ in },
@@ -26,6 +27,7 @@ final class TerminalViewController: UIViewController {
         view.backgroundColor = .systemBackground
         view.isOpaque = true
         configureTerminalView()
+        installHostConsolePipe()
         configureThemeMenu()
         applyBackgroundForCurrentAppearance()
     }
@@ -97,6 +99,26 @@ final class TerminalViewController: UIViewController {
         default:
             return profile
         }
+    }
+
+    private func installHostConsolePipe() {
+        hostConsolePipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                return
+            }
+
+            let text = String(decoding: data, as: UTF8.self)
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\n", with: "\r\n")
+
+            DispatchQueue.main.async { [weak self] in
+                self?.terminalSession.receive(text)
+            }
+        }
+        OrlixTerminalInstallConsoleOutputFileDescriptor(
+            hostConsolePipe.fileHandleForWriting.fileDescriptor
+        )
     }
 
     private static func savedTerminalTheme() -> TerminalTheme {

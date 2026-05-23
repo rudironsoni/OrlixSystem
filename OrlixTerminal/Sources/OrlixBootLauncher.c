@@ -4,6 +4,13 @@
 
 #include <string.h>
 
+extern void orlix_host_console_set_output_fd(int fd);
+
+void OrlixTerminalInstallConsoleOutputFileDescriptor(int fd)
+{
+    orlix_host_console_set_output_fd(fd);
+}
+
 static int OrlixTerminalBootProfile(enum OrlixBootProfile profile)
 {
     static const char root_image_identifier[] = "orlix.bundle.rootfs";
