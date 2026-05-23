@@ -13,7 +13,7 @@ Orlix has multiple proof lanes: kernel boot and KUnit, Linux kselftest, OrlixMLi
 Orlix product runtime claims must be promoted in dependency order:
 
 1. Kernel dependency proof: OrlixKernel boots on iOS, reaches Linux init handoff, and fails Linux-accurately when no userspace exists; KUnit proves kernel-internal behavior.
-2. Kselftest kernel-interface proof: selected Linux-owned kselftests run through a temporary foreign-libc harness, nolibc harness, or other minimal temporary runner where useful; this is early kernel-interface proof only.
+2. Kselftest kernel-interface proof: selected Linux-owned kselftests run through the temporary raw-syscall harness where useful; this is early kernel-interface proof only.
 3. OrlixMLibC libc proof: mlibc's own tests pass for the Orlix sysdeps layer.
 4. OrlixMLibC syscall/UAPI proof: selected kselftests are rebuilt and rerun against OrlixMLibC.
 5. POSIX shell environment proof: Bash runs as normal Orlix Linux userspace through the terminal path with enough process, fd, tty, signal, path, environment, and exec behavior for an interactive shell.

@@ -200,7 +200,7 @@ Tests for the old local kernel prototype are migration reference only. They are 
 Target test ownership is split by proof lane:
 
 - KUnit lives in Linux-owned overlay paths such as `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/**/<owner>_test.c` and `OrlixKernel/Sources/ports/orlix/overlay/drivers/orlix/**/<owner>_test.c`, selected by `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`.
-- kselftest lives under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/` and must run through upstream kselftest install plus `run_kselftest.sh -c orlix`.
+- kselftest lives under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/`. Before hosted userspace can run the upstream kselftest runner, the temporary kernel-interface lane may package a tiny raw-syscall `/init` probe from that tree with Linux's `usr/gen_init_cpio`. Once the user execution path can run test binaries normally, selected kselftests must run through upstream kselftest install plus `run_kselftest.sh -c orlix`.
 - XCTest lives under project-local `Tests/XCTest/` trees: `OrlixKernel/Tests/XCTest`, `OrlixHostAdapter/Tests/XCTest`, `OrlixMLibC/Tests/XCTest` when needed, and `OrlixTerminal/Tests/XCTest` when needed. XCTest owns iOS host launch, packaging, output collection, parser behavior, and narrow `OrlixHostAdapter` mechanics only.
 - Local prototype tests live only under `LegacyOrlix/Tests/MigrationReference/LocalKernelPrototype/` until migrated or deleted.
 
@@ -212,7 +212,7 @@ New proof must be labeled by what it proves:
 - XCFramework or app packaging proof proves the hosted integration is packaged or linked into the iOS host, not that Linux booted or ran userspace.
 - KUnit proves OrlixKernel internal behavior.
 - Linux-accurate no-init behavior proves kernel dependency boot reached the normal init handoff without requiring libc.
-- kselftests through a temporary foreign-libc, nolibc, or other temporary harness prove kernel-interface behavior only.
+- kselftests through the temporary raw-syscall harness prove kernel-interface behavior only.
 - mlibc's own tests prove OrlixMLibC libc behavior.
 - OrlixMLibC-built kselftests prove the OrlixMLibC-to-OrlixKernel syscall/UAPI path.
 - Bash proves the first interactive POSIX shell environment.

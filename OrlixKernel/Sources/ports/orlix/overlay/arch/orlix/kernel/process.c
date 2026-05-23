@@ -55,8 +55,8 @@ asm(
 "1:\n"
 "	mov	x0, sp\n"
 "	bl	_orlix_ret_from_fork_user\n"
-"	brk	#0\n"
-);
+	"	brk	#0\n"
+	);
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
 static __noreturn void orlix_hosted_enter_user(unsigned long pc,

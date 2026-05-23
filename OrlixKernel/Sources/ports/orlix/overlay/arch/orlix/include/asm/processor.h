@@ -5,11 +5,22 @@
 #include <linux/compiler.h>
 #include <asm/thread_info.h>
 
+#if defined(ORLIX_APP_HOSTED_BOOT)
+#define ORLIX_HOSTED_USER_BASE	(0x0000600000000000UL)
+#define ORLIX_HOSTED_STACK_TOP	(0x0000700000000000UL)
+#define TASK_SIZE		ORLIX_HOSTED_STACK_TOP
+#define TASK_UNMAPPED_BASE	ORLIX_HOSTED_USER_BASE
+#else
 #define TASK_SIZE		(0x0000800000000000UL)
 #define TASK_UNMAPPED_BASE	(TASK_SIZE / 3)
+#endif
 
 #ifdef __KERNEL__
+#if defined(ORLIX_APP_HOSTED_BOOT)
+#define STACK_TOP		ORLIX_HOSTED_STACK_TOP
+#else
 #define STACK_TOP		TASK_SIZE
+#endif
 #define STACK_TOP_MAX		STACK_TOP
 #endif
 

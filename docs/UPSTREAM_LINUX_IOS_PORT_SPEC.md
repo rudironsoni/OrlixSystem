@@ -339,7 +339,7 @@ Device proof means upstream Linux device classes bind and operate through Orlix 
 
 KUnit proves OrlixKernel internal behavior when it runs in the hosted Linux proof path and emits Linux-owned KUnit output. Building KUnit-selected objects is useful dependency evidence, but it is not iOS-hosted KUnit execution proof. Linux boot/no-init behavior proves that OrlixKernel reaches the normal Linux init handoff and fails Linux-accurately when no userspace exists.
 
-kselftest is Linux-owned source-tree test code executed from userspace against a running kernel. kselftests run through a temporary foreign-libc, nolibc, or other temporary harness are kernel-interface proof only. They are useful early signal, but they are not OrlixMLibC proof, final Orlix userspace ABI proof, package proof, or product runtime proof.
+kselftest is Linux-owned source-tree test code executed from userspace against a running kernel. Before OrlixMLibC exists, temporary kernel-interface proof uses a Linux-owned raw-syscall harness only. That early signal is not OrlixMLibC proof, final Orlix userspace ABI proof, package proof, or product runtime proof.
 
 OrlixMLibC libc proof comes from mlibc's own test suite configured for the Orlix sysdeps layer. Orlix syscall/UAPI proof comes from selected Linux kselftests rebuilt and rerun against OrlixMLibC.
 
@@ -357,7 +357,7 @@ XCTest files quarantined under `LegacyOrlix/Tests/MigrationReference/LocalKernel
 
 Durable KUnit tests live in the Linux port overlay next to Linux-owned code and are selected by `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`. The repository entry point is `make kunit` or `make test type=kunit`. Those targets may build KUnit-selected objects before hosted execution exists; do not promote that to hosted KUnit proof.
 
-Durable kselftests live under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/` and run through upstream kselftest install plus `run_kselftest.sh -c orlix`. The repository entry point is `make kselftest`, `make kselftest-install`, or `make test type=kselftest`.
+Durable kselftests live under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/`. The temporary pre-OrlixMLibC lane may package a raw-syscall `/init` probe from that tree with Linux's `usr/gen_init_cpio` to prove real initramfs ELF handoff. Once hosted user execution can run test binaries normally, selected kselftests run through upstream kselftest install plus `run_kselftest.sh -c orlix`. The repository entry point is `make kselftest`, `make kselftest-install`, or `make test type=kselftest`.
 
 Temporary kselftests and OrlixMLibC-built kselftests must use separate install and packaging paths while sharing the same Linux-shaped Make target. Select the temporary lane with `libc=linux`; it installs under `Build/OrlixKernel/kselftest/temporary/<profile>/` and carries `proof_lane=temporary-kselftest-kernel-interface` metadata. Select the OrlixMLibC lane with `libc=orlixmlibc`; it installs under `Build/OrlixMLibC/kselftest/<profile>/` and carries `proof_lane=orlixmlibc-kselftest-syscall-uapi` metadata.
 
@@ -379,7 +379,7 @@ Package or link the app-hosted OrlixKernel integration into the iOS host path fo
 
 Milestone 4: iOS-Hosted Kernel-Interface Test Execution
 
-Launch packaged OrlixKernel from an iOS host app or test host and collect dependency proof from the running kernel path. This milestone may include KUnit output, Linux-accurate no-init boot failure, and selected Linux kselftests through a temporary foreign-libc or nolibc harness where useful.
+Launch packaged OrlixKernel from an iOS host app or test host and collect dependency proof from the running kernel path. This milestone may include KUnit output, Linux-accurate no-init boot failure, and selected Linux kselftests through a temporary raw-syscall harness where useful.
 
 Milestone 4 does not prove OrlixMLibC correctness, final Orlix userspace ABI, POSIX shell behavior, third-party package compatibility, or product runtime readiness.
 

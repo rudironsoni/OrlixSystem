@@ -31,7 +31,7 @@
 #define PTRS_PER_PMD	(PAGE_SIZE / sizeof(pmd_t))
 #define PTRS_PER_PUD	(PAGE_SIZE / sizeof(pud_t))
 #define PTRS_PER_PGD	(PAGE_SIZE / sizeof(pgd_t))
-#define USER_PTRS_PER_PGD	(TASK_SIZE / PGDIR_SIZE)
+#define USER_PTRS_PER_PGD	((TASK_SIZE + PGDIR_SIZE - 1) / PGDIR_SIZE)
 
 #define KERN_VIRT_SIZE	((PTRS_PER_PGD / 2 * PGDIR_SIZE) / 2)
 #define VMALLOC_SIZE	(KERN_VIRT_SIZE >> 1)

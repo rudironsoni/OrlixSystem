@@ -45,7 +45,7 @@ Proof is claim-promoted, not flat. Work may happen in parallel, but product clai
 
 Orlix does not require `vmlinux` as a canonical build, proof, or runtime artifact. The canonical OrlixKernel proof artifact is the iOS app-hosted OrlixKernel integration that actually runs inside the Orlix app environment. A `vmlinux`-style artifact may exist only as an optional developer/debug artifact with a named consumer. It is not a milestone, not product proof, not runtime proof, not libc proof, and not required for installed UAPI headers.
 
-KUnit proves kernel-internal behavior. Temporary, nolibc, or foreign-libc kselftest proves kernel-interface behavior only. mlibc tests prove OrlixMLibC. OrlixMLibC-built kselftests prove the libc-to-kernel syscall/UAPI path. Bash proves the first interactive POSIX shell environment. jq, curl, and zsh prove increasingly realistic third-party package compatibility.
+KUnit proves kernel-internal behavior. The temporary raw-syscall kselftest lane proves kernel-interface behavior only. mlibc tests prove OrlixMLibC. OrlixMLibC-built kselftests prove the libc-to-kernel syscall/UAPI path. Bash proves the first interactive POSIX shell environment. jq, curl, and zsh prove increasingly realistic third-party package compatibility.
 
 Do not claim product runtime readiness from KUnit, temporary kselftest, boot logs, packaging, or a host-side harness.
 
@@ -84,7 +84,7 @@ make kselftest PROFILE=appstore libc=orlixmlibc ORLIX_MLIBC_SYSROOT=Build/OrlixM
 
 `make kunit` currently builds Linux KUnit-selected Orlix test objects. That is useful dependency evidence, not iOS-hosted KUnit execution proof. KUnit proves kernel-internal behavior only after the hosted Linux proof path runs it and emits Linux-owned KUnit output.
 
-`make kselftest libc=linux` uses Linux's kselftest install shape with a temporary foreign-libc sysroot under `Build/OrlixKernel/kselftest/temporary/<profile>/`. Until those tests run against the iOS-hosted kernel, this is preparation only. Once run, it is kernel-interface coverage only, not OrlixMLibC proof, Orlix userspace ABI proof, shell proof, package proof, or product runtime proof.
+`make kselftest libc=linux` builds a tiny Linux-owned raw-syscall `/init` probe from `tools/testing/selftests/orlix` and packages it with Linux's `usr/gen_init_cpio`. It proves only that the iOS-hosted kernel unpacks the initramfs, finds `/init`, and attempts a real ELF handoff. It is not OrlixMLibC proof, Orlix userspace ABI proof, shell proof, package proof, or product runtime proof.
 
 `make kselftest libc=orlixmlibc` uses a separate install path under `Build/OrlixMLibC/kselftest/<profile>/`. That lane requires an OrlixMLibC sysroot plus installed Orlix UAPI headers and is the later syscall/UAPI proof lane.
 

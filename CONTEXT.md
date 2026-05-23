@@ -42,7 +42,7 @@ Evidence from selected Linux-owned kselftests, executed from userspace against a
 
 ## Temporary Kselftest Harness
 
-A non-product userspace harness, possibly using a foreign Linux libc or nolibc style, used to run selected kselftests before OrlixMLibC exists.
+A non-product, Linux-owned raw-syscall userspace harness used for kernel-interface proof before OrlixMLibC exists.
 
 ## OrlixMLibC Kselftest Lane
 
@@ -122,7 +122,7 @@ The proof rule that KUnit and kselftest raw outputs remain separate streams. XCT
 
 ## Test Initramfs Sequence
 
-The test initramfs first collects KUnit output from the kernel log path and KUnit debugfs when enabled, then runs `run_kselftest.sh -c orlix` and captures kselftest stdout separately.
+The final test initramfs sequence first collects KUnit output from the kernel log path and KUnit debugfs when enabled, then runs `run_kselftest.sh -c orlix` and captures kselftest stdout separately. The earlier `libc=linux` lane packages only the raw-syscall `/init` exec probe until hosted user execution and syscall return are ready for the upstream kselftest runner.
 
 ## KUnit DebugFS Affordance
 
@@ -282,9 +282,9 @@ The dependency-proof path where an iOS host app or XCTest target launches `Orlix
 
 ## Temporary Kselftest Kernel-Interface Lane
 
-The early kselftest lane installed under `Build/OrlixKernel/kselftest/temporary/<profile>/` and staged with `proof_lane=temporary-kselftest-kernel-interface`. It may use a foreign Linux libc, bootstrap Debian arm64 sysroot, or nolibc-style harness. It is not OrlixMLibC proof, Orlix userspace ABI proof, package proof, or product runtime proof.
+The early kselftest lane installed under `Build/OrlixKernel/kselftest/temporary/<profile>/` and staged with `proof_lane=temporary-kselftest-kernel-interface`. It uses a Linux-owned raw-syscall harness and must not depend on OrlixMLibC, a foreign Linux sysroot, shell packages, or distro userspace. It is not OrlixMLibC proof, Orlix userspace ABI proof, package proof, or product runtime proof.
 
-`scripts/bootstrap-orlix-linux-userspace-sysroot.sh` is temporary infrastructure for the `kselftest libc=linux` kernel-interface lane. It must not feed product packaging, OrlixMLibC, package builds, or final userspace ABI proof. It must be retired or bypassed once the OrlixMLibC kselftest lane is usable.
+`make kselftest libc=linux` packages a tiny `/init` probe with Linux's `usr/gen_init_cpio`. This lane proves the kernel reached real initramfs `/init` ELF handoff and then exposes the next kernel blocker, such as hosted user execution or syscall/trap return.
 
 ## OrlixMLibC Kselftest Syscall/UAPI Lane
 
@@ -628,11 +628,11 @@ The upstream kselftest build/install flow used to stage Orlix kselftest binaries
 
 ## kselftest Proof Runner
 
-The installed `run_kselftest.sh` script used inside the test initramfs to execute Orlix kselftests. Direct binary execution is debugging only, not milestone proof.
+The installed `run_kselftest.sh` script used inside the final test initramfs to execute Orlix kselftests. Direct binary execution is debugging only, not milestone proof; the temporary raw-syscall `/init` probe is a narrower kernel-interface handoff proof, not kselftest runner proof.
 
 ## Orlix kselftest Collection
 
-The installed kselftest collection selected with `run_kselftest.sh -c orlix` inside the test initramfs, even when only `TARGETS=orlix` is installed.
+The installed kselftest collection selected with `run_kselftest.sh -c orlix` inside the final test initramfs, even when only `TARGETS=orlix` is installed.
 
 ## Orlix kselftest Target Scope
 
