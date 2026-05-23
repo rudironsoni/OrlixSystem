@@ -198,6 +198,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/percpu-refcount.c \
 	lib/refcount.c \
 	lib/errseq.c \
+	lib/crc16.c \
 	lib/crc32.c \
 	lib/dec_and_lock.c \
 	lib/debug_locks.c \
@@ -520,7 +521,9 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/sync.c \
 	fs/utimes.c \
 	fs/xattr.c \
+	fs/backing-file.c \
 	fs/buffer.c \
+	fs/mbcache.c \
 	fs/mpage.c \
 	fs/eventpoll.c \
 	fs/signalfd.c \
@@ -533,6 +536,45 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/ramfs/inode.c \
 	fs/ramfs/file-mmu.c \
 	fs/devpts/inode.c \
+	fs/jbd2/transaction.c \
+	fs/jbd2/commit.c \
+	fs/jbd2/recovery.c \
+	fs/jbd2/checkpoint.c \
+	fs/jbd2/revoke.c \
+	fs/jbd2/journal.c \
+	fs/ext4/balloc.c \
+	fs/ext4/bitmap.c \
+	fs/ext4/block_validity.c \
+	fs/ext4/dir.c \
+	fs/ext4/ext4_jbd2.c \
+	fs/ext4/extents.c \
+	fs/ext4/extents_status.c \
+	fs/ext4/file.c \
+	fs/ext4/fsmap.c \
+	fs/ext4/fsync.c \
+	fs/ext4/hash.c \
+	fs/ext4/ialloc.c \
+	fs/ext4/indirect.c \
+	fs/ext4/inline.c \
+	fs/ext4/inode.c \
+	fs/ext4/ioctl.c \
+	fs/ext4/mballoc.c \
+	fs/ext4/migrate.c \
+	fs/ext4/mmp.c \
+	fs/ext4/move_extent.c \
+	fs/ext4/namei.c \
+	fs/ext4/page-io.c \
+	fs/ext4/readpage.c \
+	fs/ext4/resize.c \
+	fs/ext4/super.c \
+	fs/ext4/symlink.c \
+	fs/ext4/sysfs.c \
+	fs/ext4/xattr.c \
+	fs/ext4/xattr_hurd.c \
+	fs/ext4/xattr_trusted.c \
+	fs/ext4/xattr_user.c \
+	fs/ext4/fast_commit.c \
+	fs/ext4/orphan.c \
 	fs/iomap/trace.c \
 	fs/iomap/iter.c \
 	fs/iomap/buffered-io.c \
@@ -540,6 +582,17 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/iomap/fiemap.c \
 	fs/iomap/seek.c \
 	fs/iomap/swapfile.c \
+	fs/overlayfs/super.c \
+	fs/overlayfs/namei.c \
+	fs/overlayfs/util.c \
+	fs/overlayfs/inode.c \
+	fs/overlayfs/file.c \
+	fs/overlayfs/dir.c \
+	fs/overlayfs/readdir.c \
+	fs/overlayfs/copy_up.c \
+	fs/overlayfs/export.c \
+	fs/overlayfs/params.c \
+	fs/overlayfs/xattrs.c \
 	io_uring/io_uring.c \
 	io_uring/opdef.c \
 	io_uring/kbuf.c \
