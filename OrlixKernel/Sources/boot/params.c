@@ -12,14 +12,14 @@ static const struct OrlixProfileBootDefaults OrlixProfileBootDefaultsTable[] = {
     {
         .profile = ORLIX_BOOT_PROFILE_APPSTORE,
         .profile_dtb_path = "arch/orlix/boot/dts/appstore.dtb",
-        .kernel_cmdline = "console=ttyS0 root=/dev/vda rootfstype=ext4 rw orlix.profile=appstore",
+        .kernel_cmdline = "console=ttyS0 root=/dev/vda rootfstype=ext4 ro orlix.profile=appstore",
         .root_device = "/dev/vda",
         .console_device = "ttyS0",
     },
     {
         .profile = ORLIX_BOOT_PROFILE_DEVELOPMENT,
         .profile_dtb_path = "arch/orlix/boot/dts/development.dtb",
-        .kernel_cmdline = "console=ttyS0 root=/dev/vda rootfstype=ext4 rw debug ignore_loglevel orlix.profile=development",
+        .kernel_cmdline = "console=ttyS0 root=/dev/vda rootfstype=ext4 ro debug ignore_loglevel orlix.profile=development",
         .root_device = "/dev/vda",
         .console_device = "ttyS0",
     },

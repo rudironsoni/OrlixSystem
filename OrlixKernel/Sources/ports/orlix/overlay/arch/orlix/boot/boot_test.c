@@ -5,7 +5,7 @@
 static void orlix_boot_handoff_records_params(struct kunit *test)
 {
 	struct boot_params params = {
-		.cmdline = "console=ttyS0 root=/dev/vda rootfstype=ext4 rw orlix.profile=appstore",
+		.cmdline = "console=ttyS0 root=/dev/vda rootfstype=ext4 ro orlix.profile=appstore",
 		.memory_base = 0x100000,
 		.memory_size = 0x4000000,
 		.dtb_base = "dtb",
@@ -29,7 +29,7 @@ static void orlix_boot_handoff_records_params(struct kunit *test)
 static void orlix_boot_handoff_rejects_missing_dtb(struct kunit *test)
 {
 	struct boot_params params = {
-		.cmdline = "console=ttyS0 root=/dev/vda rootfstype=ext4 rw orlix.profile=appstore",
+		.cmdline = "console=ttyS0 root=/dev/vda rootfstype=ext4 ro orlix.profile=appstore",
 		.root_device = "/dev/vda",
 		.console_device = "ttyS0",
 	};

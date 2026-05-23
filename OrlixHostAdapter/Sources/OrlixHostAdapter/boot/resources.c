@@ -20,13 +20,24 @@ static char OrlixHostSelectedBlockPaths[ORLIX_HOST_BLOCK_DEVICE_COUNT][PATH_MAX]
 static unsigned long long OrlixHostSelectedBlockBytes[ORLIX_HOST_BLOCK_DEVICE_COUNT];
 static int OrlixHostSelectedBlockWritable[ORLIX_HOST_BLOCK_DEVICE_COUNT];
 
-static const char *OrlixHostRootImageResourceForIdentifier(const char *identifier)
+static const char *OrlixHostInitrdResourceForIdentifier(const char *identifier)
 {
     if (!identifier) {
         return 0;
     }
     if (strcmp(identifier, "orlix.bundle.rootfs") == 0) {
         return "rootfs/initramfs.cpio.gz";
+    }
+    return 0;
+}
+
+static const char *OrlixHostBaseBlockResourceForIdentifier(const char *identifier)
+{
+    if (!identifier) {
+        return 0;
+    }
+    if (strcmp(identifier, "orlix.bundle.rootfs") == 0) {
+        return "rootfs/base.ext4";
     }
     return 0;
 }
@@ -315,11 +326,11 @@ __attribute__((visibility("hidden"))) int OrlixHostLoadKernelPayloadResource(
     return OrlixHostReadResourceFile(path, loaded);
 }
 
-__attribute__((visibility("hidden"))) int OrlixHostLoadRootImageResource(
+__attribute__((visibility("hidden"))) int OrlixHostLoadInitrdResource(
     const char *identifier,
     struct OrlixHostResource *loaded)
 {
-    const char *resource = OrlixHostRootImageResourceForIdentifier(identifier);
+    const char *resource = OrlixHostInitrdResourceForIdentifier(identifier);
 
     if (!resource) {
         return -1;
@@ -331,7 +342,7 @@ __attribute__((visibility("hidden"))) int OrlixHostLoadRootImageResource(
 __attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
     const char *identifier)
 {
-    const char *resource = OrlixHostRootImageResourceForIdentifier(identifier);
+    const char *resource = OrlixHostBaseBlockResourceForIdentifier(identifier);
     unsigned long long base_size = 0;
     unsigned long long state_size = 0;
     char base_path[PATH_MAX];

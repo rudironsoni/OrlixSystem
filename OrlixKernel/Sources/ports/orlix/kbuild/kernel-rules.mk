@@ -156,6 +156,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	crypto/scatterwalk.c \
 	crypto/proc.c \
 	crypto/ahash.c \
+	crypto/crc32c_generic.c \
 	crypto/shash.c \
 	lib/is_single_threaded.c \
 	lib/kobject_uevent.c \
@@ -871,6 +872,8 @@ ORLIX_IOS_SIMULATOR_ID ?=
 ORLIX_IOS_SIMULATOR_DERIVED_DATA ?= $(CURDIR)/.deriveddata/OrlixSystem-sim
 ORLIX_IOS_SIMULATOR_FRAMEWORK := $(ORLIX_IOS_SIMULATOR_DERIVED_DATA)/Build/Products/Debug-iphonesimulator/OrlixKernel.framework
 ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/payload/OrlixKernelPayload.bundle
+ORLIX_KERNEL_ROOTFS_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/rootfs/$(PROFILE)
+ORLIX_KERNEL_BASE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/base.ext4
 ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework
 XCODEGEN ?= xcodegen
 XCODEBUILD_MCP ?= xcodebuildmcp
@@ -882,6 +885,7 @@ LINUX_HOST_COMPAT_INCLUDE_ROOT := $(CURDIR)/tools/linux_host_compat/include
 ORLIX_KERNEL_CC ?= clang
 ORLIX_KERNEL_HOSTCC ?= cc
 ORLIX_KERNEL_AR ?= llvm-ar
+ORLIX_MKE2FS ?= $(shell if command -v mke2fs >/dev/null 2>&1; then command -v mke2fs; elif [ -x /opt/homebrew/opt/e2fsprogs/sbin/mke2fs ]; then printf '%s\n' /opt/homebrew/opt/e2fsprogs/sbin/mke2fs; else printf '%s\n' mke2fs; fi)
 ORLIX_KERNEL_NM ?= nm
 ORLIX_KERNEL_OTOOL ?= otool
 
@@ -1558,6 +1562,19 @@ __kernel-payload: __prepare-kbuild
 	rootfs_input="$(ORLIX_KERNEL_BUILD_DIR)/usr/initramfs_inc_data"; \
 	[ -s "$$rootfs_input" ] || { echo "missing non-empty root initramfs: $$rootfs_input" >&2; exit 1; }; \
 	cp "$$rootfs_input" "$$output/rootfs/initramfs.cpio.gz"; \
+	mke2fs_cmd="$(ORLIX_MKE2FS)"; \
+	command -v "$$mke2fs_cmd" >/dev/null 2>&1 || { echo "mke2fs is required to generate OrlixKernel rootfs/base.ext4; install e2fsprogs or set ORLIX_MKE2FS=/path/to/mke2fs" >&2; exit 1; }; \
+	rootfs_build="$(ORLIX_KERNEL_ROOTFS_BUILD_DIR)"; \
+	base_tree="$$rootfs_build/base-tree"; \
+	base_image="$(ORLIX_KERNEL_BASE_ROOT_IMAGE)"; \
+	rm -rf "$$base_tree" "$$base_image"; \
+	mkdir -p "$$base_tree/dev" "$$base_tree/proc" "$$base_tree/root" "$$base_tree/run" "$$base_tree/sys" "$$base_tree/tmp"; \
+	chmod 0755 "$$base_tree" "$$base_tree/dev" "$$base_tree/proc" "$$base_tree/run" "$$base_tree/sys"; \
+	chmod 0700 "$$base_tree/root"; \
+	chmod 1777 "$$base_tree/tmp"; \
+	truncate -s 16m "$$base_image"; \
+	"$$mke2fs_cmd" -q -t ext4 -F -m 0 -U clear -L ORLIXROOT -E root_owner=0:0 -d "$$base_tree" "$$base_image"; \
+	cp "$$base_image" "$$output/rootfs/base.ext4"; \
 	{ \
 		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
 		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
