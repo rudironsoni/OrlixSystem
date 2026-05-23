@@ -1,0 +1,7 @@
+config ORLIX_VIRTIO_MMIO
+	bool "Orlix hosted virtio-mmio transport"
+	depends on ORLIX
+	depends on VIRTIO_MMIO
+	help
+	  Provide the Orlix-hosted virtio-mmio backend mechanics behind
+	  normal Linux virtio-mmio device-tree nodes.

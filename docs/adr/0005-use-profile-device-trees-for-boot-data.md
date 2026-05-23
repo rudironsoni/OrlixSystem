@@ -12,12 +12,16 @@ Linux commonly represents machine description and chosen boot data with device t
 
 ## Decision
 
-Profile boot data will be represented as Linux-shaped device tree source under `arch/orlix/boot/dts` in the Orlix overlay. The bootloader supplies dynamic values and passes normal Linux boot data.
+Profile boot data will be represented as Linux-shaped device tree source under `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/boot/dts` in the Orlix overlay. The bootloader supplies dynamic values and passes normal Linux boot data.
+
+Compiled DTBs for closed built-in profiles are bundled inside `OrlixKernel.xcframework`. They are part of the kernel port machine description, not arbitrary app-supplied files.
 
 ## Consequences
 
 No custom `.boot` template format is introduced.
 
 Profile DTS files become durable architecture-port inputs.
+
+Packaging proof must validate that built-in profile DTBs are present in the framework bundle.
 
 The bootloader remains a Linux boot preparer rather than a runtime configuration API.

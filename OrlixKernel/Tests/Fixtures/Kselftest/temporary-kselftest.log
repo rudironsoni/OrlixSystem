@@ -1,0 +1,14 @@
+ORLIX-PROOF-LANE temporary-kselftest-kernel-interface
+ORLIX-PROFILE appstore
+ORLIX-LINUX-ARCH orlix
+ORLIX-LINUX-VERSION 6.12
+ORLIX-KUNIT-BEGIN
+KTAP version 1
+1..1
+ok 1 orlix_boot_handoff_records_params
+ORLIX-KUNIT-END
+ORLIX-KSELFTEST-BEGIN
+TAP version 13
+1..1
+ok 1 boot_profile_contract
+ORLIX-KSELFTEST-END status=0

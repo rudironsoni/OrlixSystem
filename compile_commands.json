@@ -1459,7 +1459,7 @@
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/CgroupContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/CgroupContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1474,12 +1474,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/CgroupContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/CgroupContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/CgroupTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/CgroupTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1497,12 +1497,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/CgroupTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/CgroupTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/CredentialContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/CredentialContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1517,12 +1517,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/CredentialContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/CredentialContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/CredentialTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/CredentialTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1540,12 +1540,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/CredentialTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/CredentialTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/DevfsContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/DevfsContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1560,12 +1560,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/DevfsContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/DevfsContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/DevfsTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/DevfsTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1583,12 +1583,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/DevfsTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/DevfsTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/EpollContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/EpollContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1603,12 +1603,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/EpollContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/EpollContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/EpollSocketContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/EpollSocketContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1623,12 +1623,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/EpollSocketContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/EpollSocketContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/EpollTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/EpollTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1646,12 +1646,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/EpollTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/EpollTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/ExecFdContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/ExecFdContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1666,12 +1666,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/ExecFdContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/ExecFdContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/ExecFdTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/ExecFdTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1689,12 +1689,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/ExecFdTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/ExecFdTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/ExecSyscallContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/ExecSyscallContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1709,12 +1709,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/ExecSyscallContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/ExecSyscallContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/ExecSyscallTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/ExecSyscallTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1732,12 +1732,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/ExecSyscallTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/ExecSyscallTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/FcntlContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/FcntlContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1752,12 +1752,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/FcntlContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/FcntlContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/FcntlTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/FcntlTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1775,12 +1775,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/FcntlTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/FcntlTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/FsPTYJobControlTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/FsPTYJobControlTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1798,12 +1798,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/FsPTYJobControlTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/FsPTYJobControlTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/FsPipeTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/FsPipeTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1821,12 +1821,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/FsPipeTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/FsPipeTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/FsRootfsBootstrapTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/FsRootfsBootstrapTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1844,12 +1844,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/FsRootfsBootstrapTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/FsRootfsBootstrapTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/FsVFSPathTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/FsVFSPathTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1867,12 +1867,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/FsVFSPathTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/FsVFSPathTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/FutexUAPICompileSmoke.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/FutexUAPICompileSmoke.c",
     "arguments": [
       "clang",
       "-x",
@@ -1887,12 +1887,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/FutexUAPICompileSmoke.c"
+      "Tests/MigrationReference/LocalKernelPrototype/FutexUAPICompileSmoke.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelBoot.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelBoot.c",
     "arguments": [
       "clang",
       "-x",
@@ -1907,12 +1907,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelBoot.c"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelBoot.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelBootTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelBootTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1930,12 +1930,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelBootTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelBootTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelFutexTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelFutexTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1953,12 +1953,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelFutexTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelFutexTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelInitContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelInitContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -1973,12 +1973,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelInitContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelInitContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelInitTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelInitTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -1996,12 +1996,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelInitTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelInitTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelOwnerCompatCompileSmoke.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelOwnerCompatCompileSmoke.c",
     "arguments": [
       "clang",
       "-x",
@@ -2016,12 +2016,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelOwnerCompatCompileSmoke.c"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelOwnerCompatCompileSmoke.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelProcessGroupSessionTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelProcessGroupSessionTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2039,12 +2039,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelProcessGroupSessionTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelProcessGroupSessionTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelSignalTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelSignalTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2062,12 +2062,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelSignalTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelSignalTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelTaskGroupTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelTaskGroupTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2085,12 +2085,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelTaskGroupTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelTaskGroupTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/KernelWaitTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/KernelWaitTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2108,12 +2108,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/KernelWaitTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/KernelWaitTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/LinuxKernelDynamicTestCase.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/LinuxKernelDynamicTestCase.m",
     "arguments": [
       "clang",
       "-x",
@@ -2131,12 +2131,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/LinuxKernelDynamicTestCase.m"
+      "Tests/MigrationReference/LocalKernelPrototype/LinuxKernelDynamicTestCase.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/LinuxUAPICompileSmoke.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/LinuxUAPICompileSmoke.c",
     "arguments": [
       "clang",
       "-x",
@@ -2151,12 +2151,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/LinuxUAPICompileSmoke.c"
+      "Tests/MigrationReference/LocalKernelPrototype/LinuxUAPICompileSmoke.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/LinuxUAPITestSupport.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/LinuxUAPITestSupport.c",
     "arguments": [
       "clang",
       "-x",
@@ -2171,12 +2171,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/LinuxUAPITestSupport.c"
+      "Tests/MigrationReference/LocalKernelPrototype/LinuxUAPITestSupport.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/MountContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/MountContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2191,12 +2191,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/MountContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/MountContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/NamespaceContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/NamespaceContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2211,12 +2211,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/NamespaceContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/NamespaceContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/NamespaceTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/NamespaceTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2234,12 +2234,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/NamespaceTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/NamespaceTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/NativeSyscallContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/NativeSyscallContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2254,12 +2254,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/NativeSyscallContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/NativeSyscallContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/NativeSyscallSocketContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/NativeSyscallSocketContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2274,12 +2274,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/NativeSyscallSocketContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/NativeSyscallSocketContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/NativeSyscallTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/NativeSyscallTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2297,12 +2297,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/NativeSyscallTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/NativeSyscallTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/PTYSessionContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/PTYSessionContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2317,12 +2317,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/PTYSessionContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/PTYSessionContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/PTYSessionIoctlShim.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/PTYSessionIoctlShim.c",
     "arguments": [
       "clang",
       "-x",
@@ -2337,12 +2337,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/PTYSessionIoctlShim.c"
+      "Tests/MigrationReference/LocalKernelPrototype/PTYSessionIoctlShim.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/PTYSessionTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/PTYSessionTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2360,12 +2360,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/PTYSessionTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/PTYSessionTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/ProcfsNamespaceContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/ProcfsNamespaceContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2380,12 +2380,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/ProcfsNamespaceContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/ProcfsNamespaceContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/ProcfsNamespaceTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/ProcfsNamespaceTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2403,12 +2403,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/ProcfsNamespaceTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/ProcfsNamespaceTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/PtraceContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/PtraceContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2423,12 +2423,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/PtraceContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/PtraceContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/PtraceTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/PtraceTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2446,12 +2446,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/PtraceTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/PtraceTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/ReadinessContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/ReadinessContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2466,12 +2466,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/ReadinessContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/ReadinessContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/ReadinessTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/ReadinessTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2489,12 +2489,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/ReadinessTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/ReadinessTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/SeccompContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/SeccompContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2509,12 +2509,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/SeccompContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/SeccompContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/SeccompTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/SeccompTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2532,12 +2532,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/SeccompTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/SeccompTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/SignalSyscallContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/SignalSyscallContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2552,12 +2552,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/SignalSyscallContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/SignalSyscallContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/SocketpairSyscall.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/SocketpairSyscall.c",
     "arguments": [
       "clang",
       "-x",
@@ -2572,12 +2572,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/SocketpairSyscall.c"
+      "Tests/MigrationReference/LocalKernelPrototype/SocketpairSyscall.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/SyscallUioContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/SyscallUioContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2592,12 +2592,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/SyscallUioContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/SyscallUioContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/TaskExecContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/TaskExecContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2612,12 +2612,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/TaskExecContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/TaskExecContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/TaskExecTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/TaskExecTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2635,12 +2635,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/TaskExecTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/TaskExecTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/UTSContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/UTSContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2655,12 +2655,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/UTSContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/UTSContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/UTSTests.m",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/UTSTests.m",
     "arguments": [
       "clang",
       "-x",
@@ -2678,12 +2678,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/UTSTests.m"
+      "Tests/MigrationReference/LocalKernelPrototype/UTSTests.m"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/VFSAtContract.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/VFSAtContract.c",
     "arguments": [
       "clang",
       "-x",
@@ -2698,12 +2698,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/VFSAtContract.c"
+      "Tests/MigrationReference/LocalKernelPrototype/VFSAtContract.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/fs/pipe/pipe_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/fs/pipe/pipe_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2718,12 +2718,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/fs/pipe/pipe_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/fs/pipe/pipe_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/fs/pty/pty_job_control_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/fs/pty/pty_job_control_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2738,12 +2738,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/fs/pty/pty_job_control_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/fs/pty/pty_job_control_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/fs/rootfs/rootfs_bootstrap_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/fs/rootfs/rootfs_bootstrap_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2758,12 +2758,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/fs/rootfs/rootfs_bootstrap_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/fs/rootfs/rootfs_bootstrap_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/fs/vfs/vfs_path_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/fs/vfs/vfs_path_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2778,12 +2778,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/fs/vfs/vfs_path_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/fs/vfs/vfs_path_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/kernel/futex/futex_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/kernel/futex/futex_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2798,12 +2798,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/kernel/futex/futex_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/kernel/futex/futex_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/kernel/signal/signal_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/kernel/signal/signal_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2818,12 +2818,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/kernel/signal/signal_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/kernel/signal/signal_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/kernel/task/process_group_session_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/kernel/task/process_group_session_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2838,12 +2838,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/kernel/task/process_group_session_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/kernel/task/process_group_session_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/kernel/task/task_group_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/kernel/task/task_group_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2858,12 +2858,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/kernel/task/task_group_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/kernel/task/task_group_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/kernel/wait/wait_test.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/kernel/wait/wait_test.c",
     "arguments": [
       "clang",
       "-x",
@@ -2878,12 +2878,12 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/kernel/wait/wait_test.c"
+      "Tests/MigrationReference/LocalKernelPrototype/kernel/wait/wait_test.c"
     ]
   },
   {
     "directory": "/Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem",
-    "file": "OrlixKernelTests/kunit/kunit.c",
+    "file": "Tests/MigrationReference/LocalKernelPrototype/kunit/kunit.c",
     "arguments": [
       "clang",
       "-x",
@@ -2898,7 +2898,7 @@
       "-D_DARWIN_C_SOURCE",
       "-D_POSIX_C_SOURCE=200112L",
       "-c",
-      "OrlixKernelTests/kunit/kunit.c"
+      "Tests/MigrationReference/LocalKernelPrototype/kunit/kunit.c"
     ]
   },
   {

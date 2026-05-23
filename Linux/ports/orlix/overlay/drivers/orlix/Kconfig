@@ -1,9 +1,0 @@
-menu "Orlix drivers"
-
-depends on ORLIX
-
-source "drivers/orlix/block/Kconfig"
-source "drivers/orlix/tty/Kconfig"
-source "drivers/orlix/char/Kconfig"
-
-endmenu

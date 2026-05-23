@@ -1,0 +1,189 @@
+name: OrlixSystem
+options:
+  bundleIdPrefix: org.orlix
+  deploymentTarget:
+    iOS: "16.0"
+  generateEmptyDirectories: true
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    CLANG_ENABLE_MODULES: YES
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: "0.1"
+    SWIFT_VERSION: "6.0"
+packages:
+  GhosttyKit:
+    url: https://github.com/Lakr233/libghostty-spm.git
+    exactVersion: 1.1.5
+targets:
+  OrlixKernel:
+    type: framework
+    platform: iOS
+    sources:
+      - path: OrlixKernel/Sources/boot
+        includes:
+          - "*.c"
+      - path: OrlixHostAdapter/Sources/OrlixHostAdapter/boot
+        includes:
+          - "*.c"
+      - path: OrlixHostAdapter/Sources/OrlixHostAdapter/terminal
+        includes:
+          - "*.c"
+      - path: OrlixHostAdapter/Sources/OrlixHostAdapter/memory
+        includes:
+          - "*.c"
+      - path: OrlixKernel/Sources/include
+        buildPhase: headers
+        headerVisibility: public
+    dependencies:
+      - sdk: CoreFoundation.framework
+    postBuildScripts:
+      - name: Embed OrlixKernel Payload
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          payload="$SRCROOT/Build/OrlixKernel/payload/OrlixKernelPayload.bundle"
+          if [ ! -d "$payload" ]; then
+              echo "missing OrlixKernel payload bundle: $payload" >&2
+              echo "run: make build PROFILE=${ORLIX_PROFILE:-appstore}" >&2
+              exit 1
+          fi
+          destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/OrlixKernelPayload.bundle"
+          rm -rf "$destination"
+          cp -R "$payload" "$destination"
+    settings:
+      base:
+        DEFINES_MODULE: YES
+        INFOPLIST_FILE: OrlixKernel/Sources/Support/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernel
+        PRODUCT_NAME: OrlixKernel
+        ORLIX_PROFILE: appstore
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/OrlixKernel/Sources
+          - $(SRCROOT)/OrlixKernel/Sources/include
+          # Temporary arch boot seam include only. Do not add generic Linux
+          # or generated Kbuild include roots to Xcode targets.
+          - $(SRCROOT)/OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/include
+          - $(SRCROOT)/OrlixHostAdapter/Sources
+        OTHER_LDFLAGS:
+          - $(inherited)
+          - $(SRCROOT)/Build/OrlixKernel/$(ORLIX_PROFILE)/$(PLATFORM_NAME)/OrlixKernel.a
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - ORLIX_APP_HOSTED_BOOT=1
+  OrlixTerminal:
+    type: application
+    platform: iOS
+    sources:
+      - path: OrlixTerminal/Sources
+    dependencies:
+      - target: OrlixKernel
+        embed: true
+      - package: GhosttyKit
+        products:
+          - GhosttyTerminal
+          - GhosttyTheme
+    settings:
+      base:
+        INFOPLIST_FILE: OrlixTerminal/Sources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixTerminal
+        PRODUCT_NAME: OrlixTerminal
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/OrlixKernel/Sources/include
+        SWIFT_OBJC_BRIDGING_HEADER: OrlixTerminal/Sources/OrlixTerminal-Bridging-Header.h
+  OrlixKernelHostProofTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OrlixKernel/Tests/XCTest/OrlixKernelHostProofTests
+    dependencies:
+      - target: OrlixTerminal
+      - target: OrlixKernel
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernelHostProofTests
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/OrlixKernel/Sources/include
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - ORLIX_APP_HOSTED_BOOT=1
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTerminal.app/OrlixTerminal
+        BUNDLE_LOADER: $(TEST_HOST)
+  OrlixLinuxProofOutputParserTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OrlixKernel/Tests/XCTest/OrlixLinuxProofOutputParserTests
+      - path: OrlixKernel/Tests/Fixtures/KUnit
+        type: folder
+        buildPhase: resources
+      - path: OrlixKernel/Tests/Fixtures/Kselftest
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: OrlixTerminal
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixLinuxProofOutputParserTests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTerminal.app/OrlixTerminal
+        BUNDLE_LOADER: $(TEST_HOST)
+  OrlixHostAdapterTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OrlixHostAdapter/Tests/XCTest/OrlixHostAdapterTests
+    dependencies:
+      - target: OrlixTerminal
+      - target: OrlixKernel
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixHostAdapterTests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTerminal.app/OrlixTerminal
+        BUNDLE_LOADER: $(TEST_HOST)
+schemes:
+  OrlixKernel:
+    build:
+      targets:
+        OrlixKernel: all
+  OrlixTerminal:
+    build:
+      targets:
+        OrlixTerminal: all
+    run:
+      config: Debug
+      executable: OrlixTerminal
+  OrlixKernelHostProofTests:
+    build:
+      targets:
+        OrlixTerminal: all
+        OrlixKernelHostProofTests: test
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: OrlixKernelHostProofTests
+  OrlixLinuxProofOutputParserTests:
+    build:
+      targets:
+        OrlixTerminal: all
+        OrlixLinuxProofOutputParserTests: test
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: OrlixLinuxProofOutputParserTests
+  OrlixHostAdapterTests:
+    build:
+      targets:
+        OrlixTerminal: all
+        OrlixHostAdapterTests: test
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: OrlixHostAdapterTests

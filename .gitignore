@@ -63,10 +63,13 @@ xcuserdata/
 /.build/
 .DS_Store
 Orlix.xcodeproj/
+OrlixKernel.xcodeproj/
+OrlixSystem.xcodeproj/
 
 # Build artifacts
 /build/
 /Build/
+Build/
 /.deriveddata/
 /DerivedData/
 *.xcresult/
@@ -77,9 +80,9 @@ Logs/
 ModuleCache/
 
 # Generated Linux source trees
-Linux/upstream/
-Linux/upstream/linux-6.12/
-Linux/upstream/linux-*/
+OrlixKernel/Sources/upstream/
+OrlixKernel/Sources/upstream/linux-6.12/
+OrlixKernel/Sources/upstream/linux-*/
 
 
 # Clangd compilation database cache

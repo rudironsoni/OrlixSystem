@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config ORLIX_BOOT_KUNIT_TEST
+	bool "KUnit test for Orlix boot handoff" if !KUNIT_ALL_TESTS
+	depends on KUNIT=y
+	default KUNIT_ALL_TESTS
+	help
+	  Test the Orlix architecture boot handoff state with KUnit.

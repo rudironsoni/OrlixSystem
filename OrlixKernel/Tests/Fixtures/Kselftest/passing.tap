@@ -1,0 +1,4 @@
+TAP version 13
+1..2
+ok 1 cmdline selects a supported Orlix profile
+ok 2 live device tree exposes the Orlix compatible string

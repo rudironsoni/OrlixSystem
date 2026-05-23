@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+#ifndef _ASM_ORLIX_VMALLOC_H
+#define _ASM_ORLIX_VMALLOC_H
+
+#define ARCH_PAGE_TABLE_SYNC_MASK	PGTBL_PTE_MODIFIED
+
+#endif /* _ASM_ORLIX_VMALLOC_H */
