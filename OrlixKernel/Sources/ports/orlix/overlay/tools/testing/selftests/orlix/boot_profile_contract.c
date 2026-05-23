@@ -65,7 +65,7 @@ int main(void)
 	const char *profile = NULL;
 
 	ksft_print_header();
-	ksft_set_plan(6);
+	ksft_set_plan(7);
 
 	if (contains_string(cmdline, "orlix.profile=appstore"))
 		profile = "appstore";
@@ -77,6 +77,8 @@ int main(void)
 			 "cmdline selects the Orlix serial console\n");
 	ksft_test_result(!contains_string(cmdline, "root=/dev/ram0"),
 			 "cmdline does not select an absent ram block root\n");
+	ksft_test_result(contains_string(cmdline, "root=/dev/vda"),
+			 "cmdline selects the immutable virtio base image as root\n");
 	ksft_test_result(profile && contains_string(bootargs, profile),
 			 "live device tree bootargs match the selected profile\n");
 	ksft_test_result(contains_dt_string(compatible, "orlix"),

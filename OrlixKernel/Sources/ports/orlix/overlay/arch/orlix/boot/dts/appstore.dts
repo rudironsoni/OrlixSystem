@@ -7,7 +7,7 @@
 	interrupt-parent = <&intc>;
 
 	chosen {
-		bootargs = "console=ttyS0 rw orlix.profile=appstore";
+		bootargs = "console=ttyS0 root=/dev/vda rootfstype=ext4 rw orlix.profile=appstore";
 		stdout-path = "serial0:115200n8";
 	};
 
