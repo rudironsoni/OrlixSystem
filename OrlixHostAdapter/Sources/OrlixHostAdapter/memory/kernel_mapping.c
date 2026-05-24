@@ -117,6 +117,7 @@ __attribute__((visibility("hidden"))) int orlix_host_user_map_page(
         protection |= VM_PROT_EXECUTE;
     }
 
+    OrlixHostUnmapPages(target_address, length);
     return OrlixHostMapPageWithProtection(target_address,
                                           source_page,
                                           length,

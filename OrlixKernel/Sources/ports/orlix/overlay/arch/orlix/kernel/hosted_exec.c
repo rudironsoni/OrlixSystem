@@ -15,11 +15,9 @@
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
 unsigned long orlix_hosted_kernel_sp;
-unsigned long orlix_hosted_host_tpidr_el0;
-unsigned long orlix_hosted_entry_user_tpidr_el0;
 unsigned long orlix_hosted_entry_user_pc;
-unsigned long orlix_hosted_return_user_tpidr_el0;
 unsigned long orlix_hosted_entry_user_callee[12];
+bool orlix_hosted_syscall_full_user_entry;
 static unsigned char orlix_hosted_syscall_gate_page[PAGE_SIZE] __page_aligned_data;
 static bool orlix_hosted_syscall_gate_ready;
 
@@ -37,16 +35,8 @@ asm(
 "	stp	x25, x26, [x9, #48]\n"
 "	stp	x27, x28, [x9, #64]\n"
 "	stp	x29, x30, [x9, #80]\n"
-"	mrs	x12, tpidr_el0\n"
-"	adrp	x13, _orlix_hosted_entry_user_tpidr_el0@PAGE\n"
-"	str	x12, [x13, _orlix_hosted_entry_user_tpidr_el0@PAGEOFF]\n"
 "	adrp	x13, _orlix_hosted_entry_user_pc@PAGE\n"
 "	str	x30, [x13, _orlix_hosted_entry_user_pc@PAGEOFF]\n"
-"	adrp	x13, _orlix_hosted_host_tpidr_el0@PAGE\n"
-"	ldr	x13, [x13, _orlix_hosted_host_tpidr_el0@PAGEOFF]\n"
-"	cbz	x13, 0f\n"
-"	msr	tpidr_el0, x13\n"
-"0:\n"
 "	mov	x9, sp\n"
 "	adrp	x10, _orlix_hosted_kernel_sp@PAGE\n"
 "	ldr	x10, [x10, _orlix_hosted_kernel_sp@PAGEOFF]\n"
@@ -59,32 +49,28 @@ asm(
 "	str	x9, [sp, #-16]!\n"
 "	mov	x7, x9\n"
 "	bl	_orlix_hosted_syscall_dispatch\n"
+"	adrp	x10, _orlix_hosted_syscall_full_user_entry@PAGE\n"
+"	ldrb	w10, [x10, _orlix_hosted_syscall_full_user_entry@PAGEOFF]\n"
+"	cbnz	w10, 2f\n"
 "	ldr	x9, [sp], #16\n"
 "	ldp	x29, x30, [sp], #16\n"
 "	adrp	x10, _orlix_hosted_kernel_sp@PAGE\n"
 "	mov	x11, sp\n"
 "	str	x11, [x10, _orlix_hosted_kernel_sp@PAGEOFF]\n"
-"	adrp	x10, _orlix_hosted_return_user_tpidr_el0@PAGE\n"
-"	ldr	x10, [x10, _orlix_hosted_return_user_tpidr_el0@PAGEOFF]\n"
-"	msr	tpidr_el0, x10\n"
 "	mov	sp, x9\n"
 "	ret\n"
+"2:\n"
+"	ldr	x9, [sp], #16\n"
+"	ldp	x29, x30, [sp], #16\n"
+"	adrp	x10, _orlix_hosted_kernel_sp@PAGE\n"
+"	mov	x11, sp\n"
+"	str	x11, [x10, _orlix_hosted_kernel_sp@PAGEOFF]\n"
+"	bl	_orlix_hosted_syscall_enter_user\n"
+"	brk	#2\n"
 );
-
-static unsigned long orlix_read_tpidr_el0(void)
-{
-	unsigned long value;
-
-	asm volatile("mrs %0, tpidr_el0" : "=r"(value));
-	return value;
-}
 
 void orlix_hosted_capture_host_context(void)
 {
-	unsigned long host_tls = orlix_read_tpidr_el0();
-
-	if (host_tls)
-		WRITE_ONCE(orlix_hosted_host_tpidr_el0, host_tls);
 }
 
 void orlix_hosted_save_kernel_stack(unsigned long sp)
@@ -96,7 +82,6 @@ unsigned long orlix_hosted_prepare_user_entry(void)
 {
 	unsigned long user_tls = current->thread.user_tls;
 
-	WRITE_ONCE(orlix_hosted_return_user_tpidr_el0, user_tls);
 	return user_tls;
 }
 
@@ -137,10 +122,12 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 				   unsigned long arg5, unsigned long user_sp)
 {
 	struct pt_regs *regs = task_pt_regs(current);
+	unsigned long entry_pc;
 	long ret;
+	bool full_user_entry;
 
 	orlix_hosted_save_callee_registers(regs);
-	current->thread.user_tls = READ_ONCE(orlix_hosted_entry_user_tpidr_el0);
+	entry_pc = READ_ONCE(orlix_hosted_entry_user_pc);
 	regs->regs[0] = arg0;
 	regs->regs[1] = arg1;
 	regs->regs[2] = arg2;
@@ -149,13 +136,20 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 	regs->regs[5] = arg5;
 	regs->regs[8] = scno;
 	regs->sp = user_sp;
-	regs->pc = READ_ONCE(orlix_hosted_entry_user_pc);
+	regs->pc = entry_pc;
 	regs->pstate = PSR_MODE_EL0t;
 	regs->syscallno = scno;
 
 	ret = orlix_syscall_dispatch(regs);
 	orlix_sync_current_user_mappings(regs);
-	WRITE_ONCE(orlix_hosted_return_user_tpidr_el0, current->thread.user_tls);
+	full_user_entry = regs->pc != entry_pc || regs->sp != user_sp;
+	WRITE_ONCE(orlix_hosted_syscall_full_user_entry, full_user_entry);
 	return ret;
+}
+
+void __noreturn orlix_hosted_syscall_enter_user(void)
+{
+	WRITE_ONCE(orlix_hosted_syscall_full_user_entry, false);
+	orlix_hosted_enter_user(task_pt_regs(current));
 }
 #endif

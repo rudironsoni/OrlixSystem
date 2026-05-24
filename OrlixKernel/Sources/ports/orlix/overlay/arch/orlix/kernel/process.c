@@ -19,9 +19,6 @@ asmlinkage void orlix_ret_from_fork_user(struct pt_regs *regs);
 extern struct task_struct *orlix_cpu_switch_context(struct orlix_cpu_context *prev,
 						    struct orlix_cpu_context *next,
 						    struct task_struct *last);
-#if defined(ORLIX_APP_HOSTED_BOOT)
-static __noreturn void orlix_hosted_enter_user(struct pt_regs *regs);
-#endif
 
 asm(
 ".p2align 2\n"
@@ -59,21 +56,18 @@ asm(
 	);
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
-static __noreturn void orlix_hosted_enter_user(struct pt_regs *regs)
+void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 {
 	unsigned long kernel_sp;
-	unsigned long user_tls;
 
 	asm volatile("mov %0, sp" : "=r"(kernel_sp));
 	orlix_hosted_save_kernel_stack(kernel_sp);
-	user_tls = orlix_hosted_prepare_user_entry();
+	orlix_hosted_prepare_user_entry();
 
 	asm volatile(
 	"	mov	x9, %0\n"
-	"	mov	x12, %1\n"
 	"	ldr	x10, [x9, #%c[pc_offset]]\n"
 	"	ldr	x11, [x9, #%c[sp_offset]]\n"
-	"	msr	tpidr_el0, x12\n"
 	"	ldr	x8, [x9, #%c[x8_offset]]\n"
 	"	ldp	x19, x20, [x9, #%c[x19_offset]]\n"
 	"	ldp	x21, x22, [x9, #%c[x21_offset]]\n"
@@ -88,7 +82,7 @@ static __noreturn void orlix_hosted_enter_user(struct pt_regs *regs)
 	"	mov	sp, x11\n"
 	"	br	x10\n"
 	:
-	: "r"(regs), "r"(user_tls),
+	: "r"(regs),
 	  [pc_offset] "i"(offsetof(struct pt_regs, pc)),
 	  [sp_offset] "i"(offsetof(struct pt_regs, sp)),
 	  [x8_offset] "i"(offsetof(struct pt_regs, regs[8])),

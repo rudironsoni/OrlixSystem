@@ -10,6 +10,7 @@ LINUX_VERSION ?= 6.12
 LINUX_ARCH ?= orlix
 LINUX_TAG ?= v$(LINUX_VERSION)
 LINUX_REMOTE ?= https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+ORLIX_HEADERS_INSTALL_JOBS ?= 1
 
 PROFILE ?= appstore
 ORLIX_PROFILES := appstore development
@@ -1074,10 +1075,11 @@ clean:
 	fi; \
 	$(call orlix_kernel_acquire_profile_lock); \
 	for path in \
-		OrlixKernel/Sources/upstream \
-		"$$port_dir" \
-		"$$upstream_dir" \
-		Build/OrlixKernel/build \
+			OrlixKernel/Sources/upstream \
+			"$$port_dir" \
+			"$$port_dir".tmp.* \
+			"$$upstream_dir" \
+			Build/OrlixKernel/build \
 		Build/OrlixKernel/kunit \
 		Build/OrlixKernel/kselftest \
 		Build/OrlixKernel/appstore \
@@ -1175,6 +1177,7 @@ __validate-profile:
 
 __prepare-port: __validate-profile __bootstrap-linux-upstream
 	@set -euo pipefail; \
+	$(call orlix_kernel_acquire_profile_lock); \
 	upstream_dir="$(LINUX_UPSTREAM_DIR)"; \
 	port_dir="$(ORLIX_KERNEL_PORT_DIR)"; \
 	expected_port_dir="Build/OrlixKernel/linux-$(LINUX_VERSION)-port"; \
@@ -1182,11 +1185,11 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 	patch_dir="$(ORLIX_LINUX_PATCH_DIR)"; \
 	profile_config="$(ORLIX_PROFILE_CONFIG)"; \
 	exception_dir="$$patch_dir/exceptions"; \
-	port_filelist="$(ORLIX_KERNEL_BUILD_ROOT)/linux-$(LINUX_VERSION)-port-source-files.txt"; \
+	port_filelist="$(ORLIX_KERNEL_BUILD_ROOT)/linux-$(LINUX_VERSION)-port-source-files.$$$$.txt"; \
 	port_stamp="$$port_dir/.orlix-port-profile"; \
 	port_tmp_dir="$$port_dir.tmp.$$$$"; \
 	forbidden_re='^(fs|kernel|mm|ipc|net|include/linux|include/uapi)(/|$$)'; \
-	trap 'rm -rf "$$port_tmp_dir"' EXIT; \
+	trap 'rm -rf "$$port_tmp_dir"; rm -f "$$port_filelist"' EXIT; \
 	if [ "$$port_dir" != "$$expected_port_dir" ]; then \
 		echo "Orlix kernel port tree must be $$expected_port_dir: $$port_dir" >&2; \
 		exit 1; \
@@ -1324,12 +1327,19 @@ __prepare-kbuild: __prepare-port
 	export PATH; \
 	sed --version >/dev/null 2>&1 || { echo "GNU sed is required by Linux Kbuild on this host" >&2; exit 1; }; \
 	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
-	for attempt in 1 2 3; do \
-		rm -rf "$$build_dir" && break; \
-		sleep 1; \
-	done; \
-	[ ! -e "$$build_dir" ] || { echo "failed to remove disposable Orlix Kbuild output: $$build_dir" >&2; exit 1; }; \
-	mkdir -p "$$build_dir"; \
+	if [ -s "$$build_dir/.config" ] && \
+		[ "$$build_dir/.config" -nt "$(ORLIX_PROFILE_CONFIG)" ] && \
+		[ "$$build_dir/.config" -nt "$(ORLIX_KERNEL_PORT_DIR)/.orlix-port-profile" ]; then \
+		echo "resuming partial Orlix Kbuild output: $$build_dir (profile $(PROFILE))"; \
+	else \
+		for attempt in 1 2 3 4 5; do \
+			rm -rf "$$build_dir" 2>/dev/null || true; \
+			[ ! -e "$$build_dir" ] && break; \
+			sleep 1; \
+		done; \
+		[ ! -e "$$build_dir" ] || { echo "failed to remove disposable Orlix Kbuild output: $$build_dir" >&2; exit 1; }; \
+		mkdir -p "$$build_dir"; \
+	fi; \
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" defconfig; \
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" prepare scripts dtbs arch/$(LINUX_ARCH)/kernel/vmlinux.lds drivers/of/empty_root.dtb.o lib/crc32.o; \
 	for dtb in appstore development; do \
@@ -1383,16 +1393,58 @@ __headers-install: __prepare-kbuild
 	for path in Build/OrlixMLibC Build/OrlixMLibC/kernel-headers; do \
 		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
-	rm -rf "$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)"; \
-	mkdir -p "$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)"; \
+	header_install_dir="$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)"; \
+	header_install_stamp="$$header_install_dir/.orlix-headers-ready"; \
+	if [ -L "$$header_install_dir" ]; then echo "refusing to clean symlinked OrlixMLibC kernel header path: $$header_install_dir" >&2; exit 1; fi; \
 	header_staging_parent="$(ORLIX_KERNEL_BUILD_DIR)/usr"; \
 	header_staging="$$header_staging_parent/include"; \
+	if [ -s "$$header_install_stamp" ] && \
+		[ "$$header_install_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/.config" ] && \
+		[ "$$header_install_stamp" -nt "$(ORLIX_KERNEL_PORT_DIR)/.orlix-port-profile" ] && \
+		[ -d "$$header_install_dir/include" ]; then \
+		echo "reusing installed Orlix UAPI headers: $$header_install_dir/include"; \
+		exit 0; \
+	fi; \
+	resume_headers=0; \
+	if [ -d "$$header_install_dir/include" ] && [ -d "$$header_staging" ]; then resume_headers=1; fi; \
+	if [ "$$resume_headers" -eq 1 ]; then \
+		echo "resuming partial Orlix UAPI header install: $$header_install_dir/include"; \
+	else \
+		for attempt in 1 2 3 4 5; do \
+			rm -rf "$$header_install_dir" 2>/dev/null || true; \
+			[ ! -e "$$header_install_dir" ] && break; \
+			sleep 1; \
+		done; \
+		[ ! -e "$$header_install_dir" ] || { echo "failed to clean generated OrlixMLibC kernel header path: $$header_install_dir" >&2; exit 1; }; \
+		mkdir -p "$$header_install_dir"; \
+	fi; \
 	for path in "$$header_staging_parent" "$$header_staging"; do \
 		if [ -L "$$path" ]; then echo "refusing to clean symlinked Linux UAPI header staging path: $$path" >&2; exit 1; fi; \
 	done; \
-	rm -rf "$$header_staging"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KERNEL_BUILD_DIR)" ARCH="$(LINUX_ARCH)" LLVM=1 INSTALL_HDR_PATH="$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)" headers_install; \
+	if [ "$$resume_headers" -ne 1 ]; then \
+		for attempt in 1 2 3 4 5; do \
+			rm -rf "$$header_staging" 2>/dev/null || true; \
+			[ ! -e "$$header_staging" ] && break; \
+			sleep 1; \
+		done; \
+		[ ! -e "$$header_staging" ] || { echo "failed to clean generated Linux UAPI header staging path: $$header_staging" >&2; exit 1; }; \
+	fi; \
+	mkdir -p "$$header_staging"; \
+	for uapi_root in \
+		"$(ORLIX_KERNEL_PORT_ABS)/include/uapi" \
+		"$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/include/uapi" \
+		"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" \
+		"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi"; do \
+		[ -d "$$uapi_root" ] || continue; \
+		(cd "$$uapi_root" && find . -type d -print) | while IFS= read -r rel_dir; do \
+			rel_dir="$${rel_dir#./}"; \
+			[ -n "$$rel_dir" ] || continue; \
+			mkdir -p "$$header_staging/$$rel_dir"; \
+		done; \
+	done; \
+	env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS "$$linux_make" -j"$(ORLIX_HEADERS_INSTALL_JOBS)" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KERNEL_BUILD_DIR)" ARCH="$(LINUX_ARCH)" LLVM=1 INSTALL_HDR_PATH="$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)" headers_install; \
 	[ -d "$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)/include" ] || { echo "missing installed Orlix UAPI headers: $(ORLIX_MLIBC_KERNEL_HEADERS_DIR)/include" >&2; exit 1; }; \
+	printf 'profile=%s\nlinux_version=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" > "$$header_install_stamp"; \
 	echo "installed Orlix UAPI headers: $(ORLIX_MLIBC_KERNEL_HEADERS_DIR)/include"
 
 __kunit: __prepare-kbuild
@@ -1499,6 +1551,9 @@ __kernel-archive:
 				for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do \
 					src="$$(orlix_product_adapter_source_for "$$src_rel")"; \
 					if [ ! -s "$$src" ] || [ ! "$$archive" -nt "$$src" ]; then archive_ready=0; break; fi; \
+					obj_name="$${src_rel//\//_}.o"; \
+					obj="$$obj_dir/$$obj_name"; \
+					if [ -e "$$obj" ] && [ ! "$$archive" -nt "$$obj" ]; then archive_ready=0; break; fi; \
 				done; \
 			fi; \
 			if [ "$$archive_ready" -eq 1 ]; then \
@@ -1689,6 +1744,9 @@ __kselftest-install: __prepare-kbuild $(KSELFTEST_PREREQS) __validate-profile
 	if [ -z "$$linux_make" ]; then linux_make="$$(command -v gmake || true)"; fi; \
 	if [ -z "$$linux_make" ]; then echo "GNU Make >= 4.0 is required by Linux kselftest; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; exit 1; fi; \
 	command -v clang >/dev/null 2>&1 || { echo "clang is required to build Linux kselftest artifacts" >&2; exit 1; }; \
+	kselftest_build_dir="$(ORLIX_KERNEL_BUILD_DIR)/kselftest/orlix"; \
+	if [ -L "$$kselftest_build_dir" ]; then echo "refusing to clean symlinked kselftest build path: $$kselftest_build_dir" >&2; exit 1; fi; \
+	rm -rf "$$kselftest_build_dir"; \
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)/tools/testing/selftests" \
 		O="$(ORLIX_KERNEL_BUILD_DIR)" \
 		TARGETS=orlix \
@@ -1696,7 +1754,7 @@ __kselftest-install: __prepare-kbuild $(KSELFTEST_PREREQS) __validate-profile
 		ARCH="$(ORLIX_KSELFTEST_ARCH)" \
 		LLVM=1 \
 		FORCE_TARGETS=1 \
-		USERCFLAGS="--sysroot=$$sysroot $$header_flags -fno-pie" \
+		USERCFLAGS="--sysroot=$$sysroot $$header_flags -DORLIX_HOSTED_EXEC=1 -femulated-tls -fno-pie" \
 		USERLDFLAGS="--sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$$hosted_user_base $$orlix_crt_flags" \
 		LDLIBS="$$orlix_ldlibs" \
 		install; \
@@ -1724,13 +1782,26 @@ __kselftest-initramfs:
 	mkdir -p "$$output_parent" "$$output/rootfs"; \
 	gen_init_cpio="$(ORLIX_KERNEL_BUILD_DIR)/usr/gen_init_cpio"; \
 	cpio_list="$$output/initramfs.list"; \
-	init_binary="$$install_dir/orlix/init_exec_probe"; \
-	[ -s "$$init_binary" ] || { echo "missing OrlixMLibC-built /init test binary: $$init_binary" >&2; exit 1; }; \
+	init_binary="$$install_dir/orlix/kselftest_init"; \
+	kselftest_list="$$install_dir/kselftest-list.txt"; \
+	[ -s "$$init_binary" ] || { echo "missing OrlixMLibC-built kselftest init binary: $$init_binary" >&2; exit 1; }; \
+	[ -s "$$kselftest_list" ] || { echo "missing installed kselftest list: $$kselftest_list" >&2; exit 1; }; \
 	[ -x "$$gen_init_cpio" ] || { echo "missing executable Linux gen_init_cpio: $$gen_init_cpio" >&2; exit 1; }; \
 	{ \
 		printf '%s\n' 'dir /dev 755 0 0'; \
+		printf '%s\n' 'dir /proc 555 0 0'; \
+		printf '%s\n' 'dir /sys 555 0 0'; \
+		printf '%s\n' 'dir /orlix 755 0 0'; \
 		printf '%s\n' 'nod /dev/console 600 0 0 c 5 1'; \
 		printf 'file /init %s 755 0 0\n' "$$init_binary"; \
+		printf 'file /kselftest-list.txt %s 644 0 0\n' "$$kselftest_list"; \
+		while IFS=: read -r collection test_name; do \
+			if [ "$$collection" = orlix ] && [ -n "$$test_name" ]; then \
+				test_binary="$$install_dir/orlix/$$test_name"; \
+				[ -s "$$test_binary" ] || { echo "missing installed Orlix kselftest binary: $$test_binary" >&2; exit 1; }; \
+				printf 'file /orlix/%s %s 755 0 0\n' "$$test_name" "$$test_binary"; \
+			fi; \
+		done < "$$kselftest_list"; \
 	} > "$$cpio_list"; \
 	"$$gen_init_cpio" "$$cpio_list" > "$$output/rootfs/initramfs.cpio"; \
 	gzip -n -f "$$output/rootfs/initramfs.cpio"; \

@@ -24,12 +24,12 @@ int main(void)
 
 	has_cmdline = orlix_read_file("/proc/cmdline", cmdline,
 				      sizeof(cmdline), &cmdline_size) == 0;
-	has_bootargs = orlix_read_file("/proc/device-tree/chosen/bootargs",
-				       bootargs, sizeof(bootargs),
-				       &bootargs_size) == 0;
-	has_compatible = orlix_read_file("/proc/device-tree/compatible",
-					 compatible, sizeof(compatible),
-					 &compatible_size) == 0;
+	has_bootargs = orlix_read_file(
+		"/sys/firmware/devicetree/base/chosen/bootargs",
+		bootargs, sizeof(bootargs), &bootargs_size) == 0;
+	has_compatible = orlix_read_file(
+		"/sys/firmware/devicetree/base/compatible",
+		compatible, sizeof(compatible), &compatible_size) == 0;
 
 	appstore_profile = has_cmdline &&
 		orlix_contains(cmdline, cmdline_size, "orlix.profile=appstore");

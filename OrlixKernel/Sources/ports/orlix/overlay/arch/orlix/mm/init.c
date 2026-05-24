@@ -182,8 +182,8 @@ void orlix_sync_current_user_mappings(struct pt_regs *regs)
 	mmap_read_lock(mm);
 	for_each_vma(vmi, vma) {
 		unsigned long address;
-		unsigned long start = PAGE_ALIGN(vma->vm_start);
-		unsigned long end = vma->vm_end & PAGE_MASK;
+		unsigned long start = vma->vm_start & PAGE_MASK;
+		unsigned long end = PAGE_ALIGN(vma->vm_end);
 
 		for (address = start; address < end; address += PAGE_SIZE) {
 			if (orlix_sync_user_page(mm, vma, address)) {

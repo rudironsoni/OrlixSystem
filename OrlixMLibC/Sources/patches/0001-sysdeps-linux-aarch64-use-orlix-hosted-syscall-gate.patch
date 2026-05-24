@@ -1,7 +1,63 @@
-diff --git a/sysdeps/linux/aarch64/arch-syscall.cpp b/sysdeps/linux/aarch64/arch-syscall.cpp
+diff --git i/options/internal/aarch64-include/mlibc/thread.hpp w/options/internal/aarch64-include/mlibc/thread.hpp
+index 1e5b3053..c2b738fd 100644
+--- i/options/internal/aarch64-include/mlibc/thread.hpp
++++ w/options/internal/aarch64-include/mlibc/thread.hpp
+@@ -3,12 +3,20 @@
+ #include <stdint.h>
+ #include <mlibc/tcb.hpp>
+ 
++#if defined(ORLIX_HOSTED_EXEC)
++extern "C" uintptr_t __orlix_hosted_thread_pointer;
++#endif
++
+ namespace mlibc {
+ 
+ inline Tcb *get_current_tcb() {
++#if defined(ORLIX_HOSTED_EXEC)
++	uintptr_t ptr = __orlix_hosted_thread_pointer;
++#else
+ 	// On AArch64, TPIDR_EL0 points to 0x10 bytes before the first TLS block.
+ 	uintptr_t ptr;
+ 	asm volatile ("mrs %0, tpidr_el0" : "=r"(ptr));
++#endif
+ 	return reinterpret_cast<Tcb *>(ptr + 0x10 - sizeof(Tcb));
+ }
+ 
+diff --git i/options/rtld/aarch64/runtime.S w/options/rtld/aarch64/runtime.S
+index c3e2cffa..896ae5b0 100644
+--- i/options/rtld/aarch64/runtime.S
++++ w/options/rtld/aarch64/runtime.S
+@@ -15,11 +15,21 @@ __mlibcTlsdescDynamic:
+ 	stp x1, x2, [sp, #-16]!
+ 	ldr x0, [x0, #8]
+ 	ldp x1, x2, [x0] // tlsIndex, addend
++#if defined(ORLIX_HOSTED_EXEC)
++	adrp x0, __orlix_hosted_thread_pointer
++	ldr x0, [x0, :lo12:__orlix_hosted_thread_pointer]
++#else
+ 	mrs x0, tpidr_el0 // tp
++#endif
+ 	ldr x0, [x0, #-104] // tp->dtvPointers
+ 	ldr x0, [x0, x1, lsl 3] // [tlsIndex]
+ 	add x0, x0, x2 // + addend
++#if defined(ORLIX_HOSTED_EXEC)
++	adrp x1, __orlix_hosted_thread_pointer
++	ldr x1, [x1, :lo12:__orlix_hosted_thread_pointer]
++#else
+ 	mrs x1, tpidr_el0 // tp
++#endif
+ 	sub x0, x0, x1 // result - tp
+ 	ldp x1, x2, [sp], #16
+ 	ret
+@@ -59,4 +69,3 @@ pltRelocateStub:
+ 	br x9
+ 
+ .section .note.GNU-stack,"",%progbits
+-
+diff --git i/sysdeps/linux/aarch64/arch-syscall.cpp w/sysdeps/linux/aarch64/arch-syscall.cpp
 index b178538f..b73041b5 100644
---- a/sysdeps/linux/aarch64/arch-syscall.cpp
-+++ b/sysdeps/linux/aarch64/arch-syscall.cpp
+--- i/sysdeps/linux/aarch64/arch-syscall.cpp
++++ w/sysdeps/linux/aarch64/arch-syscall.cpp
 @@ -3,115 +3,56 @@
  
  using sc_word_t = __sc_word_t;
@@ -142,11 +198,11 @@ index b178538f..b73041b5 100644
 -	return ret;
 +	return orlix_do_syscall(sc, arg1, arg2, arg3, arg4, arg5, arg6);
  }
-diff --git a/sysdeps/linux/aarch64/cp_syscall.S b/sysdeps/linux/aarch64/cp_syscall.S
-index 98690c73..1c2ef9b5 100644
---- a/sysdeps/linux/aarch64/cp_syscall.S
-+++ b/sysdeps/linux/aarch64/cp_syscall.S
-@@ -4,14 +4,6 @@
+diff --git i/sysdeps/linux/aarch64/cp_syscall.S w/sysdeps/linux/aarch64/cp_syscall.S
+index 98690c73..38ad61e9 100644
+--- i/sysdeps/linux/aarch64/cp_syscall.S
++++ w/sysdeps/linux/aarch64/cp_syscall.S
+@@ -4,15 +4,13 @@
  .global __mlibc_syscall_end
  .type __mlibc_do_asm_cp_syscall, "function"
  __mlibc_do_asm_cp_syscall:
@@ -158,10 +214,17 @@ index 98690c73..1c2ef9b5 100644
 -	mov x4, x5
 -	mov x5, x6
 -
++#if defined(ORLIX_HOSTED_EXEC)
++	adrp x7, __orlix_hosted_thread_pointer
++	ldr x7, [x7, :lo12:__orlix_hosted_thread_pointer]
++	cbz x7, __mlibc_syscall_begin
++#else
  	mrs x7, tpidr_el0
++#endif
  	ldr w7, [x7, #-80] // Tcb::cancelBits. See asserts in tcb.hpp.
  __mlibc_syscall_begin:
-@@ -20,7 +12,10 @@ __mlibc_syscall_begin:
+ 	// tcbCancelEnableBit && tcbCancelTriggerBit
+@@ -20,12 +18,14 @@ __mlibc_syscall_begin:
  	and x7, x7, x9
  	cmp x7, x9
  	b.eq cancel
@@ -173,15 +236,15 @@ index 98690c73..1c2ef9b5 100644
 +	ldr x30, [sp], #16
  	ret
  
-@@ -28,4 +21,3 @@ cancel:
+ cancel:
  	bl __mlibc_do_cancel
  	brk #0
  .section .note.GNU-stack,"",%progbits
 -
-diff --git a/sysdeps/linux/aarch64/signals.S b/sysdeps/linux/aarch64/signals.S
+diff --git i/sysdeps/linux/aarch64/signals.S w/sysdeps/linux/aarch64/signals.S
 index 923d8d77..863cd849 100644
---- a/sysdeps/linux/aarch64/signals.S
-+++ b/sysdeps/linux/aarch64/signals.S
+--- i/sysdeps/linux/aarch64/signals.S
++++ w/sysdeps/linux/aarch64/signals.S
 @@ -6,7 +6,7 @@ __mlibc_signal_restore:
  .global __mlibc_signal_restore_rt
  .type __mlibc_signal_restore_rt, @function
@@ -193,11 +256,11 @@ index 923d8d77..863cd849 100644
 +	blr x16
  .section .note.GNU-stack,"",%progbits
 -
-diff --git a/sysdeps/linux/aarch64/thread_entry.S b/sysdeps/linux/aarch64/thread_entry.S
-index a47a0486..cbca9d2a 100644
---- a/sysdeps/linux/aarch64/thread_entry.S
-+++ b/sysdeps/linux/aarch64/thread_entry.S
-@@ -7,13 +7,19 @@ __mlibc_spawn_thread:
+diff --git i/sysdeps/linux/aarch64/thread_entry.S w/sysdeps/linux/aarch64/thread_entry.S
+index a47a0486..92864e0f 100644
+--- i/sysdeps/linux/aarch64/thread_entry.S
++++ w/sysdeps/linux/aarch64/thread_entry.S
+@@ -7,15 +7,21 @@ __mlibc_spawn_thread:
  	//           syscall(NR_clone, flags, stack, ptid, tls, ctid)
  	//                         x8,    x0,    x1,   x2,  x3,   x4
  
@@ -208,6 +271,7 @@ index a47a0486..cbca9d2a 100644
 -
 -	mov x8, 220 // NR_clone
 -	svc 0
+-	cbnz x0, .parent
 +	str x19, [sp, #-16]!
 +	mov x19, x30
 +	mov x5, x3
@@ -217,7 +281,6 @@ index a47a0486..cbca9d2a 100644
 +	mov x0, 220 // NR_clone
 +	ldr x16, =ORLIX_HOSTED_SYSCALL_GATE_ADDRESS
 +	blr x16
--	cbnz x0, .parent
 +	cbz x0, .child
 +	mov x30, x19
 +	ldr x19, [sp], #16
@@ -225,8 +288,121 @@ index a47a0486..cbca9d2a 100644
  
 +.child:
  	ldp x0, x1, [sp], #16
-@@ -24,4 +24,3 @@ __mlibc_spawn_thread:
+ 
+ 	bl __mlibc_enter_thread
+@@ -24,4 +30,3 @@ __mlibc_spawn_thread:
  .parent:
  	ret
  .section .note.GNU-stack,"",%progbits
 -
+diff --git i/sysdeps/linux/generic/sysdeps.cpp w/sysdeps/linux/generic/sysdeps.cpp
+index a07ed53e..18c95b28 100644
+--- i/sysdeps/linux/generic/sysdeps.cpp
++++ w/sysdeps/linux/generic/sysdeps.cpp
+@@ -44,6 +44,93 @@
+ #include "generic-helpers/netlink.hpp"
+ #endif
+ 
++#if defined(__aarch64__) && defined(ORLIX_HOSTED_EXEC)
++extern "C" uintptr_t __orlix_hosted_thread_pointer = 0;
++
++namespace {
++struct orlix_emutls_object {
++	size_t size;
++	size_t align;
++	uintptr_t object;
++	void *templ;
++};
++
++struct orlix_emutls_record {
++	uintptr_t thread_pointer;
++	orlix_emutls_object *object;
++	void *address;
++	orlix_emutls_record *next;
++};
++
++orlix_emutls_record *orlix_emutls_records;
++unsigned int orlix_emutls_lock_word;
++
++void orlix_emutls_lock()
++{
++	while (__atomic_exchange_n(&orlix_emutls_lock_word, 1, __ATOMIC_ACQUIRE))
++		;
++}
++
++void orlix_emutls_unlock()
++{
++	__atomic_store_n(&orlix_emutls_lock_word, 0, __ATOMIC_RELEASE);
++}
++
++uintptr_t orlix_align_up(uintptr_t value, uintptr_t align)
++{
++	return (value + align - 1) & ~(align - 1);
++}
++
++void *orlix_emutls_mmap(size_t size)
++{
++	auto ret = mlibc::do_syscall(SYS_mmap, nullptr, size,
++			PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++	if (mlibc::sc_error(ret))
++		__builtin_trap();
++	return mlibc::sc_ptr_result<void>(ret);
++}
++
++void *orlix_emutls_allocate_storage(orlix_emutls_object *object)
++{
++	size_t align = object->align > sizeof(void *) ? object->align : sizeof(void *);
++	size_t allocation_size = object->size + align - 1;
++	char *allocation = static_cast<char *>(orlix_emutls_mmap(allocation_size));
++	char *storage = reinterpret_cast<char *>(
++			orlix_align_up(reinterpret_cast<uintptr_t>(allocation), align));
++	char *templ = static_cast<char *>(object->templ);
++
++	for (size_t i = 0; i < object->size; i++)
++		storage[i] = templ ? templ[i] : 0;
++	return storage;
++}
++} // namespace
++
++extern "C" void *__emutls_get_address(orlix_emutls_object *object)
++{
++	uintptr_t thread_pointer = __orlix_hosted_thread_pointer;
++
++	orlix_emutls_lock();
++	for (orlix_emutls_record *record = orlix_emutls_records; record; record = record->next) {
++		if (record->thread_pointer == thread_pointer && record->object == object) {
++			void *address = record->address;
++			orlix_emutls_unlock();
++			return address;
++		}
++	}
++
++	void *address = orlix_emutls_allocate_storage(object);
++	orlix_emutls_record *record =
++			static_cast<orlix_emutls_record *>(orlix_emutls_mmap(sizeof(orlix_emutls_record)));
++	record->thread_pointer = thread_pointer;
++	record->object = object;
++	record->address = address;
++	record->next = orlix_emutls_records;
++	orlix_emutls_records = record;
++	orlix_emutls_unlock();
++	return address;
++}
++#endif
++
+ #ifndef MLIBC_BUILDING_RTLD
+ extern "C" long __do_syscall_ret(unsigned long ret) {
+ 	if(ret > -4096UL) {
+@@ -179,7 +266,12 @@ int Sysdeps<TcbSet>::operator()(void *pointer) {
+ 	asm volatile ("mv tp, %0" :: "r"(thread_data));
+ #elif defined (__aarch64__)
+ 	uintptr_t thread_data = reinterpret_cast<uintptr_t>(pointer) + sizeof(Tcb) - 0x10;
++#if defined(ORLIX_HOSTED_EXEC)
++	__orlix_hosted_thread_pointer = thread_data;
++#else
+ 	asm volatile ("msr tpidr_el0, %0" :: "r"(thread_data));
++	asm volatile ("isb" ::: "memory");
++#endif
+ #elif defined (__m68k__)
+ 	auto ret = do_syscall(__NR_set_thread_area, (uintptr_t)pointer + 0x7000 + sizeof(Tcb));
+ 	if(int e = sc_error(ret); e)

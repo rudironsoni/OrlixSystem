@@ -47,36 +47,89 @@ static void orlix_write_all(const char *s)
 	}
 }
 
-static void orlix_write_uint(unsigned int value)
+static void orlix_write_bytes(const char *s, size_t len)
 {
-	char buffer[16];
-	size_t pos = sizeof(buffer);
+	while (len > 0) {
+		ssize_t written = write(STDOUT_FILENO, s, len);
 
-	buffer[--pos] = '\0';
+		if (written <= 0)
+			_exit(125);
+		s += written;
+		len -= (size_t)written;
+	}
+}
+
+static size_t orlix_append_bytes(char *buffer, size_t pos, size_t capacity,
+				 const char *s, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < len && pos + 1 < capacity; i++)
+		buffer[pos++] = s[i];
+	return pos;
+}
+
+static size_t orlix_append_cstr(char *buffer, size_t pos, size_t capacity,
+				const char *s)
+{
+	return orlix_append_bytes(buffer, pos, capacity, s, orlix_strlen(s));
+}
+
+static size_t orlix_append_uint(char *buffer, size_t pos, size_t capacity,
+				unsigned int value)
+{
+	char digits[16];
+	size_t digit_pos = sizeof(digits);
+
+	digits[--digit_pos] = '\0';
 	do {
-		buffer[--pos] = (char)('0' + (value % 10));
+		digits[--digit_pos] = (char)('0' + (value % 10));
 		value /= 10;
 	} while (value);
-	orlix_write_all(&buffer[pos]);
+	return orlix_append_cstr(buffer, pos, capacity, &digits[digit_pos]);
 }
 
 static void orlix_test_plan(unsigned int count)
 {
-	orlix_write_all("TAP version 13\n1..");
-	orlix_write_uint(count);
-	orlix_write_all("\n");
+	char line[48];
+	size_t pos = 0;
+
+	pos = orlix_append_cstr(line, pos, sizeof(line), "TAP version 13\n1..");
+	pos = orlix_append_uint(line, pos, sizeof(line), count);
+	pos = orlix_append_cstr(line, pos, sizeof(line), "\n");
+	orlix_write_bytes(line, pos);
+}
+
+static void orlix_test_comment(const char *prefix, const char *name,
+			       size_t name_len)
+{
+	char line[192];
+	size_t pos = 0;
+
+	pos = orlix_append_cstr(line, pos, sizeof(line), "# ");
+	pos = orlix_append_cstr(line, pos, sizeof(line), prefix);
+	pos = orlix_append_bytes(line, pos, sizeof(line), name, name_len);
+	pos = orlix_append_cstr(line, pos, sizeof(line), "\n");
+	orlix_write_bytes(line, pos);
 }
 
 static void orlix_test_result(bool passed, const char *name)
 {
+	char line[256];
+	size_t pos = 0;
+
 	orlix_test_index++;
 	if (!passed)
 		orlix_test_failures++;
-	orlix_write_all(passed ? "ok " : "not ok ");
-	orlix_write_uint((unsigned int)orlix_test_index);
-	orlix_write_all(" - ");
-	orlix_write_all(name);
-	orlix_write_all("\n");
+
+	pos = orlix_append_cstr(line, pos, sizeof(line),
+				passed ? "ok " : "not ok ");
+	pos = orlix_append_uint(line, pos, sizeof(line),
+				(unsigned int)orlix_test_index);
+	pos = orlix_append_cstr(line, pos, sizeof(line), " - ");
+	pos = orlix_append_cstr(line, pos, sizeof(line), name);
+	pos = orlix_append_cstr(line, pos, sizeof(line), "\n");
+	orlix_write_bytes(line, pos);
 }
 
 static void orlix_test_exit(void)
