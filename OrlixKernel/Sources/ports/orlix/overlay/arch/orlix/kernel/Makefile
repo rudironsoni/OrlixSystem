@@ -4,6 +4,7 @@
 extra-y += vmlinux.lds
 
 obj-y += cpuinfo.o
+obj-y += idle.o
 obj-y += irq.o
 obj-y += hosted_exec.o
 obj-y += ptrace.o

@@ -7,6 +7,7 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/panic.h>
+#include <linux/stddef.h>
 #include <asm/hosted_exec.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
@@ -19,8 +20,7 @@ extern struct task_struct *orlix_cpu_switch_context(struct orlix_cpu_context *pr
 						    struct orlix_cpu_context *next,
 						    struct task_struct *last);
 #if defined(ORLIX_APP_HOSTED_BOOT)
-static __noreturn void orlix_hosted_enter_user(unsigned long pc,
-					       unsigned long sp);
+static __noreturn void orlix_hosted_enter_user(struct pt_regs *regs);
 #endif
 
 asm(
@@ -59,8 +59,7 @@ asm(
 	);
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
-static __noreturn void orlix_hosted_enter_user(unsigned long pc,
-					       unsigned long sp)
+static __noreturn void orlix_hosted_enter_user(struct pt_regs *regs)
 {
 	unsigned long kernel_sp;
 	unsigned long user_tls;
@@ -68,12 +67,29 @@ static __noreturn void orlix_hosted_enter_user(unsigned long pc,
 	asm volatile("mov %0, sp" : "=r"(kernel_sp));
 	orlix_hosted_save_kernel_stack(kernel_sp);
 	user_tls = orlix_hosted_prepare_user_entry();
+
 	asm volatile(
-	"	msr	tpidr_el0, %2\n"
-	"	mov	sp, %0\n"
-	"	br	%1\n"
+	"	mov	x9, %0\n"
+	"	mov	x12, %1\n"
+	"	ldr	x10, [x9, #%c[pc_offset]]\n"
+	"	ldr	x11, [x9, #%c[sp_offset]]\n"
+	"	msr	tpidr_el0, x12\n"
+	"	ldr	x8, [x9, #%c[x8_offset]]\n"
+	"	ldp	x6, x7, [x9, #%c[x6_offset]]\n"
+	"	ldp	x4, x5, [x9, #%c[x4_offset]]\n"
+	"	ldp	x2, x3, [x9, #%c[x2_offset]]\n"
+	"	ldp	x0, x1, [x9, #%c[x0_offset]]\n"
+	"	mov	sp, x11\n"
+	"	br	x10\n"
 	:
-	: "r"(sp), "r"(pc), "r"(user_tls)
+	: "r"(regs), "r"(user_tls),
+	  [pc_offset] "i"(offsetof(struct pt_regs, pc)),
+	  [sp_offset] "i"(offsetof(struct pt_regs, sp)),
+	  [x8_offset] "i"(offsetof(struct pt_regs, regs[8])),
+	  [x6_offset] "i"(offsetof(struct pt_regs, regs[6])),
+	  [x4_offset] "i"(offsetof(struct pt_regs, regs[4])),
+	  [x2_offset] "i"(offsetof(struct pt_regs, regs[2])),
+	  [x0_offset] "i"(offsetof(struct pt_regs, regs[0]))
 	: "memory");
 	unreachable();
 }
@@ -86,7 +102,7 @@ asmlinkage void orlix_ret_from_fork_user(struct pt_regs *regs)
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
 	orlix_sync_current_user_mappings(regs);
-	orlix_hosted_enter_user(regs->pc, regs->sp);
+	orlix_hosted_enter_user(regs);
 #endif
 	panic("Orlix: user return requires hosted entry support\n");
 }
@@ -114,15 +130,25 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 
 	memset(&p->thread.cpu_context, 0, sizeof(p->thread.cpu_context));
 
-	if (!args->fn)
-		return -EOPNOTSUPP;
+	if (!args->fn) {
+		*childregs = *task_pt_regs(current);
+		childregs->regs[0] = 0;
+		childregs->syscallno = NO_SYSCALL;
+		if (args->stack)
+			childregs->sp = args->stack;
+#if defined(ORLIX_APP_HOSTED_BOOT)
+		p->thread.user_tls = current->thread.user_tls;
+		if (args->flags & CLONE_SETTLS)
+			p->thread.user_tls = args->tls;
+#endif
+	} else {
+		memset(childregs, 0, sizeof(*childregs));
+		childregs->pstate = PSR_MODE_EL1h;
+		childregs->syscallno = NO_SYSCALL;
 
-	memset(childregs, 0, sizeof(*childregs));
-	childregs->pstate = PSR_MODE_EL1h;
-	childregs->syscallno = NO_SYSCALL;
-
-	p->thread.cpu_context.x19 = (unsigned long)args->fn;
-	p->thread.cpu_context.x20 = (unsigned long)args->fn_arg;
+		p->thread.cpu_context.x19 = (unsigned long)args->fn;
+		p->thread.cpu_context.x20 = (unsigned long)args->fn_arg;
+	}
 	p->thread.cpu_context.sp = (unsigned long)childregs;
 	p->thread.cpu_context.pc = (unsigned long)ret_from_fork;
 

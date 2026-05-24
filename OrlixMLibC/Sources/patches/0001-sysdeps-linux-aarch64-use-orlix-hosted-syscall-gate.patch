@@ -161,14 +161,16 @@ index 98690c73..1c2ef9b5 100644
  	mrs x7, tpidr_el0
  	ldr w7, [x7, #-80] // Tcb::cancelBits. See asserts in tcb.hpp.
  __mlibc_syscall_begin:
-@@ -20,7 +12,8 @@ __mlibc_syscall_begin:
+@@ -20,7 +12,10 @@ __mlibc_syscall_begin:
  	and x7, x7, x9
  	cmp x7, x9
  	b.eq cancel
 -	svc 0
++	str x30, [sp, #-16]!
 +	ldr x16, =ORLIX_HOSTED_SYSCALL_GATE_ADDRESS
 +	blr x16
  __mlibc_syscall_end:
++	ldr x30, [sp], #16
  	ret
  
 @@ -28,4 +21,3 @@ cancel:
@@ -195,7 +197,7 @@ diff --git a/sysdeps/linux/aarch64/thread_entry.S b/sysdeps/linux/aarch64/thread
 index a47a0486..cbca9d2a 100644
 --- a/sysdeps/linux/aarch64/thread_entry.S
 +++ b/sysdeps/linux/aarch64/thread_entry.S
-@@ -7,13 +7,13 @@ __mlibc_spawn_thread:
+@@ -7,13 +7,19 @@ __mlibc_spawn_thread:
  	//           syscall(NR_clone, flags, stack, ptid, tls, ctid)
  	//                         x8,    x0,    x1,   x2,  x3,   x4
  
@@ -206,6 +208,8 @@ index a47a0486..cbca9d2a 100644
 -
 -	mov x8, 220 // NR_clone
 -	svc 0
++	str x19, [sp, #-16]!
++	mov x19, x30
 +	mov x5, x3
 +	mov x3, x2
 +	mov x2, x1
@@ -213,8 +217,13 @@ index a47a0486..cbca9d2a 100644
 +	mov x0, 220 // NR_clone
 +	ldr x16, =ORLIX_HOSTED_SYSCALL_GATE_ADDRESS
 +	blr x16
- 	cbnz x0, .parent
+-	cbnz x0, .parent
++	cbz x0, .child
++	mov x30, x19
++	ldr x19, [sp], #16
++	ret
  
++.child:
  	ldp x0, x1, [sp], #16
 @@ -24,4 +24,3 @@ __mlibc_spawn_thread:
  .parent:

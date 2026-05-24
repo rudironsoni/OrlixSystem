@@ -59,6 +59,7 @@ build: headers_install __bootstrap-mlibc __apply-mlibc-patches __write-cross-fil
 	DESTDIR="$(MLIBC_SYSROOT)" "$(MESON)" install -C "$(MLIBC_BUILD_DIR)"; \
 	[ -d "$(MLIBC_SYSROOT)/usr/include" ] || { echo "missing OrlixMLibC installed headers: $(MLIBC_SYSROOT)/usr/include" >&2; exit 1; }; \
 	[ -d "$(MLIBC_SYSROOT)/usr/lib" ] || { echo "missing OrlixMLibC installed libraries: $(MLIBC_SYSROOT)/usr/lib" >&2; exit 1; }; \
+	printf 'profile=%s\nmlibc_commit=%s\n' "$(PROFILE)" "$(MLIBC_COMMIT)" > "$(MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready"; \
 	echo "built OrlixMLibC sysroot: $(MLIBC_SYSROOT)"
 
 headers_install:

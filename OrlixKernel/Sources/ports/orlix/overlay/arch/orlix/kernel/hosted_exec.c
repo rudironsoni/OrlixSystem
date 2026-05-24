@@ -17,6 +17,7 @@
 unsigned long orlix_hosted_kernel_sp;
 unsigned long orlix_hosted_host_tpidr_el0;
 unsigned long orlix_hosted_entry_user_tpidr_el0;
+unsigned long orlix_hosted_entry_user_pc;
 unsigned long orlix_hosted_return_user_tpidr_el0;
 static unsigned char orlix_hosted_syscall_gate_page[PAGE_SIZE] __page_aligned_data;
 static bool orlix_hosted_syscall_gate_ready;
@@ -30,6 +31,8 @@ asm(
 "	mrs	x12, tpidr_el0\n"
 "	adrp	x13, _orlix_hosted_entry_user_tpidr_el0@PAGE\n"
 "	str	x12, [x13, _orlix_hosted_entry_user_tpidr_el0@PAGEOFF]\n"
+"	adrp	x13, _orlix_hosted_entry_user_pc@PAGE\n"
+"	str	x30, [x13, _orlix_hosted_entry_user_pc@PAGEOFF]\n"
 "	adrp	x13, _orlix_hosted_host_tpidr_el0@PAGE\n"
 "	ldr	x13, [x13, _orlix_hosted_host_tpidr_el0@PAGEOFF]\n"
 "	cbz	x13, 0f\n"
@@ -120,6 +123,7 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 	regs->regs[5] = arg5;
 	regs->regs[8] = scno;
 	regs->sp = user_sp;
+	regs->pc = READ_ONCE(orlix_hosted_entry_user_pc);
 	regs->pstate = PSR_MODE_EL0t;
 	regs->syscallno = scno;
 
