@@ -2,16 +2,20 @@
 
 #include <linux/bug.h>
 #include <linux/compiler.h>
+#include <linux/kernel.h>
 #include <linux/linkage.h>
 #include <linux/mm.h>
+#include <linux/panic.h>
 #include <linux/sched.h>
 #include <linux/sched/task_stack.h>
+#include <linux/signal.h>
 #include <linux/string.h>
 #include <asm/hosted_exec.h>
 #include <asm/page.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
 #include <internal/asm/host_memory.h>
+#include <internal/asm/host_trap.h>
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
 unsigned long orlix_hosted_kernel_sp;
@@ -22,6 +26,26 @@ static unsigned char orlix_hosted_syscall_gate_page[PAGE_SIZE] __page_aligned_da
 static bool orlix_hosted_syscall_gate_ready;
 
 void orlix_hosted_syscall_gate(void);
+
+static void __noreturn orlix_hosted_user_trap_entry(int signal_number,
+						    unsigned long user_pc,
+						    unsigned long user_sp)
+{
+	struct pt_regs *regs = task_pt_regs(current);
+	long exit_code = signal_number & 0x7f;
+
+	regs->pc = user_pc;
+	regs->sp = user_sp;
+	regs->pstate = PSR_MODE_EL0t;
+	regs->syscallno = NO_SYSCALL;
+
+	if (!exit_code)
+		exit_code = SIGKILL;
+
+	pr_info("Orlix: hosted user trap signal %d at pc %#lx\n",
+		signal_number, user_pc);
+	do_exit(exit_code);
+}
 
 asm(
 ".p2align 2\n"
@@ -71,6 +95,11 @@ asm(
 
 void orlix_hosted_capture_host_context(void)
 {
+	if (orlix_host_user_trap_install(ORLIX_HOSTED_USER_BASE,
+					 ORLIX_HOSTED_STACK_TOP,
+					 &orlix_hosted_kernel_sp,
+					 orlix_hosted_user_trap_entry))
+		panic("Orlix: failed to install hosted user trap transport\n");
 }
 
 void orlix_hosted_save_kernel_stack(unsigned long sp)
