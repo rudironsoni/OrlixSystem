@@ -124,6 +124,7 @@ MLIBC_TEST_POSIX_CASES := \
 	posix/rlimits \
 	posix/setpriority \
 	posix/getparam \
+	posix/sched_setscheduler \
 	posix/nice \
 	posix/timer \
 	posix/wcwidth \
@@ -138,6 +139,7 @@ MLIBC_TEST_POSIX_CASES := \
 	posix/getservbyport \
 	posix/strdupa \
 	posix/mkstemp \
+	posix/pthread_atfork \
 	posix/shm \
 	posix/swab \
 	posix/select \
@@ -158,6 +160,8 @@ MLIBC_TEST_POSIX_CASES := \
 	posix/wcslcpy \
 	posix/wcpcpy \
 	posix/wcpncpy \
+	posix/vfork \
+	posix/waitid \
 	posix/getwchar \
 	posix/strcoll_l \
 	posix/strxfrm_l \
