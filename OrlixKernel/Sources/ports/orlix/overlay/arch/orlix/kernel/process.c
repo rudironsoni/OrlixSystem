@@ -75,6 +75,12 @@ static __noreturn void orlix_hosted_enter_user(struct pt_regs *regs)
 	"	ldr	x11, [x9, #%c[sp_offset]]\n"
 	"	msr	tpidr_el0, x12\n"
 	"	ldr	x8, [x9, #%c[x8_offset]]\n"
+	"	ldp	x19, x20, [x9, #%c[x19_offset]]\n"
+	"	ldp	x21, x22, [x9, #%c[x21_offset]]\n"
+	"	ldp	x23, x24, [x9, #%c[x23_offset]]\n"
+	"	ldp	x25, x26, [x9, #%c[x25_offset]]\n"
+	"	ldp	x27, x28, [x9, #%c[x27_offset]]\n"
+	"	ldp	x29, x30, [x9, #%c[x29_offset]]\n"
 	"	ldp	x6, x7, [x9, #%c[x6_offset]]\n"
 	"	ldp	x4, x5, [x9, #%c[x4_offset]]\n"
 	"	ldp	x2, x3, [x9, #%c[x2_offset]]\n"
@@ -86,6 +92,12 @@ static __noreturn void orlix_hosted_enter_user(struct pt_regs *regs)
 	  [pc_offset] "i"(offsetof(struct pt_regs, pc)),
 	  [sp_offset] "i"(offsetof(struct pt_regs, sp)),
 	  [x8_offset] "i"(offsetof(struct pt_regs, regs[8])),
+	  [x19_offset] "i"(offsetof(struct pt_regs, regs[19])),
+	  [x21_offset] "i"(offsetof(struct pt_regs, regs[21])),
+	  [x23_offset] "i"(offsetof(struct pt_regs, regs[23])),
+	  [x25_offset] "i"(offsetof(struct pt_regs, regs[25])),
+	  [x27_offset] "i"(offsetof(struct pt_regs, regs[27])),
+	  [x29_offset] "i"(offsetof(struct pt_regs, regs[29])),
 	  [x6_offset] "i"(offsetof(struct pt_regs, regs[6])),
 	  [x4_offset] "i"(offsetof(struct pt_regs, regs[4])),
 	  [x2_offset] "i"(offsetof(struct pt_regs, regs[2])),

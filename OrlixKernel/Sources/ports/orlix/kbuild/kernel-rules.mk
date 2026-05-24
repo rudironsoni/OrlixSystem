@@ -1510,10 +1510,18 @@ __kernel-archive:
 		object_set_ready=1; \
 		objects_probe=(); \
 		for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do \
+			src="$$(orlix_product_adapter_source_for "$$src_rel")"; \
 			obj_name="$${src_rel//\//_}.o"; \
 			obj="$$obj_dir/$$obj_name"; \
 			verified="$$obj.verified"; \
 			if [ ! -s "$$obj" ] || [ ! -e "$$verified" ]; then object_set_ready=0; break; fi; \
+			if [ ! -s "$$src" ] || [ ! "$$obj" -nt "$$src" ]; then object_set_ready=0; break; fi; \
+			for dep in \
+				OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk \
+				OrlixKernel/Sources/ports/orlix/kbuild/product-compile-adapter.mk \
+				"$(ORLIX_KERNEL_BUILD_DIR)/.config"; do \
+				if [ ! -e "$$dep" ] || [ ! "$$obj" -nt "$$dep" ]; then object_set_ready=0; break 2; fi; \
+			done; \
 			objects_probe+=("$$obj"); \
 		done; \
 		if [ "$$object_set_ready" -eq 1 ]; then \

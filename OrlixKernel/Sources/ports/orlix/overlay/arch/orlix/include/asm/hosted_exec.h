@@ -7,6 +7,7 @@
 struct pt_regs;
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
+void orlix_hosted_capture_host_context(void);
 void orlix_hosted_save_kernel_stack(unsigned long sp);
 unsigned long orlix_hosted_prepare_user_entry(void);
 int orlix_hosted_sync_syscall_gate(void);

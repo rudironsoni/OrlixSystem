@@ -19,6 +19,7 @@ unsigned long orlix_hosted_host_tpidr_el0;
 unsigned long orlix_hosted_entry_user_tpidr_el0;
 unsigned long orlix_hosted_entry_user_pc;
 unsigned long orlix_hosted_return_user_tpidr_el0;
+unsigned long orlix_hosted_entry_user_callee[12];
 static unsigned char orlix_hosted_syscall_gate_page[PAGE_SIZE] __page_aligned_data;
 static bool orlix_hosted_syscall_gate_ready;
 
@@ -28,6 +29,14 @@ asm(
 ".p2align 2\n"
 "	.globl _orlix_hosted_syscall_gate\n"
 "_orlix_hosted_syscall_gate:\n"
+"	adrp	x9, _orlix_hosted_entry_user_callee@PAGE\n"
+"	add	x9, x9, _orlix_hosted_entry_user_callee@PAGEOFF\n"
+"	stp	x19, x20, [x9]\n"
+"	stp	x21, x22, [x9, #16]\n"
+"	stp	x23, x24, [x9, #32]\n"
+"	stp	x25, x26, [x9, #48]\n"
+"	stp	x27, x28, [x9, #64]\n"
+"	stp	x29, x30, [x9, #80]\n"
 "	mrs	x12, tpidr_el0\n"
 "	adrp	x13, _orlix_hosted_entry_user_tpidr_el0@PAGE\n"
 "	str	x12, [x13, _orlix_hosted_entry_user_tpidr_el0@PAGEOFF]\n"
@@ -70,6 +79,14 @@ static unsigned long orlix_read_tpidr_el0(void)
 	return value;
 }
 
+void orlix_hosted_capture_host_context(void)
+{
+	unsigned long host_tls = orlix_read_tpidr_el0();
+
+	if (host_tls)
+		WRITE_ONCE(orlix_hosted_host_tpidr_el0, host_tls);
+}
+
 void orlix_hosted_save_kernel_stack(unsigned long sp)
 {
 	WRITE_ONCE(orlix_hosted_kernel_sp, sp);
@@ -79,9 +96,17 @@ unsigned long orlix_hosted_prepare_user_entry(void)
 {
 	unsigned long user_tls = current->thread.user_tls;
 
-	WRITE_ONCE(orlix_hosted_host_tpidr_el0, orlix_read_tpidr_el0());
 	WRITE_ONCE(orlix_hosted_return_user_tpidr_el0, user_tls);
 	return user_tls;
+}
+
+static void orlix_hosted_save_callee_registers(struct pt_regs *regs)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(orlix_hosted_entry_user_callee); i++)
+		regs->regs[19 + i] =
+			READ_ONCE(orlix_hosted_entry_user_callee[i]);
 }
 
 static void orlix_hosted_prepare_syscall_gate(void)
@@ -114,6 +139,7 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 	struct pt_regs *regs = task_pt_regs(current);
 	long ret;
 
+	orlix_hosted_save_callee_registers(regs);
 	current->thread.user_tls = READ_ONCE(orlix_hosted_entry_user_tpidr_el0);
 	regs->regs[0] = arg0;
 	regs->regs[1] = arg1;
