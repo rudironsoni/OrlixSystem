@@ -127,6 +127,11 @@ MLIBC_TEST_POSIX_CASES := \
 	posix/basename \
 	posix/regex \
 	posix/readv-writev \
+	posix/if_indextoname \
+	posix/getnameinfo \
+	posix/gethostbyname \
+	posix/getservbyname \
+	posix/getservbyport \
 	posix/strdupa \
 	posix/mkstemp \
 	posix/shm \
@@ -399,6 +404,20 @@ __test-initramfs: __test-build __prepare-test-locale-data
 		printf '%s\n' 'tcp 6 TCP'; \
 		printf '%s\n' 'udp 17 UDP'; \
 	} > "$$output/fixtures/protocols"; \
+	{ \
+		printf '%s\n' '127.0.0.1 localhost localhost.localdomain'; \
+		printf '%s\n' '::1 localhost localhost.localdomain'; \
+		printf '%s\n' '8.8.8.8 dns.google'; \
+		printf '%s\n' '93.184.216.34 example.net'; \
+		printf '%s\n' '2606:2800:220:1:248:1893:25c8:1946 example.net'; \
+	} > "$$output/fixtures/hosts"; \
+	{ \
+		printf '%s\n' 'http 80/tcp'; \
+		printf '%s\n' 'https 443/tcp'; \
+		printf '%s\n' 'domain 53/tcp'; \
+		printf '%s\n' 'domain 53/udp'; \
+		printf '%s\n' 'babel 6696/udp'; \
+	} > "$$output/fixtures/services"; \
 	cpio_list="$$output/initramfs.list"; \
 	{ \
 		printf '%s\n' 'dir /bin 755 0 0'; \
@@ -412,7 +431,9 @@ __test-initramfs: __test-build __prepare-test-locale-data
 		printf '%s\n' 'nod /dev/zero 666 0 0 c 1 5'; \
 		printf 'file /etc/passwd %s 644 0 0\n' "$$output/fixtures/passwd"; \
 		printf 'file /etc/group %s 644 0 0\n' "$$output/fixtures/group"; \
+		printf 'file /etc/hosts %s 644 0 0\n' "$$output/fixtures/hosts"; \
 		printf 'file /etc/protocols %s 644 0 0\n' "$$output/fixtures/protocols"; \
+		printf 'file /etc/services %s 644 0 0\n' "$$output/fixtures/services"; \
 		find "$$locale_root/usr" -type d -print | sort | while IFS= read -r path; do \
 			printf 'dir /%s 755 0 0\n' "$${path#$$locale_root/}"; \
 		done; \
