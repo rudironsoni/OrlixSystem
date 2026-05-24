@@ -280,6 +280,8 @@ OrlixMLibC aims for glibc/musl source compatibility. Existing AArch64 Linux appl
 
 Native ELF execution means Linux `execve()` maps AArch64 ELF binaries and an OrlixMLibC dynamic linker as native CPU code. It is not CPU emulation. Existing non-Orlix glibc or musl binary compatibility is a future compatibility track; native Orlix ELF execution is required before product runtime proof.
 
+Because the physical host is Apple arm64, Orlix-built Linux user code reserves `x18`, the host platform register. This is a hosted execution code generation rule for Orlix-produced binaries, not an Orlix-specific syscall or libc ABI.
+
 Package managers such as apt/dpkg verify packages and install files into the filesystem. After installation, execution is governed by normal Linux mechanisms:
 
 - filesystem permissions

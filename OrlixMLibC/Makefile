@@ -24,11 +24,21 @@ MLIBC_BUILD_KERNEL_HEADERS := $(MLIBC_BUILD_DIR)/kernel-headers/include
 MLIBC_TEST_BUILD_DIR := $(REPO_ROOT)/Build/OrlixMLibC/tests/$(PROFILE)
 MLIBC_TEST_INSTALL_DIR := $(REPO_ROOT)/Build/OrlixMLibC/tests-install/$(PROFILE)
 MLIBC_TEST_INITRAMFS_DIR := $(REPO_ROOT)/Build/OrlixMLibC/test-initramfs/$(PROFILE)/OrlixMLibCTestInitramfs.bundle
+MLIBC_TEST_LOCALE_DATA_DIR := $(REPO_ROOT)/Build/OrlixMLibC/locale-data/$(PROFILE)
+MLIBC_TEST_LOCALE_ROOT := $(MLIBC_TEST_LOCALE_DATA_DIR)/root
+MLIBC_TEST_LOCALES_ALL_URL ?= https://deb.debian.org/debian/pool/main/g/glibc/locales-all_2.41-12+deb13u3_arm64.deb
+MLIBC_TEST_LOCALES_ALL_SHA256 ?= 869275c8dcbfc55823f4658b9aeaf3d8f436392578607b241f51d7b04e89b5ef
+MLIBC_TEST_LIBC_BIN_URL ?= https://deb.debian.org/debian/pool/main/g/glibc/libc-bin_2.41-12+deb13u3_arm64.deb
+MLIBC_TEST_LIBC_BIN_SHA256 ?= 02f366115bea79b87fe26c7dec4dc444f9fdcc76440905d88cc26dbef075511b
 MLIBC_RTLIB_DIR := $(REPO_ROOT)/Build/OrlixMLibC/compiler-rt/$(PROFILE)
 MLIBC_RTLIB := $(MLIBC_RTLIB_DIR)/liborlix_compiler_rt.a
 MLIBC_LOCK_ROOT := $(REPO_ROOT)/Build/OrlixMLibC/locks
 ORLIX_HOSTED_SYSCALL_GATE_ADDRESS ?= 0x00006ffff0000000
 ORLIX_HOSTED_USER_BASE_ADDRESS ?= 0x0000600000000000
+# Apple arm64 reserves x18 for the host platform; Orlix-built Linux ELF keeps it unavailable to user code.
+MLIBC_HOSTED_EXEC_FIXED_REGISTER_FLAGS := -ffixed-x18
+MLIBC_HOSTED_EXEC_CODEGEN_FLAGS := -femulated-tls $(MLIBC_HOSTED_EXEC_FIXED_REGISTER_FLAGS)
+MLIBC_HOSTED_EXEC_MESON_ARGS := '-DORLIX_HOSTED_EXEC=1', '-DORLIX_HOSTED_SYSCALL_GATE_ADDRESS=$(ORLIX_HOSTED_SYSCALL_GATE_ADDRESS)', '-femulated-tls', '-ffixed-x18', '-ffunction-sections', '-fdata-sections'
 MLIBC_LLVM_PREFIX ?= $(firstword $(wildcard /opt/homebrew/opt/llvm/bin) $(wildcard /usr/local/opt/llvm/bin))
 MLIBC_CC ?= clang
 MLIBC_CXX ?= clang++
@@ -36,7 +46,136 @@ MLIBC_AR ?= $(if $(MLIBC_LLVM_PREFIX),$(MLIBC_LLVM_PREFIX)/llvm-ar,llvm-ar)
 MLIBC_STRIP ?= $(if $(MLIBC_LLVM_PREFIX),$(MLIBC_LLVM_PREFIX)/llvm-strip,llvm-strip)
 MESON ?= meson
 NINJA ?= ninja
-MLIBC_TEST_CASES ?= ansi/abs ansi/strchr ansi/strtol ansi/qsort ansi/snprintf posix/getsubopt posix/dprintf posix/readv-writev
+MLIBC_TEST_ANSI_CASES := \
+	ansi/alloc \
+	ansi/sscanf \
+	ansi/sprintf \
+	ansi/snprintf \
+	ansi/utf8 \
+	ansi/strtol \
+	ansi/strtof \
+	ansi/abs \
+	ansi/longjmp \
+	ansi/mbrtoc32 \
+	ansi/strftime \
+	ansi/strchr \
+	ansi/strrchr \
+	ansi/wcsrtombs \
+	ansi/mbsrtowcs \
+	ansi/mbsnrtowcs \
+	ansi/wcsnrtombs \
+	ansi/mblen \
+	ansi/mbrlen \
+	ansi/wmemcmp \
+	ansi/timegm \
+	ansi/tz \
+	ansi/ungetc \
+	ansi/fopen \
+	ansi/creal-cimag \
+	ansi/qsort \
+	ansi/freopen \
+	ansi/strxfrm \
+	ansi/calloc \
+	ansi/fgetpos \
+	ansi/fputs \
+	ansi/ftell \
+	ansi/tmpfile \
+	ansi/mbstowcs \
+	ansi/locale \
+	ansi/asctime \
+	ansi/wcstof \
+	ansi/fputwc \
+	ansi/mbrtowc \
+	ansi/ungetwc \
+	ansi/fgetws \
+	ansi/swscanf \
+	ansi/fwscanf \
+	ansi/swprintf \
+	ansi/wcsftime \
+	ansi/wctype \
+	ansi/wctrans \
+	ansi/nanosleep \
+	ansi/btowc \
+	ansi/wctob
+MLIBC_TEST_POSIX_CASES := \
+	posix/inet_ntop \
+	posix/inet_pton \
+	posix/access \
+	posix/pwd \
+	posix/fdopen \
+	posix/fopencookie \
+	posix/fmemopen \
+	posix/getdelim \
+	posix/grp \
+	posix/dprintf \
+	posix/posix_memalign \
+	posix/index \
+	posix/rindex \
+	posix/search \
+	posix/semaphore \
+	posix/open_memstream \
+	posix/time \
+	posix/realpath \
+	posix/ffs \
+	posix/getcwd \
+	posix/memrchr \
+	posix/rlimits \
+	posix/setpriority \
+	posix/nice \
+	posix/timer \
+	posix/wcwidth \
+	posix/basename \
+	posix/regex \
+	posix/readv-writev \
+	posix/strdupa \
+	posix/mkstemp \
+	posix/shm \
+	posix/swab \
+	posix/select \
+	posix/wcsdup \
+	posix/wcsncasecmp \
+	posix/getsubopt \
+	posix/locale \
+	posix/jrand48 \
+	posix/memccpy \
+	posix/strfmon \
+	posix/sig2str \
+	posix/inet_aton \
+	posix/protoent \
+	posix/lfind \
+	posix/lsearch \
+	posix/nftw \
+	posix/wcslcat \
+	posix/wcslcpy \
+	posix/wcpcpy \
+	posix/wcpncpy \
+	posix/getwchar \
+	posix/strcoll_l \
+	posix/strxfrm_l \
+	posix/wcscoll_l \
+	posix/wcsxfrm_l
+MLIBC_TEST_BSD_CASES := \
+	bsd/ns_get_put \
+	bsd/reallocarray \
+	bsd/strl \
+	bsd/sbrk \
+	bsd/getloadavg
+MLIBC_TEST_GLIBC_CASES := \
+	glibc/getopt \
+	glibc/ffsl-ffsll \
+	glibc/rpmatch \
+	glibc/strverscmp \
+	glibc/memmem
+MLIBC_TEST_LINUX_CASES := \
+	linux/malloc-usable-size \
+	linux/pthread_setname_np \
+	linux/pthread_attr \
+	linux/cpuset \
+	linux/pidfd \
+	linux/timerfd \
+	linux/utmp \
+	linux/utmpx
+MLIBC_TEST_CASES ?= $(MLIBC_TEST_ANSI_CASES) $(MLIBC_TEST_POSIX_CASES) $(MLIBC_TEST_BSD_CASES) $(MLIBC_TEST_GLIBC_CASES) $(MLIBC_TEST_LINUX_CASES)
 MLIBC_COMPILER_RT_BUILTINS := \
 	addtf3.c \
 	aarch64/fp_mode.c \
@@ -67,7 +206,7 @@ MLIBC_COMPILER_RT_BUILTINS := \
 	trunctfsf2.c \
 	trunctfxf2.c
 
-.PHONY: all help build headers_install test kselftest clean mrproper __build __headers-install __ensure-kernel-headers __test-build __test-initramfs __test-run __clean __bootstrap-mlibc __apply-mlibc-patches __bootstrap-compiler-rt __build-compiler-rt __write-cross-file
+.PHONY: all help build headers_install test kselftest clean mrproper __build __headers-install __ensure-kernel-headers __prepare-test-locale-data __test-build __test-initramfs __test-run __clean __bootstrap-mlibc __apply-mlibc-patches __bootstrap-compiler-rt __build-compiler-rt __write-cross-file
 
 define orlix_mlibc_with_profile_lock
 	@set -euo pipefail; \
@@ -162,7 +301,7 @@ __test-run: __test-initramfs
 	[ -n "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log path in $$run_log" >&2; exit 1; }; \
 	for _ in $$(seq 1 50); do [ -s "$$runtime_log" ] && break; sleep 0.1; done; \
 	[ -s "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log: $$runtime_log" >&2; exit 1; }; \
-	for _ in $$(seq 1 50); do \
+	for _ in $$(seq 1 600); do \
 		if grep -E -q '(^|[^[:alnum:]])not ok[[:space:]][0-9]|Kernel panic|Out of memory|oom-killer|Assertion .* failed' "$$runtime_log"; then break; fi; \
 		grep -F -q 'ORLIX-MLIBC-TEST-END' "$$runtime_log" && break; \
 		sleep 0.1; \
@@ -183,7 +322,7 @@ __test-build: build __build-compiler-rt
 	mkdir -p "$$test_build" "$$install_dir/mlibc-tests"; \
 	crt_flags="$$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o"; \
 	ldlibs="-Wl,--start-group $$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $(MLIBC_RTLIB) -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
-	cflags="--target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $(MLIBC_KERNEL_HEADERS) -D_GNU_SOURCE -DUSE_CROSS_LIBC -U__MLIBC_DEBUG -U__MLIBC_BUILDING_MLIBC -fhosted -fno-builtin -femulated-tls -fno-pie -Wno-unknown-warning-option"; \
+	cflags="--target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $(MLIBC_KERNEL_HEADERS) -D_GNU_SOURCE -DUSE_CROSS_LIBC -U__MLIBC_DEBUG -U__MLIBC_BUILDING_MLIBC -fhosted -fno-builtin $(MLIBC_HOSTED_EXEC_CODEGEN_FLAGS) -fno-pie -Wno-unknown-warning-option"; \
 	ldflags="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIX_HOSTED_USER_BASE_ADDRESS)"; \
 	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
 	command -v "$(MLIBC_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package OrlixMLibC tests; set MLIBC_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
@@ -200,10 +339,44 @@ __test-build: build __build-compiler-rt
 	printf 'proof_lane=mlibc-upstream-libc-tests\nprofile=%s\n' "$(PROFILE)" > "$$install_dir/proof_lane.txt"; \
 	echo "built OrlixMLibC upstream test programs: $$install_dir"
 
-__test-initramfs: __test-build
+__prepare-test-locale-data:
+	@set -euo pipefail; \
+	locale_dir="$(MLIBC_TEST_LOCALE_DATA_DIR)"; \
+	locale_root="$(MLIBC_TEST_LOCALE_ROOT)"; \
+	locale_unpack="$$locale_dir/unpack"; \
+	case "$$locale_dir" in "$(REPO_ROOT)"/Build/OrlixMLibC/locale-data/*) ;; *) echo "refusing to prepare OrlixMLibC locale data outside Build/OrlixMLibC/locale-data: $$locale_dir" >&2; exit 1 ;; esac; \
+	for path in "$(REPO_ROOT)/Build" "$(REPO_ROOT)/Build/OrlixMLibC" "$(REPO_ROOT)/Build/OrlixMLibC/locale-data" "$$locale_dir"; do \
+		if [ -L "$$path" ]; then echo "refusing to prepare OrlixMLibC locale data through symlinked path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch OrlixMLibC locale test data" >&2; exit 1; }; \
+	command -v ar >/dev/null 2>&1 || { echo "ar is required to unpack OrlixMLibC locale test data" >&2; exit 1; }; \
+	command -v tar >/dev/null 2>&1 || { echo "tar is required to unpack OrlixMLibC locale test data" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify OrlixMLibC locale test data" >&2; exit 1; }; \
+	rm -rf "$$locale_dir"; \
+	mkdir -p "$$locale_dir/packages" "$$locale_root/usr/lib/locale" "$$locale_unpack"; \
+	locales_all_pkg="$$locale_dir/packages/locales-all.deb"; \
+	libc_bin_pkg="$$locale_dir/packages/libc-bin.deb"; \
+	curl -fL -o "$$locales_all_pkg" "$(MLIBC_TEST_LOCALES_ALL_URL)"; \
+	printf '%s  %s\n' "$(MLIBC_TEST_LOCALES_ALL_SHA256)" "$$locales_all_pkg" | shasum -a 256 -c - >/dev/null; \
+	curl -fL -o "$$libc_bin_pkg" "$(MLIBC_TEST_LIBC_BIN_URL)"; \
+	printf '%s  %s\n' "$(MLIBC_TEST_LIBC_BIN_SHA256)" "$$libc_bin_pkg" | shasum -a 256 -c - >/dev/null; \
+	ar p "$$locales_all_pkg" data.tar.xz > "$$locale_dir/locales-all-data.tar.xz"; \
+	ar p "$$libc_bin_pkg" data.tar.xz > "$$locale_dir/libc-bin-data.tar.xz"; \
+	tar -xJf "$$locale_dir/locales-all-data.tar.xz" -C "$$locale_unpack" ./usr/lib/locale; \
+	tar -xJf "$$locale_dir/libc-bin-data.tar.xz" -C "$$locale_unpack" ./usr/lib/locale/C.utf8; \
+	for locale_name in C.utf8 en_US.utf8 de_DE de_DE.utf8 ru_RU.utf8 fr_FR.utf8; do \
+		[ -d "$$locale_unpack/usr/lib/locale/$$locale_name" ] || { echo "missing $$locale_name locale test data in package" >&2; exit 1; }; \
+		cp -R -L "$$locale_unpack/usr/lib/locale/$$locale_name" "$$locale_root/usr/lib/locale/"; \
+	done; \
+	[ -s "$$locale_root/usr/lib/locale/en_US.utf8/LC_CTYPE" ] || { echo "missing en_US.utf8 locale test data" >&2; exit 1; }; \
+	[ -s "$$locale_root/usr/lib/locale/C.utf8/LC_CTYPE" ] || { echo "missing C.utf8 locale test data" >&2; exit 1; }; \
+	echo "prepared OrlixMLibC locale test data: $$locale_root/usr/lib/locale"
+
+__test-initramfs: __test-build __prepare-test-locale-data
 	@set -euo pipefail; \
 	output="$(MLIBC_TEST_INITRAMFS_DIR)"; \
 	install_dir="$(MLIBC_TEST_INSTALL_DIR)"; \
+	locale_root="$(MLIBC_TEST_LOCALE_ROOT)"; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)"; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
 	case "$$output" in "$(REPO_ROOT)"/Build/OrlixMLibC/test-initramfs/*) ;; *) echo "refusing to write OrlixMLibC test initramfs outside Build/OrlixMLibC/test-initramfs: $$output" >&2; exit 1 ;; esac; \
@@ -215,13 +388,34 @@ __test-initramfs: __test-build
 	[ -s "$$install_dir/mlibc-test-list.txt" ] || { echo "missing OrlixMLibC test list: $$install_dir/mlibc-test-list.txt" >&2; exit 1; }; \
 	rm -rf "$$output"; \
 	mkdir -p "$$output/rootfs"; \
+	mkdir -p "$$output/fixtures"; \
+	printf '%s\n' 'root:x:0:0:root:/root:/bin/sh' > "$$output/fixtures/passwd"; \
+	printf '%s\n' 'root:x:0:root' > "$$output/fixtures/group"; \
+	{ \
+		printf '%s\n' 'ip 0 IP'; \
+		printf '%s\n' 'icmp 1 ICMP'; \
+		printf '%s\n' 'tcp 6 TCP'; \
+		printf '%s\n' 'udp 17 UDP'; \
+	} > "$$output/fixtures/protocols"; \
 	cpio_list="$$output/initramfs.list"; \
 	{ \
+		printf '%s\n' 'dir /bin 755 0 0'; \
 		printf '%s\n' 'dir /dev 755 0 0'; \
+		printf '%s\n' 'dir /etc 755 0 0'; \
 		printf '%s\n' 'dir /proc 555 0 0'; \
+		printf '%s\n' 'dir /root 700 0 0'; \
 		printf '%s\n' 'dir /tmp 1777 0 0'; \
 		printf '%s\n' 'dir /mlibc-tests 755 0 0'; \
 		printf '%s\n' 'nod /dev/console 600 0 0 c 5 1'; \
+		printf 'file /etc/passwd %s 644 0 0\n' "$$output/fixtures/passwd"; \
+		printf 'file /etc/group %s 644 0 0\n' "$$output/fixtures/group"; \
+		printf 'file /etc/protocols %s 644 0 0\n' "$$output/fixtures/protocols"; \
+		find "$$locale_root/usr" -type d -print | sort | while IFS= read -r path; do \
+			printf 'dir /%s 755 0 0\n' "$${path#$$locale_root/}"; \
+		done; \
+		find "$$locale_root/usr" -type f -print | sort | while IFS= read -r path; do \
+			printf 'file /%s %s 644 0 0\n' "$${path#$$locale_root/}" "$$path"; \
+		done; \
 		printf 'file /init %s 755 0 0\n' "$$install_dir/init"; \
 		printf 'file /mlibc-test-list.txt %s 644 0 0\n' "$$install_dir/mlibc-test-list.txt"; \
 		while IFS=: read -r test_name test_path; do \
@@ -259,6 +453,7 @@ __clean:
 		"$(REPO_ROOT)/Build/OrlixMLibC/compiler-rt" \
 		"$(REPO_ROOT)/Build/OrlixMLibC/cross" \
 		"$(REPO_ROOT)/Build/OrlixMLibC/kselftest" \
+		"$(REPO_ROOT)/Build/OrlixMLibC/locale-data" \
 		"$(REPO_ROOT)/Build/OrlixMLibC/sysroot" \
 		"$(REPO_ROOT)/Build/OrlixMLibC/tests" \
 		"$(REPO_ROOT)/Build/OrlixMLibC/tests-install" \
@@ -327,7 +522,7 @@ __build-compiler-rt: __bootstrap-compiler-rt
 		object_name="$${source_name////-}"; \
 		object="$$rtlib_dir/objects/$${object_name%.c}.o"; \
 		[ -s "$$source" ] || { echo "missing compiler-rt builtin source: $$source" >&2; exit 1; }; \
-		"$(MLIBC_CC)" --target=aarch64-linux-gnu -ffreestanding -fno-builtin -O2 -I"$$builtins_dir" -c "$$source" -o "$$object"; \
+		"$(MLIBC_CC)" --target=aarch64-linux-gnu -ffreestanding -fno-builtin $(MLIBC_HOSTED_EXEC_FIXED_REGISTER_FLAGS) -O2 -I"$$builtins_dir" -c "$$source" -o "$$object"; \
 	done; \
 	"$(MLIBC_AR)" rcs "$(MLIBC_RTLIB)" "$$rtlib_dir"/objects/*.o; \
 	[ -s "$(MLIBC_RTLIB)" ] || { echo "missing Orlix compiler runtime archive: $(MLIBC_RTLIB)" >&2; exit 1; }; \
@@ -353,8 +548,8 @@ __write-cross-file: __apply-mlibc-patches
 		printf '%s\n' 'needs_exe_wrapper = true'; \
 		printf '%s\n' ''; \
 		printf '%s\n' '[built-in options]'; \
-		printf "%s\n" "c_args = ['-DORLIX_HOSTED_EXEC=1', '-DORLIX_HOSTED_SYSCALL_GATE_ADDRESS=$(ORLIX_HOSTED_SYSCALL_GATE_ADDRESS)', '-femulated-tls', '-ffunction-sections', '-fdata-sections']"; \
-		printf "%s\n" "cpp_args = ['-DORLIX_HOSTED_EXEC=1', '-DORLIX_HOSTED_SYSCALL_GATE_ADDRESS=$(ORLIX_HOSTED_SYSCALL_GATE_ADDRESS)', '-femulated-tls', '-ffunction-sections', '-fdata-sections']"; \
+		printf "%s\n" "c_args = [$(MLIBC_HOSTED_EXEC_MESON_ARGS)]"; \
+		printf "%s\n" "cpp_args = [$(MLIBC_HOSTED_EXEC_MESON_ARGS)]"; \
 		printf "%s\n" "c_link_args = ['-fuse-ld=lld']"; \
 		printf "%s\n" "cpp_link_args = ['-fuse-ld=lld']"; \
 	} > "$(MLIBC_CROSS_FILE)"; \

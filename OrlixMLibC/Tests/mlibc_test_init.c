@@ -10,9 +10,17 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-static char test_list[8192];
+static char test_list[32768];
 static unsigned int test_index;
 static unsigned int test_failures;
+static char *const test_envp[] = {
+	"LANG=en_US.utf8",
+	"HOME=/root",
+	"LOGNAME=root",
+	"SHELL=/bin/sh",
+	"USER=root",
+	NULL,
+};
 
 static void park_init(void)
 {
@@ -91,7 +99,7 @@ static int run_test(const char *label, const char *path)
 	if (child == 0) {
 		char *const argv[] = { (char *)path, NULL };
 
-		execv(path, argv);
+		execve(path, argv, test_envp);
 		_exit(127);
 	}
 	if (child < 0)

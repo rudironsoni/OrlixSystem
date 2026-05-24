@@ -21,6 +21,8 @@ The primary userspace and package format is Linux ELF for AArch64, linked agains
 
 Linux ELF text executes as native AArch64 code inside the hosted Orlix process. Orlix-built libc syscall stubs call a private hosted syscall gate instead of emitting a Darwin-routed `svc #0`. The gate enters the `arch/orlix` syscall path, which dispatches through Linux syscall numbers and Linux syscall implementations.
 
+Orlix-built AArch64 Linux user code reserves Apple arm64's host platform register `x18`. This is a hosted-execution code generation constraint, not a new userspace syscall ABI: Linux UAPI layouts, syscall numbers, calling shapes, errno behavior, and mlibc `sysdeps/linux` semantics remain the Linux contract.
+
 The execution stack is:
 
 ```text

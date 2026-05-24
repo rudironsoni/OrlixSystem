@@ -1488,7 +1488,7 @@ __kunit: __prepare-kbuild
 __kernel-archive:
 	@set -euo pipefail; \
 	$(call orlix_kernel_acquire_profile_lock); \
-	$(MAKE) -f OrlixKernel/Makefile __kernel-payload PROFILE="$(PROFILE)" type="$(type)" libc="$(libc)"; \
+	$(MAKE) -f OrlixKernel/Makefile __kernel-payload PROFILE="$(PROFILE)" type="$(type)" libc="$(libc)" ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(ORLIX_KERNEL_TEST_INITRAMFS_INPUT)"; \
 	cc="$(ORLIX_KERNEL_CC)"; \
 	hostcc="$(ORLIX_KERNEL_HOSTCC)"; \
 	ar_cmd="$(ORLIX_KERNEL_AR)"; \
@@ -1852,12 +1852,16 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		*) echo "refusing to package root initramfs outside Orlix Build roots: $$rootfs_input" >&2; exit 1 ;; \
 	esac; \
 	[ -s "$$rootfs_input" ] || { echo "missing non-empty root initramfs: $$rootfs_input" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify OrlixKernel payload rootfs input" >&2; exit 1; }; \
+	rootfs_sha256="$$(shasum -a 256 "$$rootfs_input" | awk '{ print $$1 }')"; \
 	payload_stamp="$$output/.orlix-payload-ready"; \
 	if [ -s "$$payload_stamp" ] && \
 		[ "$$payload_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" ] && \
 		[ "$$payload_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
 		[ "$$payload_stamp" -nt "$$rootfs_input" ] && \
 		[ "$$payload_stamp" -nt "OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk" ] && \
+		[ "$$(sed -n 's/^rootfs_input=//p' "$$payload_stamp")" = "$$rootfs_input" ] && \
+		[ "$$(sed -n 's/^rootfs_sha256=//p' "$$payload_stamp")" = "$$rootfs_sha256" ] && \
 		[ -s "$$output/Info.plist" ] && \
 		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" ] && \
 		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
@@ -1913,7 +1917,7 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		printf '%s\n' '</plist>'; \
 	} > "$$output/Info.plist"; \
 	plutil -lint "$$output/Info.plist" >/dev/null; \
-	printf 'profile=%s\nlinux_version=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" > "$$payload_stamp"; \
+	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" > "$$payload_stamp"; \
 	echo "packaged OrlixKernel payload: $$output (profile $(PROFILE))"
 
 __ios-simulator-framework: xcodeproj
