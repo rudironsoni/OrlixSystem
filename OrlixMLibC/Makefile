@@ -36,7 +36,7 @@ MLIBC_AR ?= $(if $(MLIBC_LLVM_PREFIX),$(MLIBC_LLVM_PREFIX)/llvm-ar,llvm-ar)
 MLIBC_STRIP ?= $(if $(MLIBC_LLVM_PREFIX),$(MLIBC_LLVM_PREFIX)/llvm-strip,llvm-strip)
 MESON ?= meson
 NINJA ?= ninja
-MLIBC_TEST_CASES ?= ansi/abs ansi/strchr posix/getsubopt
+MLIBC_TEST_CASES ?= ansi/abs ansi/strchr ansi/strtol ansi/qsort posix/getsubopt posix/dprintf posix/readv-writev
 MLIBC_COMPILER_RT_BUILTINS := \
 	addtf3.c \
 	aarch64/fp_mode.c \
