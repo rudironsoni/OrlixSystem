@@ -160,13 +160,18 @@ __test-run: __test-initramfs
 	$(KERNEL_MAKE) run PROFILE="$(PROFILE)" type=mlibc libc=orlixmlibc ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(MLIBC_TEST_INITRAMFS_DIR)/rootfs/initramfs.cpio.gz" | tee "$$run_log"; \
 	runtime_log="$$(sed -n 's/.*"runtimeLogPath": "\([^"]*\)".*/\1/p' "$$run_log" | tail -n 1)"; \
 	[ -n "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log path in $$run_log" >&2; exit 1; }; \
+	for _ in $$(seq 1 50); do [ -s "$$runtime_log" ] && break; sleep 0.1; done; \
 	[ -s "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log: $$runtime_log" >&2; exit 1; }; \
-	for _ in $$(seq 1 50); do grep -F -q 'ORLIX-MLIBC-TEST-END' "$$runtime_log" && break; sleep 0.1; done; \
-	grep -F -q 'ORLIX-MLIBC-TEST-END' "$$runtime_log" || { echo "OrlixMLibC tests did not reach completion marker: $$runtime_log" >&2; exit 1; }; \
+	for _ in $$(seq 1 50); do \
+		if grep -E -q '(^|[^[:alnum:]])not ok[[:space:]][0-9]|Kernel panic|Out of memory|oom-killer|Assertion .* failed' "$$runtime_log"; then break; fi; \
+		grep -F -q 'ORLIX-MLIBC-TEST-END' "$$runtime_log" && break; \
+		sleep 0.1; \
+	done; \
 	if grep -E '(^|[^[:alnum:]])not ok[[:space:]][0-9]|Kernel panic|Out of memory|oom-killer|Assertion .* failed' "$$runtime_log"; then \
 		echo "OrlixMLibC tests reported failure in runtime log: $$runtime_log" >&2; \
 		exit 1; \
 	fi; \
+	grep -F -q 'ORLIX-MLIBC-TEST-END' "$$runtime_log" || { echo "OrlixMLibC tests did not reach completion marker: $$runtime_log" >&2; exit 1; }; \
 	echo "verified OrlixMLibC upstream tests in simulator log: $$runtime_log"
 
 __test-build: build __build-compiler-rt
