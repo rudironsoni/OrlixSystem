@@ -102,6 +102,7 @@ MLIBC_TEST_POSIX_CASES := \
 	posix/inet_ntop \
 	posix/inet_pton \
 	posix/access \
+	posix/accept4 \
 	posix/pwd \
 	posix/fdopen \
 	posix/fopencookie \
@@ -122,12 +123,14 @@ MLIBC_TEST_POSIX_CASES := \
 	posix/memrchr \
 	posix/rlimits \
 	posix/setpriority \
+	posix/getparam \
 	posix/nice \
 	posix/timer \
 	posix/wcwidth \
 	posix/basename \
 	posix/regex \
 	posix/readv-writev \
+	posix/string \
 	posix/if_indextoname \
 	posix/getnameinfo \
 	posix/gethostbyname \
@@ -189,6 +192,7 @@ MLIBC_TEST_LINUX_CASES := \
 	linux/cpuset \
 	linux/getifaddrs \
 	linux/pidfd \
+	linux/process_vm_readv_writev \
 	linux/timerfd \
 	linux/utmp \
 	linux/utmpx
