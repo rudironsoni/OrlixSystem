@@ -37,7 +37,35 @@ MLIBC_STRIP ?= $(if $(MLIBC_LLVM_PREFIX),$(MLIBC_LLVM_PREFIX)/llvm-strip,llvm-st
 MESON ?= meson
 NINJA ?= ninja
 MLIBC_TEST_CASES ?= ansi/abs ansi/strchr posix/getsubopt
-MLIBC_COMPILER_RT_BUILTINS := comparetf2.c trunctfdf2.c extenddftf2.c divtf3.c
+MLIBC_COMPILER_RT_BUILTINS := \
+	addtf3.c \
+	aarch64/fp_mode.c \
+	comparetf2.c \
+	divtf3.c \
+	extenddftf2.c \
+	extendhftf2.c \
+	extendsftf2.c \
+	extendxftf2.c \
+	fixtfdi.c \
+	fixtfsi.c \
+	fixtfti.c \
+	fixunstfdi.c \
+	fixunstfsi.c \
+	fixunstfti.c \
+	floatditf.c \
+	floatsitf.c \
+	floattitf.c \
+	floatunditf.c \
+	floatunsitf.c \
+	floatuntitf.c \
+	multf3.c \
+	powitf2.c \
+	subtf3.c \
+	trunctfbf2.c \
+	trunctfdf2.c \
+	trunctfhf2.c \
+	trunctfsf2.c \
+	trunctfxf2.c
 
 .PHONY: all help build headers_install test kselftest clean mrproper __build __headers-install __ensure-kernel-headers __test-build __test-initramfs __test-run __clean __bootstrap-mlibc __apply-mlibc-patches __bootstrap-compiler-rt __build-compiler-rt __write-cross-file
 
@@ -126,7 +154,20 @@ test:
 	$(call orlix_mlibc_with_profile_lock,__test-run)
 
 __test-run: __test-initramfs
-	@$(KERNEL_MAKE) run PROFILE="$(PROFILE)" type=mlibc libc=orlixmlibc ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(MLIBC_TEST_INITRAMFS_DIR)/rootfs/initramfs.cpio.gz"
+	@set -euo pipefail; \
+	run_log="$(MLIBC_TEST_BUILD_DIR)/orlix-kernel-run-output.log"; \
+	mkdir -p "$(MLIBC_TEST_BUILD_DIR)"; \
+	$(KERNEL_MAKE) run PROFILE="$(PROFILE)" type=mlibc libc=orlixmlibc ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(MLIBC_TEST_INITRAMFS_DIR)/rootfs/initramfs.cpio.gz" | tee "$$run_log"; \
+	runtime_log="$$(sed -n 's/.*"runtimeLogPath": "\([^"]*\)".*/\1/p' "$$run_log" | tail -n 1)"; \
+	[ -n "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log path in $$run_log" >&2; exit 1; }; \
+	[ -s "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log: $$runtime_log" >&2; exit 1; }; \
+	for _ in $$(seq 1 50); do grep -F -q 'ORLIX-MLIBC-TEST-END' "$$runtime_log" && break; sleep 0.1; done; \
+	grep -F -q 'ORLIX-MLIBC-TEST-END' "$$runtime_log" || { echo "OrlixMLibC tests did not reach completion marker: $$runtime_log" >&2; exit 1; }; \
+	if grep -E '(^|[^[:alnum:]])not ok[[:space:]][0-9]|Kernel panic|Out of memory|oom-killer|Assertion .* failed' "$$runtime_log"; then \
+		echo "OrlixMLibC tests reported failure in runtime log: $$runtime_log" >&2; \
+		exit 1; \
+	fi; \
+	echo "verified OrlixMLibC upstream tests in simulator log: $$runtime_log"
 
 __test-build: build __build-compiler-rt
 	@set -euo pipefail; \
@@ -274,7 +315,8 @@ __build-compiler-rt: __bootstrap-compiler-rt
 	mkdir -p "$$rtlib_dir/objects"; \
 	for source_name in $(MLIBC_COMPILER_RT_BUILTINS); do \
 		source="$$builtins_dir/$$source_name"; \
-		object="$$rtlib_dir/objects/$${source_name%.c}.o"; \
+		object_name="$${source_name////-}"; \
+		object="$$rtlib_dir/objects/$${object_name%.c}.o"; \
 		[ -s "$$source" ] || { echo "missing compiler-rt builtin source: $$source" >&2; exit 1; }; \
 		"$(MLIBC_CC)" --target=aarch64-linux-gnu -ffreestanding -fno-builtin -O2 -I"$$builtins_dir" -c "$$source" -o "$$object"; \
 	done; \
