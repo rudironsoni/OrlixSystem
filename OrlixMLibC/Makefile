@@ -199,7 +199,8 @@ MLIBC_TEST_LINUX_CASES := \
 	linux/process_vm_readv_writev \
 	linux/timerfd \
 	linux/utmp \
-	linux/utmpx
+	linux/utmpx \
+	linux/xattr
 MLIBC_TEST_CASES ?= $(MLIBC_TEST_ANSI_CASES) $(MLIBC_TEST_POSIX_CASES) $(MLIBC_TEST_BSD_CASES) $(MLIBC_TEST_GLIBC_CASES) $(MLIBC_TEST_LINUX_CASES)
 MLIBC_COMPILER_RT_BUILTINS := \
 	addtf3.c \

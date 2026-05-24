@@ -169,6 +169,8 @@ int main(void)
 	puts("ORLIX-MLIBC-TEST-INIT");
 	(void)mkdir("/proc", 0555);
 	(void)mount("proc", "/proc", "proc", 0, NULL);
+	(void)mount("tmpfs", "/tmp", "tmpfs", 0, "mode=1777");
+	(void)chdir("/tmp");
 	configure_loopback();
 
 	have_list = read_file("/mlibc-test-list.txt", test_list,
