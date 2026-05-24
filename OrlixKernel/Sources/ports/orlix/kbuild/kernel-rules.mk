@@ -1206,6 +1206,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 	if [ -s "$$port_stamp" ]; then \
 		if find "$$overlay_dir" -type f -newer "$$port_stamp" -print -quit | grep -q .; then port_inputs_changed=1; fi; \
 		if [ -d "$$patch_dir" ] && find "$$patch_dir" -type f -newer "$$port_stamp" -print -quit | grep -q .; then port_inputs_changed=1; fi; \
+		if [ "$$profile_config" -nt "$$port_stamp" ]; then port_inputs_changed=1; fi; \
 	fi; \
 	if [ -s "$$port_stamp" ] && \
 		[ "$$port_inputs_changed" -eq 0 ] && \

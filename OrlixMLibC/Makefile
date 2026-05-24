@@ -165,12 +165,14 @@ MLIBC_TEST_GLIBC_CASES := \
 	glibc/ffsl-ffsll \
 	glibc/rpmatch \
 	glibc/strverscmp \
-	glibc/memmem
+	glibc/memmem \
+	glibc/stdio_ext
 MLIBC_TEST_LINUX_CASES := \
 	linux/malloc-usable-size \
 	linux/pthread_setname_np \
 	linux/pthread_attr \
 	linux/cpuset \
+	linux/getifaddrs \
 	linux/pidfd \
 	linux/timerfd \
 	linux/utmp \
@@ -407,6 +409,7 @@ __test-initramfs: __test-build __prepare-test-locale-data
 		printf '%s\n' 'dir /tmp 1777 0 0'; \
 		printf '%s\n' 'dir /mlibc-tests 755 0 0'; \
 		printf '%s\n' 'nod /dev/console 600 0 0 c 5 1'; \
+		printf '%s\n' 'nod /dev/zero 666 0 0 c 1 5'; \
 		printf 'file /etc/passwd %s 644 0 0\n' "$$output/fixtures/passwd"; \
 		printf 'file /etc/group %s 644 0 0\n' "$$output/fixtures/group"; \
 		printf 'file /etc/protocols %s 644 0 0\n' "$$output/fixtures/protocols"; \

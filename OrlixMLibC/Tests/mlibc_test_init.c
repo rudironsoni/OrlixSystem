@@ -5,7 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
 #include <sys/mount.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -64,6 +67,33 @@ static bool parse_test_line(char *line, char **label, char **path)
 	*label = line;
 	*path = separator + 1;
 	return **label != '\0' && **path != '\0';
+}
+
+static void configure_loopback(void)
+{
+	struct ifreq ifr;
+	int fd;
+
+	fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (fd < 0) {
+		perror("# loopback socket");
+		return;
+	}
+
+	memset(&ifr, 0, sizeof(ifr));
+	strncpy(ifr.ifr_name, "lo", IFNAMSIZ - 1);
+	if (ioctl(fd, SIOCGIFFLAGS, &ifr) < 0) {
+		perror("# loopback SIOCGIFFLAGS");
+		close(fd);
+		return;
+	}
+
+	if (!(ifr.ifr_flags & IFF_UP)) {
+		ifr.ifr_flags |= IFF_UP;
+		if (ioctl(fd, SIOCSIFFLAGS, &ifr) < 0)
+			perror("# loopback SIOCSIFFLAGS");
+	}
+	close(fd);
 }
 
 static unsigned int count_tests(char *data, size_t size)
@@ -139,6 +169,7 @@ int main(void)
 	puts("ORLIX-MLIBC-TEST-INIT");
 	(void)mkdir("/proc", 0555);
 	(void)mount("proc", "/proc", "proc", 0, NULL);
+	configure_loopback();
 
 	have_list = read_file("/mlibc-test-list.txt", test_list,
 			      sizeof(test_list), &list_size);
