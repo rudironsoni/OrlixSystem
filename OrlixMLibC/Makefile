@@ -48,6 +48,7 @@ MESON ?= meson
 NINJA ?= ninja
 MLIBC_TEST_ANSI_CASES := \
 	ansi/alloc \
+	ansi/fenv \
 	ansi/sscanf \
 	ansi/sprintf \
 	ansi/snprintf \
@@ -166,9 +167,18 @@ MLIBC_TEST_BSD_CASES := \
 	bsd/sbrk \
 	bsd/getloadavg
 MLIBC_TEST_GLIBC_CASES := \
+	glibc/error \
+	glibc/error_at_line \
+	glibc/error_message_count \
+	glibc/error_one_per_line \
+	glibc/error_print_progname \
+	glibc/getgrouplist \
 	glibc/getopt \
 	glibc/ffsl-ffsll \
+	glibc/gnu-basename \
+	glibc/linux-syscall \
 	glibc/rpmatch \
+	glibc/shadow \
 	glibc/strverscmp \
 	glibc/memmem \
 	glibc/stdio_ext
