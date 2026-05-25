@@ -224,9 +224,13 @@ static bool OrlixHostUserTrapRepairUserTlsLoad(mcontext_t machine_context,
         if ((instruction & ORLIX_ARM64_MRS_TPIDR_EL0_MASK) ==
                 ORLIX_ARM64_MRS_TPIDR_EL0 &&
             (instruction & ORLIX_ARM64_REGISTER_MASK) == base_register) {
-            return OrlixHostUserTrapWriteRegister(machine_context,
-                                                  base_register,
-                                                  active_tls);
+            if (!OrlixHostUserTrapWriteRegister(machine_context,
+                                                base_register,
+                                                active_tls)) {
+                return false;
+            }
+            OrlixHostWriteTls(active_tls);
+            return true;
         }
     }
 
