@@ -315,8 +315,10 @@ __build: __write-cross-file
 		-Dlinux_kernel_headers="$(MLIBC_BUILD_KERNEL_HEADERS)"; \
 	"$(MESON)" compile -C "$(MLIBC_BUILD_DIR)"; \
 	DESTDIR="$(MLIBC_SYSROOT)" "$(MESON)" install -C "$(MLIBC_BUILD_DIR)"; \
+	$(MAKE) -f "$(PROJECT_DIR)/Makefile" __build-compiler-rt PROFILE="$(PROFILE)"; \
 	[ -d "$(MLIBC_SYSROOT)/usr/include" ] || { echo "missing OrlixMLibC installed headers: $(MLIBC_SYSROOT)/usr/include" >&2; exit 1; }; \
 	[ -d "$(MLIBC_SYSROOT)/usr/lib" ] || { echo "missing OrlixMLibC installed libraries: $(MLIBC_SYSROOT)/usr/lib" >&2; exit 1; }; \
+	[ -s "$(MLIBC_RTLIB)" ] || { echo "missing Orlix compiler runtime archive: $(MLIBC_RTLIB)" >&2; exit 1; }; \
 	printf 'profile=%s\nmlibc_commit=%s\n' "$(PROFILE)" "$(MLIBC_COMMIT)" > "$(MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready"; \
 	echo "built OrlixMLibC sysroot: $(MLIBC_SYSROOT)"
 

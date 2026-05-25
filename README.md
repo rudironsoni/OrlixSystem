@@ -8,11 +8,12 @@ OrlixKernel is Linux. It does not provide a shell, libc, package manager, public
 
 ## ELI5 Start
 
-Orlix has four important source areas:
+Orlix has five important source areas:
 
 - `OrlixKernel/Sources/upstream/linux-6.12` is generated upstream Linux source. Treat it as read-only input.
 - `OrlixKernel/Sources/ports/orlix` is where durable Orlix Linux port inputs live.
 - `OrlixMLibC/Sources` is the durable component area for OrlixMLibC sysdeps, configs, and patches. The upstream mlibc checkout is generated under `Build/OrlixMLibC/upstream/mlibc`.
+- `OrlixOS` is the package and rootfs assembly lane for Orlix Linux userspace inputs. It builds package artifacts against OrlixMLibC and stages generated rootfs content under `Build/OrlixOS`.
 - `OrlixHostAdapter/Sources` is where private iOS and Darwin mechanics live.
 
 Project source and test roots are organized consistently:
@@ -24,6 +25,7 @@ OrlixHostAdapter/Sources
 OrlixHostAdapter/Tests
 OrlixMLibC/Sources
 OrlixMLibC/Tests
+OrlixOS
 OrlixTerminal/Sources
 OrlixTerminal/Tests
 ```
@@ -51,7 +53,7 @@ Do not claim product runtime readiness from KUnit, kselftest, boot logs, packagi
 
 ## Build And Test Commands
 
-The top-level Makefile keeps a small, Linux-shaped interface and delegates to `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`:
+The top-level Makefile keeps a small, Linux-shaped interface and delegates to `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, `OrlixOS/Makefile`, and `OrlixTerminal/Makefile`:
 
 ```bash
 make help
@@ -62,7 +64,7 @@ make test type=kunit,kselftest
 make clean
 ```
 
-`make setup-env` fetches upstream Linux and generates the disposable Xcode project from `project.yml`. `make build` first runs `make clean`, which removes generated outputs including `OrlixKernel/Sources/upstream/linux-6.12`; the kernel build then reclones upstream Linux through the normal bootstrap path. The same build flow materializes upstream mlibc under `Build/OrlixMLibC/upstream/mlibc` and builds the OrlixMLibC sysroot from upstream mlibc plus durable OrlixMLibC inputs. It does not prove terminal runtime behavior or build or require `vmlinux` as a normal artifact.
+`make setup-env` fetches upstream Linux and generates the disposable Xcode project from `project.yml`. `make build` first runs `make clean`, which removes generated outputs including `OrlixKernel/Sources/upstream/linux-6.12`; the kernel build then reclones upstream Linux through the normal bootstrap path. The same build flow materializes upstream mlibc under `Build/OrlixMLibC/upstream/mlibc`, builds the OrlixMLibC sysroot from upstream mlibc plus durable OrlixMLibC inputs, and stages OrlixOS package/rootfs inputs under `Build/OrlixOS`. It does not prove terminal runtime behavior or build or require `vmlinux` as a normal artifact.
 
 The Linux compile lane emits per-profile, per-platform OrlixKernel static archives under `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`. Xcode links the matching archive into `OrlixKernel.framework`, and framework slices are packaged into `OrlixKernel.xcframework`.
 

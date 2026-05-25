@@ -48,6 +48,7 @@ Project-local source and test roots are fixed:
 - `OrlixHostAdapter/Tests`
 - `OrlixMLibC/Sources`
 - `OrlixMLibC/Tests`
+- `OrlixOS`
 - `OrlixTerminal/Sources`
 - `OrlixTerminal/Tests`
 
@@ -90,6 +91,7 @@ Generated OrlixMLibC and userspace artifacts are disposable:
 
 - `Build/OrlixMLibC`
 - `Build/OrlixMLibC/upstream/mlibc`
+- `Build/OrlixOS`
 
 The public product header lives in:
 
@@ -165,6 +167,12 @@ OrlixMLibC consumes kernel UAPI only through standard Linux `headers_install` ou
 
 Orlix userspace ABI is profile-invariant. App Store, development, simulator, CI, and debug builds may produce separate artifacts, but installed UAPI headers, syscall numbers, errno values, signal ABI, ioctl payloads, userspace-visible struct layouts, OrlixMLibC ABI, dynamic-loader contract, package ABI, and observable Linux userspace behavior must remain the same. Profile ABI drift is a release-blocking error.
 
+## OrlixOS Rule
+
+`OrlixOS` is a package and rootfs assembly component, not part of `OrlixKernel` or `OrlixMLibC`. It builds Orlix Linux userspace package inputs against OrlixMLibC and stages generated rootfs content under `Build/OrlixOS`.
+
+OrlixOS must not own kernel semantics, libc semantics, syscall ABI, package-manager policy, or iOS host mechanics. It may fetch pristine upstream package sources at build time, verify them, build them as Orlix Linux userspace binaries, and assemble generated rootfs inputs consumed by the kernel boot packaging path.
+
 ## Build And Proof Rule
 
 Orlix does not require `vmlinux` as a canonical build, proof, or runtime artifact.
@@ -190,7 +198,7 @@ Do not claim product runtime readiness from KUnit, kselftest, no-init boot logs,
 
 ## Make Target Rule
 
-There is one Makefile per project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`. The top-level `Makefile` orchestrates those project Makefiles and keeps its public interface small and Linux-shaped. Prefer conventional targets such as `build`, `prepare`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, and `test`.
+There is one Makefile per project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, `OrlixOS/Makefile`, and `OrlixTerminal/Makefile`. The top-level `Makefile` orchestrates those project Makefiles and keeps its public interface small and Linux-shaped. Prefer conventional targets such as `build`, `prepare`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, and `test`.
 
 Select Orlix-specific scope with variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=orlixmlibc` when the libc lane must be explicit. Do not add user-facing milestone, proof-lane, or artifact-path targets such as `proof-*`, `build-temporary-*`, `stage-temporary-*`, or `test-all`; proof labels belong in artifact metadata and logs.
 
