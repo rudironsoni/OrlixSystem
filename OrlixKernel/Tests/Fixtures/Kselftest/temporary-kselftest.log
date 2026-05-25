@@ -1,5 +1,5 @@
 ORLIX-PROOF-LANE temporary-kselftest-kernel-interface
-ORLIX-PROFILE appstore
+ORLIX-PROFILE release
 ORLIX-LINUX-ARCH orlix
 ORLIX-LINUX-VERSION 6.12
 ORLIX-KUNIT-BEGIN

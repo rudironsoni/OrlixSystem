@@ -6,7 +6,7 @@ HOSTADAPTER_MAKE := $(MAKE) -f OrlixHostAdapter/Makefile
 MLIBC_MAKE := $(MAKE) -f OrlixMLibC/Makefile
 ORLIXOS_MAKE := $(MAKE) -f OrlixOS/Makefile
 TERMINAL_MAKE := $(MAKE) -f OrlixTerminal/Makefile
-PROFILE ?= appstore
+PROFILE ?= release
 ORLIXOS_BASE_ROOT_TREE := $(CURDIR)/Build/OrlixOS/rootfs/$(PROFILE)/base-tree
 
 .PHONY: all help setup-env build prepare scripts dtbs headers_install kunit kselftest kselftest-install test xcodeproj run clean mrproper

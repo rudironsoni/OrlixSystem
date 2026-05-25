@@ -50,7 +50,7 @@ targets:
           payload="$SRCROOT/Build/OrlixKernel/payload/OrlixKernelPayload.bundle"
           if [ ! -d "$payload" ]; then
               echo "missing OrlixKernel payload bundle: $payload" >&2
-              echo "run: make build PROFILE=${ORLIX_PROFILE:-appstore}" >&2
+              echo "run: make build PROFILE=${ORLIX_PROFILE:-release}" >&2
               exit 1
           fi
           destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/OrlixKernelPayload.bundle"
@@ -62,7 +62,7 @@ targets:
         INFOPLIST_FILE: OrlixKernel/Sources/Support/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKernel
         PRODUCT_NAME: OrlixKernel
-        ORLIX_PROFILE: appstore
+        ORLIX_PROFILE: release
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/OrlixKernel/Sources
           - $(SRCROOT)/OrlixKernel/Sources/include

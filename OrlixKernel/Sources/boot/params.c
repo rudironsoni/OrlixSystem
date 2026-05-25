@@ -10,9 +10,9 @@ struct OrlixProfileBootDefaults {
 
 static const struct OrlixProfileBootDefaults OrlixProfileBootDefaultsTable[] = {
     {
-        .profile = ORLIX_BOOT_PROFILE_APPSTORE,
-        .profile_dtb_path = "arch/orlix/boot/dts/appstore.dtb",
-        .kernel_cmdline = "console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro orlix.profile=appstore",
+        .profile = ORLIX_BOOT_PROFILE_RELEASE,
+        .profile_dtb_path = "arch/orlix/boot/dts/release.dtb",
+        .kernel_cmdline = "console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro orlix.profile=release",
         .root_device = "/dev/vda",
         .console_device = "hvc0",
     },

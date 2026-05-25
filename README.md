@@ -68,18 +68,18 @@ make clean
 
 The Linux compile lane emits per-profile, per-platform OrlixKernel static archives under `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`. Xcode links the matching archive into `OrlixKernel.framework`, and framework slices are packaged into `OrlixKernel.xcframework`.
 
-`PROFILE=appstore` is the default profile. Pass another profile only when you intentionally need it.
+`PROFILE=release` is the default profile. Pass another profile only when you intentionally need it.
 
 Use variables for scope instead of target-name variants: `PROFILE=...`, `type=...`, and `libc=...`. Proof labels are emitted inside artifacts and logs; they are not public Make targets.
 
 The Linux-shaped lower-level targets are available when needed:
 
 ```bash
-make prepare PROFILE=appstore
-make headers_install PROFILE=appstore
-make kunit PROFILE=appstore
-make kselftest PROFILE=appstore
-make kselftest PROFILE=appstore libc=orlixmlibc
+make prepare PROFILE=release
+make headers_install PROFILE=release
+make kunit PROFILE=release
+make kselftest PROFILE=release
+make kselftest PROFILE=release libc=orlixmlibc
 ```
 
 `make prepare` materializes the generated upstream-plus-Orlix port tree and Kbuild output without requiring a standalone kernel image. `make headers_install` installs Linux UAPI headers into `Build/OrlixMLibC/kernel-headers/<profile>/include` and does not consume `vmlinux`.
@@ -135,7 +135,7 @@ OrlixKernel/Sources/ports/orlix/
 
 `patches` contains minimal upstream-tree deltas that cannot be represented as overlay files.
 
-`configs` contains product profile defconfigs such as `appstore_defconfig` and `development_defconfig`.
+`configs` contains product profile defconfigs such as `release_defconfig` and `development_defconfig`.
 
 ## Product Surface
 

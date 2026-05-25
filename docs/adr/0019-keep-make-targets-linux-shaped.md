@@ -14,7 +14,7 @@ Earlier wording and transitional scripts risked turning proof lane names, artifa
 
 Keep the top-level Makefile's public targets small and Linux-shaped. The top-level Makefile delegates to `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, `OrlixOS/Makefile`, and `OrlixTerminal/Makefile`. The normal public targets are `all`, `setup-env`, `build`, `test`, `prepare`, `scripts`, `dtbs`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, `xcodeproj`, `run`, `clean`, and `mrproper`.
 
-Use variables for Orlix-specific scope. `PROFILE=appstore` selects the normal profile, `type=kunit,kselftest` selects test classes for `make test`, and `libc=orlixmlibc` may make the kselftest libc lane explicit.
+Use variables for Orlix-specific scope. `PROFILE=release` selects the normal profile, `type=kunit,kselftest` selects test classes for `make test`, and `libc=orlixmlibc` may make the kselftest libc lane explicit.
 
 Proof labels are artifact metadata and log markers, not public Make targets. Labels such as `orlixmlibc-kselftest-syscall-uapi` describe what the generated output proves; they do not become command names.
 

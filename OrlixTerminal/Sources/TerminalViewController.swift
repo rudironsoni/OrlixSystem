@@ -5,7 +5,7 @@ import UIKit
 final class TerminalViewController: UIViewController {
     private static let lightThemeKey = "SelectedTheme.light"
     private static let darkThemeKey = "SelectedTheme.dark"
-    private static let defaultBootProfileName = "appstore"
+    private static let defaultBootProfileName = "release"
 
     private var didStartBoot = false
     private let bootQueue = DispatchQueue(label: "org.orlix.terminal.boot", qos: .userInitiated)
@@ -98,9 +98,9 @@ final class TerminalViewController: UIViewController {
     }
 
     private static func profileDisplayName(_ profile: String) -> String {
-        switch profile {
-        case "appstore":
-            return "App Store"
+	switch profile {
+	case "release":
+		return "release"
         case "development":
             return "development"
         default:

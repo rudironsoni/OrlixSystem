@@ -2,19 +2,19 @@
 
 ## Status
 
-Accepted
+Accepted, updated by ADR 0023.
 
 ## Context
 
-The App Store profile needs reviewed bundled content, writable Linux state, cache separation, and Linux-compatible package/database behavior.
+The release profile needs reviewed bundled content, writable Linux state, cache separation, and Linux-compatible package/database behavior.
 
 A single mutable image or host-path-backed root would blur storage roles and leak host mechanics.
 
 ## Decision
 
-The App Store profile uses virtio-blk-backed Linux filesystem images and upstream OverlayFS.
+The release profile uses virtio-blk-backed Linux filesystem images. Upstream OverlayFS is the writable-root assembly mode, not the only valid root mode.
 
-`/dev/vda` is the immutable bundled base image. `/dev/vdb` is the writable app-private state image. Initramfs assembles the merged root with upstream OverlayFS.
+`/dev/vda` is the immutable bundled base image. `/dev/vdb` is the writable app-private state image. Initramfs can assemble a merged root with upstream OverlayFS; direct immutable-root and initramfs-only proof boots remain explicit Linux-shaped modes.
 
 ## Consequences
 

@@ -1,13 +1,13 @@
 /dts-v1/;
 
 / {
-	compatible = "orlix,appstore", "orlix";
+	compatible = "orlix,release", "orlix";
 	#address-cells = <2>;
 	#size-cells = <2>;
 	interrupt-parent = <&intc>;
 
 	chosen {
-		bootargs = "console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro orlix.profile=appstore";
+		bootargs = "console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro orlix.profile=release";
 		stdout-path = "serial0:115200n8";
 	};
 

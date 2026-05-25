@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, updated by ADR 0023.
 
 ## Context
 
@@ -18,6 +18,6 @@ Orlix uses normal Linux package and execution mechanisms first. Apt/dpkg-style u
 
 No custom Orlix execution policy layer is introduced unless a concrete constraint cannot be represented with normal Linux mechanisms.
 
-The App Store profile may use curated, signed, profile-approved repositories.
+The release profile bundles curated OrlixOS distribution content as signed app resources and updates executable content through app releases first. Downloaded binary repositories are deferred until a curated, signed, profile-approved channel is explicitly designed and reviewed.
 
 Unavoidable iOS memory mechanics are adapted through `arch/orlix` host seams and `OrlixHostAdapter/Sources`, not virtio or package metadata in the kernel.

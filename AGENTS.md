@@ -181,7 +181,7 @@ The canonical OrlixKernel proof artifact is the iOS app-hosted OrlixKernel integ
 
 A `vmlinux`-style artifact may exist only as an optional developer/debug artifact with a named consumer. It is not a milestone, not product proof, not runtime proof, not libc proof, and not required for installed UAPI headers. If no concrete workflow consumes it, do not generate it.
 
-`PROFILE=appstore` is the default normal profile.
+`PROFILE=release` is the default normal profile.
 
 Packaging boot stubs alone is not product proof. Packaging is useful only when it packages or links the app-hosted OrlixKernel integration that is later launched in the iOS proof path.
 
@@ -200,7 +200,7 @@ Do not claim product runtime readiness from KUnit, kselftest, no-init boot logs,
 
 There is one Makefile per project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, `OrlixOS/Makefile`, and `OrlixTerminal/Makefile`. The top-level `Makefile` orchestrates those project Makefiles and keeps its public interface small and Linux-shaped. Prefer conventional targets such as `build`, `prepare`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, and `test`.
 
-Select Orlix-specific scope with variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=orlixmlibc` when the libc lane must be explicit. Do not add user-facing milestone, proof-lane, or artifact-path targets such as `proof-*`, `build-temporary-*`, `stage-temporary-*`, or `test-all`; proof labels belong in artifact metadata and logs.
+Select Orlix-specific scope with variables such as `PROFILE=release`, `type=kunit,kselftest`, and `libc=orlixmlibc` when the libc lane must be explicit. Do not add user-facing milestone, proof-lane, or artifact-path targets such as `proof-*`, `build-temporary-*`, `stage-temporary-*`, or `test-all`; proof labels belong in artifact metadata and logs.
 
 ## Test Rule
 

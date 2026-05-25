@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR 0023.
 
 ## Context
 
@@ -12,7 +12,7 @@ Defaulting to a broader profile risks depending on behavior that the real produc
 
 ## Decision
 
-Normal builds default to `PROFILE=appstore`. The development profile is an explicit choice.
+Normal builds default to `PROFILE=release`. The development profile is an explicit choice.
 
 The development profile must stay equivalent to the App Store profile except for explicit debug and testing affordances. It must not introduce broader product behavior, different Linux-visible device shape, or noisier boot/resource semantics.
 

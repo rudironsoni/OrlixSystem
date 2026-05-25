@@ -6,7 +6,7 @@ REPO_ROOT := $(abspath $(PROJECT_DIR)/..)
 KERNEL_MAKE := $(MAKE) -C $(REPO_ROOT) -f OrlixKernel/Makefile
 ORLIXOS_MAKE := $(MAKE) -C $(REPO_ROOT) -f OrlixOS/Makefile
 
-PROFILE ?= appstore
+PROFILE ?= release
 ORLIX_KERNEL_BASE_ROOT_TREE_INPUT ?= $(REPO_ROOT)/Build/OrlixOS/rootfs/$(PROFILE)/base-tree
 
 .PHONY: all help build run clean mrproper

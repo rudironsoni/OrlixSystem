@@ -149,7 +149,7 @@ Do not copy Linux syscall numbers, ioctl payloads, structs, constants, flags, or
 Normal builds default to:
 
 ```text
-PROFILE=appstore
+PROFILE=release
 ```
 
 Profile defconfigs are durable product-profile configs under `OrlixKernel/Sources/ports/orlix/configs`. The selected profile is materialized into the generated port tree in the location Kbuild expects.
@@ -158,7 +158,7 @@ The repository Makefile is the command surface for repeatable local orchestratio
 
 `make build` means orchestration of the current component build hooks. It first runs `make clean`, removing generated outputs including `OrlixKernel/Sources/upstream/linux-6.12`, then the OrlixKernel build reclones upstream Linux through the bootstrap path. OrlixMLibC builds materialize upstream mlibc under `Build/OrlixMLibC/upstream/mlibc` and apply durable OrlixMLibC inputs from `OrlixMLibC/Sources`. It must not be described as proof that every component is runtime-complete. Until OrlixTerminal is backed by a Linux console path, its build hook may be source-ownership or placeholder checks only.
 
-When Linux has a conventional target name, use that name. Orlix-specific dimensions should be variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=orlixmlibc` when the libc lane must be explicit, not new target names. Do not add milestone, proof-lane, or artifact-path names such as `build-temporary-*`, `stage-temporary-*`, `proof-kernel-*`, or `proof-ios-*` as normal user-facing targets.
+When Linux has a conventional target name, use that name. Orlix-specific dimensions should be variables such as `PROFILE=release`, `type=kunit,kselftest`, and `libc=orlixmlibc` when the libc lane must be explicit, not new target names. Do not add milestone, proof-lane, or artifact-path names such as `build-temporary-*`, `stage-temporary-*`, `proof-kernel-*`, or `proof-ios-*` as normal user-facing targets.
 
 Proof labels are artifact metadata and log markers, not public Make targets. Internal Make plumbing may use private implementation targets, but docs and normal workflows should point users at the Linux-shaped public targets.
 
@@ -178,11 +178,11 @@ Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a
 
 Xcode links the matching archive into `OrlixKernel.framework`, and the framework slices are packaged into `OrlixKernel.xcframework`. The normal framework link input uses the product-named archive path.
 
-The App Store and development profiles should validate the same product scope. Development may enable explicit debug and testing affordances, but it must not drift into a broader Linux-visible product shape. Milestones that claim iOS packaging, boot, runtime, or Linux behavior must validate the same XCTest suite and assertions across App Store and development profiles on both `iphoneos` and `iphonesimulator`.
+The release and development profiles validate the same product scope. Release is the default because every shipped Orlix product is intended for App Store distribution. Development may enable explicit debug and testing affordances, but it must not drift into a broader Linux-visible product shape. Milestones that claim iOS packaging, boot, runtime, or Linux behavior must validate the same XCTest suite and assertions across release and development profiles on both `iphoneos` and `iphonesimulator`.
 
-Orlix userspace ABI is profile-invariant. App Store, development, simulator, CI, and debug builds may produce separate artifacts, but installed UAPI headers, syscall numbers, errno values, signal ABI, ioctl payloads, userspace-visible struct layouts, OrlixMLibC ABI, dynamic-loader contract, package ABI, and observable Linux userspace behavior must remain the same. Profile-specific paths, signing, diagnostics, tracing, assertions, host mediation, and test knobs are allowed only when they do not alter product ABI. Profile ABI drift is release-blocking.
+Orlix userspace ABI is profile-invariant. Release, development, simulator, CI, and debug builds may produce separate artifacts, but installed UAPI headers, syscall numbers, errno values, signal ABI, ioctl payloads, userspace-visible struct layouts, OrlixMLibC ABI, dynamic-loader contract, package ABI, and observable Linux userspace behavior must remain the same. Profile-specific paths, signing, diagnostics, tracing, assertions, host mediation, and test knobs are allowed only when they do not alter product ABI. Profile ABI drift is release-blocking.
 
-Test-only kernel config overlays may enable KUnit, kselftest support, KUnit debugfs, and proof collection affordances for both App Store and development proof builds. Those overlays do not change the normal product profile configs.
+Test-only kernel config overlays may enable KUnit, kselftest support, KUnit debugfs, and proof collection affordances for both release and development proof builds. Those overlays do not change the normal product profile configs.
 
 ## Boot Model
 
@@ -192,7 +192,7 @@ The public direction is:
 
 ```c
 enum OrlixBootProfile {
-    ORLIX_BOOT_PROFILE_APPSTORE,
+    ORLIX_BOOT_PROFILE_RELEASE,
     ORLIX_BOOT_PROFILE_DEVELOPMENT,
 };
 
@@ -215,7 +215,7 @@ OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/boot/dts/
 
 Do not invent a custom Orlix `.boot` template format. Use device tree data, `/chosen`, kernel command line defaults, and normal Linux boot mechanisms.
 
-Initramfs is supported through normal Linux behavior. The App Store profile defaults to an external initramfs bundled with the app, signed as app content, immutable at runtime, and loaded by the bootloader. Direct `root=/dev/vda` boot remains a Linux-shaped path when appropriate.
+Initramfs is supported through normal Linux behavior. The release profile defaults to an external initramfs bundled with the app, signed as app content, immutable at runtime, and loaded by the bootloader. Direct `root=/dev/vda` boot remains a Linux-shaped path when appropriate.
 
 ## Virtio-First Device Model
 
@@ -237,7 +237,7 @@ Use virtio as much as possible for device-like host mediation. Do not create cus
 
 ## Storage And Root Filesystem
 
-The App Store root storage model uses Linux-visible storage roles:
+The release root storage model uses Linux-visible storage roles:
 
 - `/dev/vda`: immutable bundled base image
 - `/dev/vdb`: writable app-private state image
@@ -245,7 +245,7 @@ The App Store root storage model uses Linux-visible storage roles:
 - `tmpfs` for `/tmp`
 - explicit virtio-fs or 9p mounts for external documents and user-selected directories
 
-The root filesystem is assembled using upstream Linux mechanisms. The App Store profile uses initramfs to mount the base and writable state images, assemble root with upstream OverlayFS, and switch to the merged root.
+The root filesystem is assembled using upstream Linux mechanisms. The release profile may use initramfs to mount the base and writable state images, assemble root with upstream OverlayFS, and switch to the merged root. Direct immutable-root boot and initramfs-only proof boot remain valid Linux-shaped modes when selected intentionally.
 
 Writable state mirrors normal Linux paths, especially:
 
@@ -262,7 +262,7 @@ Raw iOS paths are never Linux-visible truth.
 
 Orlix supports both serial-style console behavior and upstream virtio-console.
 
-The App Store profile enables both. Normal boot-time console selection follows Linux `console=` behavior.
+The release profile enables both. Normal boot-time console selection follows Linux `console=` behavior.
 
 The serial-style console is available for early, debug, or fallback use. The virtio-console path is the normal interactive direction where upstream Linux provides the closest virtual-console behavior.
 
@@ -289,9 +289,9 @@ Package managers such as apt/dpkg verify packages and install files into the fil
 - memory-management behavior
 - upstream security mechanisms when configured
 
-The App Store profile may allow downloaded binary packages only through curated, signed, profile-approved repositories with App Store-safe disclosure and policy checks. It is not an unrestricted arbitrary repository model.
+The release profile bundles curated OrlixOS distribution content as signed app resources and updates that executable content through app releases first. Downloaded binary package repositories are deferred until a curated, signed, profile-approved channel with App Store-safe disclosure and policy checks is explicitly designed and reviewed. It is not an unrestricted arbitrary repository model.
 
-Bash is the first shell proof package. `/bin/sh` is rootfs policy, not kernel behavior. The third-party package proof ladder is jq, then curl, then zsh.
+Bash is the first shell proof package. `/bin/sh` is rootfs policy, not kernel behavior. The third-party package proof ladder is jq, then curl, then zsh, but those packages are acceptance gates for an OrlixOS distribution model rather than the architecture itself.
 
 Do not introduce a custom Orlix execution policy layer unless a concrete App Store or iOS host constraint cannot be represented with normal Linux package, mount, permission, MM, or upstream security mechanisms.
 

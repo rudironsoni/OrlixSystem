@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, updated by ADR 0023.
 
 ## Context
 
@@ -17,7 +17,7 @@ Orlix product runtime claims must be promoted in dependency order:
 3. OrlixMLibC libc proof: mlibc's own tests pass for the Orlix sysdeps layer.
 4. OrlixMLibC syscall/UAPI proof: selected kselftests are rebuilt and rerun against OrlixMLibC.
 5. POSIX shell environment proof: Bash runs as normal Orlix Linux userspace through the terminal path with enough process, fd, tty, signal, path, environment, and exec behavior for an interactive shell.
-6. Third-party package ladder: jq, then curl, then zsh prove increasingly realistic Linux package compatibility.
+6. Third-party package ladder: jq, then curl, then zsh prove increasingly realistic OrlixOS distribution/package compatibility.
 
 Development work may proceed in parallel, but claims, release gates, milestone summaries, and product-readiness statements must follow this order.
 

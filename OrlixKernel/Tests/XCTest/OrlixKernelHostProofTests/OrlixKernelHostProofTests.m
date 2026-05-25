@@ -11,7 +11,7 @@
 - (void)testBootloaderRejectsUnavailableRootIdentifier
 {
     struct OrlixBootConfig config = {
-        .profile = ORLIX_BOOT_PROFILE_APPSTORE,
+        .profile = ORLIX_BOOT_PROFILE_RELEASE,
         .root_image_identifier = "orlix.test.rootfs",
         .terminal_identifier = "orlix.test.terminal",
     };
@@ -24,7 +24,7 @@
 - (void)testBootloaderRejectsMissingRootIdentifier
 {
     struct OrlixBootConfig config = {
-        .profile = ORLIX_BOOT_PROFILE_APPSTORE,
+        .profile = ORLIX_BOOT_PROFILE_RELEASE,
         .root_image_identifier = NULL,
         .terminal_identifier = "orlix.test.terminal",
     };

@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 enum OrlixBootProfile {
-    ORLIX_BOOT_PROFILE_APPSTORE = 0,
+    ORLIX_BOOT_PROFILE_RELEASE = 0,
     ORLIX_BOOT_PROFILE_DEVELOPMENT = 1,
 };
 

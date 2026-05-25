@@ -12,8 +12,8 @@ LINUX_TAG ?= v$(LINUX_VERSION)
 LINUX_REMOTE ?= https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 ORLIX_HEADERS_INSTALL_JOBS ?= 1
 
-PROFILE ?= appstore
-ORLIX_PROFILES := appstore development
+PROFILE ?= release
+ORLIX_PROFILES := release development
 
 type ?= kunit
 libc ?= orlixmlibc
@@ -1087,7 +1087,7 @@ clean:
 			Build/OrlixKernel/build \
 		Build/OrlixKernel/kunit \
 		Build/OrlixKernel/kselftest \
-		Build/OrlixKernel/appstore \
+		Build/OrlixKernel/release \
 		Build/OrlixKernel/development \
 		Build/OrlixKernel/payload \
 		Build/OrlixKernel/test-initramfs \
@@ -1301,7 +1301,7 @@ __prepare-kbuild: __prepare-port
 		[ -s "$$build_dir/.config" ] && \
 		[ -s "$$build_dir/include/generated/autoconf.h" ] && \
 		[ -s "$$build_dir/arch/$(LINUX_ARCH)/kernel/vmlinux.lds" ] && \
-		[ -s "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" ] && \
+		[ -s "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/release.dtb" ] && \
 		[ -s "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
 		[ -s "$$build_dir/drivers/of/empty_root.dtb" ] && \
 		[ -x "$$build_dir/usr/gen_init_cpio" ] && \
@@ -1348,7 +1348,7 @@ __prepare-kbuild: __prepare-port
 	fi; \
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" defconfig; \
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" prepare scripts dtbs arch/$(LINUX_ARCH)/kernel/vmlinux.lds drivers/of/empty_root.dtb.o lib/crc32.o; \
-	for dtb in appstore development; do \
+	for dtb in release development; do \
 		[ -f "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" ] || { echo "missing profile DTB: $$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" >&2; exit 1; }; \
 	done; \
 	[ -s "$$build_dir/drivers/of/empty_root.dtb" ] || { echo "missing generated empty-root DTB: $$build_dir/drivers/of/empty_root.dtb" >&2; exit 1; }; \
@@ -1693,6 +1693,11 @@ __verify-xcodegen-boundary:
 		echo "generated Xcode project references installed OrlixMLibC UAPI headers" >&2; \
 		exit 1; \
 	fi; \
+	if grep -R -n -E 'dlsym[[:space:]]*\([^;]*start_kernel|start_kernel[^;]*dlsym|RTLD_DEFAULT[^;]*start_kernel|start_kernel[^;]*RTLD_DEFAULT' \
+		OrlixHostAdapter/Sources OrlixKernel/Sources/boot OrlixTerminal/Sources; then \
+		echo "product boot path must not resolve start_kernel through dlsym or RTLD_DEFAULT" >&2; \
+		exit 1; \
+	fi; \
 	echo "verified generated Xcode project does not compile Linux-owned sources"
 
 __verify-framework-symbols:
@@ -1881,7 +1886,7 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 	fi; \
 	payload_stamp="$$output/.orlix-payload-ready"; \
 	if [ -s "$$payload_stamp" ] && \
-		[ "$$payload_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" ] && \
+		[ "$$payload_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/release.dtb" ] && \
 		[ "$$payload_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
 		[ "$$payload_stamp" -nt "$$rootfs_input" ] && \
 		[ "$$payload_stamp" -nt "OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk" ] && \
@@ -1890,7 +1895,7 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		[ "$$(sed -n 's/^base_root_tree_input=//p' "$$payload_stamp")" = "$$base_root_tree_input" ] && \
 		[ "$$(sed -n 's/^base_root_tree_sha256=//p' "$$payload_stamp")" = "$$base_root_tree_sha256" ] && \
 		[ -s "$$output/Info.plist" ] && \
-		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" ] && \
+		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/release.dtb" ] && \
 		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
 		[ -s "$$output/rootfs/initramfs.cpio.gz" ] && \
 		[ -s "$$output/rootfs/base.ext4" ]; then \
@@ -1899,7 +1904,7 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 	fi; \
 	rm -rf "$$output"; \
 	mkdir -p "$$output/arch/$(LINUX_ARCH)/boot/dts"; \
-	for dtb in appstore development; do \
+	for dtb in release development; do \
 		input="$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb"; \
 		[ -s "$$input" ] || { echo "missing non-empty profile DTB: $$input" >&2; exit 1; }; \
 		cp "$$input" "$$output/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb"; \
@@ -2026,7 +2031,7 @@ __ios-simulator-xcframework: __ios-simulator-framework
 		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/Info.plist" \
 		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/OrlixKernel" \
 		"$$payload/Info.plist" \
-		"$$payload/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" \
+		"$$payload/arch/$(LINUX_ARCH)/boot/dts/release.dtb" \
 		"$$payload/arch/$(LINUX_ARCH)/boot/dts/development.dtb"; do \
 		[ -s "$$required" ] || { echo "missing non-empty XCFramework input: $$required" >&2; exit 1; }; \
 	done; \

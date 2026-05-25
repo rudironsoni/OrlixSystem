@@ -6,7 +6,7 @@ PROJECT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT := $(abspath $(PROJECT_DIR)/..)
 KERNEL_MAKE := $(MAKE) -C $(REPO_ROOT) -f OrlixKernel/Makefile
 
-PROFILE ?= appstore
+PROFILE ?= release
 
 MLIBC_REMOTE ?= https://github.com/managarm/mlibc.git
 MLIBC_COMMIT ?= 43ab07732cdfefe2e915bf98190f5d7f4bd8d765

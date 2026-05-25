@@ -36,8 +36,8 @@ int OrlixTerminalBootProfileNamed(const char *profile_name)
     if (!profile_name) {
         return ORLIX_BOOT_STATUS_INVALID_CONFIG;
     }
-    if (strcmp(profile_name, "appstore") == 0) {
-        return OrlixTerminalBootProfile(ORLIX_BOOT_PROFILE_APPSTORE);
+    if (strcmp(profile_name, "release") == 0) {
+        return OrlixTerminalBootProfile(ORLIX_BOOT_PROFILE_RELEASE);
     }
     if (strcmp(profile_name, "development") == 0) {
         return OrlixTerminalBootProfile(ORLIX_BOOT_PROFILE_DEVELOPMENT);

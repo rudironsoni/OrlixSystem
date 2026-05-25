@@ -19,7 +19,7 @@ int main(void)
 	bool has_bootargs;
 	bool has_compatible;
 	bool has_consoles;
-	bool appstore_profile;
+	bool release_profile;
 	bool development_profile;
 	const char *profile = NULL;
 
@@ -36,13 +36,13 @@ int main(void)
 	has_consoles = orlix_read_file("/proc/consoles", consoles,
 				       sizeof(consoles), &consoles_size) == 0;
 
-	appstore_profile = has_cmdline &&
-		orlix_contains(cmdline, cmdline_size, "orlix.profile=appstore");
+	release_profile = has_cmdline &&
+		orlix_contains(cmdline, cmdline_size, "orlix.profile=release");
 	development_profile = has_cmdline &&
 		orlix_contains(cmdline, cmdline_size, "orlix.profile=development");
 
-	if (appstore_profile)
-		profile = "appstore";
+	if (release_profile)
+		profile = "release";
 	else if (development_profile)
 		profile = "development";
 

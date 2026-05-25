@@ -304,17 +304,17 @@ Evidence that the app-hosted OrlixKernel integration for `ARCH=orlix` can be bui
 
 The third milestone for the upstream-Linux iOS port. It packages or links the app-hosted OrlixKernel integration into the iOS host path before iOS-hosted kernel-interface proof and later runtime proof; boot-stub packaging is not proof.
 
-## App Store Profile
+## Release Profile
 
-The default Orlix build profile. Normal build targets use this profile unless explicitly overridden, because it carries the strictest product constraints.
+The default Orlix build profile. Normal build targets use this profile unless explicitly overridden, because every shipped Orlix product targets App Store distribution constraints.
 
 ## Development Profile
 
-An Orlix build profile that should match the App Store profile except for explicit debug and testing affordances. It must not become a noisier or broader product shape.
+An Orlix build profile that should match the release profile except for explicit debug and testing affordances. It must not become a noisier or broader product shape.
 
 ## Profile Parity
 
-The rule that App Store and development profile differences are limited to explicit debug and testing affordances. All product behavior, Linux-visible device shape, boot resource roles, and milestone proof scope should otherwise remain equal.
+The rule that release and development profile differences are limited to explicit debug and testing affordances. All product behavior, Linux-visible device shape, boot resource roles, and milestone proof scope should otherwise remain equal.
 
 ## Profile-Invariant Userspace ABI
 
@@ -326,7 +326,7 @@ A release-blocking difference where profiles expose different Linux userspace AB
 
 ## Test Build Overlay
 
-A test-only kernel configuration layer applied to both App Store and development proof builds to enable KUnit, kselftest support, KUnit debugfs, and related proof affordances without changing the normal product profile configs.
+A test-only kernel configuration layer applied to both release and development proof builds to enable KUnit, kselftest support, KUnit debugfs, and related proof affordances without changing the normal product profile configs.
 
 ## Orlix KUnit Config
 
@@ -334,15 +334,15 @@ A committed `.kunitconfig` under the Orlix architecture overlay that selects Orl
 
 ## KUnit Proof Merge
 
-The proof-build step that merges the selected profile defconfig with `arch/orlix/.kunitconfig` for both App Store and development proof kernels. Normal product builds use only the selected profile defconfig.
+The proof-build step that merges the selected profile defconfig with `arch/orlix/.kunitconfig` for both release and development proof kernels. Normal product builds use only the selected profile defconfig.
 
 ## Profile Proof Parity
 
-The requirement that milestones claiming iOS packaging, boot, runtime, or Linux behavior validate both App Store and development profiles against the same XCTest scope.
+The requirement that milestones claiming iOS packaging, boot, runtime, or Linux behavior validate both release and development profiles against the same XCTest scope.
 
 ## iOS Proof Matrix
 
-The required four-cell XCTest proof matrix for milestones claiming iOS packaging, boot, runtime, or Linux behavior: App Store on `iphoneos`, App Store on `iphonesimulator`, development on `iphoneos`, and development on `iphonesimulator`.
+The required four-cell XCTest proof matrix for milestones claiming iOS packaging, boot, runtime, or Linux behavior: release on `iphoneos`, release on `iphonesimulator`, development on `iphoneos`, and development on `iphonesimulator`.
 
 ## Linux-Shaped Make Surface
 
@@ -350,7 +350,7 @@ The top-level Makefile's public command surface stays small and follows conventi
 
 ## Make Scope Variables
 
-Variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=orlixmlibc` select profile, test class, and kselftest libc lane without creating new public target names for each proof lane or artifact path.
+Variables such as `PROFILE=release`, `type=kunit,kselftest`, and `libc=orlixmlibc` select profile, test class, and kselftest libc lane without creating new public target names for each proof lane or artifact path.
 
 ## Proof Label Metadata
 
@@ -358,7 +358,7 @@ Proof labels name what an artifact or log stream proves, such as `orlixmlibc-kse
 
 ## Boot Profile
 
-A closed product-profile choice exposed through the bootloader entrypoint. Supported profiles are App Store and development; arbitrary string-named profiles are not part of the public API.
+A closed product-profile choice exposed through the bootloader entrypoint. Supported profiles are release and development; arbitrary string-named profiles are not part of the public API.
 
 ## Profile Defconfig
 
@@ -384,17 +384,17 @@ The Linux-visible default root storage devices for Orlix. `/dev/vda` is the immu
 
 The main Linux filesystem for Orlix. It is assembled from virtio-blk-backed Linux filesystem images using upstream Linux mechanisms; external directory mechanisms such as virtio-fs or 9p are separate explicit mounts, not the root filesystem.
 
-## App Store Root Storage
+## Release Root Storage
 
-The App Store root storage model uses an immutable bundled base image plus writable app-private state or overlay storage. Persistent Linux state belongs in app-private storage, while caches remain recreatable and external documents are explicit mounts.
+The release root storage model uses an immutable bundled base image plus writable app-private state or overlay storage. Persistent Linux state belongs in app-private storage, while caches remain recreatable and external documents are explicit mounts.
 
 ## Package State
 
 Linux package databases and permitted installed package state live under normal Linux paths in writable state. Pre-bundled packages live in the immutable base image, while repositories, post-install behavior, and downloaded content are constrained by profile policy.
 
-## App Store Package Channel
+## Release Package Channel
 
-The App Store profile may allow downloaded binary packages only through curated, signed, profile-approved repositories with App Store-safe disclosure and policy checks. It is not an unrestricted arbitrary Linux repository model.
+The release profile bundles curated OrlixOS distribution content as signed app resources and updates executable content through app releases first. Downloaded binary package repositories are deferred until a curated, signed, profile-approved channel with App Store-safe disclosure and policy checks is explicitly designed and reviewed. It is not an unrestricted arbitrary Linux repository model.
 
 ## Package Policy Ownership
 
@@ -402,7 +402,7 @@ Repository trust, package signatures, metadata, and post-install policy are user
 
 ## Executable Memory Policy
 
-The App Store profile follows normal Linux execution controls for file-backed executable mappings, including filesystem permissions, mount flags, memory-management behavior, and upstream security mechanisms. Unavoidable iOS host constraints such as writable-plus-executable denial are adapted through the architecture/MM boundary.
+The release profile follows normal Linux execution controls for file-backed executable mappings, including filesystem permissions, mount flags, memory-management behavior, and upstream security mechanisms. Unavoidable iOS host constraints such as writable-plus-executable denial are adapted through the architecture/MM boundary.
 
 ## Executable Content Trust
 
@@ -526,7 +526,7 @@ The ninth milestone for the upstream-Linux iOS port. It adds remaining virtio-fi
 
 ## Root Overlay
 
-The App Store root filesystem is assembled with upstream Linux OverlayFS when supported by the lower and upper filesystems. Initramfs mounts the immutable base image and writable state image, then switches to the merged root.
+The release root filesystem may be assembled with upstream Linux OverlayFS when writable-root mode is selected and supported by the lower and upper filesystems. Initramfs mounts the immutable base image and writable state image, then switches to the merged root. Direct immutable-root boot and initramfs-only proof boot remain separate, intentional Linux-shaped modes.
 
 ## Writable State Layout
 
@@ -534,7 +534,7 @@ The persistent writable root state mirrors normal Linux paths, especially `/etc`
 
 ## Cache Storage
 
-Recreatable Linux cache data is separated from persistent writable state. The App Store profile should expose cache-backed storage as a distinct Linux-visible mount, such as `/var/cache`, so host cache loss cannot corrupt persistent identity.
+Recreatable Linux cache data is separated from persistent writable state. The release profile should expose cache-backed storage as a distinct Linux-visible mount, such as `/var/cache`, so host cache loss cannot corrupt persistent identity.
 
 ## Temporary Storage
 
@@ -542,11 +542,11 @@ The default `/tmp` storage for Orlix is upstream Linux `tmpfs`. Host temporary d
 
 ## Initramfs Policy
 
-Orlix supports normal Linux initramfs/initrd behavior. The App Store profile defaults to initramfs for early policy and root setup, but direct `root=/dev/vda` boot remains a supported Linux-shaped path.
+Orlix supports normal Linux initramfs/initrd behavior. The release profile defaults to initramfs for early policy and root setup, but direct `root=/dev/vda` boot remains a supported Linux-shaped path.
 
-## App Store Initramfs
+## Release Initramfs
 
-The App Store profile uses an external initramfs artifact that is bundled with the app, signed as app content, immutable at runtime, and loaded by the bootloader through normal Linux boot data.
+The release profile uses an external initramfs artifact that is bundled with the app, signed as app content, immutable at runtime, and loaded by the bootloader through normal Linux boot data.
 
 ## Virtio-Block Semantics
 
@@ -588,9 +588,9 @@ The Linux-visible boot console for Orlix. Orlix should support both a serial-sty
 
 The Linux-shaped process of selecting active boot consoles through kernel boot arguments and registered console drivers. Orlix should allow choosing between serial-style console behavior and virtio-console behavior at boot, matching regular Linux expectations.
 
-## App Store Console Profile
+## Release Console Profile
 
-The default console policy for the App Store profile. Both virtio-console and serial-style console support are enabled; virtio-console is the normal interactive path, and the serial-style console remains available for early, debug, or fallback use.
+The default console policy for the release profile. Both virtio-console and serial-style console support are enabled; virtio-console is the normal interactive path, and the serial-style console remains available for early, debug, or fallback use.
 
 ## Early Console
 
@@ -606,7 +606,7 @@ A profile-selected set of Linux-shaped boot artifacts, especially device tree da
 
 ## Profile Device Tree
 
-The static Linux-shaped device tree source for an Orlix profile. Durable profile device trees live under the Orlix architecture overlay, for example `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/boot/dts/appstore.dts`, and the bootloader supplies dynamic boot-time values.
+The static Linux-shaped device tree source for an Orlix profile. Durable profile device trees live under the Orlix architecture overlay, for example `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/boot/dts/release.dts`, and the bootloader supplies dynamic boot-time values.
 
 ## Bundled Profile DTB
 

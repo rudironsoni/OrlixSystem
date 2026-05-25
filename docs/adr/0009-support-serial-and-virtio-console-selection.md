@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, updated by ADR 0023.
 
 ## Context
 
@@ -16,7 +16,7 @@ Orlix supports both serial-style console behavior and upstream virtio-console. B
 
 ## Consequences
 
-The App Store profile enables both console paths.
+The release profile enables both console paths.
 
 The serial-style console is available for early, debug, or fallback use.
 

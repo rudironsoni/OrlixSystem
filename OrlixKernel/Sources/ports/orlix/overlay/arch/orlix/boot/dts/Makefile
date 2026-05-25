@@ -1,2 +1,2 @@
-dtb-y += appstore.dtb
+dtb-y += release.dtb
 dtb-y += development.dtb
