@@ -4,6 +4,8 @@
 #include <fcntl.h>
 #include <stddef.h>
 #include <sys/ioctl.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static void write_literal(int fd, const char *message)
@@ -54,6 +56,45 @@ static int open_controlling_tty(void)
 	return fd;
 }
 
+static int ensure_directory(const char *path, mode_t mode)
+{
+	if (mkdir(path, mode) < 0 && errno != EEXIST)
+		return -1;
+
+	return 0;
+}
+
+static int mount_filesystem(const char *source, const char *target,
+			    const char *type, unsigned long flags,
+			    const char *data)
+{
+	if (mount(source, target, type, flags, data) < 0 && errno != EBUSY)
+		return -1;
+
+	return 0;
+}
+
+static void mount_runtime_filesystems(void)
+{
+	if (ensure_directory("/proc", 0555) < 0 ||
+	    mount_filesystem("proc", "/proc", "proc", 0, NULL) < 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /proc failed\n");
+
+	if (ensure_directory("/sys", 0555) < 0 ||
+	    mount_filesystem("sysfs", "/sys", "sysfs", 0, NULL) < 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /sys failed\n");
+
+	if (ensure_directory("/run", 0755) < 0 ||
+	    mount_filesystem("tmpfs", "/run", "tmpfs",
+			     MS_NOSUID | MS_NODEV, "mode=0755") < 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /run failed\n");
+
+	if (ensure_directory("/tmp", 01777) < 0 ||
+	    mount_filesystem("tmpfs", "/tmp", "tmpfs",
+			     MS_NOSUID | MS_NODEV, "mode=1777") < 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /tmp failed\n");
+}
+
 static void install_stdio(int fd)
 {
 	for (int target = STDIN_FILENO; target <= STDERR_FILENO; target++) {
@@ -83,6 +124,7 @@ int main(void)
 	}
 
 	install_stdio(tty);
+	mount_runtime_filesystems();
 	execve(argv[0], argv, envp);
 	write_literal(STDERR_FILENO, "orlix-init: exec /bin/sh failed\n");
 
