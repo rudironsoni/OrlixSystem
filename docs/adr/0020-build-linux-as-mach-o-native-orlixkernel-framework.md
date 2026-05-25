@@ -27,7 +27,7 @@ OrlixBoot()
   -> real Mach-O-linked start_kernel()
 ```
 
-During bring-up, `start_kernel()` may remain unavailable and `OrlixBoot()` may return `ORLIX_BOOT_STATUS_UNAVAILABLE`. That is an app-hosted kernel dependency proof only. Runtime symbol lookup is a temporary bridge and must not become the final product design unless a specific Mach-O or framework constraint requires it. Keep `dlsym("start_kernel")` on the removal list: once the real upstream dependency chain and Mach-O section/linker policy can provide `start_kernel()`, use a direct symbol or an explicitly documented weak-symbol transition instead.
+During bring-up, `OrlixBoot()` may return `ORLIX_BOOT_STATUS_UNAVAILABLE` if a selected profile cannot yet satisfy the upstream Linux dependency chain. That is an app-hosted kernel dependency proof only. Runtime symbol lookup is a temporary bridge and must not become the final product design unless a specific Mach-O or framework constraint requires it. Keep `dlsym("start_kernel")` on the removal list: once the real upstream dependency chain and Mach-O section/linker policy can provide `start_kernel()`, use a direct symbol or an explicitly documented weak-symbol transition instead.
 
 ## Consequences
 
@@ -39,7 +39,7 @@ During bring-up, `start_kernel()` may remain unavailable and `OrlixBoot()` may r
 - Host mechanics stay behind `OrlixHostAdapter/Sources`.
 - iOS slices must preserve one Linux userspace ABI.
 - `vmlinux`, `vmlinux.o`, and ELF payloads may appear only in explicit non-product experiments.
-- Product proof language remains limited to app-hosted kernel dependency proof until real `start_kernel()` executes.
+- Product proof language remains limited to app-hosted kernel dependency proof until real `start_kernel()` executes in the iOS-hosted app environment.
 
 ## Section And Linker Work
 
@@ -74,6 +74,6 @@ Unsupported section classes may be stubbed only when the selected first slice ca
 
 ## Initial Build Slice
 
-The first Mach-O-native lane prepares the generated Orlix Linux port tree from `OrlixKernel/Sources/upstream` and `OrlixKernel/Sources/ports/orlix`, runs Kbuild preparation and DTB generation, compiles selected Linux-owned `arch/orlix` source from the generated tree with iOS Mach-O target triples, archives those objects as `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`, links the matching archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
+The first Mach-O-native lane prepares the generated Orlix Linux port tree from `OrlixKernel/Sources/upstream` and `OrlixKernel/Sources/ports/orlix`, runs Kbuild preparation and DTB generation, compiles selected Linux-owned source from the generated tree with iOS Mach-O target triples, archives those objects as `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`, links the matching archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
 
-The first slice does not compile or link real upstream `init/main.c` successfully. `start_kernel()` remains unavailable until the real upstream Linux provider can be compiled and linked as Mach-O.
+The current dependency lane includes real upstream `init/main.c` and the Orlix hosted-exec/syscall substrate. Remaining failures in this lane are normal upstream Linux dependency-closure work, not permission to add fake `start_kernel()` providers or boot-only package shortcuts.

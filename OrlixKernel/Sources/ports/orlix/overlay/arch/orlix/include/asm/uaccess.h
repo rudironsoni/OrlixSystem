@@ -3,26 +3,16 @@
 #define _ASM_ORLIX_UACCESS_H
 
 #include <linux/compiler.h>
-#include <linux/string.h>
 
-static inline unsigned long raw_copy_from_user(void *to,
-						       const void __user *from,
-						       unsigned long n)
-{
-	memcpy(to, (const void __force *)from, n);
-	return 0;
-}
-
-static inline unsigned long raw_copy_to_user(void __user *to,
-						     const void *from,
-						     unsigned long n)
-{
-	memcpy((void __force *)to, from, n);
-	return 0;
-}
+unsigned long raw_copy_from_user(void *to, const void __user *from,
+				 unsigned long n);
+unsigned long raw_copy_to_user(void __user *to, const void *from,
+			       unsigned long n);
+unsigned long __clear_user(void __user *to, unsigned long n);
 
 #define INLINE_COPY_FROM_USER
 #define INLINE_COPY_TO_USER
+#define __clear_user	__clear_user
 
 #include <asm-generic/uaccess.h>
 

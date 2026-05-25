@@ -1,4 +1,5 @@
 #include "OrlixHostAdapter/memory/kernel_mapping.h"
+#include "OrlixHostAdapter/runtime/host_tls.h"
 
 #include <mach/mach.h>
 #include <mach/vm_map.h>
@@ -88,17 +89,24 @@ __attribute__((visibility("hidden"))) int orlix_host_kernel_map_page(
     const void *source_page,
     unsigned long length)
 {
-    return OrlixHostMapPageWithProtection(target_address,
-                                          source_page,
-                                          length,
-                                          VM_PROT_NONE);
+    unsigned long active_tls = OrlixHostEnterHostTls();
+    int result = OrlixHostMapPageWithProtection(target_address,
+                                                source_page,
+                                                length,
+                                                VM_PROT_NONE);
+
+    OrlixHostLeaveHostTls(active_tls);
+    return result;
 }
 
 __attribute__((visibility("hidden"))) void orlix_host_kernel_unmap_pages(
     unsigned long target_address,
     unsigned long length)
 {
+    unsigned long active_tls = OrlixHostEnterHostTls();
+
     OrlixHostUnmapPages(target_address, length);
+    OrlixHostLeaveHostTls(active_tls);
 }
 
 __attribute__((visibility("hidden"))) int orlix_host_user_map_page(
@@ -117,17 +125,26 @@ __attribute__((visibility("hidden"))) int orlix_host_user_map_page(
         protection |= VM_PROT_EXECUTE;
     }
 
-    return OrlixHostMapPageWithProtection(target_address,
-                                          source_page,
-                                          length,
-                                          protection);
+    unsigned long active_tls = OrlixHostEnterHostTls();
+    int result;
+
+    OrlixHostUnmapPages(target_address, length);
+    result = OrlixHostMapPageWithProtection(target_address,
+                                            source_page,
+                                            length,
+                                            protection);
+    OrlixHostLeaveHostTls(active_tls);
+    return result;
 }
 
 __attribute__((visibility("hidden"))) void orlix_host_user_unmap_pages(
     unsigned long target_address,
     unsigned long length)
 {
+    unsigned long active_tls = OrlixHostEnterHostTls();
+
     OrlixHostUnmapPages(target_address, length);
+    OrlixHostLeaveHostTls(active_tls);
 }
 
 __attribute__((visibility("hidden"))) void *orlix_host_ioremap(
@@ -138,23 +155,26 @@ __attribute__((visibility("hidden"))) void *orlix_host_ioremap(
     vm_address_t mapped = 0;
     vm_size_t rounded_length = OrlixHostRoundPageLength(length);
     kern_return_t status;
+    unsigned long active_tls;
+    void *result = NULL;
 
     if (physical_address == 0 || rounded_length == 0) {
         return NULL;
     }
 
+    active_tls = OrlixHostEnterHostTls();
     status = vm_allocate(mach_task_self(),
                          &mapped,
                          rounded_length,
                          VM_FLAGS_ANYWHERE);
     if (status != KERN_SUCCESS || mapped == 0) {
-        return NULL;
+        goto out;
     }
 
     mapping = malloc(sizeof(*mapping));
     if (!mapping) {
         (void)vm_deallocate(mach_task_self(), mapped, rounded_length);
-        return NULL;
+        goto out;
     }
 
     memset((void *)mapped, 0, rounded_length);
@@ -163,19 +183,24 @@ __attribute__((visibility("hidden"))) void *orlix_host_ioremap(
     mapping->length = rounded_length;
     mapping->next = OrlixHostIOMappings;
     OrlixHostIOMappings = mapping;
+    result = mapping->address;
 
-    return mapping->address;
+out:
+    OrlixHostLeaveHostTls(active_tls);
+    return result;
 }
 
 __attribute__((visibility("hidden"))) void orlix_host_iounmap(
     void *mapped_address)
 {
     struct OrlixHostIOMapping **cursor = &OrlixHostIOMappings;
+    unsigned long active_tls;
 
     if (!mapped_address) {
         return;
     }
 
+    active_tls = OrlixHostEnterHostTls();
     while (*cursor) {
         struct OrlixHostIOMapping *mapping = *cursor;
 
@@ -185,11 +210,14 @@ __attribute__((visibility("hidden"))) void orlix_host_iounmap(
                                 (vm_address_t)mapping->address,
                                 mapping->length);
             free(mapping);
+            OrlixHostLeaveHostTls(active_tls);
             return;
         }
 
         cursor = &mapping->next;
     }
+
+    OrlixHostLeaveHostTls(active_tls);
 }
 
 __attribute__((visibility("hidden"))) int orlix_host_iomem_physical_address(

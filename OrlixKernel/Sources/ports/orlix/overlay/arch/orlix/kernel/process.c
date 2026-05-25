@@ -7,6 +7,8 @@
 #include <linux/errno.h>
 #include <linux/kernel.h>
 #include <linux/panic.h>
+#include <linux/stddef.h>
+#include <asm/hosted_exec.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
 
@@ -17,11 +19,6 @@ asmlinkage void orlix_ret_from_fork_user(struct pt_regs *regs);
 extern struct task_struct *orlix_cpu_switch_context(struct orlix_cpu_context *prev,
 						    struct orlix_cpu_context *next,
 						    struct task_struct *last);
-#if defined(ORLIX_APP_HOSTED_BOOT)
-void orlix_sync_current_user_mappings(struct pt_regs *regs);
-static __noreturn void orlix_hosted_enter_user(unsigned long pc,
-					       unsigned long sp);
-#endif
 
 asm(
 ".p2align 2\n"
@@ -55,18 +52,62 @@ asm(
 "1:\n"
 "	mov	x0, sp\n"
 "	bl	_orlix_ret_from_fork_user\n"
-"	brk	#0\n"
-);
+	"	brk	#0\n"
+	);
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
-static __noreturn void orlix_hosted_enter_user(unsigned long pc,
-					       unsigned long sp)
+extern unsigned long orlix_hosted_active_user_tls;
+
+void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 {
+	unsigned long kernel_sp;
+	unsigned long user_tls = current->thread.user_tls;
+
+	asm volatile("mov %0, sp" : "=r"(kernel_sp));
+	orlix_hosted_save_kernel_stack(kernel_sp);
+
 	asm volatile(
-	"	mov	sp, %0\n"
-	"	br	%1\n"
+	"	mov	x9, %0\n"
+	"	mov	x12, %1\n"
+	"	ldr	x10, [x9, #%c[pc_offset]]\n"
+	"	ldr	x11, [x9, #%c[sp_offset]]\n"
+	"	ldr	x8, [x9, #%c[x8_offset]]\n"
+	"	ldp	x19, x20, [x9, #%c[x19_offset]]\n"
+	"	ldp	x21, x22, [x9, #%c[x21_offset]]\n"
+	"	ldp	x23, x24, [x9, #%c[x23_offset]]\n"
+	"	ldp	x25, x26, [x9, #%c[x25_offset]]\n"
+	"	ldp	x27, x28, [x9, #%c[x27_offset]]\n"
+	"	ldp	x29, x30, [x9, #%c[x29_offset]]\n"
+	"	ldp	x6, x7, [x9, #%c[x6_offset]]\n"
+	"	ldp	x4, x5, [x9, #%c[x4_offset]]\n"
+	"	ldp	x2, x3, [x9, #%c[x2_offset]]\n"
+	"	ldp	x0, x1, [x9, #%c[x0_offset]]\n"
+	"	msr	tpidr_el0, x12\n"
+	"	isb\n"
+	"	mrs	x12, tpidr_el0\n"
+	"	adrp	x13, _orlix_hosted_active_user_tls@PAGE\n"
+	"	str	x12, [x13, _orlix_hosted_active_user_tls@PAGEOFF]\n"
+	"	adrp	x13, _orlix_hosted_user_active@PAGE\n"
+	"	mov	x14, #1\n"
+	"	str	x14, [x13, _orlix_hosted_user_active@PAGEOFF]\n"
+	"	mov	sp, x11\n"
+	"	br	x10\n"
 	:
-	: "r"(sp), "r"(pc)
+	: "r"(regs),
+	  "r"(user_tls),
+	  [pc_offset] "i"(offsetof(struct pt_regs, pc)),
+	  [sp_offset] "i"(offsetof(struct pt_regs, sp)),
+	  [x8_offset] "i"(offsetof(struct pt_regs, regs[8])),
+	  [x19_offset] "i"(offsetof(struct pt_regs, regs[19])),
+	  [x21_offset] "i"(offsetof(struct pt_regs, regs[21])),
+	  [x23_offset] "i"(offsetof(struct pt_regs, regs[23])),
+	  [x25_offset] "i"(offsetof(struct pt_regs, regs[25])),
+	  [x27_offset] "i"(offsetof(struct pt_regs, regs[27])),
+	  [x29_offset] "i"(offsetof(struct pt_regs, regs[29])),
+	  [x6_offset] "i"(offsetof(struct pt_regs, regs[6])),
+	  [x4_offset] "i"(offsetof(struct pt_regs, regs[4])),
+	  [x2_offset] "i"(offsetof(struct pt_regs, regs[2])),
+	  [x0_offset] "i"(offsetof(struct pt_regs, regs[0]))
 	: "memory");
 	unreachable();
 }
@@ -79,7 +120,7 @@ asmlinkage void orlix_ret_from_fork_user(struct pt_regs *regs)
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
 	orlix_sync_current_user_mappings(regs);
-	orlix_hosted_enter_user(regs->pc, regs->sp);
+	orlix_hosted_enter_user(regs);
 #endif
 	panic("Orlix: user return requires hosted entry support\n");
 }
@@ -91,11 +132,24 @@ void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 	regs->sp = sp;
 	regs->pstate = PSR_MODE_EL0t;
 	regs->syscallno = NO_SYSCALL;
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	current->thread.user_tls = 0;
+	memset(current->thread.user_simd, 0, sizeof(current->thread.user_simd));
+	current->thread.user_fpsr = 0;
+	current->thread.user_fpcr = 0;
+	current->thread.user_simd_valid = 1;
+#endif
 }
 
 void flush_thread(void)
 {
-	/* Orlix has no TLS/FPU/vector state to reset yet. */
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	current->thread.user_tls = 0;
+	memset(current->thread.user_simd, 0, sizeof(current->thread.user_simd));
+	current->thread.user_fpsr = 0;
+	current->thread.user_fpcr = 0;
+	current->thread.user_simd_valid = 1;
+#endif
 }
 
 int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
@@ -103,16 +157,44 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 	struct pt_regs *childregs = task_pt_regs(p);
 
 	memset(&p->thread.cpu_context, 0, sizeof(p->thread.cpu_context));
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	p->thread.user_tls = 0;
+	memset(p->thread.user_simd, 0, sizeof(p->thread.user_simd));
+	p->thread.user_fpsr = 0;
+	p->thread.user_fpcr = 0;
+	p->thread.user_simd_valid = 0;
+#endif
 
-	if (!args->fn)
-		return -EOPNOTSUPP;
+	if (!args->fn) {
+		*childregs = *task_pt_regs(current);
+		childregs->regs[0] = 0;
+		childregs->syscallno = NO_SYSCALL;
+		if (args->stack)
+			childregs->sp = args->stack;
+#if defined(ORLIX_APP_HOSTED_BOOT)
+		/*
+		 * The syscall gate snapshots userspace TLS at the Linux syscall
+		 * boundary.  Deeper kernel code must use that saved value: hosted
+		 * trap transport can run while the hardware TLS register belongs to
+		 * the iOS host thread.
+		 */
+		p->thread.user_tls = current->thread.user_tls;
+		if (args->flags & CLONE_SETTLS)
+			p->thread.user_tls = args->tls;
+		memcpy(p->thread.user_simd, current->thread.user_simd,
+		       sizeof(p->thread.user_simd));
+		p->thread.user_fpsr = current->thread.user_fpsr;
+		p->thread.user_fpcr = current->thread.user_fpcr;
+		p->thread.user_simd_valid = current->thread.user_simd_valid;
+#endif
+	} else {
+		memset(childregs, 0, sizeof(*childregs));
+		childregs->pstate = PSR_MODE_EL1h;
+		childregs->syscallno = NO_SYSCALL;
 
-	memset(childregs, 0, sizeof(*childregs));
-	childregs->pstate = PSR_MODE_EL1h;
-	childregs->syscallno = NO_SYSCALL;
-
-	p->thread.cpu_context.x19 = (unsigned long)args->fn;
-	p->thread.cpu_context.x20 = (unsigned long)args->fn_arg;
+		p->thread.cpu_context.x19 = (unsigned long)args->fn;
+		p->thread.cpu_context.x20 = (unsigned long)args->fn_arg;
+	}
 	p->thread.cpu_context.sp = (unsigned long)childregs;
 	p->thread.cpu_context.pc = (unsigned long)ret_from_fork;
 

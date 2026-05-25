@@ -40,17 +40,13 @@ The bring-up-only host resolver for `start_kernel()`. It is acceptable only whil
 
 Evidence from selected Linux-owned kselftests, executed from userspace against a running OrlixKernel, that kernel-exposed interfaces behave correctly.
 
-## Temporary Kselftest Harness
-
-A non-product userspace harness, possibly using a foreign Linux libc or nolibc style, used to run selected kselftests before OrlixMLibC exists.
-
 ## OrlixMLibC Kselftest Lane
 
 The kselftest proof lane where selected Linux kselftests are built against OrlixMLibC and validate the Orlix syscall and userspace ABI path.
 
 ## Kselftest Promotion Rule
 
-Selected kselftests may start as temporary-harness kernel-interface proof, but only tests rebuilt and rerun through OrlixMLibC count as Orlix syscall and userspace ABI proof.
+Selected kselftests must build against OrlixMLibC. Do not add a separate nolibc/raw-syscall lane for Orlix kselftest proof.
 
 ## Dependency Proof
 
@@ -74,7 +70,7 @@ The product runtime proof model that requires POSIX shell environment proof plus
 
 ## Product Runtime Claim Promotion Order
 
-The evidence order for product runtime claims: kernel dependency proof, temporary kselftest kernel-interface proof, OrlixMLibC libc proof, OrlixMLibC-built kselftest syscall/UAPI proof, POSIX shell environment proof, then third-party package proof.
+The evidence order for product runtime claims: kernel dependency proof, OrlixMLibC-built kselftest kernel-interface proof, OrlixMLibC libc proof, OrlixMLibC-built kselftest syscall/UAPI proof, POSIX shell environment proof, then third-party package proof.
 
 ## Parallel Development, Ordered Claims
 
@@ -122,7 +118,7 @@ The proof rule that KUnit and kselftest raw outputs remain separate streams. XCT
 
 ## Test Initramfs Sequence
 
-The test initramfs first collects KUnit output from the kernel log path and KUnit debugfs when enabled, then runs `run_kselftest.sh -c orlix` and captures kselftest stdout separately.
+The final test initramfs sequence first collects KUnit output from the kernel log path and KUnit debugfs when enabled, then runs `run_kselftest.sh -c orlix` and captures kselftest stdout separately.
 
 ## KUnit DebugFS Affordance
 
@@ -162,7 +158,7 @@ A future build mode where running Orlix Linux compiles Orlix Linux userspace bin
 
 ## Orlix Linux Syscall ABI
 
-The Linux syscall ABI exposed by upstream Linux for `ARCH=orlix`, including syscall numbers, argument shapes, errno behavior, signal and task semantics, futexes, ioctls, and file-descriptor behavior.
+The upstream Linux syscall ABI consumed by mlibc `sysdeps/linux`, exposed by OrlixKernel for `ARCH=orlix`: Linux syscall numbers, argument shapes, negative errno behavior, signal and task semantics, futexes, ioctls, file-descriptor behavior, and installed Linux UAPI layouts. It is not an Orlix-specific ABI.
 
 ## OrlixMLibC
 
@@ -174,11 +170,11 @@ A durable top-level OrlixSystem component, separate from the Linux kernel port, 
 
 ## OrlixMLibC Upstream Model
 
-The libc source model where upstream mlibc is generated read-only input and durable Orlix sysdeps, configs, and patches live under the OrlixMLibC component.
+The libc source model where upstream mlibc is generated read-only input under `Build/OrlixMLibC/upstream/mlibc` and durable Orlix sysdeps, configs, and patches live under the OrlixMLibC component.
 
 ## OrlixMLibC Sysdeps Rule
 
-OrlixMLibC may have an Orlix sysdeps identity only where mlibc needs an OS-port hook, but it must call Linux-shaped syscalls and expose Linux-compatible behavior without an Orlix-specific application ABI.
+OrlixMLibC uses upstream mlibc `sysdeps/linux` as the libc syscall and ABI semantics. Orlix patches are allowed only when an iOS-hosted execution constraint makes the physical syscall transport impossible upstream, and those patches must preserve the Linux syscall ABI rather than create an Orlix application ABI.
 
 ## OrlixMLibC Kernel Header Source
 
@@ -280,15 +276,9 @@ The quarantined coverage under `LegacyOrlix/Tests/MigrationReference/LocalKernel
 
 The dependency-proof path where an iOS host app or XCTest target launches `OrlixKernel.xcframework`, boots Orlix Linux with test resources, and captures Linux-native test output without claiming product runtime proof.
 
-## Temporary Kselftest Kernel-Interface Lane
-
-The early kselftest lane installed under `Build/OrlixKernel/kselftest/temporary/<profile>/` and staged with `proof_lane=temporary-kselftest-kernel-interface`. It may use a foreign Linux libc, bootstrap Debian arm64 sysroot, or nolibc-style harness. It is not OrlixMLibC proof, Orlix userspace ABI proof, package proof, or product runtime proof.
-
-`scripts/bootstrap-orlix-linux-userspace-sysroot.sh` is temporary infrastructure for the `kselftest libc=linux` kernel-interface lane. It must not feed product packaging, OrlixMLibC, package builds, or final userspace ABI proof. It must be retired or bypassed once the OrlixMLibC kselftest lane is usable.
-
 ## OrlixMLibC Kselftest Syscall/UAPI Lane
 
-The later kselftest lane installed under `Build/OrlixMLibC/kselftest/<profile>/` and staged with `proof_lane=orlixmlibc-kselftest-syscall-uapi`. It requires an OrlixMLibC sysroot plus installed Orlix UAPI headers and proves selected OrlixMLibC-to-OrlixKernel syscall/UAPI behavior.
+The kselftest lane installed under `Build/OrlixMLibC/kselftest/<profile>/` and staged with `proof_lane=orlixmlibc-kselftest-syscall-uapi`. It requires an OrlixMLibC sysroot plus installed Orlix UAPI headers and proves selected OrlixMLibC-to-OrlixKernel syscall/UAPI behavior.
 
 ## XCTest Proof Topology
 
@@ -360,11 +350,11 @@ The top-level Makefile's public command surface stays small and follows conventi
 
 ## Make Scope Variables
 
-Variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=linux` or `libc=orlixmlibc` select profile, test class, and kselftest libc lane without creating new public target names for each proof lane or artifact path.
+Variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=orlixmlibc` select profile, test class, and kselftest libc lane without creating new public target names for each proof lane or artifact path.
 
 ## Proof Label Metadata
 
-Proof labels name what an artifact or log stream proves, such as `temporary-kselftest-kernel-interface` or `orlixmlibc-kselftest-syscall-uapi`. They are metadata and log markers, not public Make targets.
+Proof labels name what an artifact or log stream proves, such as `orlixmlibc-kselftest-syscall-uapi`. They are metadata and log markers, not public Make targets.
 
 ## Boot Profile
 
@@ -429,6 +419,10 @@ Unavoidable iOS memory mechanics are reached through narrow `arch/orlix`-owned s
 ## Architecture Host Seams
 
 Non-device host mechanics such as clocks, timers, execution substrate, low-level memory mapping, lifecycle notification, and very-early entropy may use narrow `arch/orlix`-owned seams into `OrlixHostAdapter`. Device-like runtime services should use virtio where possible.
+
+## Host Reality Rule
+
+The physical host is iOS only, private, and sandboxed. Host limits are implementation constraints, not Linux-facing behavior. Processes, signals, process groups, sessions, mounts, namespaces, cgroups, seccomp, ptrace, and related facilities are virtualized inside Orlix when iOS cannot supply matching private mechanics, and device-like mediation uses virtio wherever upstream Linux has a fitting class.
 
 ## Lifecycle Ownership
 
@@ -508,7 +502,7 @@ The second milestone for the upstream-Linux iOS port. It introduces the minimal 
 
 ## iOS-Hosted Kernel-Interface Test Execution Milestone
 
-The fourth milestone for the upstream-Linux iOS port. It launches packaged OrlixKernel from an iOS host app or test host and collects dependency proof from the running kernel path, such as KUnit output, Linux-accurate no-init behavior, or selected kselftests through a temporary harness. It does not prove OrlixMLibC, final userspace ABI, POSIX shell behavior, package compatibility, or product runtime readiness.
+The fourth milestone for the upstream-Linux iOS port. It launches packaged OrlixKernel from an iOS host app or test host and collects dependency proof from the running kernel path, such as KUnit output, Linux-accurate no-init behavior, or selected OrlixMLibC-built kselftests. It does not prove POSIX shell behavior, package compatibility, or product runtime readiness.
 
 ## Boot To Virtio Probe Milestone
 
@@ -628,11 +622,11 @@ The upstream kselftest build/install flow used to stage Orlix kselftest binaries
 
 ## kselftest Proof Runner
 
-The installed `run_kselftest.sh` script used inside the test initramfs to execute Orlix kselftests. Direct binary execution is debugging only, not milestone proof.
+The installed `run_kselftest.sh` script used inside the final test initramfs to execute Orlix kselftests. Direct binary execution is debugging only, not milestone proof.
 
 ## Orlix kselftest Collection
 
-The installed kselftest collection selected with `run_kselftest.sh -c orlix` inside the test initramfs, even when only `TARGETS=orlix` is installed.
+The installed kselftest collection selected with `run_kselftest.sh -c orlix` inside the final test initramfs, even when only `TARGETS=orlix` is installed.
 
 ## Orlix kselftest Target Scope
 

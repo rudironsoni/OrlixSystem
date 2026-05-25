@@ -15,7 +15,11 @@
 
 #define CORE_DUMP_USE_REGSET
 #define ELF_EXEC_PAGESIZE	PAGE_SIZE
+#if defined(ORLIX_APP_HOSTED_BOOT)
+#define ELF_ET_DYN_BASE		ORLIX_HOSTED_USER_BASE
+#else
 #define ELF_ET_DYN_BASE		((TASK_SIZE / 3) * 2)
+#endif
 
 #define ELF_HWCAP	(0)
 #define ELF_PLATFORM	(NULL)

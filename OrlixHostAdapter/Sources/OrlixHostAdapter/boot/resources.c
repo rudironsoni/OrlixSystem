@@ -1,4 +1,5 @@
 #include "OrlixHostAdapter/boot/resources.h"
+#include "OrlixHostAdapter/runtime/host_tls.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <errno.h>
@@ -403,6 +404,8 @@ __attribute__((visibility("hidden"))) int orlix_host_block_read(
     unsigned long long available;
     unsigned int file_read_length;
     size_t read_count;
+    unsigned long active_tls;
+    int result = -1;
 
     if (!OrlixHostBlockDeviceIsSelected(device) || !buffer || !length ||
         sector > ULLONG_MAX / ORLIX_HOST_BLOCK_SECTOR_SIZE) {
@@ -420,9 +423,11 @@ __attribute__((visibility("hidden"))) int orlix_host_block_read(
         return -1;
     }
 
+    active_tls = OrlixHostEnterHostTls();
     memset(buffer, 0, length);
     if (offset >= OrlixHostSelectedBlockBytes[device]) {
-        return 0;
+        result = 0;
+        goto out;
     }
 
     available = OrlixHostSelectedBlockBytes[device] - offset;
@@ -432,16 +437,20 @@ __attribute__((visibility("hidden"))) int orlix_host_block_read(
     }
     file = fopen(OrlixHostSelectedBlockPaths[device], "rb");
     if (!file) {
-        return -1;
+        goto out;
     }
     if (fseeko(file, (off_t)offset, SEEK_SET) != 0) {
         fclose(file);
-        return -1;
+        goto out;
     }
 
     read_count = fread(buffer, 1, file_read_length, file);
     fclose(file);
-    return read_count == file_read_length ? 0 : -1;
+    result = read_count == file_read_length ? 0 : -1;
+
+out:
+    OrlixHostLeaveHostTls(active_tls);
+    return result;
 }
 
 __attribute__((visibility("hidden"))) int orlix_host_block_write(
@@ -454,6 +463,8 @@ __attribute__((visibility("hidden"))) int orlix_host_block_write(
     unsigned long long offset;
     unsigned long long capacity_bytes;
     size_t write_count;
+    unsigned long active_tls;
+    int result = -1;
 
     if (!OrlixHostBlockDeviceIsSelected(device) ||
         !OrlixHostSelectedBlockWritable[device] ||
@@ -473,32 +484,41 @@ __attribute__((visibility("hidden"))) int orlix_host_block_write(
         return -1;
     }
 
+    active_tls = OrlixHostEnterHostTls();
     file = fopen(OrlixHostSelectedBlockPaths[device], "r+b");
     if (!file) {
-        return -1;
+        goto out;
     }
     if (fseeko(file, (off_t)offset, SEEK_SET) != 0) {
         fclose(file);
-        return -1;
+        goto out;
     }
 
     write_count = fwrite(buffer, 1, length, file);
     if (write_count != length) {
         fclose(file);
-        return -1;
+        goto out;
     }
 
-    return fclose(file) == 0 ? 0 : -1;
+    result = fclose(file) == 0 ? 0 : -1;
+
+out:
+    OrlixHostLeaveHostTls(active_tls);
+    return result;
 }
 
 __attribute__((visibility("hidden"))) void OrlixHostFreeResource(
     struct OrlixHostResource *resource)
 {
+    unsigned long active_tls;
+
     if (!resource) {
         return;
     }
 
+    active_tls = OrlixHostEnterHostTls();
     free(resource->data);
+    OrlixHostLeaveHostTls(active_tls);
     resource->data = 0;
     resource->size = 0;
 }

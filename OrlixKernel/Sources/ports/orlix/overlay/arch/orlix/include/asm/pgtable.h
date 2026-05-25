@@ -31,7 +31,7 @@
 #define PTRS_PER_PMD	(PAGE_SIZE / sizeof(pmd_t))
 #define PTRS_PER_PUD	(PAGE_SIZE / sizeof(pud_t))
 #define PTRS_PER_PGD	(PAGE_SIZE / sizeof(pgd_t))
-#define USER_PTRS_PER_PGD	(TASK_SIZE / PGDIR_SIZE)
+#define USER_PTRS_PER_PGD	((TASK_SIZE + PGDIR_SIZE - 1) / PGDIR_SIZE)
 
 #define KERN_VIRT_SIZE	((PTRS_PER_PGD / 2 * PGDIR_SIZE) / 2)
 #define VMALLOC_SIZE	(KERN_VIRT_SIZE >> 1)
@@ -344,9 +344,24 @@ static inline void update_mmu_cache_range(struct vm_fault *vmf,
 #define update_mmu_cache_pmd(vma, addr, pmd) do { } while (0)
 #define update_mmu_cache_pud(vma, addr, pud) do { } while (0)
 
-#define __swp_type(x)		(((x).val >> 2) & 0x1f)
-#define __swp_offset(x)		((x).val >> 8)
-#define __swp_entry(type, offset)	((swp_entry_t) { ((type) << 2) | ((offset) << 8) })
+/*
+ * Swap PTEs are !pte_none() && !pte_present().  Keep the encoded swap type
+ * and offset clear of _PAGE_PRESENT, _PAGE_PROT_NONE, and the exclusive
+ * marker so Linux never mistakes a swap/migration entry for a present PFN.
+ */
+#define __SWP_TYPE_SHIFT	8
+#define __SWP_TYPE_BITS		5
+#define __SWP_TYPE_MASK		((1UL << __SWP_TYPE_BITS) - 1)
+#define __SWP_OFFSET_SHIFT	(__SWP_TYPE_SHIFT + __SWP_TYPE_BITS)
+
+#define MAX_SWAPFILES_CHECK() \
+	BUILD_BUG_ON(MAX_SWAPFILES_SHIFT > __SWP_TYPE_BITS)
+
+#define __swp_type(x)		(((x).val >> __SWP_TYPE_SHIFT) & __SWP_TYPE_MASK)
+#define __swp_offset(x)		((x).val >> __SWP_OFFSET_SHIFT)
+#define __swp_entry(type, offset) \
+	((swp_entry_t) { (((type) & __SWP_TYPE_MASK) << __SWP_TYPE_SHIFT) | \
+			 ((offset) << __SWP_OFFSET_SHIFT) })
 #define __pte_to_swp_entry(pte)	((swp_entry_t) { pte_val(pte) })
 #define __swp_entry_to_pte(x)	__pte((x).val)
 

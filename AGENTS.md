@@ -48,6 +48,7 @@ Project-local source and test roots are fixed:
 - `OrlixHostAdapter/Tests`
 - `OrlixMLibC/Sources`
 - `OrlixMLibC/Tests`
+- `OrlixOS`
 - `OrlixTerminal/Sources`
 - `OrlixTerminal/Tests`
 
@@ -89,6 +90,8 @@ The iOS host app tests live under:
 Generated OrlixMLibC and userspace artifacts are disposable:
 
 - `Build/OrlixMLibC`
+- `Build/OrlixMLibC/upstream/mlibc`
+- `Build/OrlixOS`
 
 The public product header lives in:
 
@@ -156,13 +159,19 @@ Linux kernel internal helper sources are not libc permission slips. Add them to 
 
 ## OrlixMLibC Rule
 
-`OrlixMLibC` is a top-level component, not part of the Linux kernel port. It tracks upstream mlibc through generated/read-only upstream input plus durable Orlix sysdeps, configs, and patches under `OrlixMLibC/Sources`. Its tests live under `OrlixMLibC/Tests`.
+`OrlixMLibC` is a top-level component, not part of the Linux kernel port. It tracks upstream mlibc through generated/read-only upstream input under `Build/OrlixMLibC/upstream/mlibc` plus durable Orlix sysdeps, configs, and patches under `OrlixMLibC/Sources`. Its tests live under `OrlixMLibC/Tests`.
 
 OrlixMLibC may have an Orlix sysdeps identity only where mlibc needs an OS-port hook. It must call Linux-shaped syscalls and expose glibc/musl source-compatible Linux behavior. Do not add an Orlix-specific application ABI.
 
 OrlixMLibC consumes kernel UAPI only through standard Linux `headers_install` output for `ARCH=orlix`, generated under `Build/OrlixMLibC/kernel-headers/<profile>/`. Do not commit copied Linux syscall numbers, ioctl payloads, structs, constants, flags, or UAPI definitions into OrlixMLibC.
 
 Orlix userspace ABI is profile-invariant. App Store, development, simulator, CI, and debug builds may produce separate artifacts, but installed UAPI headers, syscall numbers, errno values, signal ABI, ioctl payloads, userspace-visible struct layouts, OrlixMLibC ABI, dynamic-loader contract, package ABI, and observable Linux userspace behavior must remain the same. Profile ABI drift is a release-blocking error.
+
+## OrlixOS Rule
+
+`OrlixOS` is a package and rootfs assembly component, not part of `OrlixKernel` or `OrlixMLibC`. It builds Orlix Linux userspace package inputs against OrlixMLibC and stages generated rootfs content under `Build/OrlixOS`.
+
+OrlixOS must not own kernel semantics, libc semantics, syscall ABI, package-manager policy, or iOS host mechanics. It may fetch pristine upstream package sources at build time, verify them, build them as Orlix Linux userspace binaries, and assemble generated rootfs inputs consumed by the kernel boot packaging path.
 
 ## Build And Proof Rule
 
@@ -185,13 +194,13 @@ Work may happen in parallel, but product runtime claims must follow ADR 0017's p
 5. POSIX shell environment proof
 6. Third-party package ladder: jq, curl, zsh
 
-Do not claim product runtime readiness from KUnit, temporary kselftest, no-init boot logs, packaging, simulator launch, or a host-side harness.
+Do not claim product runtime readiness from KUnit, kselftest, no-init boot logs, packaging, simulator launch, or a host-side harness.
 
 ## Make Target Rule
 
-There is one Makefile per project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`. The top-level `Makefile` orchestrates those project Makefiles and keeps its public interface small and Linux-shaped. Prefer conventional targets such as `build`, `prepare`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, and `test`.
+There is one Makefile per project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, `OrlixOS/Makefile`, and `OrlixTerminal/Makefile`. The top-level `Makefile` orchestrates those project Makefiles and keeps its public interface small and Linux-shaped. Prefer conventional targets such as `build`, `prepare`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, and `test`.
 
-Select Orlix-specific scope with variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=linux` or `libc=orlixmlibc`. Do not add user-facing milestone, proof-lane, or artifact-path targets such as `proof-*`, `build-temporary-*`, `stage-temporary-*`, or `test-all`; proof labels belong in artifact metadata and logs.
+Select Orlix-specific scope with variables such as `PROFILE=appstore`, `type=kunit,kselftest`, and `libc=orlixmlibc` when the libc lane must be explicit. Do not add user-facing milestone, proof-lane, or artifact-path targets such as `proof-*`, `build-temporary-*`, `stage-temporary-*`, or `test-all`; proof labels belong in artifact metadata and logs.
 
 ## Test Rule
 
@@ -200,11 +209,11 @@ Tests for the old local kernel prototype are migration reference only. They are 
 Target test ownership is split by proof lane:
 
 - KUnit lives in Linux-owned overlay paths such as `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/**/<owner>_test.c` and `OrlixKernel/Sources/ports/orlix/overlay/drivers/orlix/**/<owner>_test.c`, selected by `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`.
-- kselftest lives under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/` and must run through upstream kselftest install plus `run_kselftest.sh -c orlix`.
+- kselftest lives under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/`. Selected kselftests must build against OrlixMLibC and run through upstream kselftest install plus `run_kselftest.sh -c orlix`; do not add a separate nolibc/raw-syscall `/init` lane.
 - XCTest lives under project-local `Tests/XCTest/` trees: `OrlixKernel/Tests/XCTest`, `OrlixHostAdapter/Tests/XCTest`, `OrlixMLibC/Tests/XCTest` when needed, and `OrlixTerminal/Tests/XCTest` when needed. XCTest owns iOS host launch, packaging, output collection, parser behavior, and narrow `OrlixHostAdapter` mechanics only.
 - Local prototype tests live only under `LegacyOrlix/Tests/MigrationReference/LocalKernelPrototype/` until migrated or deleted.
 
-Temporary kselftests use `Build/OrlixKernel/kselftest/temporary/<profile>/` and the proof label `temporary-kselftest-kernel-interface`. OrlixMLibC-built kselftests use `Build/OrlixMLibC/kselftest/<profile>/` and the proof label `orlixmlibc-kselftest-syscall-uapi`.
+OrlixMLibC-built kselftests use `Build/OrlixMLibC/kselftest/<profile>/` and the proof label `orlixmlibc-kselftest-syscall-uapi`.
 
 New proof must be labeled by what it proves:
 
@@ -212,7 +221,7 @@ New proof must be labeled by what it proves:
 - XCFramework or app packaging proof proves the hosted integration is packaged or linked into the iOS host, not that Linux booted or ran userspace.
 - KUnit proves OrlixKernel internal behavior.
 - Linux-accurate no-init behavior proves kernel dependency boot reached the normal init handoff without requiring libc.
-- kselftests through a temporary foreign-libc, nolibc, or other temporary harness prove kernel-interface behavior only.
+- OrlixMLibC-built kselftests prove kernel-interface and OrlixMLibC-to-OrlixKernel syscall/UAPI behavior only.
 - mlibc's own tests prove OrlixMLibC libc behavior.
 - OrlixMLibC-built kselftests prove the OrlixMLibC-to-OrlixKernel syscall/UAPI path.
 - Bash proves the first interactive POSIX shell environment.

@@ -11,6 +11,8 @@ config ORLIX
 	select HAS_DMA
 	select ARCH_WANT_FRAME_POINTERS
 	select GENERIC_CPU_DEVICES
+	select LOCK_MM_AND_FIND_VMA
+	select CLONE_BACKWARDS
 
 config 64BIT
 	bool
@@ -32,5 +34,9 @@ config GENERIC_CALIBRATE_DELAY
 
 config GENERIC_HWEIGHT
 	def_bool y
+
+config ORLIX_HOSTED_ASYNC_USER_TIMER
+	bool
+	default y
 
 source "kernel/Kconfig.hz"

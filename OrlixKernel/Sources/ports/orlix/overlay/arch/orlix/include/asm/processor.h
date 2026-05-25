@@ -5,11 +5,26 @@
 #include <linux/compiler.h>
 #include <asm/thread_info.h>
 
+#if defined(ORLIX_APP_HOSTED_BOOT)
+#define ORLIX_HOSTED_USER_BASE	(0x0000600000000000UL)
+#define ORLIX_HOSTED_STACK_TOP	(0x0000700000000000UL)
+#ifndef ORLIX_HOSTED_SYSCALL_GATE_ADDRESS
+#define ORLIX_HOSTED_SYSCALL_GATE_ADDRESS	0x00006ffff0000000UL
+#endif
+#define ORLIX_HOSTED_SYSCALL_GATE	ORLIX_HOSTED_SYSCALL_GATE_ADDRESS
+#define TASK_SIZE		ORLIX_HOSTED_STACK_TOP
+#define TASK_UNMAPPED_BASE	ORLIX_HOSTED_USER_BASE
+#else
 #define TASK_SIZE		(0x0000800000000000UL)
 #define TASK_UNMAPPED_BASE	(TASK_SIZE / 3)
+#endif
 
 #ifdef __KERNEL__
+#if defined(ORLIX_APP_HOSTED_BOOT)
+#define STACK_TOP		ORLIX_HOSTED_STACK_TOP
+#else
 #define STACK_TOP		TASK_SIZE
+#endif
 #define STACK_TOP_MAX		STACK_TOP
 #endif
 
@@ -39,7 +54,14 @@ struct orlix_cpu_context {
 
 struct thread_struct {
 	struct orlix_cpu_context cpu_context;
-};
+#if defined(ORLIX_APP_HOSTED_BOOT)
+		unsigned long user_tls;
+		unsigned long user_simd[64];
+		unsigned long user_fpsr;
+		unsigned long user_fpcr;
+		unsigned long user_simd_valid;
+#endif
+	};
 
 #define INIT_THREAD			\
 {					\

@@ -1,93 +1,77 @@
 // SPDX-License-Identifier: GPL-2.0
-#include <errno.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stddef.h>
 
-#include "../kselftest.h"
+#include "orlix_kselftest_user.h"
 
-static char *read_file(const char *path)
-{
-	FILE *file = fopen(path, "rb");
-	char *buffer;
-	size_t capacity = 4096;
-	size_t size = 0;
-
-	if (!file)
-		ksft_exit_fail_msg("missing file %s: %s\n", path, strerror(errno));
-
-	buffer = malloc(capacity);
-	if (!buffer)
-		ksft_exit_fail_msg("malloc failed\n");
-
-	for (;;) {
-		size_t nread;
-
-		if (size + 1 == capacity) {
-			char *grown;
-
-			capacity *= 2;
-			grown = realloc(buffer, capacity);
-			if (!grown)
-				ksft_exit_fail_msg("realloc failed\n");
-			buffer = grown;
-		}
-
-		nread = fread(buffer + size, 1, capacity - size - 1, file);
-		size += nread;
-		if (nread == 0)
-			break;
-	}
-	if (ferror(file))
-		ksft_exit_fail_msg("fread failed for %s: %s\n", path, strerror(errno));
-	buffer[size] = '\0';
-	fclose(file);
-
-	return buffer;
-}
-
-static bool contains_string(const char *haystack, const char *needle)
-{
-	return strstr(haystack, needle) != NULL;
-}
-
-static bool contains_dt_string(const char *data, const char *expected)
-{
-	return contains_string(data, expected);
-}
+static char cmdline[4096];
+static char bootargs[4096];
+static char compatible[1024];
+static char consoles[1024];
 
 int main(void)
 {
-	char *cmdline = read_file("/proc/cmdline");
-	char *bootargs = read_file("/proc/device-tree/chosen/bootargs");
-	char *compatible = read_file("/proc/device-tree/compatible");
+	size_t cmdline_size;
+	size_t bootargs_size;
+	size_t compatible_size;
+	size_t consoles_size;
+	bool has_cmdline;
+	bool has_bootargs;
+	bool has_compatible;
+	bool has_consoles;
+	bool appstore_profile;
+	bool development_profile;
 	const char *profile = NULL;
 
-	ksft_print_header();
-	ksft_set_plan(7);
+	orlix_test_plan(9);
 
-	if (contains_string(cmdline, "orlix.profile=appstore"))
+	has_cmdline = orlix_read_file("/proc/cmdline", cmdline,
+				      sizeof(cmdline), &cmdline_size) == 0;
+	has_bootargs = orlix_read_file(
+		"/sys/firmware/devicetree/base/chosen/bootargs",
+		bootargs, sizeof(bootargs), &bootargs_size) == 0;
+	has_compatible = orlix_read_file(
+		"/sys/firmware/devicetree/base/compatible",
+		compatible, sizeof(compatible), &compatible_size) == 0;
+	has_consoles = orlix_read_file("/proc/consoles", consoles,
+				       sizeof(consoles), &consoles_size) == 0;
+
+	appstore_profile = has_cmdline &&
+		orlix_contains(cmdline, cmdline_size, "orlix.profile=appstore");
+	development_profile = has_cmdline &&
+		orlix_contains(cmdline, cmdline_size, "orlix.profile=development");
+
+	if (appstore_profile)
 		profile = "appstore";
-	else if (contains_string(cmdline, "orlix.profile=development"))
+	else if (development_profile)
 		profile = "development";
 
-	ksft_test_result(profile != NULL, "cmdline selects a supported Orlix profile\n");
-	ksft_test_result(contains_string(cmdline, "console=ttyS0"),
-			 "cmdline selects the Orlix serial console\n");
-	ksft_test_result(!contains_string(cmdline, "root=/dev/ram0"),
-			 "cmdline does not select an absent ram block root\n");
-	ksft_test_result(contains_string(cmdline, "root=/dev/vda"),
-			 "cmdline selects the immutable virtio base image as root\n");
-	ksft_test_result(profile && contains_string(bootargs, profile),
-			 "live device tree bootargs match the selected profile\n");
-	ksft_test_result(contains_dt_string(compatible, "orlix"),
-			 "live device tree exposes the Orlix compatible string\n");
-	ksft_test_result(profile && contains_dt_string(compatible, profile),
-			 "live device tree exposes the selected profile compatible string\n");
+	orlix_test_result(profile != NULL,
+			  "cmdline selects a supported Orlix profile");
+	orlix_test_result(has_cmdline &&
+			  orlix_contains(cmdline, cmdline_size, "console=ttyS0"),
+			  "cmdline keeps the Orlix serial console fallback");
+	orlix_test_result(has_cmdline &&
+			  orlix_contains(cmdline, cmdline_size, "console=hvc0"),
+			  "cmdline selects the Orlix virtio console");
+	orlix_test_result(has_cmdline &&
+			  !orlix_contains(cmdline, cmdline_size, "root=/dev/ram0"),
+			  "cmdline does not select an absent ram block root");
+	orlix_test_result(has_cmdline &&
+			  orlix_contains(cmdline, cmdline_size, "root=/dev/vda"),
+			  "cmdline selects the immutable virtio base image as root");
+	orlix_test_result(profile && has_bootargs &&
+			  orlix_contains(bootargs, bootargs_size, profile),
+			  "live device tree bootargs match the selected profile");
+	orlix_test_result(has_compatible &&
+			  orlix_contains(compatible, compatible_size, "orlix"),
+			  "live device tree exposes the Orlix compatible string");
+	orlix_test_result(profile && has_compatible &&
+			  orlix_contains(compatible, compatible_size, profile),
+			  "live device tree exposes the selected profile compatible string");
+	orlix_test_result(has_consoles &&
+			  orlix_contains(consoles, consoles_size, "hvc0"),
+			  "live consoles include the Orlix virtio console");
 
-	free(cmdline);
-	free(bootargs);
-	free(compatible);
-	ksft_finished();
+	orlix_test_exit();
 }

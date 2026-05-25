@@ -8,11 +8,12 @@ OrlixKernel is Linux. It does not provide a shell, libc, package manager, public
 
 ## ELI5 Start
 
-Orlix has four important source areas:
+Orlix has five important source areas:
 
 - `OrlixKernel/Sources/upstream/linux-6.12` is generated upstream Linux source. Treat it as read-only input.
 - `OrlixKernel/Sources/ports/orlix` is where durable Orlix Linux port inputs live.
-- `OrlixMLibC/Sources` is the top-level component area for the mlibc-based Orlix userspace C library.
+- `OrlixMLibC/Sources` is the durable component area for OrlixMLibC sysdeps, configs, and patches. The upstream mlibc checkout is generated under `Build/OrlixMLibC/upstream/mlibc`.
+- `OrlixOS` is the package and rootfs assembly lane for Orlix Linux userspace inputs. It builds package artifacts against OrlixMLibC and stages generated rootfs content under `Build/OrlixOS`.
 - `OrlixHostAdapter/Sources` is where private iOS and Darwin mechanics live.
 
 Project source and test roots are organized consistently:
@@ -24,6 +25,7 @@ OrlixHostAdapter/Sources
 OrlixHostAdapter/Tests
 OrlixMLibC/Sources
 OrlixMLibC/Tests
+OrlixOS
 OrlixTerminal/Sources
 OrlixTerminal/Tests
 ```
@@ -45,13 +47,13 @@ Proof is claim-promoted, not flat. Work may happen in parallel, but product clai
 
 Orlix does not require `vmlinux` as a canonical build, proof, or runtime artifact. The canonical OrlixKernel proof artifact is the iOS app-hosted OrlixKernel integration that actually runs inside the Orlix app environment. A `vmlinux`-style artifact may exist only as an optional developer/debug artifact with a named consumer. It is not a milestone, not product proof, not runtime proof, not libc proof, and not required for installed UAPI headers.
 
-KUnit proves kernel-internal behavior. Temporary, nolibc, or foreign-libc kselftest proves kernel-interface behavior only. mlibc tests prove OrlixMLibC. OrlixMLibC-built kselftests prove the libc-to-kernel syscall/UAPI path. Bash proves the first interactive POSIX shell environment. jq, curl, and zsh prove increasingly realistic third-party package compatibility.
+KUnit proves kernel-internal behavior. OrlixMLibC-built kselftests prove Linux kernel-interface and libc-to-kernel syscall/UAPI behavior. mlibc tests prove OrlixMLibC. Bash proves the first interactive POSIX shell environment. jq, curl, and zsh prove increasingly realistic third-party package compatibility.
 
-Do not claim product runtime readiness from KUnit, temporary kselftest, boot logs, packaging, or a host-side harness.
+Do not claim product runtime readiness from KUnit, kselftest, boot logs, packaging, or a host-side harness.
 
 ## Build And Test Commands
 
-The top-level Makefile keeps a small, Linux-shaped interface and delegates to `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`:
+The top-level Makefile keeps a small, Linux-shaped interface and delegates to `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, `OrlixOS/Makefile`, and `OrlixTerminal/Makefile`:
 
 ```bash
 make help
@@ -62,7 +64,7 @@ make test type=kunit,kselftest
 make clean
 ```
 
-`make setup-env` fetches upstream Linux and generates the disposable Xcode project from `project.yml`. `make build` exercises the current component build hooks: it builds the app-hosted OrlixKernel iOS artifact path and runs placeholder hooks for components that are not implemented yet. It does not build a real OrlixMLibC sysroot, prove terminal runtime behavior, or build or require `vmlinux` as a normal artifact.
+`make setup-env` fetches upstream Linux and generates the disposable Xcode project from `project.yml`. `make build` first runs `make clean`, which removes generated outputs including `OrlixKernel/Sources/upstream/linux-6.12`; the kernel build then reclones upstream Linux through the normal bootstrap path. The same build flow materializes upstream mlibc under `Build/OrlixMLibC/upstream/mlibc`, builds the OrlixMLibC sysroot from upstream mlibc plus durable OrlixMLibC inputs, and stages OrlixOS package/rootfs inputs under `Build/OrlixOS`. It does not prove terminal runtime behavior or build or require `vmlinux` as a normal artifact.
 
 The Linux compile lane emits per-profile, per-platform OrlixKernel static archives under `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`. Xcode links the matching archive into `OrlixKernel.framework`, and framework slices are packaged into `OrlixKernel.xcframework`.
 
@@ -76,17 +78,15 @@ The Linux-shaped lower-level targets are available when needed:
 make prepare PROFILE=appstore
 make headers_install PROFILE=appstore
 make kunit PROFILE=appstore
-make kselftest PROFILE=appstore libc=linux
-make kselftest PROFILE=appstore libc=orlixmlibc ORLIX_MLIBC_SYSROOT=Build/OrlixMLibC/sysroot/appstore
+make kselftest PROFILE=appstore
+make kselftest PROFILE=appstore libc=orlixmlibc
 ```
 
 `make prepare` materializes the generated upstream-plus-Orlix port tree and Kbuild output without requiring a standalone kernel image. `make headers_install` installs Linux UAPI headers into `Build/OrlixMLibC/kernel-headers/<profile>/include` and does not consume `vmlinux`.
 
 `make kunit` currently builds Linux KUnit-selected Orlix test objects. That is useful dependency evidence, not iOS-hosted KUnit execution proof. KUnit proves kernel-internal behavior only after the hosted Linux proof path runs it and emits Linux-owned KUnit output.
 
-`make kselftest libc=linux` uses Linux's kselftest install shape with a temporary foreign-libc sysroot under `Build/OrlixKernel/kselftest/temporary/<profile>/`. Until those tests run against the iOS-hosted kernel, this is preparation only. Once run, it is kernel-interface coverage only, not OrlixMLibC proof, Orlix userspace ABI proof, shell proof, package proof, or product runtime proof.
-
-`make kselftest libc=orlixmlibc` uses a separate install path under `Build/OrlixMLibC/kselftest/<profile>/`. That lane requires an OrlixMLibC sysroot plus installed Orlix UAPI headers and is the later syscall/UAPI proof lane.
+`make kselftest` uses OrlixMLibC-built kselftests under `Build/OrlixMLibC/kselftest/<profile>/`. That lane requires an OrlixMLibC sysroot plus installed Orlix UAPI headers and is the syscall/UAPI proof lane.
 
 Do not run kselftest or KUnit on Darwin and do not use a VM as product proof. Do not add repo-local shell or standalone C contract tests as milestone proof. Linux kernel-internal behavior belongs in KUnit. Linux kernel-interface behavior belongs in selected kselftests. Orlix userspace ABI and product runtime claims require the later ADR 0017 proof lanes.
 
@@ -112,7 +112,13 @@ The disposable upstream-plus-Orlix port tree is generated at:
 Build/OrlixKernel/linux-6.12-port
 ```
 
-If a change should survive regeneration, put it in `OrlixKernel/Sources/ports/orlix`, not in a generated tree.
+The upstream mlibc checkout used by OrlixMLibC builds is generated at:
+
+```text
+Build/OrlixMLibC/upstream/mlibc
+```
+
+If a kernel change should survive regeneration, put it in `OrlixKernel/Sources/ports/orlix`, not in a generated tree. If an mlibc change should survive regeneration, put it in durable OrlixMLibC inputs such as `OrlixMLibC/Sources/patches`, not in the generated upstream mlibc checkout.
 
 ## Port Inputs
 
@@ -139,7 +145,7 @@ The public product surface is bootloader-shaped. It should expose a minimal boot
 
 The current blocking proof boundary is iOS-hosted kernel-interface execution. The branch is source-layout and build-hook aligned, not runtime aligned. Real-artifact XCFramework packaging is a prerequisite, not product runtime proof.
 
-Success at this boundary means the iOS host launches packaged OrlixKernel and collects dependency proof from the running kernel path, such as KUnit output, Linux-accurate no-init behavior, or selected kselftests through a temporary harness. It does not mean OrlixMLibC, Bash, jq, curl, zsh, or product runtime compatibility is proved.
+Success at this boundary means the iOS host launches packaged OrlixKernel and collects dependency proof from the running kernel path, such as KUnit output, Linux-accurate no-init behavior, or selected OrlixMLibC-built kselftests. It does not mean Bash, jq, curl, zsh, or product runtime compatibility is proved.
 
 ## Device Direction
 

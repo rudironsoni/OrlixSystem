@@ -1,10 +1,12 @@
 ORLIX_PRODUCT_ADAPTER_ROOT := $(ORLIX_KERNEL_BUILD_DIR)/orlix-product-compile-adapter
 ORLIX_PRODUCT_ADAPTER_INCLUDE := $(ORLIX_PRODUCT_ADAPTER_ROOT)/include
-ORLIX_PRODUCT_ADAPTER_CFLAGS := -O2 -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fshort-wchar -DPER_CPU_BASE_SECTION=\"__DATA,__percpu\" -I"$(ORLIX_PRODUCT_ADAPTER_INCLUDE)"
+ORLIX_PRODUCT_ADAPTER_CFLAGS := -O2 -fno-omit-frame-pointer -mno-omit-leaf-frame-pointer -fshort-wchar -Wno-macro-redefined -Wno-address-of-packed-member -Wno-gnu-variable-sized-type-not-at-end -Wno-pointer-sign -Wno-format -Wno-default-const-init-var-unsafe -Wno-default-const-init-field-unsafe -Wno-initializer-overrides -DPER_CPU_BASE_SECTION='"__DATA,__percpu"' -DORLIX_HOSTED_SYSCALL_GATE_ADDRESS=$(ORLIX_HOSTED_SYSCALL_GATE_ADDRESS) -I"$(ORLIX_PRODUCT_ADAPTER_INCLUDE)"
 ORLIX_PRODUCT_PAYLOAD_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-payloads.o
 ORLIX_PRODUCT_BOUNDARY_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-boundaries.o
 ORLIX_PRODUCT_KALLSYMS_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-kallsyms.o
 ORLIX_PRODUCT_BOUNDARY_OBJECTS := $(ORLIX_PRODUCT_PAYLOAD_OBJECT) $(ORLIX_PRODUCT_BOUNDARY_OBJECT) $(ORLIX_PRODUCT_KALLSYMS_OBJECT)
+ORLIX_KERNEL_PORT_ABS := $(abspath $(ORLIX_KERNEL_PORT_DIR))
+ORLIX_PRODUCT_INITRAMFS_INPUT := $(ORLIX_KERNEL_PAYLOAD_DIR)/rootfs/initramfs.cpio.gz
 
 ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__text \
@@ -89,7 +91,21 @@ adapter_include="$(ORLIX_PRODUCT_ADAPTER_INCLUDE)"; \
 for path in "$(ORLIX_KERNEL_BUILD_DIR)" "$$adapter_root" "$$adapter_include"; do \
 	if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked product adapter path: $$path" >&2; exit 1; fi; \
 done; \
-rm -rf "$$adapter_root"; \
+adapter_stamp="$$adapter_root/.orlix-product-adapter-ready"; \
+if [ -s "$$adapter_stamp" ] && \
+	[ "$$adapter_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/.config" ] && \
+	[ "$$adapter_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/kernel/vmlinux.lds" ] && \
+	[ -s "$$adapter_include/linux/init.h" ] && \
+	[ -s "$$adapter_include/linux/cache.h" ] && \
+	[ -s "$$adapter_include/linux/compiler.h" ] && \
+	[ -s "$$adapter_include/linux/module.h" ] && \
+	[ -s "$$adapter_include/linux/moduleparam.h" ] && \
+	[ -s "$$adapter_root/source/kernel/sched/core.c" ] && \
+	[ -s "$$adapter_root/source/lib/crc32.c" ] && \
+	[ -s "$$adapter_root/source/mm/page_alloc.c" ]; then \
+	echo "reusing Orlix product compile adapter: $$adapter_root"; \
+else \
+	rm -rf "$$adapter_root"; \
 	mkdir -p "$$adapter_include/linux"; \
 	mkdir -p "$$adapter_include/linux/sched"; \
 	mkdir -p "$$adapter_include/asm"; \
@@ -100,16 +116,19 @@ rm -rf "$$adapter_root"; \
 	mkdir -p "$$adapter_root/source/drivers/tty/vt"; \
 	mkdir -p "$$adapter_root/source/kernel/sched"; \
 	mkdir -p "$$adapter_root/source/mm"; \
+	echo "preparing Orlix product compile adapter: $$adapter_root"; \
 $(call orlix_product_adapter_validate_linux_truth); \
 $(call orlix_product_adapter_validate_macho_projection); \
 $(call orlix_product_adapter_generate_headers); \
-$(call orlix_product_adapter_generate_sources)
+$(call orlix_product_adapter_generate_sources); \
+	printf 'profile=%s\nlinux_version=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" > "$$adapter_stamp"; \
+fi
 endef
 
 define orlix_product_adapter_validate_linux_truth
 config="$(ORLIX_KERNEL_BUILD_DIR)/.config"; \
 lds="$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/kernel/vmlinux.lds"; \
-linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
+linux_root="$(ORLIX_KERNEL_PORT_ABS)"; \
 [ -s "$$config" ] || { echo "missing generated Orlix kernel config: $$config" >&2; exit 1; }; \
 [ -s "$$lds" ] || { echo "missing generated Orlix linker script: $$lds" >&2; exit 1; }; \
 for required in \
@@ -150,6 +169,7 @@ for required in \
 	"$$linux_root/lib/buildid.c" \
 	"$$linux_root/lib/crypto/blake2s-generic.c" \
 	"$$linux_root/scripts/mod/modpost.c" \
+	"$$linux_root/scripts/mksysmap" \
 	"$$linux_root/scripts/link-vmlinux.sh"; do \
 	[ -s "$$required" ] || { echo "missing Linux truth input: $$required" >&2; exit 1; }; \
 done; \
@@ -248,6 +268,8 @@ require_text "$$linux_root/include/asm-generic/vmlinux.lds.h" '*(.export_symbol)
 	require_text "$$linux_root/lib/crc32.c" 'u32 __pure __crc32c_le_base(u32, unsigned char const *, size_t) __alias(__crc32c_le);'; \
 	require_text "$$linux_root/lib/crc32.c" 'u32 __pure crc32_be_base(u32, unsigned char const *, size_t) __alias(crc32_be);'; \
 	require_text "$$linux_root/scripts/mod/modpost.c" 'EXPORT_SYMBOL'; \
+	require_text "$$linux_root/scripts/mksysmap" '/ [aNUw] /d'; \
+	require_text "$$linux_root/scripts/mksysmap" '/ __kstrtab_/d'; \
 require_text "$$linux_root/scripts/link-vmlinux.sh" 'vmlinux.o'; \
 require_text "$$linux_root/scripts/link-vmlinux.sh" 'scripts/kallsyms $${kallsymopt} "$${1}" > "$${2}.S"'; \
 require_text "$$linux_root/scripts/kallsyms.c" 'Usage: kallsyms [--all-symbols] [--absolute-percpu] in.map > out.S'; \
@@ -291,7 +313,7 @@ endef
 define orlix_product_adapter_generate_headers
 command -v perl >/dev/null 2>&1 || { echo "perl is required to generate product adapter headers" >&2; exit 1; }; \
 adapter_include="$(ORLIX_PRODUCT_ADAPTER_INCLUDE)"; \
-linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
+linux_root="$(ORLIX_KERNEL_PORT_ABS)"; \
 replace_once() { \
 	file="$$1"; from="$$2"; to="$$3"; \
 	count="$$(TEXT="$$from" perl -0ne 'BEGIN { $$text = $$ENV{"TEXT"}; $$count = 0; } $$count += () = /\Q$$text\E/g; END { print $$count; }' "$$file")"; \
@@ -370,7 +392,7 @@ endef
 
 define orlix_product_adapter_generate_sources
 adapter_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)"; \
-	linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
+	linux_root="$(ORLIX_KERNEL_PORT_ABS)"; \
 	cp "$$linux_root/lib/crc32.c" "$$adapter_root/source/lib/crc32.c"; \
 	cp "$$linux_root/lib/crypto/blake2s-generic.c" "$$adapter_root/source/lib/crypto/blake2s-generic.c"; \
 	cp "$$linux_root/drivers/of/of_reserved_mem.c" "$$adapter_root/source/drivers/of/of_reserved_mem.c"; \
@@ -408,7 +430,7 @@ orlix_product_adapter_source_for() { \
 		lib/crypto/blake2s-generic.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/lib/crypto/blake2s-generic.c" ;; \
 		lib/crc32.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/lib/crc32.c" ;; \
 		mm/page_alloc.c) printf '%s\n' "$(ORLIX_PRODUCT_ADAPTER_ROOT)/source/mm/page_alloc.c" ;; \
-		*) printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel" ;; \
+		*) printf '%s\n' "$(ORLIX_KERNEL_PORT_ABS)/$$src_rel" ;; \
 	esac; \
 };
 endef
@@ -420,9 +442,9 @@ orlix_product_adapter_generate_payloads() { \
 	payload_src="$(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-payloads.S"; \
 	payload_obj="$(ORLIX_PRODUCT_PAYLOAD_OBJECT)"; \
 	empty_root_dtb="$(ORLIX_KERNEL_BUILD_DIR)/drivers/of/empty_root.dtb"; \
-	initramfs_data="$(ORLIX_KERNEL_BUILD_DIR)/usr/initramfs_inc_data"; \
+	initramfs_data="$(ORLIX_PRODUCT_INITRAMFS_INPUT)"; \
 	[ -s "$$empty_root_dtb" ] || { echo "missing generated Linux empty-root DTB: $$empty_root_dtb" >&2; exit 1; }; \
-	[ -s "$$initramfs_data" ] || { echo "missing generated Linux initramfs input: $$initramfs_data" >&2; exit 1; }; \
+	[ -s "$$initramfs_data" ] || { echo "missing Orlix product initramfs input: $$initramfs_data" >&2; exit 1; }; \
 	initramfs_size="$$(wc -c < "$$initramfs_data" | tr -d '[:space:]')"; \
 	{ \
 		printf '%s\n' '/* generated Build-only Mach-O wrappers for Linux-generated payload inputs */'; \
@@ -455,9 +477,11 @@ define orlix_product_adapter_verify_object_contract
 orlix_product_adapter_verify_object_contract() { \
 	obj="$$1"; \
 	allowed_sections="$(ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS)"; \
-	"$$otool_cmd" -l "$$obj" | awk -v allowed_sections="$$allowed_sections" 'BEGIN { split(allowed_sections, pairs, /[[:space:]]+/); for (i in pairs) if (pairs[i] != "") allowed[pairs[i]] = 1 } /sectname / { section=$$2; next } /segname / { segment=$$2; key=segment "," section; if (section != "" && !(key in allowed)) { print "unclassified Mach-O section " key " in " FILENAME > "/dev/stderr"; bad=1 } section="" } END { exit bad ? 1 : 0 }' || { echo "Orlix product object contains unclassified Mach-O section: $$obj" >&2; exit 1; }; \
-	if "$$otool_cmd" -l "$$obj" | grep -E 'segname \.(init|exit|ref|discard|export_symbol|modinfo)'; then echo "Orlix product object leaked GNU/Linux section spelling into Mach-O segment: $$obj" >&2; exit 1; fi; \
-	if "$$otool_cmd" -l "$$obj" | grep -E 'sectname \.(init|exit|ref|discard|export_symbol|modinfo)'; then echo "Orlix product object leaked GNU/Linux section spelling into Mach-O section: $$obj" >&2; exit 1; fi; \
+	load_commands="$$obj.load-commands"; \
+	if [ ! -s "$$load_commands" ] || [ "$$load_commands" -ot "$$obj" ]; then tmp_load_commands="$$load_commands.tmp.$$$$"; "$$otool_cmd" -l "$$obj" > "$$tmp_load_commands"; mv -f "$$tmp_load_commands" "$$load_commands"; fi; \
+	awk -v allowed_sections="$$allowed_sections" 'BEGIN { split(allowed_sections, pairs, /[[:space:]]+/); for (i in pairs) if (pairs[i] != "") allowed[pairs[i]] = 1 } /sectname / { section=$$2; next } /segname / { segment=$$2; key=segment "," section; if (section != "" && !(key in allowed)) { print "unclassified Mach-O section " key > "/dev/stderr"; bad=1 } section="" } END { exit bad ? 1 : 0 }' "$$load_commands" || { echo "Orlix product object contains unclassified Mach-O section: $$obj" >&2; exit 1; }; \
+	if grep -E 'segname \.(init|exit|ref|discard|export_symbol|modinfo)' "$$load_commands"; then echo "Orlix product object leaked GNU/Linux section spelling into Mach-O segment: $$obj" >&2; exit 1; fi; \
+	if grep -E 'sectname \.(init|exit|ref|discard|export_symbol|modinfo)' "$$load_commands"; then echo "Orlix product object leaked GNU/Linux section spelling into Mach-O section: $$obj" >&2; exit 1; fi; \
 	if "$$nm_cmd" -m "$$obj" | grep -E '(^|[[:space:]])_+(__DISABLE_EXPORTS|HAVE_ARCH_COMPILER_H)([[:space:]]|$$)'; then echo "Orlix product object uses forbidden adapter escape symbol: $$obj" >&2; exit 1; fi; \
 };
 endef
@@ -469,10 +493,12 @@ orlix_product_adapter_generate_kallsyms() { \
 	shift 2; \
 	product_objects=("$${@}"); \
 	[ "$${#product_objects[@]}" -gt 0 ] || { echo "cannot generate product kallsyms without product objects" >&2; exit 1; }; \
-	linux_root="$(ORLIX_KERNEL_PORT_DIR)"; \
+	linux_root="$(ORLIX_KERNEL_PORT_ABS)"; \
 	config="$(ORLIX_KERNEL_BUILD_DIR)/.config"; \
 	kallsyms_tool="$(ORLIX_KERNEL_BUILD_DIR)/scripts/kallsyms"; \
+	mksysmap_filter="$$linux_root/scripts/mksysmap"; \
 	[ -x "$$kallsyms_tool" ] || { echo "missing Linux kallsyms generator: $$kallsyms_tool" >&2; exit 1; }; \
+	[ -s "$$mksysmap_filter" ] || { echo "missing Linux mksysmap filter: $$mksysmap_filter" >&2; exit 1; }; \
 	kallsyms_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)/kallsyms-$$platform"; \
 	rm -rf "$$kallsyms_root"; \
 	mkdir -p "$$kallsyms_root"; \
@@ -511,7 +537,7 @@ orlix_product_adapter_generate_kallsyms() { \
 			printf '%s D __per_cpu_end\n' "$$(hex_sum "$$percpu_addr" "$$percpu_size")"; \
 		fi; \
 		"$$nm_cmd" -n "$$merged_obj" | awk 'NF >= 3 && $$1 ~ /^[0-9A-Fa-f]+$$/ && $$2 ~ /^[A-Za-z]$$/ { name=$$3; if (name ~ /^ltmp[0-9]+$$/ || name ~ /^l[_.]/) next; sub(/^_/, "", name); print $$1, $$2, name }'; \
-	} | LC_ALL=C sort -k1,1 -k3,3 | sed -f "$$linux_root/scripts/mksysmap" > "$$sysmap"; \
+	} | LC_ALL=C sort -k1,1 -k3,3 | sed -f "$$mksysmap_filter" > "$$sysmap"; \
 	grep -q ' _text$$' "$$sysmap" || { echo "generated kallsyms System.map missing _text" >&2; exit 1; }; \
 	grep -q ' _stext$$' "$$sysmap" || { echo "generated kallsyms System.map missing _stext" >&2; exit 1; }; \
 	grep -q ' _etext$$' "$$sysmap" || { echo "generated kallsyms System.map missing _etext" >&2; exit 1; }; \
@@ -520,7 +546,7 @@ orlix_product_adapter_generate_kallsyms() { \
 	if grep -q '^CONFIG_KALLSYMS_ABSOLUTE_PERCPU=y$$' "$$config"; then kallsyms_flags="$$kallsyms_flags --absolute-percpu"; fi; \
 	"$$kallsyms_tool" $$kallsyms_flags "$$sysmap" > "$$linux_asm"; \
 	perl -pe 's/^\t\.section \.rodata, "a"$$/\t.section __DATA_CONST,__const/; s/^\.globl (kallsyms_[A-Za-z0-9_]+)/.globl _$$1/; s/^(kallsyms_[A-Za-z0-9_]+):/_$$1:/; s/\bPTR\t_text\b/PTR\t__text/g;' "$$linux_asm" > "$$kallsyms_src"; \
-	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler-with-cpp -ffreestanding $(ORLIX_PRODUCT_ADAPTER_CFLAGS) -fno-builtin -nostdinc -D__KERNEL__ -include "linux/kconfig.h" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -c "$$kallsyms_src" -o "$$kallsyms_obj"; \
+	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler-with-cpp -ffreestanding $(ORLIX_PRODUCT_ADAPTER_CFLAGS) -fno-builtin -nostdinc -D__KERNEL__ -include "linux/kconfig.h" -I"$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_ABS)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_ABS)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -c "$$kallsyms_src" -o "$$kallsyms_obj"; \
 	orlix_product_adapter_verify_object_contract "$$kallsyms_obj"; \
 	for symbol in _kallsyms_num_syms _kallsyms_names _kallsyms_markers _kallsyms_token_table _kallsyms_token_index _kallsyms_offsets _kallsyms_relative_base _kallsyms_seqs_of_names; do "$$nm_cmd" -m "$$kallsyms_obj" | grep -F -q "$$symbol" || { echo "product kallsyms object missing symbol: $$symbol" >&2; exit 1; }; done; \
 	objs+=("$$kallsyms_obj"); \
@@ -537,10 +563,15 @@ orlix_product_adapter_generate_boundaries() { \
 	boundary_src="$(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-boundaries.S"; \
 	boundary_obj="$(ORLIX_PRODUCT_BOUNDARY_OBJECT)"; \
 	[ "$${#product_objects[@]}" -gt 0 ] || { echo "cannot generate product boundaries without product objects" >&2; exit 1; }; \
-	present_sections="$$(for candidate in "$${product_objects[@]}"; do "$$otool_cmd" -l "$$candidate" | awk '/sectname / { section=$$2; next } /segname / { if (section != "") print $$2 "," section; section="" }'; done | LC_ALL=C sort -u)"; \
+	metadata_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)/object-metadata-$$platform"; \
+	mkdir -p "$$metadata_root"; \
+	object_metadata_key() { basename "$$1" | tr -c 'A-Za-z0-9_.-' '_'; }; \
+	object_sections_for() { candidate="$$1"; cache="$$metadata_root/$$(object_metadata_key "$$candidate").sections"; if [ ! -s "$$cache" ] || [ "$$cache" -ot "$$candidate" ]; then tmp_cache="$$cache.tmp.$$$$"; "$$otool_cmd" -l "$$candidate" | awk '/sectname / { section=$$2; next } /segname / { if (section != "") print $$2 "," section; section="" }' > "$$tmp_cache"; mv -f "$$tmp_cache" "$$cache"; fi; cat "$$cache"; }; \
+	object_undefined_for() { candidate="$$1"; cache="$$metadata_root/$$(object_metadata_key "$$candidate").undefined"; if [ ! -s "$$cache" ] || [ "$$cache" -ot "$$candidate" ]; then tmp_cache="$$cache.tmp.$$$$"; "$$nm_cmd" -u "$$candidate" | awk 'NF { print $$NF }' > "$$tmp_cache"; mv -f "$$tmp_cache" "$$cache"; fi; cat "$$cache"; }; \
+	present_sections="$$(for candidate in "$${product_objects[@]}"; do object_sections_for "$$candidate"; done | LC_ALL=C sort -u)"; \
 	present_section_names="$$(printf '%s\n' "$$present_sections" | awk -F, 'NF == 2 { print $$2 }' | LC_ALL=C sort -u)"; \
-	undefined_symbols="$$(for candidate in "$${product_objects[@]}"; do "$$nm_cmd" -u "$$candidate" | awk 'NF { print $$NF }'; done | LC_ALL=C sort -u)"; \
-	thread_size="$$(awk '/^#define[[:space:]]+THREAD_SIZE[[:space:]]+/ { value=$$0; sub(/^.*_AC[(]/, "", value); sub(/,.*/, "", value); print value; exit }' "$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/asm/thread_info.h")"; \
+	undefined_symbols="$$(for candidate in "$${product_objects[@]}"; do object_undefined_for "$$candidate"; done | LC_ALL=C sort -u)"; \
+	thread_size="$$(awk '/^#define[[:space:]]+THREAD_SIZE[[:space:]]+/ { value=$$0; sub(/^.*_AC[(]/, "", value); sub(/,.*/, "", value); print value; exit }' "$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/include/asm/thread_info.h")"; \
 	case "$$thread_size" in ''|*[!0-9]*) echo "unable to extract numeric THREAD_SIZE for product init stack" >&2; exit 1 ;; esac; \
 	thread_align=0; thread_align_value="$$thread_size"; \
 	while [ "$$thread_align_value" -gt 1 ]; do \
@@ -729,19 +760,23 @@ define orlix_product_adapter_finalize_archive
 orlix_product_adapter_finalize_archive() { \
 	platform="$$1"; \
 	target="$$2"; \
-	archive="$$3"; \
+	archive_output="$$3"; \
 	shift 3; \
 	product_objects=("$${@}"); \
 	[ "$${#product_objects[@]}" -gt 0 ] || { echo "cannot finalize OrlixKernel archive without product objects" >&2; exit 1; }; \
 	link_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)/linked-$$platform"; \
-	rm -rf "$$link_root"; \
-	mkdir -p "$$link_root"; \
+	mkdir -p "$$link_root/chunks"; \
+	metadata_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)/object-metadata-$$platform"; \
+	mkdir -p "$$metadata_root"; \
+	object_metadata_key() { basename "$$1" | tr -c 'A-Za-z0-9_.-' '_'; }; \
+	object_macho_symbols_for() { candidate="$$1"; cache="$$metadata_root/$$(object_metadata_key "$$candidate").nm-m"; if [ ! -s "$$cache" ] || [ "$$cache" -ot "$$candidate" ]; then tmp_cache="$$cache.tmp.$$$$"; "$$nm_cmd" -m "$$candidate" > "$$tmp_cache"; mv -f "$$tmp_cache" "$$cache"; fi; cat "$$cache"; }; \
+	product_objects_rsp="$$link_root/product-objects.rsp"; \
 	objects_rsp="$$link_root/objects.rsp"; \
 	linked_obj="$$link_root/orlix-product-kernel.o"; \
 	order_file="$$link_root/orlix-product-order-file.txt"; \
-	printf '%s\n' "$${product_objects[@]}" > "$$objects_rsp"; \
+	printf '%s\n' "$${product_objects[@]}" > "$$product_objects_rsp"; \
 	: > "$$order_file"; \
-	initcall_symbols="$$(for obj in "$${product_objects[@]}"; do "$$nm_cmd" -m "$$obj" | awk '/\(__DATA,__initcall_e\)/ && $$NF ~ /^___initcall____/ { print "__initcall_e", $$NF; next } /\(__DATA,__initcall0\)/ && $$NF ~ /^___initcall____/ { print "__initcall0", $$NF; next } /\(__DATA,__initcall0s\)/ && $$NF ~ /^___initcall____/ { print "__initcall0s", $$NF; next } /\(__DATA,__initcall1\)/ && $$NF ~ /^___initcall____/ { print "__initcall1", $$NF; next } /\(__DATA,__initcall1s\)/ && $$NF ~ /^___initcall____/ { print "__initcall1s", $$NF; next } /\(__DATA,__initcall2\)/ && $$NF ~ /^___initcall____/ { print "__initcall2", $$NF; next } /\(__DATA,__initcall2s\)/ && $$NF ~ /^___initcall____/ { print "__initcall2s", $$NF; next } /\(__DATA,__initcall3\)/ && $$NF ~ /^___initcall____/ { print "__initcall3", $$NF; next } /\(__DATA,__initcall3s\)/ && $$NF ~ /^___initcall____/ { print "__initcall3s", $$NF; next } /\(__DATA,__initcall4\)/ && $$NF ~ /^___initcall____/ { print "__initcall4", $$NF; next } /\(__DATA,__initcall4s\)/ && $$NF ~ /^___initcall____/ { print "__initcall4s", $$NF; next } /\(__DATA,__initcall5\)/ && $$NF ~ /^___initcall____/ { print "__initcall5", $$NF; next } /\(__DATA,__initcall5s\)/ && $$NF ~ /^___initcall____/ { print "__initcall5s", $$NF; next } /\(__DATA,__initcallrf\)/ && $$NF ~ /^___initcall____/ { print "__initcallrf", $$NF; next } /\(__DATA,__initcallrfs\)/ && $$NF ~ /^___initcall____/ { print "__initcallrfs", $$NF; next } /\(__DATA,__initcall6\)/ && $$NF ~ /^___initcall____/ { print "__initcall6", $$NF; next } /\(__DATA,__initcall6s\)/ && $$NF ~ /^___initcall____/ { print "__initcall6s", $$NF; next } /\(__DATA,__initcall7\)/ && $$NF ~ /^___initcall____/ { print "__initcall7", $$NF; next } /\(__DATA,__initcall7s\)/ && $$NF ~ /^___initcall____/ { print "__initcall7s", $$NF; next }'; done)"; \
+	initcall_symbols="$$(for obj in "$${product_objects[@]}"; do object_macho_symbols_for "$$obj" | awk '/\(__DATA,__initcall_e\)/ && $$NF ~ /^___initcall____/ { print "__initcall_e", $$NF; next } /\(__DATA,__initcall0\)/ && $$NF ~ /^___initcall____/ { print "__initcall0", $$NF; next } /\(__DATA,__initcall0s\)/ && $$NF ~ /^___initcall____/ { print "__initcall0s", $$NF; next } /\(__DATA,__initcall1\)/ && $$NF ~ /^___initcall____/ { print "__initcall1", $$NF; next } /\(__DATA,__initcall1s\)/ && $$NF ~ /^___initcall____/ { print "__initcall1s", $$NF; next } /\(__DATA,__initcall2\)/ && $$NF ~ /^___initcall____/ { print "__initcall2", $$NF; next } /\(__DATA,__initcall2s\)/ && $$NF ~ /^___initcall____/ { print "__initcall2s", $$NF; next } /\(__DATA,__initcall3\)/ && $$NF ~ /^___initcall____/ { print "__initcall3", $$NF; next } /\(__DATA,__initcall3s\)/ && $$NF ~ /^___initcall____/ { print "__initcall3s", $$NF; next } /\(__DATA,__initcall4\)/ && $$NF ~ /^___initcall____/ { print "__initcall4", $$NF; next } /\(__DATA,__initcall4s\)/ && $$NF ~ /^___initcall____/ { print "__initcall4s", $$NF; next } /\(__DATA,__initcall5\)/ && $$NF ~ /^___initcall____/ { print "__initcall5", $$NF; next } /\(__DATA,__initcall5s\)/ && $$NF ~ /^___initcall____/ { print "__initcall5s", $$NF; next } /\(__DATA,__initcallrf\)/ && $$NF ~ /^___initcall____/ { print "__initcallrf", $$NF; next } /\(__DATA,__initcallrfs\)/ && $$NF ~ /^___initcall____/ { print "__initcallrfs", $$NF; next } /\(__DATA,__initcall6\)/ && $$NF ~ /^___initcall____/ { print "__initcall6", $$NF; next } /\(__DATA,__initcall6s\)/ && $$NF ~ /^___initcall____/ { print "__initcall6s", $$NF; next } /\(__DATA,__initcall7\)/ && $$NF ~ /^___initcall____/ { print "__initcall7", $$NF; next } /\(__DATA,__initcall7s\)/ && $$NF ~ /^___initcall____/ { print "__initcall7s", $$NF; next }'; done)"; \
 	expected_initcall_order="$$(for section in __initcall_e __initcall0 __initcall0s __initcall1 __initcall1s __initcall2 __initcall2s __initcall3 __initcall3s __initcall4 __initcall4s __initcall5 __initcall5s __initcallrf __initcallrfs __initcall6 __initcall6s __initcall7 __initcall7s; do printf '%s\n' "$$initcall_symbols" | awk -v section="$$section" '$$1 == section { print $$2 }'; done)"; \
 	initcall_entries_for_section() { section="$$1"; printf '%s\n' "$$initcall_symbols" | awk -v section="$$section" '$$1 == section { print $$2 }'; }; \
 	append_initcall_order_section() { section="$$1"; boundary="$${2-}"; if [ -n "$$boundary" ]; then printf '%s\n' "$$boundary"; fi; initcall_entries_for_section "$$section"; }; \
@@ -768,7 +803,7 @@ orlix_product_adapter_finalize_archive() { \
 			append_initcall_order_section __initcall7s; \
 		} >> "$$order_file"; \
 	fi; \
-	class_symbol_present() { symbol="$$1"; for obj in "$${product_objects[@]}"; do "$$nm_cmd" "$$obj" | awk -v symbol="$$symbol" 'NF >= 3 && $$3 == symbol { found = 1 } END { exit found ? 0 : 1 }' && return 0; done; return 1; }; \
+	class_symbol_present() { symbol="$$1"; for obj in "$${product_objects[@]}"; do case "$$obj" in *kernel_sched_*.o) "$$nm_cmd" "$$obj" | awk -v symbol="$$symbol" 'NF >= 3 && $$3 == symbol { found = 1 } END { exit found ? 0 : 1 }' && return 0 ;; esac; done; return 1; }; \
 	expected_sched_order="$$(for symbol in _stop_sched_class _dl_sched_class _rt_sched_class _fair_sched_class _ext_sched_class _idle_sched_class; do if class_symbol_present "$$symbol"; then printf '%s\n' "$$symbol"; fi; done)"; \
 	if [ -n "$$expected_sched_order" ]; then printf '%s\n' "$$expected_sched_order" >> "$$order_file"; fi; \
 	link_order_args=(); \
@@ -779,8 +814,45 @@ orlix_product_adapter_finalize_archive() { \
 		done; \
 	fi; \
 	if [ -s "$$order_file" ]; then link_order_args=(-Wl,-order_file,"$$order_file"); fi; \
-	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -nostdlib -Wl,-r "$${link_rename_args[@]}" "$${link_order_args[@]}" -Wl,-o,"$$linked_obj" @"$$objects_rsp"; \
-	orlix_product_adapter_verify_object_contract "$$linked_obj"; \
+	partial_objects=(); \
+	chunk_index=0; \
+	link_chunk() { \
+		[ "$$#" -gt 0 ] || return 0; \
+		chunk_obj="$${link_root}/chunks/orlix-product-kernel-chunk-$$(printf '%03d' "$$chunk_index").o"; \
+		chunk_rsp="$${chunk_obj%.o}.rsp"; \
+		printf '%s\n' "$$@" > "$$chunk_rsp"; \
+		chunk_needs_link=0; \
+		if [ ! -s "$$chunk_obj" ]; then chunk_needs_link=1; else for chunk_input in "$$@"; do if [ "$$chunk_obj" -ot "$$chunk_input" ]; then chunk_needs_link=1; break; fi; done; fi; \
+		if [ "$$chunk_needs_link" -eq 1 ]; then \
+			printf '  ORLIXLDCHUNK %s %s\n' "$$platform" "$$(basename "$$chunk_obj")" >&2; \
+			/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -nostdlib -Wl,-r -Wl,-o,"$$chunk_obj" @"$$chunk_rsp"; \
+		fi; \
+		partial_objects+=("$$chunk_obj"); \
+		chunk_index=$$((chunk_index + 1)); \
+	}; \
+	if [ -s "$$order_file" ]; then \
+		partial_objects=("$${product_objects[@]}"); \
+	else \
+		chunk_members=(); \
+		for product_object in "$${product_objects[@]}"; do \
+			chunk_members+=("$$product_object"); \
+			if [ "$${#chunk_members[@]}" -ge 96 ]; then link_chunk "$${chunk_members[@]}"; chunk_members=(); fi; \
+		done; \
+		link_chunk "$${chunk_members[@]}"; \
+	fi; \
+	printf '%s\n' "$${partial_objects[@]}" > "$$objects_rsp"; \
+	linked_verified="$$linked_obj.verified"; \
+	linked_needs_link=0; \
+	if [ ! -s "$$linked_obj" ]; then linked_needs_link=1; else for partial_object in "$${partial_objects[@]}"; do if [ "$$linked_obj" -ot "$$partial_object" ]; then linked_needs_link=1; break; fi; done; fi; \
+	if [ -s "$$order_file" ] && [ "$$linked_obj" -ot "$$order_file" ]; then linked_needs_link=1; fi; \
+	if [ "$$linked_needs_link" -eq 1 ]; then \
+		/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -nostdlib -Wl,-r "$${link_rename_args[@]}" "$${link_order_args[@]}" -Wl,-o,"$$linked_obj" @"$$objects_rsp"; \
+		orlix_product_adapter_verify_object_contract "$$linked_obj"; \
+		: > "$$linked_verified"; \
+	elif [ ! -e "$$linked_verified" ] || [ "$$linked_verified" -ot "$$linked_obj" ]; then \
+		orlix_product_adapter_verify_object_contract "$$linked_obj"; \
+		: > "$$linked_verified"; \
+	fi; \
 	if [ -n "$$expected_initcall_order" ]; then \
 		actual_order="$$( "$$nm_cmd" -n -m "$$linked_obj" | awk 'index($$0, "(__DATA,__initcalls)") && $$NF ~ /^___initcall____/ { print $$NF }' )"; \
 		if [ "$$actual_order" != "$$expected_initcall_order" ]; then \
@@ -802,6 +874,6 @@ orlix_product_adapter_finalize_archive() { \
 			exit 1; \
 		fi; \
 	fi; \
-	"$$ar_cmd" rcs "$$archive" "$$linked_obj"; \
+	"$$ar_cmd" rcs "$$archive_output" "$$linked_obj"; \
 };
 endef

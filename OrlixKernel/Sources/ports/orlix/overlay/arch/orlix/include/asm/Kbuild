@@ -1,6 +1,6 @@
+syscall-y += syscall_table_64.h
+
 generic-y += cache.h
-generic-y += checksum.h
-generic-y += delay.h
 generic-y += early_ioremap.h
 generic-y += extable.h
 generic-y += kvm_para.h

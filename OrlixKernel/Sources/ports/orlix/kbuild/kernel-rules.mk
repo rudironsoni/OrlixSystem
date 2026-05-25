@@ -1,5 +1,6 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := all
+.NOTPARALLEL:
 
 empty :=
 space := $(empty) $(empty)
@@ -9,12 +10,13 @@ LINUX_VERSION ?= 6.12
 LINUX_ARCH ?= orlix
 LINUX_TAG ?= v$(LINUX_VERSION)
 LINUX_REMOTE ?= https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+ORLIX_HEADERS_INSTALL_JOBS ?= 1
 
 PROFILE ?= appstore
 ORLIX_PROFILES := appstore development
 
 type ?= kunit
-libc ?= linux
+libc ?= orlixmlibc
 
 LINUX_UPSTREAM_DIR ?= OrlixKernel/Sources/upstream/linux-$(LINUX_VERSION)
 LINUX_CLONE_CACHE_DIR ?= .cache/linux-clone
@@ -25,28 +27,105 @@ ORLIX_LINUX_PATCH_DIR ?= OrlixKernel/Sources/ports/orlix/patches
 override ORLIX_PROFILE_CONFIG := OrlixKernel/Sources/ports/orlix/configs/$(PROFILE)_defconfig
 
 ORLIX_KERNEL_PORT_DIR ?= Build/OrlixKernel/linux-$(LINUX_VERSION)-port
+ORLIX_KERNEL_PORT_ARCHIVE_PATHS := \
+	.clang-format \
+	.cocciconfig \
+	.editorconfig \
+	.gitattributes \
+	.gitignore \
+	.mailmap \
+	.rustfmt.toml \
+	COPYING \
+	CREDITS \
+	Documentation/Kconfig \
+	Kbuild \
+	Kconfig \
+	LICENSES \
+	MAINTAINERS \
+	Makefile \
+	README \
+	arch \
+	block \
+	certs \
+	crypto \
+	drivers \
+	fs \
+	include \
+	init \
+	io_uring \
+	ipc \
+	kernel \
+	lib \
+	mm \
+	net \
+	rust \
+	samples \
+	scripts \
+	security \
+	sound \
+	usr \
+	virt \
+	tools/testing/selftests/Makefile \
+	tools/testing/selftests/kselftest \
+	tools/testing/selftests/kselftest.h \
+	tools/testing/selftests/kselftest_harness.h \
+	tools/testing/selftests/kselftest_module.h \
+	tools/testing/selftests/lib.mk \
+	tools/testing/selftests/run_kselftest.sh
 ORLIX_KERNEL_BUILD_ROOT := $(CURDIR)/Build/OrlixKernel/build
 ORLIX_KERNEL_BUILD_DIR := $(ORLIX_KERNEL_BUILD_ROOT)/$(PROFILE)
+ORLIX_KERNEL_BUILD_LOCK_ROOT := $(CURDIR)/Build/OrlixKernel/locks
+ORLIX_KERNEL_BUILD_LOCK := $(ORLIX_KERNEL_BUILD_LOCK_ROOT)/$(PROFILE).lock
 ORLIX_KERNEL_ARCHIVE_ROOT := $(CURDIR)/Build/OrlixKernel/$(PROFILE)
 ORLIX_KERNEL_ARCHIVE_MANIFEST := $(ORLIX_KERNEL_ARCHIVE_ROOT)/linux-object-manifest.txt
 ORLIX_KERNEL_DEVICE_ARCHIVE_DIR := $(ORLIX_KERNEL_ARCHIVE_ROOT)/iphoneos
 ORLIX_KERNEL_SIMULATOR_ARCHIVE_DIR := $(ORLIX_KERNEL_ARCHIVE_ROOT)/iphonesimulator
 ORLIX_KERNEL_ARCHIVE_NAME := OrlixKernel.a
+ORLIX_KERNEL_ARCHIVE_PLATFORMS ?= iphoneos iphonesimulator
 ORLIX_IOS_TARGET := arm64-apple-ios
 ORLIX_IOS_SIMULATOR_TARGET := arm64-apple-ios-simulator
+ORLIX_HOSTED_SYSCALL_GATE_ADDRESS ?= 0x00006ffff0000000
+
+define orlix_kernel_acquire_profile_lock
+if [ "$${ORLIX_KERNEL_PROFILE_LOCK_HELD:-0}" != 1 ]; then \
+lock_root="$(ORLIX_KERNEL_BUILD_LOCK_ROOT)"; \
+for path in Build Build/OrlixKernel "$$lock_root"; do \
+	if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixKernel lock path: $$path" >&2; exit 1; fi; \
+done; \
+mkdir -p "$$lock_root"; \
+lock_dir="$(ORLIX_KERNEL_BUILD_LOCK).dir"; \
+while ! mkdir "$$lock_dir" 2>/dev/null; do \
+	if [ -s "$$lock_dir/pid" ] && ! kill -0 "$$(cat "$$lock_dir/pid")" 2>/dev/null; then \
+		rm -rf "$$lock_dir"; \
+		continue; \
+	fi; \
+	sleep 1; \
+done; \
+printf '%s\n' "$$$$" > "$$lock_dir/pid"; \
+trap 'rm -rf "$$lock_dir"' EXIT INT TERM; \
+export ORLIX_KERNEL_PROFILE_LOCK_HELD=1; \
+fi
+endef
+
 ORLIX_KERNEL_LINUX_SOURCES := \
 	arch/$(LINUX_ARCH)/boot/boot.c \
 	arch/$(LINUX_ARCH)/kernel/cpuinfo.c \
+	arch/$(LINUX_ARCH)/kernel/hosted_exec.c \
+	arch/$(LINUX_ARCH)/kernel/idle.c \
 	arch/$(LINUX_ARCH)/kernel/irq.c \
 	arch/$(LINUX_ARCH)/kernel/process.c \
 	arch/$(LINUX_ARCH)/kernel/ptrace.c \
 	arch/$(LINUX_ARCH)/kernel/reboot.c \
 	arch/$(LINUX_ARCH)/kernel/setup.c \
+	arch/$(LINUX_ARCH)/kernel/signal.c \
+	arch/$(LINUX_ARCH)/kernel/syscall.c \
 	arch/$(LINUX_ARCH)/kernel/time.c \
 	arch/$(LINUX_ARCH)/kernel/traps.c \
 	arch/$(LINUX_ARCH)/mm/delay.c \
+	arch/$(LINUX_ARCH)/mm/fault.c \
 	arch/$(LINUX_ARCH)/mm/iomem.c \
 	arch/$(LINUX_ARCH)/mm/init.c \
+	arch/$(LINUX_ARCH)/mm/uaccess.c \
 	init/version.c \
 	init/main.c \
 	init/init_task.c \
@@ -409,7 +488,9 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/block/virtio_blk.c \
 	drivers/char/mem.c \
 	drivers/char/random.c \
+	drivers/char/virtio_console.c \
 	drivers/net/loopback.c \
+	drivers/tty/hvc/hvc_console.c \
 	drivers/tty/tty_io.c \
 	drivers/tty/n_tty.c \
 	drivers/tty/tty_ioctl.c \
@@ -857,16 +938,13 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	lib/fdt_empty_tree.c \
 	lib/fdt_addresses.c
 ORLIX_KUNIT_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/kunit/$(PROFILE)
-ORLIX_TEMPORARY_KSELFTEST_INSTALL_DIR := $(CURDIR)/Build/OrlixKernel/kselftest/temporary/$(PROFILE)
-ORLIX_TEMPORARY_TEST_INITRAMFS_DIR := $(CURDIR)/Build/OrlixKernel/test-initramfs/temporary/$(PROFILE)/OrlixTestInitramfs.bundle
 ORLIX_MLIBC_KERNEL_HEADERS_DIR := $(CURDIR)/Build/OrlixMLibC/kernel-headers/$(PROFILE)
 ORLIX_MLIBC_SYSROOT ?= Build/OrlixMLibC/sysroot/$(PROFILE)
 ORLIX_MLIBC_KSELFTEST_INSTALL_DIR := $(CURDIR)/Build/OrlixMLibC/kselftest/$(PROFILE)
 ORLIX_MLIBC_TEST_INITRAMFS_DIR := $(CURDIR)/Build/OrlixMLibC/test-initramfs/$(PROFILE)/OrlixTestInitramfs.bundle
 
-ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR ?= Build/OrlixKernel/linux-userspace-sysroot/aarch64
-ORLIX_LINUX_USERSPACE_SYSROOT ?= $(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)
 ORLIX_KSELFTEST_ARCH ?= arm64
+ORLIX_HOSTED_USER_BASE_ADDRESS ?= 0x0000600000000000
 
 ORLIX_XCODE_PROJECT ?= OrlixSystem.xcodeproj
 ORLIX_IOS_SIMULATOR_NAME ?= iPhone 17 Pro
@@ -876,6 +954,7 @@ ORLIX_IOS_SIMULATOR_FRAMEWORK := $(ORLIX_IOS_SIMULATOR_DERIVED_DATA)/Build/Produ
 ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/payload/OrlixKernelPayload.bundle
 ORLIX_KERNEL_ROOTFS_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/rootfs/$(PROFILE)
 ORLIX_KERNEL_BASE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/base.ext4
+ORLIX_KERNEL_BASE_ROOT_TREE_INPUT ?=
 ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework
 XCODEGEN ?= xcodegen
 XCODEBUILD_MCP ?= xcodebuildmcp
@@ -893,24 +972,13 @@ ORLIX_KERNEL_OTOOL ?= otool
 
 TEST_TYPES := $(strip $(subst $(comma),$(space),$(type)))
 
-ifeq ($(libc),linux)
-KSELFTEST_SYSROOT := $(ORLIX_LINUX_USERSPACE_SYSROOT)
-KSELFTEST_INSTALL_DIR := $(ORLIX_TEMPORARY_KSELFTEST_INSTALL_DIR)
-KSELFTEST_INITRAMFS_DIR := $(ORLIX_TEMPORARY_TEST_INITRAMFS_DIR)
-KSELFTEST_HEADER_FLAGS :=
-KSELFTEST_PROOF_LABEL := temporary-kselftest-kernel-interface
-ifeq ($(ORLIX_LINUX_USERSPACE_SYSROOT),$(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR))
-KSELFTEST_PREREQS := __linux-userspace-sysroot prepare
-else
-KSELFTEST_PREREQS := prepare
-endif
-else ifeq ($(libc),orlixmlibc)
+ifeq ($(libc),orlixmlibc)
 KSELFTEST_SYSROOT := $(ORLIX_MLIBC_SYSROOT)
 KSELFTEST_INSTALL_DIR := $(ORLIX_MLIBC_KSELFTEST_INSTALL_DIR)
 KSELFTEST_INITRAMFS_DIR := $(ORLIX_MLIBC_TEST_INITRAMFS_DIR)
 KSELFTEST_HEADER_FLAGS := -isystem $(ORLIX_MLIBC_KERNEL_HEADERS_DIR)/include
 KSELFTEST_PROOF_LABEL := orlixmlibc-kselftest-syscall-uapi
-KSELFTEST_PREREQS := headers_install
+KSELFTEST_PREREQS := __orlixmlibc-sysroot
 else
 KSELFTEST_SYSROOT :=
 KSELFTEST_INSTALL_DIR :=
@@ -920,10 +988,16 @@ KSELFTEST_PROOF_LABEL :=
 KSELFTEST_PREREQS :=
 endif
 
+ORLIX_KERNEL_TEST_INITRAMFS_INPUT :=
+ORLIX_KERNEL_PAYLOAD_PREREQS := __prepare-kbuild
+ifneq (,$(filter kselftest,$(TEST_TYPES)))
+ORLIX_KERNEL_TEST_INITRAMFS_INPUT := $(KSELFTEST_INITRAMFS_DIR)/rootfs/initramfs.cpio.gz
+ORLIX_KERNEL_PAYLOAD_PREREQS := __prepare-kbuild kselftest
+endif
+
 include OrlixKernel/Sources/ports/orlix/kbuild/product-compile-adapter.mk
 
-.PHONY: all setup-env build test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install xcodeproj run __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __kernel-archive __verify-xcodegen-boundary __verify-framework-symbols __linux-userspace-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
-
+.PHONY: all setup-env build test clean mrproper help prepare scripts dtbs headers_install kunit kselftest kselftest-install xcodeproj run __xcodeproj-generate __bootstrap-linux-upstream __validate-profile __prepare-port __prepare-kbuild __headers-install __kunit __kernel-archive __verify-xcodegen-boundary __verify-framework-symbols __orlixmlibc-sysroot __kselftest-install __kselftest-initramfs __kernel-payload __ios-simulator-framework __ios-simulator-xcframework
 all: build
 
 help:
@@ -933,15 +1007,14 @@ help:
 	@printf '%s\n' '  test                      run test type(s), default: type=kunit'
 	@printf '%s\n' '  test type=kunit           build Linux KUnit-selected Orlix tests'
 	@printf '%s\n' '  test type=kunit,kselftest build KUnit and Linux kselftest artifacts'
-	@printf '%s\n' '  kselftest libc=linux      install and package temporary Linux-libc kselftests'
-	@printf '%s\n' '  kselftest libc=orlixmlibc install and package OrlixMLibC kselftests'
+	@printf '%s\n' '  kselftest                 install OrlixMLibC-built kselftests'
 	@printf '%s\n' '  headers_install           install Linux UAPI headers for OrlixMLibC'
 	@printf '%s\n' '  clean                     remove normal generated outputs'
 	@printf '%s\n' '  mrproper                  remove all generated local outputs'
 
 setup-env: __bootstrap-linux-upstream xcodeproj
 
-build: __ios-simulator-xcframework
+build: clean __ios-simulator-xcframework
 
 prepare scripts dtbs: __prepare-kbuild
 
@@ -949,7 +1022,7 @@ headers_install: __headers-install
 
 kunit: __kunit
 
-kselftest-install: $(KSELFTEST_PREREQS) __kselftest-install
+kselftest-install: __kselftest-install
 
 kselftest: kselftest-install __kselftest-initramfs
 
@@ -967,15 +1040,15 @@ test:
 		esac; \
 	done
 
-xcodeproj:
+xcodeproj: __xcodeproj-generate __verify-xcodegen-boundary
+
+__xcodeproj-generate:
 	@set -euo pipefail; \
 	command -v "$(XCODEGEN)" >/dev/null 2>&1 || { echo "XcodeGen is required; install xcodegen or set XCODEGEN=/path/to/xcodegen" >&2; exit 1; }; \
-	"$(XCODEGEN)" generate --spec project.yml; \
-	$(MAKE) -f OrlixKernel/Makefile __verify-xcodegen-boundary
+	"$(XCODEGEN)" generate --spec project.yml
 
-run: __kernel-payload
+run: __ios-simulator-framework xcodeproj
 	@set -euo pipefail; \
-	$(MAKE) xcodeproj; \
 	command -v "$(XCODEBUILD_MCP)" >/dev/null 2>&1 || { echo "XcodeBuildMCP is required; install xcodebuildmcp or set XCODEBUILD_MCP=/path/to/xcodebuildmcp" >&2; exit 1; }; \
 	selector=(); \
 	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
@@ -993,15 +1066,25 @@ run: __kernel-payload
 
 clean:
 	@set -euo pipefail; \
+	upstream_dir="$(LINUX_UPSTREAM_DIR)"; \
+	expected_upstream_dir="OrlixKernel/Sources/upstream/linux-$(LINUX_VERSION)"; \
 	port_dir="$(ORLIX_KERNEL_PORT_DIR)"; \
 	expected_port_dir="Build/OrlixKernel/linux-$(LINUX_VERSION)-port"; \
+	if [ "$$upstream_dir" != "$$expected_upstream_dir" ]; then \
+		echo "Linux upstream directory must be $$expected_upstream_dir: $$upstream_dir" >&2; \
+		exit 1; \
+	fi; \
 	if [ "$$port_dir" != "$$expected_port_dir" ]; then \
 		echo "Orlix kernel port tree must be $$expected_port_dir: $$port_dir" >&2; \
 		exit 1; \
 	fi; \
+	$(call orlix_kernel_acquire_profile_lock); \
 	for path in \
-		"$$port_dir" \
-		Build/OrlixKernel/build \
+			OrlixKernel/Sources/upstream \
+			"$$port_dir" \
+			"$$port_dir".tmp.* \
+			"$$upstream_dir" \
+			Build/OrlixKernel/build \
 		Build/OrlixKernel/kunit \
 		Build/OrlixKernel/kselftest \
 		Build/OrlixKernel/appstore \
@@ -1011,11 +1094,14 @@ clean:
 		Build/OrlixKernel/tool-shims \
 		Build/OrlixKernel/xcframework \
 		Build/OrlixMLibC/kernel-headers \
+		Build/OrlixMLibC/build \
 		Build/OrlixMLibC/kselftest \
+		Build/OrlixMLibC/sysroot \
 		Build/OrlixMLibC/test-initramfs \
+		Build/OrlixMLibC/upstream \
 		.deriveddata/OrlixSystem-sim; do \
 		if [ -L "$$path" ]; then echo "refusing to clean symlinked path: $$path" >&2; exit 1; fi; \
-		rm -rf "$$path"; \
+		if [ "$$path" != OrlixKernel/Sources/upstream ]; then rm -rf "$$path"; fi; \
 	done; \
 	echo "cleaned generated build outputs"
 
@@ -1049,8 +1135,17 @@ __bootstrap-linux-upstream:
 	done; \
 	if [ -d "$$upstream_dir/.git" ]; then \
 		checked_tag="$$(git -C "$$upstream_dir" describe --tags --exact-match HEAD 2>/dev/null || true)"; \
-		if [ "$$checked_tag" = "$$linux_tag" ]; then \
+		missing_files="$$(git -C "$$upstream_dir" ls-files -d)"; \
+		if [ "$$checked_tag" = "$$linux_tag" ] && [ -z "$$missing_files" ]; then \
 			echo "upstream Linux ready: $$upstream_dir ($$checked_tag)"; \
+			exit 0; \
+		fi; \
+		if [ "$$checked_tag" = "$$linux_tag" ]; then \
+			git -C "$$upstream_dir" reset --hard "$$linux_tag" >/dev/null; \
+			git -C "$$upstream_dir" clean -fdx >/dev/null; \
+			missing_files="$$(git -C "$$upstream_dir" ls-files -d)"; \
+			[ -z "$$missing_files" ] || { echo "failed to restore upstream Linux checkout: $$upstream_dir" >&2; exit 1; }; \
+			echo "upstream Linux restored: $$upstream_dir ($$checked_tag)"; \
 			exit 0; \
 		fi; \
 	fi; \
@@ -1087,6 +1182,7 @@ __validate-profile:
 
 __prepare-port: __validate-profile __bootstrap-linux-upstream
 	@set -euo pipefail; \
+	$(call orlix_kernel_acquire_profile_lock); \
 	upstream_dir="$(LINUX_UPSTREAM_DIR)"; \
 	port_dir="$(ORLIX_KERNEL_PORT_DIR)"; \
 	expected_port_dir="Build/OrlixKernel/linux-$(LINUX_VERSION)-port"; \
@@ -1094,7 +1190,11 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 	patch_dir="$(ORLIX_LINUX_PATCH_DIR)"; \
 	profile_config="$(ORLIX_PROFILE_CONFIG)"; \
 	exception_dir="$$patch_dir/exceptions"; \
+	port_filelist="$(ORLIX_KERNEL_BUILD_ROOT)/linux-$(LINUX_VERSION)-port-source-files.$$$$.txt"; \
+	port_stamp="$$port_dir/.orlix-port-profile"; \
+	port_tmp_dir="$$port_dir.tmp.$$$$"; \
 	forbidden_re='^(fs|kernel|mm|ipc|net|include/linux|include/uapi)(/|$$)'; \
+	trap 'rm -rf "$$port_tmp_dir"; rm -f "$$port_filelist"' EXIT; \
 	if [ "$$port_dir" != "$$expected_port_dir" ]; then \
 		echo "Orlix kernel port tree must be $$expected_port_dir: $$port_dir" >&2; \
 		exit 1; \
@@ -1107,12 +1207,45 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 		if [ -L "$$path" ]; then echo "refusing to use symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
 	[ -d "$$overlay_dir" ] || { echo "missing Linux overlay directory: $$overlay_dir" >&2; exit 1; }; \
-	rm -rf "$$port_dir"; \
-	mkdir -p "$$port_dir"; \
-	git -C "$$upstream_dir" archive --format=tar HEAD | tar -x -C "$$port_dir"; \
-	cp -R "$$overlay_dir/." "$$port_dir"; \
-	mkdir -p "$$port_dir/arch/$(LINUX_ARCH)/configs"; \
-	cp "$$profile_config" "$$port_dir/arch/$(LINUX_ARCH)/configs/defconfig"; \
+	port_inputs_changed=0; \
+	if [ -s "$$port_stamp" ]; then \
+		if find "$$overlay_dir" -type f -newer "$$port_stamp" -print -quit | grep -q .; then port_inputs_changed=1; fi; \
+		if [ -d "$$patch_dir" ] && find "$$patch_dir" -type f -newer "$$port_stamp" -print -quit | grep -q .; then port_inputs_changed=1; fi; \
+		if [ "$$profile_config" -nt "$$port_stamp" ]; then port_inputs_changed=1; fi; \
+	fi; \
+	if [ -s "$$port_stamp" ] && \
+		[ "$$port_inputs_changed" -eq 0 ] && \
+		grep -Fxq "linux_version=$(LINUX_VERSION)" "$$port_stamp" && \
+		grep -Fxq "profile=$(PROFILE)" "$$port_stamp" && \
+		[ -s "$$port_dir/Makefile" ] && \
+		[ -s "$$port_dir/arch/$(LINUX_ARCH)/configs/defconfig" ] && \
+		[ -s "$$port_dir/include/linux/init.h" ] && \
+		[ -s "$$port_dir/init/Kconfig" ] && \
+		[ -s "$$port_dir/usr/Kconfig" ] && \
+		[ -s "$$port_dir/scripts/Makefile.clang" ] && \
+		[ -s "$$port_dir/kernel/fork.c" ] && \
+		[ -s "$$port_dir/mm/page_alloc.c" ] && \
+		[ -s "$$port_dir/tools/testing/selftests/lib.mk" ]; then \
+		echo "prepared Orlix kernel port tree: $$port_dir (profile $(PROFILE))"; \
+		exit 0; \
+	fi; \
+	for attempt in 1 2 3; do \
+		rm -rf "$$port_dir" "$$port_tmp_dir" && break; \
+		sleep 1; \
+	done; \
+	[ ! -e "$$port_dir" ] || { echo "failed to remove disposable Orlix kernel port tree: $$port_dir" >&2; exit 1; }; \
+	[ ! -e "$$port_tmp_dir" ] || { echo "failed to remove disposable Orlix kernel port staging tree: $$port_tmp_dir" >&2; exit 1; }; \
+	mkdir -p "$$port_tmp_dir" "$$(dirname "$$port_filelist")"; \
+	rm -f "$$port_filelist"; \
+	for archive_path in $(ORLIX_KERNEL_PORT_ARCHIVE_PATHS); do \
+		printf 'checking out Orlix Linux port input: %s\n' "$$archive_path"; \
+		git -C "$$upstream_dir" ls-tree -r --name-only HEAD -- "$$archive_path" > "$$port_filelist"; \
+		[ -s "$$port_filelist" ] || { echo "missing Orlix Linux port input: $$archive_path" >&2; exit 1; }; \
+		git -C "$$upstream_dir" checkout-index --force --stdin --prefix="$(CURDIR)/$$port_tmp_dir/" < "$$port_filelist"; \
+	done; \
+	cp -R "$$overlay_dir/." "$$port_tmp_dir"; \
+	mkdir -p "$$port_tmp_dir/arch/$(LINUX_ARCH)/configs"; \
+	cp "$$profile_config" "$$port_tmp_dir/arch/$(LINUX_ARCH)/configs/defconfig"; \
 	if [ -d "$$patch_dir" ]; then \
 		for patch in "$$patch_dir"/*.patch "$$patch_dir"/*.diff; do \
 			[ -e "$$patch" ] || continue; \
@@ -1127,13 +1260,28 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 					exit 1; \
 				fi; \
 			fi; \
-			patch -d "$$port_dir" -p1 < "$$patch_abs" >/dev/null; \
+			patch -d "$$port_tmp_dir" -p1 < "$$patch_abs" >/dev/null; \
 		done; \
 	fi; \
+	for required_port_file in \
+		"$$port_tmp_dir/Makefile" \
+		"$$port_tmp_dir/arch/$(LINUX_ARCH)/configs/defconfig" \
+		"$$port_tmp_dir/include/linux/init.h" \
+		"$$port_tmp_dir/init/Kconfig" \
+		"$$port_tmp_dir/usr/Kconfig" \
+		"$$port_tmp_dir/scripts/Makefile.clang" \
+		"$$port_tmp_dir/kernel/fork.c" \
+		"$$port_tmp_dir/mm/page_alloc.c" \
+		"$$port_tmp_dir/tools/testing/selftests/lib.mk"; do \
+		[ -s "$$required_port_file" ] || { echo "missing materialized Orlix Linux port input: $$required_port_file" >&2; exit 1; }; \
+	done; \
+	{ printf 'linux_version=%s\n' "$(LINUX_VERSION)"; printf 'profile=%s\n' "$(PROFILE)"; } > "$$port_tmp_dir/.orlix-port-profile"; \
+	mv "$$port_tmp_dir" "$$port_dir"; \
 	echo "prepared Orlix kernel port tree: $$port_dir (profile $(PROFILE))"
 
 __prepare-kbuild: __prepare-port
 	@set -euo pipefail; \
+	$(call orlix_kernel_acquire_profile_lock); \
 	linux_make="$(LINUX_MAKE)"; \
 	if [ -z "$$linux_make" ]; then linux_make="$$(command -v gmake || true)"; fi; \
 	if [ -z "$$linux_make" ]; then \
@@ -1145,6 +1293,21 @@ __prepare-kbuild: __prepare-port
 	if [ "$$build_dir" != "$$expected_build_dir" ]; then \
 		echo "Orlix kernel build directory must be $$expected_build_dir: $$build_dir" >&2; \
 		exit 1; \
+	fi; \
+	ready_stamp="$$build_dir/.orlix-kbuild-ready"; \
+	if [ -s "$$ready_stamp" ] && \
+		[ "$$ready_stamp" -nt "$(ORLIX_PROFILE_CONFIG)" ] && \
+		[ "$$ready_stamp" -nt "$(ORLIX_KERNEL_PORT_DIR)/.orlix-port-profile" ] && \
+		[ -s "$$build_dir/.config" ] && \
+		[ -s "$$build_dir/include/generated/autoconf.h" ] && \
+		[ -s "$$build_dir/arch/$(LINUX_ARCH)/kernel/vmlinux.lds" ] && \
+		[ -s "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" ] && \
+		[ -s "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
+		[ -s "$$build_dir/drivers/of/empty_root.dtb" ] && \
+		[ -x "$$build_dir/usr/gen_init_cpio" ] && \
+		[ -s "$$build_dir/usr/initramfs_inc_data" ]; then \
+		echo "reusing prepared Orlix Kbuild output: $$build_dir (profile $(PROFILE))"; \
+		exit 0; \
 	fi; \
 	for path in Build/OrlixKernel/build; do \
 		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked path: $$path" >&2; exit 1; fi; \
@@ -1170,21 +1333,45 @@ __prepare-kbuild: __prepare-port
 	export PATH; \
 	sed --version >/dev/null 2>&1 || { echo "GNU sed is required by Linux Kbuild on this host" >&2; exit 1; }; \
 	command -v llvm-ar >/dev/null 2>&1 || { echo "llvm-ar is required by Linux Kbuild; install LLVM or set LINUX_LLVM_BIN=/path/to/llvm/bin" >&2; exit 1; }; \
-	rm -rf "$$build_dir"; \
-	mkdir -p "$$build_dir"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" mrproper defconfig prepare scripts dtbs arch/$(LINUX_ARCH)/kernel/vmlinux.lds drivers/of/empty_root.dtb.o usr/initramfs_data.o lib/crc32.o; \
+	if [ -s "$$build_dir/.config" ] && \
+		[ "$$build_dir/.config" -nt "$(ORLIX_PROFILE_CONFIG)" ] && \
+		[ "$$build_dir/.config" -nt "$(ORLIX_KERNEL_PORT_DIR)/.orlix-port-profile" ]; then \
+		echo "resuming partial Orlix Kbuild output: $$build_dir (profile $(PROFILE))"; \
+	else \
+		for attempt in 1 2 3 4 5; do \
+			rm -rf "$$build_dir" 2>/dev/null || true; \
+			[ ! -e "$$build_dir" ] && break; \
+			sleep 1; \
+		done; \
+		[ ! -e "$$build_dir" ] || { echo "failed to remove disposable Orlix Kbuild output: $$build_dir" >&2; exit 1; }; \
+		mkdir -p "$$build_dir"; \
+	fi; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" defconfig; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" prepare scripts dtbs arch/$(LINUX_ARCH)/kernel/vmlinux.lds drivers/of/empty_root.dtb.o lib/crc32.o; \
 	for dtb in appstore development; do \
 		[ -f "$$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" ] || { echo "missing profile DTB: $$build_dir/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb" >&2; exit 1; }; \
 	done; \
 	[ -s "$$build_dir/drivers/of/empty_root.dtb" ] || { echo "missing generated empty-root DTB: $$build_dir/drivers/of/empty_root.dtb" >&2; exit 1; }; \
+	mkdir -p "$$build_dir/usr"; \
+	gen_init_cpio="$$build_dir/usr/gen_init_cpio"; \
+	initramfs_list="$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/boot/initramfs/no-init.list"; \
+	"$(ORLIX_KERNEL_HOSTCC)" -O2 -Wall -Wmissing-prototypes -Wstrict-prototypes -o "$$gen_init_cpio" "$(ORLIX_KERNEL_PORT_ABS)/usr/gen_init_cpio.c"; \
+	[ -x "$$gen_init_cpio" ] || { echo "missing executable Linux gen_init_cpio: $$gen_init_cpio" >&2; exit 1; }; \
+	[ -s "$$initramfs_list" ] || { echo "missing Orlix no-init initramfs list: $$initramfs_list" >&2; exit 1; }; \
+	grep -Fxq 'CONFIG_INITRAMFS_SOURCE="$$(srctree)/arch/$(LINUX_ARCH)/boot/initramfs/no-init.list"' "$$build_dir/.config" || { echo "unexpected CONFIG_INITRAMFS_SOURCE; update Orlix initramfs generation policy" >&2; exit 1; }; \
+	grep -Fxq 'CONFIG_INITRAMFS_COMPRESSION_GZIP=y' "$$build_dir/.config" || { echo "unexpected CONFIG_INITRAMFS_COMPRESSION policy; update Orlix initramfs generation policy" >&2; exit 1; }; \
+	"$$gen_init_cpio" "$$initramfs_list" > "$$build_dir/usr/initramfs_data.cpio"; \
+	gzip -n -c "$$build_dir/usr/initramfs_data.cpio" > "$$build_dir/usr/initramfs_inc_data"; \
 	[ -s "$$build_dir/usr/initramfs_inc_data" ] || { echo "missing generated initramfs input: $$build_dir/usr/initramfs_inc_data" >&2; exit 1; }; \
 	linker_script="$$build_dir/arch/$(LINUX_ARCH)/kernel/vmlinux.lds"; \
 	[ -s "$$linker_script" ] || { echo "missing generated Orlix Kbuild linker script: $$linker_script" >&2; exit 1; }; \
+	printf 'profile=%s\nlinux_version=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" > "$$ready_stamp"; \
 	echo "verified Orlix Kbuild linker script: $$linker_script"; \
 	echo "prepared Orlix Kbuild output without a standalone image: $$build_dir (profile $(PROFILE))"
 
 __headers-install: __prepare-kbuild
 	@set -euo pipefail; \
+	$(call orlix_kernel_acquire_profile_lock); \
 	linux_make="$(LINUX_MAKE)"; \
 	if [ -z "$$linux_make" ]; then linux_make="$$(command -v gmake || true)"; fi; \
 	if [ -z "$$linux_make" ]; then \
@@ -1212,10 +1399,58 @@ __headers-install: __prepare-kbuild
 	for path in Build/OrlixMLibC Build/OrlixMLibC/kernel-headers; do \
 		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
-	rm -rf "$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)"; \
-	mkdir -p "$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$(ORLIX_KERNEL_BUILD_DIR)" ARCH="$(LINUX_ARCH)" LLVM=1 INSTALL_HDR_PATH="$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)" headers_install; \
+	header_install_dir="$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)"; \
+	header_install_stamp="$$header_install_dir/.orlix-headers-ready"; \
+	if [ -L "$$header_install_dir" ]; then echo "refusing to clean symlinked OrlixMLibC kernel header path: $$header_install_dir" >&2; exit 1; fi; \
+	header_staging_parent="$(ORLIX_KERNEL_BUILD_DIR)/usr"; \
+	header_staging="$$header_staging_parent/include"; \
+	if [ -s "$$header_install_stamp" ] && \
+		[ "$$header_install_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/.config" ] && \
+		[ "$$header_install_stamp" -nt "$(ORLIX_KERNEL_PORT_DIR)/.orlix-port-profile" ] && \
+		[ -d "$$header_install_dir/include" ]; then \
+		echo "reusing installed Orlix UAPI headers: $$header_install_dir/include"; \
+		exit 0; \
+	fi; \
+	resume_headers=0; \
+	if [ -d "$$header_install_dir/include" ] && [ -d "$$header_staging" ]; then resume_headers=1; fi; \
+	if [ "$$resume_headers" -eq 1 ]; then \
+		echo "resuming partial Orlix UAPI header install: $$header_install_dir/include"; \
+	else \
+		for attempt in 1 2 3 4 5; do \
+			rm -rf "$$header_install_dir" 2>/dev/null || true; \
+			[ ! -e "$$header_install_dir" ] && break; \
+			sleep 1; \
+		done; \
+		[ ! -e "$$header_install_dir" ] || { echo "failed to clean generated OrlixMLibC kernel header path: $$header_install_dir" >&2; exit 1; }; \
+		mkdir -p "$$header_install_dir"; \
+	fi; \
+	for path in "$$header_staging_parent" "$$header_staging"; do \
+		if [ -L "$$path" ]; then echo "refusing to clean symlinked Linux UAPI header staging path: $$path" >&2; exit 1; fi; \
+	done; \
+	if [ "$$resume_headers" -ne 1 ]; then \
+		for attempt in 1 2 3 4 5; do \
+			rm -rf "$$header_staging" 2>/dev/null || true; \
+			[ ! -e "$$header_staging" ] && break; \
+			sleep 1; \
+		done; \
+		[ ! -e "$$header_staging" ] || { echo "failed to clean generated Linux UAPI header staging path: $$header_staging" >&2; exit 1; }; \
+	fi; \
+	mkdir -p "$$header_staging"; \
+	for uapi_root in \
+		"$(ORLIX_KERNEL_PORT_ABS)/include/uapi" \
+		"$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/include/uapi" \
+		"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" \
+		"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi"; do \
+		[ -d "$$uapi_root" ] || continue; \
+		(cd "$$uapi_root" && find . -type d -print) | while IFS= read -r rel_dir; do \
+			rel_dir="$${rel_dir#./}"; \
+			[ -n "$$rel_dir" ] || continue; \
+			mkdir -p "$$header_staging/$$rel_dir"; \
+		done; \
+	done; \
+	env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS "$$linux_make" -j"$(ORLIX_HEADERS_INSTALL_JOBS)" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KERNEL_BUILD_DIR)" ARCH="$(LINUX_ARCH)" LLVM=1 INSTALL_HDR_PATH="$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)" headers_install; \
 	[ -d "$(ORLIX_MLIBC_KERNEL_HEADERS_DIR)/include" ] || { echo "missing installed Orlix UAPI headers: $(ORLIX_MLIBC_KERNEL_HEADERS_DIR)/include" >&2; exit 1; }; \
+	printf 'profile=%s\nlinux_version=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" > "$$header_install_stamp"; \
 	echo "installed Orlix UAPI headers: $(ORLIX_MLIBC_KERNEL_HEADERS_DIR)/include"
 
 __kunit: __prepare-kbuild
@@ -1251,13 +1486,15 @@ __kunit: __prepare-kbuild
 	sed --version >/dev/null 2>&1 || { echo "GNU sed is required by Linux KUnit builds" >&2; exit 1; }; \
 	rm -rf "$(ORLIX_KUNIT_BUILD_DIR)"; \
 	mkdir -p "$(ORLIX_KUNIT_BUILD_DIR)"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" defconfig; \
-	"$(ORLIX_KERNEL_PORT_DIR)/scripts/kconfig/merge_config.sh" -m -O "$(ORLIX_KUNIT_BUILD_DIR)" "$(ORLIX_KUNIT_BUILD_DIR)/.config" "$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/.kunitconfig"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" olddefconfig arch/$(LINUX_ARCH)/boot/boot_test.o; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" defconfig; \
+	"$(ORLIX_KERNEL_PORT_ABS)/scripts/kconfig/merge_config.sh" -m -O "$(ORLIX_KUNIT_BUILD_DIR)" "$(ORLIX_KUNIT_BUILD_DIR)/.config" "$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/.kunitconfig"; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(LINUX_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" olddefconfig arch/$(LINUX_ARCH)/boot/boot_test.o; \
 	echo "built Orlix KUnit objects: $(ORLIX_KUNIT_BUILD_DIR)"
 
-__kernel-archive: __prepare-kbuild
+__kernel-archive:
 	@set -euo pipefail; \
+	$(call orlix_kernel_acquire_profile_lock); \
+	$(MAKE) -f OrlixKernel/Makefile __kernel-payload PROFILE="$(PROFILE)" type="$(type)" libc="$(libc)" ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(ORLIX_KERNEL_TEST_INITRAMFS_INPUT)" ORLIX_KERNEL_BASE_ROOT_TREE_INPUT="$(ORLIX_KERNEL_BASE_ROOT_TREE_INPUT)"; \
 	cc="$(ORLIX_KERNEL_CC)"; \
 	hostcc="$(ORLIX_KERNEL_HOSTCC)"; \
 	ar_cmd="$(ORLIX_KERNEL_AR)"; \
@@ -1279,7 +1516,7 @@ __kernel-archive: __prepare-kbuild
 	mkdir -p "$$root"; \
 	$(call orlix_product_adapter_prepare); \
 	mkdir -p "$(ORLIX_KERNEL_BUILD_DIR)/init"; \
-	build_version="$${KBUILD_BUILD_VERSION:-$$(cd "$(ORLIX_KERNEL_BUILD_DIR)" && "$(CURDIR)/$(ORLIX_KERNEL_PORT_DIR)/scripts/build-version")}"; \
+	build_version="$${KBUILD_BUILD_VERSION:-$$(cd "$(ORLIX_KERNEL_BUILD_DIR)" && "$(ORLIX_KERNEL_PORT_ABS)/scripts/build-version")}"; \
 	build_timestamp="$${KBUILD_BUILD_TIMESTAMP:-$$(LC_ALL=C date)}"; \
 	smp_flag=""; \
 	preempt_flag=""; \
@@ -1289,7 +1526,7 @@ __kernel-archive: __prepare-kbuild
 	if grep -q '^CONFIG_PREEMPT_RT=y$$' "$(ORLIX_KERNEL_BUILD_DIR)/.config"; then preempt_flag="PREEMPT_RT"; fi; \
 	uts_version="$$(printf '#%s %s %s %s' "$$build_version" "$$smp_flag" "$$preempt_flag" "$$build_timestamp" | cut -b -64)"; \
 	printf '#define UTS_VERSION "%s"\n' "$$uts_version" > "$(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h"; \
-	{ for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do printf '%s\n' "$(ORLIX_KERNEL_PORT_DIR)/$$src_rel"; done; } > "$(ORLIX_KERNEL_ARCHIVE_MANIFEST)"; \
+	{ for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do printf '%s\n' "$(ORLIX_KERNEL_PORT_ABS)/$$src_rel"; done; } > "$(ORLIX_KERNEL_ARCHIVE_MANIFEST)"; \
 	$(call orlix_product_adapter_verify_object_contract) \
 	$(call orlix_product_adapter_source_resolver) \
 	$(call orlix_product_adapter_generate_payloads) \
@@ -1302,10 +1539,58 @@ __kernel-archive: __prepare-kbuild
 		output_dir="$$root/$$platform"; \
 		obj_dir="$$output_dir/objects"; \
 		archive="$$output_dir/$(ORLIX_KERNEL_ARCHIVE_NAME)"; \
-		rm -rf "$$output_dir"; \
+		archive_tmp="$$output_dir/.$(ORLIX_KERNEL_ARCHIVE_NAME).tmp.$$$$"; \
+		symbols_tmp="$$output_dir/.symbols.txt.tmp.$$$$"; \
 		mkdir -p "$$obj_dir"; \
-		objs=(); \
+		if [ -s "$$archive" ] && [ -s "$$output_dir/symbols.txt" ] && \
+			grep -q '_arch_boot_entry' "$$output_dir/symbols.txt" && \
+			grep -q '_arch_boot_params' "$$output_dir/symbols.txt"; then \
+			archive_ready=1; \
+			for dep in \
+				OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk \
+				OrlixKernel/Sources/ports/orlix/kbuild/product-compile-adapter.mk \
+				"$(ORLIX_KERNEL_BUILD_DIR)/.config" \
+				"$(ORLIX_PRODUCT_INITRAMFS_INPUT)"; do \
+				if [ ! -e "$$dep" ] || [ ! "$$archive" -nt "$$dep" ]; then archive_ready=0; break; fi; \
+			done; \
+			if [ "$$archive_ready" -eq 1 ]; then \
+				for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do \
+					src="$$(orlix_product_adapter_source_for "$$src_rel")"; \
+					if [ ! -s "$$src" ] || [ ! "$$archive" -nt "$$src" ]; then archive_ready=0; break; fi; \
+					obj_name="$${src_rel//\//_}.o"; \
+					obj="$$obj_dir/$$obj_name"; \
+					if [ -e "$$obj" ] && [ ! "$$archive" -nt "$$obj" ]; then archive_ready=0; break; fi; \
+				done; \
+			fi; \
+			if [ "$$archive_ready" -eq 1 ]; then \
+				echo "reusing OrlixKernel archive: $$archive ($$target)"; \
+				return 0; \
+			fi; \
+		fi; \
+		rm -f "$$archive_tmp" "$$symbols_tmp"; \
+		object_set_ready=1; \
+		objects_probe=(); \
 		for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do \
+			src="$$(orlix_product_adapter_source_for "$$src_rel")"; \
+			obj_name="$${src_rel//\//_}.o"; \
+			obj="$$obj_dir/$$obj_name"; \
+			verified="$$obj.verified"; \
+			if [ ! -s "$$obj" ] || [ ! -e "$$verified" ]; then object_set_ready=0; break; fi; \
+			if [ ! -s "$$src" ] || [ ! "$$obj" -nt "$$src" ]; then object_set_ready=0; break; fi; \
+			for dep in \
+				OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk \
+				OrlixKernel/Sources/ports/orlix/kbuild/product-compile-adapter.mk \
+				"$(ORLIX_KERNEL_BUILD_DIR)/.config"; do \
+				if [ ! -e "$$dep" ] || [ ! "$$obj" -nt "$$dep" ]; then object_set_ready=0; break 2; fi; \
+			done; \
+			objects_probe+=("$$obj"); \
+		done; \
+		if [ "$$object_set_ready" -eq 1 ]; then \
+			objs=("$${objects_probe[@]}"); \
+			printf '  ORLIXOBJS %s %s objects\n' "$$platform" "$${#objs[@]}" >&2; \
+		else \
+			objs=(); \
+			for src_rel in $(ORLIX_KERNEL_LINUX_SOURCES); do \
 			src="$$(orlix_product_adapter_source_for "$$src_rel")"; \
 			[ -s "$$src" ] || { echo "missing Linux source: $$src" >&2; exit 1; }; \
 			kbuild_name="$${src_rel##*/}"; \
@@ -1313,40 +1598,71 @@ __kernel-archive: __prepare-kbuild
 			kbuild_name="$${kbuild_name//-/_}"; \
 			obj_name="$${src_rel//\//_}.o"; \
 			obj="$$obj_dir/$$obj_name"; \
+			verified="$$obj.verified"; \
 			dep="$$obj_dir/$${obj_name%.o}.d"; \
+			src_dir="$${src_rel%/*}"; \
+			src_local_dir="$${src%/*}"; \
+			local_cflags="-I$$src_local_dir -I$(ORLIX_KERNEL_PORT_ABS)/$$src_dir -I$(ORLIX_KERNEL_BUILD_DIR)/$$src_dir"; \
 			extra_cflags=""; \
 			case "$$src_rel" in \
 				init/version.c) extra_cflags="-include $(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h" ;; \
-				drivers/of/of_reserved_mem.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/drivers/of" ;; \
-				fs/iomap/trace.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/fs/iomap" ;; \
-				kernel/sched/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/kernel/sched" ;; \
-				lib/crc32.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/lib -I$(ORLIX_KERNEL_BUILD_DIR)/lib" ;; \
-				lib/fdt*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_DIR)/scripts/dtc/libfdt" ;; \
+				drivers/of/of_reserved_mem.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/of" ;; \
+				drivers/char/virtio_console.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty/hvc -I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty" ;; \
+				drivers/tty/hvc/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty/hvc -I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty" ;; \
+				drivers/tty/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty" ;; \
+				fs/iomap/trace.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/fs/iomap" ;; \
+				kernel/sched/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/kernel/sched" ;; \
+				lib/crc32.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/lib -I$(ORLIX_KERNEL_BUILD_DIR)/lib" ;; \
+				lib/fdt*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/scripts/dtc/libfdt" ;; \
 			esac; \
-			/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x c -ffreestanding $(ORLIX_PRODUCT_ADAPTER_CFLAGS) -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -DORLIX_APP_HOSTED_BOOT=1 -DKBUILD_MODNAME=\"$$kbuild_name\" -DKBUILD_BASENAME=\"$$kbuild_name\" -DKBUILD_MODFILE=\"$$src_rel\" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_DIR)/include/linux/kconfig.h" $$extra_cflags -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_DIR)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_DIR)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_DIR)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -MMD -MF "$$dep" -c "$$src" -o "$$obj"; \
-			if grep -E '(/Applications/|/Library/Developer/CommandLineTools/SDKs/|/System/Library/Frameworks|/usr/include)' "$$dep"; then \
-				echo "Linux object included a host SDK or libc header: $$dep" >&2; \
-				exit 1; \
+			needs_build=1; \
+			if [ -s "$$obj" ] && \
+				[ "$$obj" -nt "$$src" ] && \
+				[ "$$obj" -nt "$(ORLIX_KERNEL_BUILD_DIR)/.config" ]; then \
+				needs_build=0; \
 			fi; \
-			if grep -E '(OrlixHostAdapter/Sources|OrlixKernel/Sources/include|OrlixKernel/Sources/boot|OrlixMLibC/Sources|Build/OrlixMLibC/sysroot|/usr/local/include|/opt/homebrew/include)' "$$dep"; then \
-				echo "Linux object included host, OrlixMLibC, or product headers: $$dep" >&2; \
-				exit 1; \
+			if [ "$$needs_build" -eq 1 ]; then \
+				printf '  ORLIXCC %s %s\n' "$$platform" "$$src_rel" >&2; \
+				/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x c -ffreestanding $(ORLIX_PRODUCT_ADAPTER_CFLAGS) -fno-builtin -fno-stack-protector -fno-objc-arc -fno-common -nostdinc -D__KERNEL__ -DORLIX_APP_HOSTED_BOOT=1 -DKBUILD_MODNAME=\"$$kbuild_name\" -DKBUILD_BASENAME=\"$$kbuild_name\" -DKBUILD_MODFILE=\"$$src_rel\" -include "$(ORLIX_KERNEL_PORT_ABS)/include/linux/compiler-version.h" -include "$(ORLIX_KERNEL_PORT_ABS)/include/linux/kconfig.h" $$local_cflags $$extra_cflags -I"$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated" -I"$(ORLIX_KERNEL_PORT_ABS)/include" -I"$(ORLIX_KERNEL_BUILD_DIR)/include" -I"$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/include/generated/uapi" -I"$(ORLIX_KERNEL_PORT_ABS)/include/uapi" -I"$(ORLIX_KERNEL_BUILD_DIR)/include/generated/uapi" -MMD -MF "$$dep" -c "$$src" -o "$$obj"; \
+				if grep -E '(/Applications/|/Library/Developer/CommandLineTools/SDKs/|/System/Library/Frameworks|/usr/include)' "$$dep"; then \
+					echo "Linux object included a host SDK or libc header: $$dep" >&2; \
+					exit 1; \
+				fi; \
+				if grep -E '(OrlixHostAdapter/Sources|OrlixKernel/Sources/include|OrlixKernel/Sources/boot|OrlixMLibC/Sources|Build/OrlixMLibC/sysroot|/usr/local/include|/opt/homebrew/include)' "$$dep"; then \
+					echo "Linux object included host, OrlixMLibC, or product headers: $$dep" >&2; \
+					exit 1; \
+				fi; \
+				orlix_product_adapter_verify_object_contract "$$obj"; \
+				: > "$$verified"; \
+			else \
+				if [ ! -e "$$verified" ] || [ "$$verified" -ot "$$obj" ]; then \
+					orlix_product_adapter_verify_object_contract "$$obj"; \
+					: > "$$verified"; \
+				fi; \
 			fi; \
-			orlix_product_adapter_verify_object_contract "$$obj"; \
 			objs+=("$$obj"); \
-		done; \
+			done; \
+		fi; \
 		orlix_product_adapter_generate_payloads "$$platform" "$$target"; \
 		orlix_product_adapter_generate_boundaries "$$platform" "$$target" "$${objs[@]}"; \
 		orlix_product_adapter_generate_kallsyms "$$platform" "$$target" "$${objs[@]}"; \
-		orlix_product_adapter_finalize_archive "$$platform" "$$target" "$$archive" "$${objs[@]}"; \
-		[ -s "$$archive" ] || { echo "missing OrlixKernel archive: $$archive" >&2; exit 1; }; \
-		"$$nm_cmd" -gU "$$archive" > "$$output_dir/symbols.txt"; \
-		grep -q '_arch_boot_entry' "$$output_dir/symbols.txt" || { echo "OrlixKernel archive missing _arch_boot_entry: $$archive" >&2; exit 1; }; \
-		grep -q '_arch_boot_params' "$$output_dir/symbols.txt" || { echo "OrlixKernel archive missing _arch_boot_params: $$archive" >&2; exit 1; }; \
+		orlix_product_adapter_finalize_archive "$$platform" "$$target" "$$archive_tmp" "$${objs[@]}"; \
+		[ -s "$$archive_tmp" ] || { echo "missing staged OrlixKernel archive: $$archive_tmp" >&2; exit 1; }; \
+		"$$nm_cmd" -gU "$$archive_tmp" > "$$symbols_tmp"; \
+		grep -q '_arch_boot_entry' "$$symbols_tmp" || { echo "OrlixKernel archive missing _arch_boot_entry: $$archive_tmp" >&2; exit 1; }; \
+		grep -q '_arch_boot_params' "$$symbols_tmp" || { echo "OrlixKernel archive missing _arch_boot_params: $$archive_tmp" >&2; exit 1; }; \
+		mv -f "$$archive_tmp" "$$archive"; \
+		mv -f "$$symbols_tmp" "$$output_dir/symbols.txt"; \
 		echo "built OrlixKernel archive: $$archive ($$target)"; \
 	}; \
-	compile_slice iphoneos "$(ORLIX_IOS_TARGET)"; \
-	compile_slice iphonesimulator "$(ORLIX_IOS_SIMULATOR_TARGET)"; \
+	[ -n "$(strip $(ORLIX_KERNEL_ARCHIVE_PLATFORMS))" ] || { echo "ORLIX_KERNEL_ARCHIVE_PLATFORMS must not be empty" >&2; exit 1; }; \
+	for archive_platform in $(ORLIX_KERNEL_ARCHIVE_PLATFORMS); do \
+		case "$$archive_platform" in \
+			iphoneos) compile_slice iphoneos "$(ORLIX_IOS_TARGET)" ;; \
+			iphonesimulator) compile_slice iphonesimulator "$(ORLIX_IOS_SIMULATOR_TARGET)" ;; \
+			*) echo "unsupported OrlixKernel archive platform: $$archive_platform" >&2; exit 1 ;; \
+		esac; \
+	done; \
 	echo "wrote OrlixKernel archive manifest: $(ORLIX_KERNEL_ARCHIVE_MANIFEST)"
 
 __verify-xcodegen-boundary:
@@ -1391,30 +1707,29 @@ __verify-framework-symbols:
 	grep -q '_arch_boot_params' "$$symbols" || { echo "OrlixKernel.framework missing _arch_boot_params" >&2; exit 1; }; \
 	echo "verified OrlixKernel framework symbols: $$framework_binary"
 
-__linux-userspace-sysroot:
-	@set -euo pipefail; \
-	if [ -L "$(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)" ]; then \
-		echo "refusing to use symlinked Linux userspace sysroot: $(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)" >&2; \
-		exit 1; \
-	fi; \
-	if [ ! -d "$(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)" ]; then \
-		./scripts/bootstrap-orlix-linux-userspace-sysroot.sh --output "$(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)"; \
-	fi; \
-	[ -d "$(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)" ] || { echo "missing Linux userspace sysroot: $(ORLIX_LINUX_USERSPACE_SYSROOT_BOOTSTRAP_DIR)" >&2; exit 1; }
-
-__kselftest-install: __validate-profile
+__orlixmlibc-sysroot: __validate-profile
 	@set -euo pipefail; \
 	selected_libc="$(libc)"; \
-	case "$$selected_libc" in linux|orlixmlibc) ;; *) echo "unsupported libc=$$selected_libc (expected linux or orlixmlibc)" >&2; exit 1 ;; esac; \
+	case "$$selected_libc" in orlixmlibc) ;; *) echo "unsupported libc=$$selected_libc (expected orlixmlibc)" >&2; exit 1 ;; esac; \
 	sysroot="$(KSELFTEST_SYSROOT)"; \
+	sysroot_stamp="$$sysroot/.orlixmlibc-sysroot-ready"; \
+	if [ -s "$$sysroot_stamp" ] && \
+		[ "$$sysroot_stamp" -nt "OrlixMLibC/Makefile" ] && \
+		[ "$$sysroot_stamp" -nt "OrlixMLibC/Sources/patches/0001-sysdeps-linux-aarch64-use-orlix-hosted-syscall-gate.patch" ] && \
+		[ -d "$$sysroot/usr/include" ] && \
+		[ -d "$$sysroot/usr/lib" ] && \
+		[ -s "$$sysroot/usr/lib/libc.a" ]; then \
+		echo "reusing OrlixMLibC sysroot: $$sysroot"; \
+		exit 0; \
+	fi; \
+	$(MAKE) -f OrlixMLibC/Makefile build PROFILE="$(PROFILE)" ORLIX_HOSTED_SYSCALL_GATE_ADDRESS="$(ORLIX_HOSTED_SYSCALL_GATE_ADDRESS)"
+
+__kselftest-install: __prepare-kbuild $(KSELFTEST_PREREQS) __validate-profile
+	@set -euo pipefail; \
+	selected_libc="$(libc)"; \
+	case "$$selected_libc" in orlixmlibc) ;; *) echo "unsupported libc=$$selected_libc (expected orlixmlibc)" >&2; exit 1 ;; esac; \
 	install_dir="$(KSELFTEST_INSTALL_DIR)"; \
-	header_flags="$(KSELFTEST_HEADER_FLAGS)"; \
 	proof_label="$(KSELFTEST_PROOF_LABEL)"; \
-	case "$$sysroot" in /*) ;; *) sysroot="$(CURDIR)/$$sysroot" ;; esac; \
-	[ -d "$$sysroot" ] || { echo "missing kselftest sysroot: $$sysroot" >&2; exit 1; }; \
-	linux_make="$(LINUX_MAKE)"; \
-	if [ -z "$$linux_make" ]; then linux_make="$$(command -v gmake || true)"; fi; \
-	if [ -z "$$linux_make" ]; then echo "GNU Make >= 4.0 is required by Linux kselftest; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; exit 1; fi; \
 	linux_llvm_bin="$(LINUX_LLVM_BIN)"; \
 	coreutils_dir=""; \
 	if readlink -e / >/dev/null 2>&1; then coreutils_dir="$$(dirname "$$(command -v readlink)")"; \
@@ -1422,27 +1737,43 @@ __kselftest-install: __validate-profile
 	else echo "GNU readlink is required by kselftest install; install coreutils" >&2; exit 1; fi; \
 	PATH="$$coreutils_dir:$${linux_llvm_bin:+$$linux_llvm_bin:}$$PATH"; \
 	export PATH; \
-	command -v clang >/dev/null 2>&1 || { echo "clang is required to build Linux kselftest artifacts" >&2; exit 1; }; \
 	rm -rf "$$install_dir"; \
 	mkdir -p "$$(dirname "$$install_dir")"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_DIR)/tools/testing/selftests" \
+	sysroot="$(KSELFTEST_SYSROOT)"; \
+	header_flags="$(KSELFTEST_HEADER_FLAGS)"; \
+	case "$$sysroot" in /*) ;; *) sysroot="$(CURDIR)/$$sysroot" ;; esac; \
+	[ -d "$$sysroot" ] || { echo "missing OrlixMLibC sysroot: $$sysroot; run make -f OrlixMLibC/Makefile build PROFILE=$(PROFILE)" >&2; exit 1; }; \
+	hosted_user_base="$(ORLIX_HOSTED_USER_BASE_ADDRESS)"; \
+	processor_header="$(ORLIX_KERNEL_PORT_ABS)/arch/$(LINUX_ARCH)/include/asm/processor.h"; \
+	grep -Eq "^[[:space:]]*#define[[:space:]]+ORLIX_HOSTED_USER_BASE[[:space:]]+\\($$hosted_user_base" "$$processor_header" || { echo "Orlix kselftest link base $$hosted_user_base does not match ORLIX_HOSTED_USER_BASE in $$processor_header" >&2; exit 1; }; \
+	orlix_crt_flags="$$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o"; \
+	orlix_ldlibs="-Wl,--start-group $$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
+	linux_make="$(LINUX_MAKE)"; \
+	if [ -z "$$linux_make" ]; then linux_make="$$(command -v gmake || true)"; fi; \
+	if [ -z "$$linux_make" ]; then echo "GNU Make >= 4.0 is required by Linux kselftest; install gmake or set LINUX_MAKE=/path/to/gmake" >&2; exit 1; fi; \
+	command -v clang >/dev/null 2>&1 || { echo "clang is required to build Linux kselftest artifacts" >&2; exit 1; }; \
+	kselftest_build_dir="$(ORLIX_KERNEL_BUILD_DIR)/kselftest/orlix"; \
+	if [ -L "$$kselftest_build_dir" ]; then echo "refusing to clean symlinked kselftest build path: $$kselftest_build_dir" >&2; exit 1; fi; \
+	rm -rf "$$kselftest_build_dir"; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)/tools/testing/selftests" \
 		O="$(ORLIX_KERNEL_BUILD_DIR)" \
 		TARGETS=orlix \
 		KSFT_INSTALL_PATH="$$install_dir" \
 		ARCH="$(ORLIX_KSELFTEST_ARCH)" \
 		LLVM=1 \
 		FORCE_TARGETS=1 \
-		USERCFLAGS="--sysroot=$$sysroot $$header_flags" \
-		USERLDFLAGS="--sysroot=$$sysroot -static -fuse-ld=lld" \
+		USERCFLAGS="--sysroot=$$sysroot $$header_flags -DORLIX_HOSTED_EXEC=1 -femulated-tls -fno-pie" \
+		USERLDFLAGS="--sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$$hosted_user_base $$orlix_crt_flags" \
+		LDLIBS="$$orlix_ldlibs" \
 		install; \
 	printf 'proof_lane=%s\n' "$$proof_label" > "$$install_dir/proof_lane.txt"; \
 	[ -s "$$install_dir/run_kselftest.sh" ] || { echo "missing installed kselftest runner" >&2; exit 1; }; \
-	echo "installed Orlix kselftests: $$install_dir (libc $$selected_libc)"
+	echo "installed OrlixMLibC-built kselftests: $$install_dir"
 
-__kselftest-initramfs: kselftest-install
+__kselftest-initramfs:
 	@set -euo pipefail; \
 	selected_libc="$(libc)"; \
-	case "$$selected_libc" in linux|orlixmlibc) ;; *) echo "unsupported libc=$$selected_libc (expected linux or orlixmlibc)" >&2; exit 1 ;; esac; \
+	case "$$selected_libc" in orlixmlibc) ;; *) echo "unsupported libc=$$selected_libc (expected orlixmlibc)" >&2; exit 1 ;; esac; \
 	install_dir="$(KSELFTEST_INSTALL_DIR)"; \
 	output="$(KSELFTEST_INITRAMFS_DIR)"; \
 	proof_label="$(KSELFTEST_PROOF_LABEL)"; \
@@ -1454,66 +1785,34 @@ __kselftest-initramfs: kselftest-install
 		if [ -L "$$path" ]; then echo "refusing to package test initramfs through symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
 	[ -d "$$install_dir" ] || { echo "missing kselftest install directory: $$install_dir" >&2; exit 1; }; \
-	for required in \
-		"$$install_dir/run_kselftest.sh" \
-		"$$install_dir/kselftest/runner.sh" \
-		"$$install_dir/kselftest-list.txt" \
-		"$$install_dir/orlix/boot_profile_contract" \
-		"$$install_dir/orlix/virtio_mmio_probe_contract"; do \
-		[ -s "$$required" ] || { echo "missing non-empty kselftest install input: $$required" >&2; exit 1; }; \
-	done; \
-	grep -qx 'orlix:boot_profile_contract' "$$install_dir/kselftest-list.txt" || { echo "kselftest install list is missing orlix:boot_profile_contract" >&2; exit 1; }; \
-	grep -qx 'orlix:virtio_mmio_probe_contract' "$$install_dir/kselftest-list.txt" || { echo "kselftest install list is missing orlix:virtio_mmio_probe_contract" >&2; exit 1; }; \
 	output_parent="$$(dirname "$$output")"; \
 	rm -rf "$$output"; \
-	mkdir -p "$$output_parent" "$$output/kselftest"; \
-	cp -R "$$install_dir/." "$$output/kselftest"; \
+	mkdir -p "$$output_parent" "$$output/rootfs"; \
+	gen_init_cpio="$(ORLIX_KERNEL_BUILD_DIR)/usr/gen_init_cpio"; \
+	cpio_list="$$output/initramfs.list"; \
+	init_binary="$$install_dir/orlix/kselftest_init"; \
+	kselftest_list="$$install_dir/kselftest-list.txt"; \
+	[ -s "$$init_binary" ] || { echo "missing OrlixMLibC-built kselftest init binary: $$init_binary" >&2; exit 1; }; \
+	[ -s "$$kselftest_list" ] || { echo "missing installed kselftest list: $$kselftest_list" >&2; exit 1; }; \
+	[ -x "$$gen_init_cpio" ] || { echo "missing executable Linux gen_init_cpio: $$gen_init_cpio" >&2; exit 1; }; \
 	{ \
-		printf '%s\n' '#!/bin/sh'; \
-		printf '%s\n' 'set -eu'; \
-		printf '\n'; \
-		printf '%s\n' 'mkdir -p /proc /sys /sys/kernel/debug /dev'; \
-		printf '%s\n' 'mount -t proc proc /proc 2>/dev/null || true'; \
-		printf '%s\n' 'mount -t sysfs sysfs /sys 2>/dev/null || true'; \
-		printf '%s\n' 'mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null || true'; \
-		printf '\n'; \
-		printf '%s\n' "echo \"ORLIX-PROOF-LANE $$proof_label\""; \
-		printf '%s\n' "echo \"ORLIX-PROFILE $(PROFILE)\""; \
-		printf '%s\n' "echo \"ORLIX-LINUX-ARCH $(LINUX_ARCH)\""; \
-		printf '%s\n' "echo \"ORLIX-LINUX-VERSION $(LINUX_VERSION)\""; \
-		printf '\n'; \
-		printf '%s\n' 'echo "ORLIX-KUNIT-BEGIN"'; \
-		printf '%s\n' 'if [ -d /sys/kernel/debug/kunit ]; then'; \
-		printf '%s\n' '    found_kunit_results=0'; \
-		printf '%s\n' '    for result in /sys/kernel/debug/kunit/*/results; do'; \
-		printf '%s\n' '        if [ -r "$$result" ]; then'; \
-		printf '%s\n' '            found_kunit_results=1'; \
-		printf '%s\n' '            cat "$$result"'; \
-		printf '%s\n' '        fi'; \
-		printf '%s\n' '    done'; \
-		printf '%s\n' '    if [ "$$found_kunit_results" -eq 0 ]; then'; \
-		printf '%s\n' '        dmesg || true'; \
-		printf '%s\n' '    fi'; \
-		printf '%s\n' 'else'; \
-		printf '%s\n' '    dmesg || true'; \
-		printf '%s\n' 'fi'; \
-		printf '%s\n' 'echo "ORLIX-KUNIT-END"'; \
-		printf '\n'; \
-		printf '%s\n' 'echo "ORLIX-KSELFTEST-BEGIN"'; \
-		printf '%s\n' 'cd /kselftest'; \
-		printf '%s\n' 'set +e'; \
-		printf '%s\n' './run_kselftest.sh -c orlix'; \
-		printf '%s\n' 'kselftest_status="$$?"'; \
-		printf '%s\n' 'set -e'; \
-		printf '%s\n' 'echo "ORLIX-KSELFTEST-END status=$$kselftest_status"'; \
-		printf '%s\n' 'exit "$$kselftest_status"'; \
-	} > "$$output/init"; \
-	chmod 755 "$$output/init"; \
-	printf 'proof_lane=%s\n' "$$proof_label" > "$$output/proof_lane.txt"; \
-	printf '%s\n' "$(PROFILE)" > "$$output/selected_profile.txt"; \
-	printf '%s\n' "$(LINUX_ARCH)" > "$$output/linux_arch.txt"; \
-	printf '%s\n' "$(LINUX_VERSION)" > "$$output/linux_version.txt"; \
-	shasum -a 256 "$$output/kselftest/kselftest-list.txt" | awk '{ print $$1 }' > "$$output/kselftest-list.sha256"; \
+		printf '%s\n' 'dir /dev 755 0 0'; \
+		printf '%s\n' 'dir /proc 555 0 0'; \
+		printf '%s\n' 'dir /sys 555 0 0'; \
+		printf '%s\n' 'dir /orlix 755 0 0'; \
+		printf '%s\n' 'nod /dev/console 600 0 0 c 5 1'; \
+		printf 'file /init %s 755 0 0\n' "$$init_binary"; \
+		printf 'file /kselftest-list.txt %s 644 0 0\n' "$$kselftest_list"; \
+		while IFS=: read -r collection test_name; do \
+			if [ "$$collection" = orlix ] && [ -n "$$test_name" ]; then \
+				test_binary="$$install_dir/orlix/$$test_name"; \
+				[ -s "$$test_binary" ] || { echo "missing installed Orlix kselftest binary: $$test_binary" >&2; exit 1; }; \
+				printf 'file /orlix/%s %s 755 0 0\n' "$$test_name" "$$test_binary"; \
+			fi; \
+		done < "$$kselftest_list"; \
+	} > "$$cpio_list"; \
+	"$$gen_init_cpio" "$$cpio_list" > "$$output/rootfs/initramfs.cpio"; \
+	gzip -n -f "$$output/rootfs/initramfs.cpio"; \
 	{ \
 		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
 		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
@@ -1543,8 +1842,9 @@ __kselftest-initramfs: kselftest-install
 	plutil -lint "$$output/Info.plist" >/dev/null; \
 	echo "packaged kselftest initramfs: $$output (libc $$selected_libc)"
 
-__kernel-payload: __prepare-kbuild
+__kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 	@set -euo pipefail; \
+	$(call orlix_kernel_acquire_profile_lock); \
 	output="$(ORLIX_KERNEL_PAYLOAD_DIR)"; \
 	case "$$output" in \
 		"$(CURDIR)"/Build/OrlixKernel/payload/OrlixKernelPayload.bundle) ;; \
@@ -1553,6 +1853,50 @@ __kernel-payload: __prepare-kbuild
 	for path in Build Build/OrlixKernel Build/OrlixKernel/payload "$$output"; do \
 		if [ -L "$$path" ]; then echo "refusing to package OrlixKernel payload through symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
+	rootfs_input="$(ORLIX_KERNEL_TEST_INITRAMFS_INPUT)"; \
+	if [ -z "$$rootfs_input" ]; then rootfs_input="$(ORLIX_KERNEL_BUILD_DIR)/usr/initramfs_inc_data"; fi; \
+	base_root_tree_input="$(ORLIX_KERNEL_BASE_ROOT_TREE_INPUT)"; \
+	case "$$rootfs_input" in \
+		"$(CURDIR)"/Build/OrlixKernel/test-initramfs/*/rootfs/initramfs.cpio.gz|"$(CURDIR)"/Build/OrlixMLibC/test-initramfs/*/rootfs/initramfs.cpio.gz|"$(ORLIX_KERNEL_BUILD_DIR)"/usr/initramfs_inc_data) ;; \
+		*) echo "refusing to package root initramfs outside Orlix Build roots: $$rootfs_input" >&2; exit 1 ;; \
+	esac; \
+	if [ -n "$$base_root_tree_input" ]; then \
+		case "$$base_root_tree_input" in \
+			"$(CURDIR)"/Build/OrlixOS/rootfs/*/base-tree) ;; \
+			*) echo "refusing to package base root tree outside Build/OrlixOS/rootfs: $$base_root_tree_input" >&2; exit 1 ;; \
+		esac; \
+		[ -d "$$base_root_tree_input" ] || { echo "missing OrlixOS base root tree: $$base_root_tree_input" >&2; exit 1; }; \
+	fi; \
+	[ -s "$$rootfs_input" ] || { echo "missing non-empty root initramfs: $$rootfs_input" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify OrlixKernel payload rootfs input" >&2; exit 1; }; \
+	rootfs_sha256="$$(shasum -a 256 "$$rootfs_input" | awk '{ print $$1 }')"; \
+	base_root_tree_sha256=none; \
+	if [ -n "$$base_root_tree_input" ]; then \
+		base_root_tree_sha256="$$(cd "$$base_root_tree_input" && find . -mindepth 1 -print | LC_ALL=C sort | while IFS= read -r path; do \
+			if [ -L "$$path" ]; then printf 'link %s %s\n' "$$path" "$$(readlink "$$path")"; \
+			elif [ -f "$$path" ]; then printf 'file %s ' "$$path"; shasum -a 256 "$$path"; \
+			elif [ -d "$$path" ]; then printf 'dir %s\n' "$$path"; \
+			fi; \
+		done | shasum -a 256 | awk '{ print $$1 }')"; \
+	fi; \
+	payload_stamp="$$output/.orlix-payload-ready"; \
+	if [ -s "$$payload_stamp" ] && \
+		[ "$$payload_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" ] && \
+		[ "$$payload_stamp" -nt "$(ORLIX_KERNEL_BUILD_DIR)/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
+		[ "$$payload_stamp" -nt "$$rootfs_input" ] && \
+		[ "$$payload_stamp" -nt "OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk" ] && \
+		[ "$$(sed -n 's/^rootfs_input=//p' "$$payload_stamp")" = "$$rootfs_input" ] && \
+		[ "$$(sed -n 's/^rootfs_sha256=//p' "$$payload_stamp")" = "$$rootfs_sha256" ] && \
+		[ "$$(sed -n 's/^base_root_tree_input=//p' "$$payload_stamp")" = "$$base_root_tree_input" ] && \
+		[ "$$(sed -n 's/^base_root_tree_sha256=//p' "$$payload_stamp")" = "$$base_root_tree_sha256" ] && \
+		[ -s "$$output/Info.plist" ] && \
+		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" ] && \
+		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
+		[ -s "$$output/rootfs/initramfs.cpio.gz" ] && \
+		[ -s "$$output/rootfs/base.ext4" ]; then \
+		echo "reusing OrlixKernel payload: $$output (profile $(PROFILE))"; \
+		exit 0; \
+	fi; \
 	rm -rf "$$output"; \
 	mkdir -p "$$output/arch/$(LINUX_ARCH)/boot/dts"; \
 	for dtb in appstore development; do \
@@ -1561,8 +1905,6 @@ __kernel-payload: __prepare-kbuild
 		cp "$$input" "$$output/arch/$(LINUX_ARCH)/boot/dts/$$dtb.dtb"; \
 	done; \
 	mkdir -p "$$output/rootfs"; \
-	rootfs_input="$(ORLIX_KERNEL_BUILD_DIR)/usr/initramfs_inc_data"; \
-	[ -s "$$rootfs_input" ] || { echo "missing non-empty root initramfs: $$rootfs_input" >&2; exit 1; }; \
 	cp "$$rootfs_input" "$$output/rootfs/initramfs.cpio.gz"; \
 	mke2fs_cmd="$(ORLIX_MKE2FS)"; \
 	command -v "$$mke2fs_cmd" >/dev/null 2>&1 || { echo "mke2fs is required to generate OrlixKernel rootfs/base.ext4; install e2fsprogs or set ORLIX_MKE2FS=/path/to/mke2fs" >&2; exit 1; }; \
@@ -1571,10 +1913,13 @@ __kernel-payload: __prepare-kbuild
 	base_image="$(ORLIX_KERNEL_BASE_ROOT_IMAGE)"; \
 	rm -rf "$$base_tree" "$$base_image"; \
 	mkdir -p "$$base_tree/dev" "$$base_tree/proc" "$$base_tree/root" "$$base_tree/run" "$$base_tree/sys" "$$base_tree/tmp"; \
+	if [ -n "$$base_root_tree_input" ]; then \
+		(cd "$$base_root_tree_input" && tar -cf - .) | (cd "$$base_tree" && tar -xf -); \
+	fi; \
 	chmod 0755 "$$base_tree" "$$base_tree/dev" "$$base_tree/proc" "$$base_tree/run" "$$base_tree/sys"; \
-	chmod 0700 "$$base_tree/root"; \
-	chmod 1777 "$$base_tree/tmp"; \
-	truncate -s 16m "$$base_image"; \
+	[ -d "$$base_tree/root" ] && chmod 0700 "$$base_tree/root"; \
+	[ -d "$$base_tree/tmp" ] && chmod 1777 "$$base_tree/tmp"; \
+	truncate -s 64m "$$base_image"; \
 	"$$mke2fs_cmd" -q -t ext4 -F -m 0 -U clear -L ORLIXROOT -E root_owner=0:0 -d "$$base_tree" "$$base_image"; \
 	cp "$$base_image" "$$output/rootfs/base.ext4"; \
 	{ \
@@ -1602,11 +1947,13 @@ __kernel-payload: __prepare-kbuild
 		printf '%s\n' '</plist>'; \
 	} > "$$output/Info.plist"; \
 	plutil -lint "$$output/Info.plist" >/dev/null; \
+	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" > "$$payload_stamp"; \
 	echo "packaged OrlixKernel payload: $$output (profile $(PROFILE))"
 
-__ios-simulator-framework: __kernel-payload __kernel-archive
+__ios-simulator-framework: xcodeproj
 	@set -euo pipefail; \
-	$(MAKE) xcodeproj; \
+	$(call orlix_kernel_acquire_profile_lock); \
+	$(MAKE) -f OrlixKernel/Makefile __kernel-archive PROFILE="$(PROFILE)" type="$(type)" libc="$(libc)" ORLIX_KERNEL_ARCHIVE_PLATFORMS=iphonesimulator; \
 	command -v "$(XCODEBUILD_MCP)" >/dev/null 2>&1 || { echo "XcodeBuildMCP is required; install xcodebuildmcp or set XCODEBUILD_MCP=/path/to/xcodebuildmcp" >&2; exit 1; }; \
 	selector=(); \
 	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
@@ -1626,5 +1973,65 @@ __ios-simulator-framework: __kernel-payload __kernel-archive
 
 __ios-simulator-xcframework: __ios-simulator-framework
 	@set -euo pipefail; \
-	./scripts/package-orlixkernel-simulator-xcframework.sh --framework "$(ORLIX_IOS_SIMULATOR_FRAMEWORK)" --output "$(ORLIX_KERNEL_XCFRAMEWORK)"; \
-	./scripts/verify-orlixkernel-simulator-xcframework.sh --xcframework "$(ORLIX_KERNEL_XCFRAMEWORK)" --profile "$(PROFILE)" --linux-version "$(LINUX_VERSION)" --linux-arch "$(LINUX_ARCH)"
+	framework="$(ORLIX_IOS_SIMULATOR_FRAMEWORK)"; \
+	xcframework="$(ORLIX_KERNEL_XCFRAMEWORK)"; \
+	case "$$xcframework" in \
+		"$(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework"|Build/OrlixKernel/xcframework/OrlixKernel.xcframework) ;; \
+		*) echo "refusing to write simulator XCFramework outside Build/OrlixKernel/xcframework: $$xcframework" >&2; exit 1 ;; \
+	esac; \
+	[ -d "$$framework" ] || { echo "missing simulator framework: $$framework" >&2; exit 1; }; \
+	if [ -L Build ] || [ -L Build/OrlixKernel ] || [ -L Build/OrlixKernel/xcframework ] || [ -L "$$xcframework" ]; then \
+		echo "refusing to package simulator XCFramework through symlinked Build path" >&2; \
+		exit 1; \
+	fi; \
+	for required in "$$framework/OrlixKernel" "$$framework/Info.plist"; do \
+		[ -s "$$required" ] || { echo "missing non-empty framework input: $$required" >&2; exit 1; }; \
+	done; \
+	xcframework_parent="$$(dirname "$$xcframework")"; \
+	rm -rf "$$xcframework"; \
+	mkdir -p "$$xcframework_parent" "$$xcframework/ios-arm64-simulator"; \
+	cp -R "$$framework" "$$xcframework/ios-arm64-simulator/OrlixKernel.framework"; \
+	{ \
+		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
+		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
+		printf '%s\n' '<plist version="1.0">'; \
+		printf '%s\n' '<dict>'; \
+		printf '%s\n' '    <key>AvailableLibraries</key>'; \
+		printf '%s\n' '    <array>'; \
+		printf '%s\n' '        <dict>'; \
+		printf '%s\n' '            <key>LibraryIdentifier</key>'; \
+		printf '%s\n' '            <string>ios-arm64-simulator</string>'; \
+		printf '%s\n' '            <key>LibraryPath</key>'; \
+		printf '%s\n' '            <string>OrlixKernel.framework</string>'; \
+		printf '%s\n' '            <key>SupportedArchitectures</key>'; \
+		printf '%s\n' '            <array>'; \
+		printf '%s\n' '                <string>arm64</string>'; \
+		printf '%s\n' '            </array>'; \
+		printf '%s\n' '            <key>SupportedPlatform</key>'; \
+		printf '%s\n' '            <string>ios</string>'; \
+		printf '%s\n' '            <key>SupportedPlatformVariant</key>'; \
+		printf '%s\n' '            <string>simulator</string>'; \
+		printf '%s\n' '        </dict>'; \
+		printf '%s\n' '    </array>'; \
+		printf '%s\n' '    <key>CFBundlePackageType</key>'; \
+		printf '%s\n' '    <string>XFWK</string>'; \
+		printf '%s\n' '    <key>XCFrameworkFormatVersion</key>'; \
+		printf '%s\n' '    <string>1.0</string>'; \
+		printf '%s\n' '</dict>'; \
+		printf '%s\n' '</plist>'; \
+	} > "$$xcframework/Info.plist"; \
+	payload="$$xcframework/ios-arm64-simulator/OrlixKernel.framework/OrlixKernelPayload.bundle"; \
+	for required in \
+		"$$xcframework/Info.plist" \
+		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/Info.plist" \
+		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/OrlixKernel" \
+		"$$payload/Info.plist" \
+		"$$payload/arch/$(LINUX_ARCH)/boot/dts/appstore.dtb" \
+		"$$payload/arch/$(LINUX_ARCH)/boot/dts/development.dtb"; do \
+		[ -s "$$required" ] || { echo "missing non-empty XCFramework input: $$required" >&2; exit 1; }; \
+	done; \
+	plutil -lint \
+		"$$xcframework/Info.plist" \
+		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/Info.plist" \
+		"$$payload/Info.plist" >/dev/null; \
+	echo "packaged and verified simulator OrlixKernel XCFramework: $$xcframework (profile $(PROFILE))"

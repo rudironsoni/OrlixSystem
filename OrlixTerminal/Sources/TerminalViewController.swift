@@ -12,7 +12,14 @@ final class TerminalViewController: UIViewController {
     private let hostConsolePipe = Pipe()
     private lazy var terminalView = TerminalView(frame: .zero)
     private lazy var terminalSession = InMemoryTerminalSession(
-        write: { _ in },
+        write: { data in
+            data.withUnsafeBytes { buffer in
+                guard let baseAddress = buffer.baseAddress else {
+                    return
+                }
+                OrlixTerminalSendConsoleInput(baseAddress, UInt(buffer.count))
+            }
+        },
         resize: { _ in }
     )
     private lazy var controller = TerminalController(

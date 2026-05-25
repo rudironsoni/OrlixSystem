@@ -22,15 +22,15 @@ XCTest proof follows upstream Linux output shape: KUnit results are collected fr
 
 KUnit and kselftest raw outputs remain separate streams. XCTest parses each stream independently and reports a combined milestone verdict only after both pass.
 
-The test initramfs collects KUnit output before running kselftest. Built-in KUnit runs during boot, so the initramfs captures kernel-log/debugfs KUnit results first, then invokes `run_kselftest.sh -c orlix` and captures stdout separately.
+The final test initramfs collects KUnit output before running kselftest. Built-in KUnit runs during boot, so the initramfs captures kernel-log/debugfs KUnit results first, then invokes `run_kselftest.sh -c orlix` and captures stdout separately.
 
 The iOS-hosted test kernel may enable Linux debugfs and `CONFIG_KUNIT_DEBUGFS` as explicit test affordances so the test initramfs can read per-suite KTAP from `/sys/kernel/debug/kunit/<suite>/results`. Kernel-log collection remains the primary boot-time KUnit path.
 
 Orlix KUnit suite selection follows upstream KUnit surface conventions through the committed `OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/.kunitconfig`. kselftest coverage lives under `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix`.
 
-kselftest binaries should be staged for the test initramfs through the upstream kselftest install shape, not by ad hoc copying, unless the upstream install path is temporarily blocked.
+kselftest binaries should be staged for the final test initramfs through the upstream kselftest install shape, not by ad hoc copying or a separate nolibc/raw-syscall lane.
 
-The test initramfs should invoke installed kselftests through `run_kselftest.sh`. Direct execution of individual selftest binaries bypasses upstream runner behavior and is not milestone proof.
+The final test initramfs should invoke installed kselftests through `run_kselftest.sh`. Direct execution of individual selftest binaries bypasses upstream runner behavior and is not milestone proof.
 
 The proof runner should select the Orlix collection explicitly with `run_kselftest.sh -c orlix`, even when only `TARGETS=orlix` is installed.
 
@@ -50,7 +50,7 @@ Durable milestone decisions belong in ADRs, the canonical architecture spec, and
 
 This ADR establishes that Linux-facing behavior must be grounded in Linux-native proof, while iOS host integration is proved with XCTest. ADR 0017 refines how Linux-native proof is promoted into product runtime claims.
 
-KUnit proves OrlixKernel internal behavior. kselftest run through a temporary foreign-libc, nolibc, or other temporary harness proves kernel-interface behavior only. These lanes are necessary dependency proof, but they do not by themselves prove the full Orlix userspace runtime.
+KUnit proves OrlixKernel internal behavior. OrlixMLibC-built kselftest proves kernel-interface and syscall/UAPI behavior only. These lanes are necessary dependency proof, but they do not by themselves prove the full Orlix userspace runtime.
 
 Full product runtime claims must follow the claim promotion order in ADR 0017: kernel dependency proof, kselftest kernel-interface proof, OrlixMLibC libc proof, OrlixMLibC-built syscall/UAPI proof, POSIX shell environment proof, and third-party package proof.
 
@@ -60,7 +60,7 @@ Milestone 1 is app-hosted OrlixKernel build proof, not full boot or device suppo
 
 Milestone 3 establishes app-hosted OrlixKernel packaging or linking because iOS-hosted execution cannot advance without the integration artifact the iOS app actually runs.
 
-Milestone 4 establishes iOS-hosted kernel-interface test execution before later runtime milestones claim proof. KUnit proves kernel-internal behavior, and temporary-harness kselftests prove kernel-interface behavior only.
+Milestone 4 establishes iOS-hosted kernel-interface test execution before later runtime milestones claim proof. KUnit proves kernel-internal behavior, and OrlixMLibC-built kselftests prove kernel-interface behavior only.
 
 Later milestones cover boot entrypoint, XCFramework packaging, iOS-hosted kernel-interface test execution, boot to virtio probe, virtio root disks, root assembly, console, remaining virtio devices, OrlixMLibC, POSIX shell proof, package proof, and final prototype deletion.
 

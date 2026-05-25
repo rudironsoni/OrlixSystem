@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <asm/boot.h>
+#include <asm/hosted_exec.h>
 #include <asm/page.h>
 #include <asm/thread_info.h>
 #include <linux/init.h>
@@ -7,7 +8,7 @@
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
 #define __orlix_boot_init
-static unsigned long app_hosted_boot_memory[(64UL * 1024 * 1024) /
+static unsigned long app_hosted_boot_memory[(256UL * 1024 * 1024) /
 					    sizeof(unsigned long)]
 	__aligned(PAGE_SIZE);
 static struct boot_params app_hosted_boot_params;
@@ -26,6 +27,7 @@ static __attribute__((noreturn)) void arch_boot_start_kernel(void)
 	unsigned long stack_top = (unsigned long)init_stack + THREAD_SIZE;
 	void (*entry)(void) = start_kernel;
 
+	orlix_hosted_capture_host_context();
 	asm volatile("mov x29, xzr\n"
 		     "mov sp, %0\n"
 		     "blr %1\n"
