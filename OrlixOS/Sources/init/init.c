@@ -4,6 +4,8 @@
 #include <fcntl.h>
 #include <stddef.h>
 #include <sys/ioctl.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static void write_literal(int fd, const char *message)
@@ -54,6 +56,37 @@ static int open_controlling_tty(void)
 	return fd;
 }
 
+static int ensure_dir(const char *path, mode_t mode)
+{
+	if (mkdir(path, mode) == 0 || errno == EEXIST)
+		return 0;
+
+	return -1;
+}
+
+static int mount_if_needed(const char *source, const char *target,
+			   const char *fstype, unsigned long flags,
+			   const void *data)
+{
+	if (mount(source, target, fstype, flags, data) == 0 || errno == EBUSY)
+		return 0;
+
+	return -1;
+}
+
+static void mount_runtime_filesystems(void)
+{
+	if (ensure_dir("/run", 0755) == 0 &&
+	    mount_if_needed("tmpfs", "/run", "tmpfs", MS_NOSUID | MS_NODEV,
+			    "mode=0755") != 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /run failed\n");
+
+	if (ensure_dir("/tmp", 01777) == 0 &&
+	    mount_if_needed("tmpfs", "/tmp", "tmpfs", MS_NOSUID | MS_NODEV,
+			    "mode=1777") != 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /tmp failed\n");
+}
+
 static void install_stdio(int fd)
 {
 	for (int target = STDIN_FILENO; target <= STDERR_FILENO; target++) {
@@ -83,6 +116,7 @@ int main(void)
 	}
 
 	install_stdio(tty);
+	mount_runtime_filesystems();
 	execve(argv[0], argv, envp);
 	write_literal(STDERR_FILENO, "orlix-init: exec /bin/sh failed\n");
 
