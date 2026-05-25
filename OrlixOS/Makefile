@@ -26,6 +26,8 @@ ORLIXOS_BASH_SRC_DIR := $(ORLIXOS_SRC_DIR)/bash-$(BASH_VERSION)
 ORLIXOS_BASH_SOURCE_STAMP := $(ORLIXOS_BASH_SRC_DIR)/.orlix-source-ready
 ORLIXOS_BASH_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/bash-$(BASH_VERSION)
 ORLIXOS_BASH_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/bash
+ORLIXOS_INIT_SOURCE := $(PROJECT_DIR)/Sources/init/init.c
+ORLIXOS_INIT_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/sbin/init
 ORLIXOS_ROOTFS_PROOF := $(ORLIXOS_ROOTFS_DIR)/rootfs.proof
 
 ORLIXOS_MLIBC_SYSROOT := $(REPO_ROOT)/Build/OrlixMLibC/sysroot/$(PROFILE)
@@ -49,7 +51,7 @@ help:
 	@printf '%s\n' '  rootfs   build the immutable OrlixOS base root tree'
 	@printf '%s\n' '  clean    remove generated OrlixOS outputs'
 
-build: $(ORLIXOS_BASH_BINARY)
+build: $(ORLIXOS_BASH_BINARY) $(ORLIXOS_INIT_BINARY)
 
 rootfs: $(ORLIXOS_ROOTFS_PROOF)
 
@@ -118,7 +120,24 @@ $(ORLIXOS_BASH_BINARY): $(ORLIXOS_BASH_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	printf 'profile=%s\npackage=bash\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(BASH_VERSION)" "$(BASH_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/bash.proof"; \
 	echo "built Orlix Linux Bash package input: $(ORLIXOS_BASH_BINARY)"
 
-$(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY)
+$(ORLIXOS_INIT_BINARY): $(ORLIXOS_INIT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_CC)" >/dev/null 2>&1 || { echo "clang is required to build Orlix init; set ORLIXOS_CC=/path/to/clang" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package Orlix init; set ORLIXOS_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
+	mkdir -p "$(dir $(ORLIXOS_INIT_BINARY))"; \
+	"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -std=c17 -O2 -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_INIT_SOURCE)" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_INIT_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_INIT_BINARY)"; \
+	file "$(ORLIXOS_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_INIT_BINARY)" >&2; exit 1; }; \
+	printf 'profile=%s\nprogram=init\nconsole=/dev/hvc0\nshell=/bin/sh\n' "$(PROFILE)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/init.proof"; \
+	echo "built OrlixOS first-stage init: $(ORLIXOS_INIT_BINARY)"
+
+$(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_INIT_BINARY)
 	@set -euo pipefail; \
 	root_tree="$(ORLIXOS_BASE_ROOT_TREE)"; \
 	case "$$root_tree" in "$(REPO_ROOT)"/Build/OrlixOS/rootfs/*/base-tree) ;; *) echo "refusing to write OrlixOS root tree outside Build/OrlixOS/rootfs: $$root_tree" >&2; exit 1 ;; esac; \
@@ -128,6 +147,7 @@ $(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY)
 	rm -rf "$$root_tree"; \
 	mkdir -p "$$root_tree/bin" "$$root_tree/dev" "$$root_tree/etc" "$$root_tree/proc" "$$root_tree/root" "$$root_tree/run" "$$root_tree/sbin" "$$root_tree/sys" "$$root_tree/tmp" "$$root_tree/usr/bin" "$$root_tree/var/tmp"; \
 	install -m 0755 "$(ORLIXOS_BASH_BINARY)" "$$root_tree/bin/bash"; \
+	install -m 0755 "$(ORLIXOS_INIT_BINARY)" "$$root_tree/sbin/init"; \
 	ln -s bash "$$root_tree/bin/sh"; \
 	printf '%s\n' 'root:x:0:0:root:/root:/bin/sh' > "$$root_tree/etc/passwd"; \
 	printf '%s\n' 'root:x:0:root' > "$$root_tree/etc/group"; \
@@ -135,7 +155,7 @@ $(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY)
 	chmod 0755 "$$root_tree" "$$root_tree/bin" "$$root_tree/dev" "$$root_tree/etc" "$$root_tree/proc" "$$root_tree/run" "$$root_tree/sbin" "$$root_tree/sys" "$$root_tree/usr" "$$root_tree/usr/bin" "$$root_tree/var"; \
 	chmod 0700 "$$root_tree/root"; \
 	chmod 1777 "$$root_tree/tmp" "$$root_tree/var/tmp"; \
-	printf 'profile=%s\nshell=/bin/sh\npackage=bash\nversion=%s\n' "$(PROFILE)" "$(BASH_VERSION)" > "$(ORLIXOS_ROOTFS_PROOF)"; \
+	printf 'profile=%s\ninit=/sbin/init\nshell=/bin/sh\npackage=bash\nversion=%s\n' "$(PROFILE)" "$(BASH_VERSION)" > "$(ORLIXOS_ROOTFS_PROOF)"; \
 	echo "built OrlixOS base root tree: $$root_tree"
 
 clean:
