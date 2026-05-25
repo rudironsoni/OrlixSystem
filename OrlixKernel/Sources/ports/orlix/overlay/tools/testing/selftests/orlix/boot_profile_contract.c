@@ -86,14 +86,23 @@ int main(void)
 			  !orlix_contains(cmdline, cmdline_size, "root=/dev/ram0"),
 			  "cmdline does not select an absent ram block root");
 	orlix_test_result(has_cmdline &&
-			  orlix_contains(cmdline, cmdline_size, "root=/dev/vda"),
-			  "cmdline selects the immutable virtio base image as root");
+			  ((release_profile &&
+			    orlix_contains(cmdline, cmdline_size, "root=/dev/vda")) ||
+			   (development_profile &&
+			    !orlix_contains(cmdline, cmdline_size, "root=/dev/vda"))),
+			  "release uses direct virtio root while development uses initramfs root assembly");
 	orlix_test_result(has_cmdline &&
-			  orlix_contains(cmdline, cmdline_size, "rootfstype=ext4"),
-			  "cmdline selects ext4 for direct immutable root");
+			  ((release_profile &&
+			    orlix_contains(cmdline, cmdline_size, "rootfstype=ext4")) ||
+			   (development_profile &&
+			    orlix_contains(cmdline, cmdline_size, "rdinit=/init"))),
+			  "cmdline selects the profile root handoff mechanism");
 	orlix_test_result(has_cmdline &&
-			  orlix_contains(cmdline, cmdline_size, " ro "),
-			  "cmdline mounts the direct immutable root read-only");
+			  ((release_profile &&
+			    orlix_contains(cmdline, cmdline_size, " ro ")) ||
+			   (development_profile &&
+			    orlix_contains(cmdline, cmdline_size, "orlix.root=overlay"))),
+			  "cmdline carries the selected root mode policy");
 	orlix_test_result(profile && has_bootargs &&
 			  orlix_contains(bootargs, bootargs_size, profile),
 			  "live device tree bootargs match the selected profile");
@@ -107,8 +116,11 @@ int main(void)
 			  orlix_contains(consoles, consoles_size, "hvc0"),
 			  "live consoles include the Orlix virtio console");
 	orlix_test_result(has_root_mode &&
-			  orlix_contains(root_mode, root_mode_size, "direct"),
-			  "live device tree selects direct root mode explicitly");
+			  ((release_profile &&
+			    orlix_contains(root_mode, root_mode_size, "direct")) ||
+			   (development_profile &&
+			    orlix_contains(root_mode, root_mode_size, "overlay"))),
+			  "live device tree selects the profile root mode explicitly");
 	orlix_test_result(has_root_modes &&
 			  orlix_contains(root_modes, root_modes_size, "direct") &&
 			  orlix_contains(root_modes, root_modes_size, "overlay"),

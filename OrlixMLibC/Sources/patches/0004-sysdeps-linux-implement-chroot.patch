@@ -1,0 +1,30 @@
+diff --git i/sysdeps/linux/generic/sysdeps.cpp w/sysdeps/linux/generic/sysdeps.cpp
+index 6832cd40..8201bad6 100644
+--- i/sysdeps/linux/generic/sysdeps.cpp
++++ w/sysdeps/linux/generic/sysdeps.cpp
+@@ -1098,6 +1098,13 @@ int Sysdeps<Fchdir>::operator()(int fd) {
+ 	return 0;
+ }
+ 
++int Sysdeps<Chroot>::operator()(const char *path) {
++	auto ret = do_syscall(SYS_chroot, path);
++	if (int e = sc_error(ret); e)
++		return e;
++	return 0;
++}
++
+ int Sysdeps<Mkdir>::operator()(const char *path, mode_t mode) {
+ 	auto ret = do_syscall(SYS_mkdirat, AT_FDCWD, path, mode);
+ 	if (int e = sc_error(ret); e)
+diff --git i/sysdeps/linux/include/mlibc/sysdeps.hpp w/sysdeps/linux/include/mlibc/sysdeps.hpp
+index 62341d81..14eb3d8e 100644
+--- i/sysdeps/linux/include/mlibc/sysdeps.hpp
++++ w/sysdeps/linux/include/mlibc/sysdeps.hpp
+@@ -54,6 +54,7 @@ struct LinuxSysdepTags :
+ 	GetCwd,
+ 	Chdir,
+ 	Fchdir,
++	Chroot,
+ 	Mkdir,
+ 	Mkdirat,
+ 	Link,

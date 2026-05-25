@@ -957,9 +957,16 @@ ORLIX_IOS_SIMULATOR_FRAMEWORK := $(ORLIX_IOS_SIMULATOR_DERIVED_DATA)/Build/Produ
 ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/payload/OrlixKernelPayload.bundle
 ORLIX_KERNEL_ROOTFS_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/rootfs/$(PROFILE)
 ORLIX_KERNEL_BASE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/base.ext4
+ORLIX_KERNEL_STATE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/state.ext4
 ORLIX_KERNEL_BASE_ROOT_TREE_INPUT ?=
+ORLIX_KERNEL_STATE_ROOT_TREE_INPUT ?=
+ORLIX_KERNEL_ROOT_INITRAMFS_INPUT ?=
 ORLIX_KERNEL_ROOT_MODES := initramfs-only direct overlay
+ifeq ($(PROFILE),development)
+ORLIX_KERNEL_SELECTED_ROOT_MODE := overlay
+else
 ORLIX_KERNEL_SELECTED_ROOT_MODE := direct
+endif
 ORLIX_KERNEL_BASE_ROOT_DEVICE := /dev/vda
 ORLIX_KERNEL_STATE_ROOT_DEVICE := /dev/vdb
 ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework
@@ -1501,7 +1508,7 @@ __kunit: __prepare-kbuild
 __kernel-archive:
 	@set -euo pipefail; \
 	$(call orlix_kernel_acquire_profile_lock); \
-	$(MAKE) -f OrlixKernel/Makefile __kernel-payload PROFILE="$(PROFILE)" type="$(type)" libc="$(libc)" ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(ORLIX_KERNEL_TEST_INITRAMFS_INPUT)" ORLIX_KERNEL_BASE_ROOT_TREE_INPUT="$(ORLIX_KERNEL_BASE_ROOT_TREE_INPUT)"; \
+	$(MAKE) -f OrlixKernel/Makefile __kernel-payload PROFILE="$(PROFILE)" type="$(type)" libc="$(libc)" ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(ORLIX_KERNEL_TEST_INITRAMFS_INPUT)" ORLIX_KERNEL_ROOT_INITRAMFS_INPUT="$(ORLIX_KERNEL_ROOT_INITRAMFS_INPUT)" ORLIX_KERNEL_BASE_ROOT_TREE_INPUT="$(ORLIX_KERNEL_BASE_ROOT_TREE_INPUT)" ORLIX_KERNEL_STATE_ROOT_TREE_INPUT="$(ORLIX_KERNEL_STATE_ROOT_TREE_INPUT)"; \
 	cc="$(ORLIX_KERNEL_CC)"; \
 	hostcc="$(ORLIX_KERNEL_HOSTCC)"; \
 	ar_cmd="$(ORLIX_KERNEL_AR)"; \
@@ -1866,10 +1873,12 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		if [ -L "$$path" ]; then echo "refusing to package OrlixKernel payload through symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
 	rootfs_input="$(ORLIX_KERNEL_TEST_INITRAMFS_INPUT)"; \
+	if [ -z "$$rootfs_input" ] && [ -n "$(ORLIX_KERNEL_ROOT_INITRAMFS_INPUT)" ]; then rootfs_input="$(ORLIX_KERNEL_ROOT_INITRAMFS_INPUT)"; fi; \
 	if [ -z "$$rootfs_input" ]; then rootfs_input="$(ORLIX_KERNEL_BUILD_DIR)/usr/initramfs_inc_data"; fi; \
 	base_root_tree_input="$(ORLIX_KERNEL_BASE_ROOT_TREE_INPUT)"; \
+	state_root_tree_input="$(ORLIX_KERNEL_STATE_ROOT_TREE_INPUT)"; \
 	case "$$rootfs_input" in \
-		"$(CURDIR)"/Build/OrlixKernel/test-initramfs/*/rootfs/initramfs.cpio.gz|"$(CURDIR)"/Build/OrlixMLibC/test-initramfs/*/rootfs/initramfs.cpio.gz|"$(ORLIX_KERNEL_BUILD_DIR)"/usr/initramfs_inc_data) ;; \
+		"$(CURDIR)"/Build/OrlixKernel/test-initramfs/*/rootfs/initramfs.cpio.gz|"$(CURDIR)"/Build/OrlixMLibC/test-initramfs/*/rootfs/initramfs.cpio.gz|"$(CURDIR)"/Build/OrlixOS/rootfs/*/rootfs/initramfs.cpio.gz|"$(ORLIX_KERNEL_BUILD_DIR)"/usr/initramfs_inc_data) ;; \
 		*) echo "refusing to package root initramfs outside Orlix Build roots: $$rootfs_input" >&2; exit 1 ;; \
 	esac; \
 	if [ -n "$$base_root_tree_input" ]; then \
@@ -1879,12 +1888,28 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		esac; \
 		[ -d "$$base_root_tree_input" ] || { echo "missing OrlixOS base root tree: $$base_root_tree_input" >&2; exit 1; }; \
 	fi; \
+	if [ -n "$$state_root_tree_input" ]; then \
+		case "$$state_root_tree_input" in \
+			"$(CURDIR)"/Build/OrlixOS/rootfs/*/state-tree) ;; \
+			*) echo "refusing to package state root tree outside Build/OrlixOS/rootfs: $$state_root_tree_input" >&2; exit 1 ;; \
+		esac; \
+		[ -d "$$state_root_tree_input" ] || { echo "missing OrlixOS state root tree: $$state_root_tree_input" >&2; exit 1; }; \
+	fi; \
 	[ -s "$$rootfs_input" ] || { echo "missing non-empty root initramfs: $$rootfs_input" >&2; exit 1; }; \
 	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify OrlixKernel payload rootfs input" >&2; exit 1; }; \
 	rootfs_sha256="$$(shasum -a 256 "$$rootfs_input" | awk '{ print $$1 }')"; \
 	base_root_tree_sha256=none; \
 	if [ -n "$$base_root_tree_input" ]; then \
 		base_root_tree_sha256="$$(cd "$$base_root_tree_input" && find . -mindepth 1 -print | LC_ALL=C sort | while IFS= read -r path; do \
+			if [ -L "$$path" ]; then printf 'link %s %s\n' "$$path" "$$(readlink "$$path")"; \
+			elif [ -f "$$path" ]; then printf 'file %s ' "$$path"; shasum -a 256 "$$path"; \
+			elif [ -d "$$path" ]; then printf 'dir %s\n' "$$path"; \
+			fi; \
+		done | shasum -a 256 | awk '{ print $$1 }')"; \
+	fi; \
+	state_root_tree_sha256=none; \
+	if [ -n "$$state_root_tree_input" ]; then \
+		state_root_tree_sha256="$$(cd "$$state_root_tree_input" && find . -mindepth 1 -print | LC_ALL=C sort | while IFS= read -r path; do \
 			if [ -L "$$path" ]; then printf 'link %s %s\n' "$$path" "$$(readlink "$$path")"; \
 			elif [ -f "$$path" ]; then printf 'file %s ' "$$path"; shasum -a 256 "$$path"; \
 			elif [ -d "$$path" ]; then printf 'dir %s\n' "$$path"; \
@@ -1901,6 +1926,8 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		[ "$$(sed -n 's/^rootfs_sha256=//p' "$$payload_stamp")" = "$$rootfs_sha256" ] && \
 		[ "$$(sed -n 's/^base_root_tree_input=//p' "$$payload_stamp")" = "$$base_root_tree_input" ] && \
 		[ "$$(sed -n 's/^base_root_tree_sha256=//p' "$$payload_stamp")" = "$$base_root_tree_sha256" ] && \
+		[ "$$(sed -n 's/^state_root_tree_input=//p' "$$payload_stamp")" = "$$state_root_tree_input" ] && \
+		[ "$$(sed -n 's/^state_root_tree_sha256=//p' "$$payload_stamp")" = "$$state_root_tree_sha256" ] && \
 		[ "$$(sed -n 's/^root_modes=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_ROOT_MODES)" ] && \
 		[ "$$(sed -n 's/^selected_root_mode=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_SELECTED_ROOT_MODE)" ] && \
 		[ "$$(sed -n 's/^base_root_device=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" ] && \
@@ -1909,7 +1936,8 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/release.dtb" ] && \
 		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
 		[ -s "$$output/rootfs/initramfs.cpio.gz" ] && \
-		[ -s "$$output/rootfs/base.ext4" ]; then \
+		[ -s "$$output/rootfs/base.ext4" ] && \
+		[ -s "$$output/rootfs/state.ext4" ]; then \
 		echo "reusing OrlixKernel payload: $$output (profile $(PROFILE))"; \
 		exit 0; \
 	fi; \
@@ -1927,7 +1955,9 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 	rootfs_build="$(ORLIX_KERNEL_ROOTFS_BUILD_DIR)"; \
 	base_tree="$$rootfs_build/base-tree"; \
 	base_image="$(ORLIX_KERNEL_BASE_ROOT_IMAGE)"; \
-	rm -rf "$$base_tree" "$$base_image"; \
+	state_tree="$$rootfs_build/state-tree"; \
+	state_image="$(ORLIX_KERNEL_STATE_ROOT_IMAGE)"; \
+	rm -rf "$$base_tree" "$$base_image" "$$state_tree" "$$state_image"; \
 	mkdir -p "$$base_tree/dev" "$$base_tree/proc" "$$base_tree/root" "$$base_tree/run" "$$base_tree/sys" "$$base_tree/tmp"; \
 	if [ -n "$$base_root_tree_input" ]; then \
 		(cd "$$base_root_tree_input" && tar -cf - .) | (cd "$$base_tree" && tar -xf -); \
@@ -1938,6 +1968,14 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 	truncate -s 64m "$$base_image"; \
 	"$$mke2fs_cmd" -q -t ext4 -F -m 0 -U clear -L ORLIXROOT -E root_owner=0:0 -d "$$base_tree" "$$base_image"; \
 	cp "$$base_image" "$$output/rootfs/base.ext4"; \
+	mkdir -p "$$state_tree/upper" "$$state_tree/work"; \
+	if [ -n "$$state_root_tree_input" ]; then \
+		(cd "$$state_root_tree_input" && tar -cf - .) | (cd "$$state_tree" && tar -xf -); \
+	fi; \
+	chmod 0755 "$$state_tree" "$$state_tree/upper" "$$state_tree/work"; \
+	truncate -s 32m "$$state_image"; \
+	"$$mke2fs_cmd" -q -t ext4 -F -m 0 -U clear -L ORLIXSTATE -E root_owner=0:0 -d "$$state_tree" "$$state_image"; \
+	cp "$$state_image" "$$output/rootfs/state.ext4"; \
 	{ \
 		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
 		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
@@ -1967,11 +2005,13 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		printf '%s\n' '    <string>$(ORLIX_KERNEL_BASE_ROOT_DEVICE)</string>'; \
 		printf '%s\n' '    <key>OrlixStateRootDevice</key>'; \
 		printf '%s\n' '    <string>$(ORLIX_KERNEL_STATE_ROOT_DEVICE)</string>'; \
+		printf '%s\n' '    <key>OrlixStateRootImage</key>'; \
+		printf '%s\n' '    <string>rootfs/state.ext4</string>'; \
 		printf '%s\n' '</dict>'; \
 		printf '%s\n' '</plist>'; \
 	} > "$$output/Info.plist"; \
 	plutil -lint "$$output/Info.plist" >/dev/null; \
-	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" "$(ORLIX_KERNEL_ROOT_MODES)" "$(ORLIX_KERNEL_SELECTED_ROOT_MODE)" "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" > "$$payload_stamp"; \
+	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\nstate_root_tree_input=%s\nstate_root_tree_sha256=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\nstate_root_image=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" "$$state_root_tree_input" "$$state_root_tree_sha256" "$(ORLIX_KERNEL_ROOT_MODES)" "$(ORLIX_KERNEL_SELECTED_ROOT_MODE)" "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" "rootfs/state.ext4" > "$$payload_stamp"; \
 	echo "packaged OrlixKernel payload: $$output (profile $(PROFILE))"
 
 __ios-simulator-framework: xcodeproj

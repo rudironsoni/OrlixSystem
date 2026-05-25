@@ -43,6 +43,17 @@ static const char *OrlixHostBaseBlockResourceForIdentifier(const char *identifie
     return 0;
 }
 
+static const char *OrlixHostStateBlockResourceForIdentifier(const char *identifier)
+{
+    if (!identifier) {
+        return 0;
+    }
+    if (strcmp(identifier, "orlix.bundle.rootfs") == 0) {
+        return "rootfs/state.ext4";
+    }
+    return 0;
+}
+
 static int OrlixHostCopyPayloadRootPath(char *path, size_t path_size)
 {
     CFBundleRef kernel_bundle;
@@ -215,14 +226,86 @@ static int OrlixHostCopyStateBlockPath(char *path, size_t path_size)
     return written >= 0 && (size_t)written < path_size ? 0 : -1;
 }
 
+static int OrlixHostCopyFile(const char *source, const char *target)
+{
+    unsigned char buffer[16384];
+    FILE *input;
+    FILE *output;
+    size_t count;
+    int result = -1;
+
+    if (!source || !target) {
+        return -1;
+    }
+
+    input = fopen(source, "rb");
+    if (!input) {
+        return -1;
+    }
+    output = fopen(target, "wb");
+    if (!output) {
+        fclose(input);
+        return -1;
+    }
+
+    while ((count = fread(buffer, 1, sizeof(buffer), input)) > 0) {
+        if (fwrite(buffer, 1, count, output) != count) {
+            goto out;
+        }
+    }
+    if (ferror(input) || fflush(output) != 0) {
+        goto out;
+    }
+
+    result = 0;
+
+out:
+    if (fclose(output) != 0) {
+        result = -1;
+    }
+    fclose(input);
+    return result;
+}
+
+static int OrlixHostStateBlockHasExt4Magic(const char *path)
+{
+    unsigned char magic[2];
+    FILE *file;
+    size_t count;
+
+    if (!path) {
+        return 0;
+    }
+
+    file = fopen(path, "rb");
+    if (!file) {
+        return 0;
+    }
+    if (fseeko(file, 1080, SEEK_SET) != 0) {
+        fclose(file);
+        return 0;
+    }
+
+    count = fread(magic, 1, sizeof(magic), file);
+    fclose(file);
+
+    return count == sizeof(magic) && magic[0] == 0x53 && magic[1] == 0xef;
+}
+
 static int OrlixHostEnsureStateBlockFile(const char *path,
+                                         const char *template_path,
                                          unsigned long long *size)
 {
     unsigned long long target_size;
     struct stat state;
     int fd;
 
-    if (!path || !size) {
+    if (!path || !template_path || !size) {
+        return -1;
+    }
+
+    if (!OrlixHostStateBlockHasExt4Magic(path) &&
+        OrlixHostCopyFile(template_path, path) != 0) {
         return -1;
     }
 
@@ -344,17 +427,24 @@ __attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
     const char *identifier)
 {
     const char *resource = OrlixHostBaseBlockResourceForIdentifier(identifier);
+    const char *state_resource = OrlixHostStateBlockResourceForIdentifier(identifier);
     unsigned long long base_size = 0;
     unsigned long long state_size = 0;
     char base_path[PATH_MAX];
+    char state_template_path[PATH_MAX];
     char state_path[PATH_MAX];
 
     OrlixHostClearSelectedBlockImages();
 
-    if (!resource) {
+    if (!resource || !state_resource) {
         return -1;
     }
     if (OrlixHostCopyPayloadResourcePath(resource, base_path, sizeof(base_path)) != 0) {
+        return -1;
+    }
+    if (OrlixHostCopyPayloadResourcePath(state_resource,
+                                         state_template_path,
+                                         sizeof(state_template_path)) != 0) {
         return -1;
     }
     if (OrlixHostResourceFileSize(base_path, &base_size) != 0) {
@@ -363,7 +453,9 @@ __attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
     if (OrlixHostCopyStateBlockPath(state_path, sizeof(state_path)) != 0) {
         return -1;
     }
-    if (OrlixHostEnsureStateBlockFile(state_path, &state_size) != 0) {
+    if (OrlixHostEnsureStateBlockFile(state_path,
+                                      state_template_path,
+                                      &state_size) != 0) {
         return -1;
     }
     if (OrlixHostCopySelectedBlockPath(ORLIX_HOST_BASE_BLOCK_DEVICE, base_path) != 0 ||

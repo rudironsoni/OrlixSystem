@@ -7,8 +7,8 @@
 	interrupt-parent = <&intc>;
 
 	chosen {
-		bootargs = "console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro debug ignore_loglevel orlix.profile=development";
-		orlix,root-mode = "direct";
+		bootargs = "console=ttyS0 console=hvc0 rdinit=/init orlix.root=overlay debug ignore_loglevel orlix.profile=development";
+		orlix,root-mode = "overlay";
 		orlix,root-modes = "initramfs-only", "direct", "overlay";
 		stdout-path = "serial0:115200n8";
 	};

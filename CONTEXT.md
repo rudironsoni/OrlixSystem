@@ -526,7 +526,7 @@ The ninth milestone for the upstream-Linux iOS port. It adds remaining virtio-fi
 
 ## Root Overlay
 
-The release root filesystem may be assembled with upstream Linux OverlayFS when writable-root mode is selected and supported by the lower and upper filesystems. Initramfs mounts the immutable base image and writable state image, then switches to the merged root. Direct immutable-root boot and initramfs-only proof boot remain separate, intentional Linux-shaped modes; current profile device trees select `direct` while advertising the distinct root modes.
+The root filesystem may be assembled with upstream Linux OverlayFS when writable-root mode is selected and supported by the lower and upper filesystems. The product initramfs mounts the immutable base image and writable state image, then switches to the merged root. Direct immutable-root boot and initramfs-only proof boot remain separate, intentional Linux-shaped modes. The release profile currently selects `direct`; the development profile selects `overlay` to keep writable-root assembly continuously exercised.
 
 ## Writable State Layout
 
@@ -542,11 +542,11 @@ The default `/tmp` storage for Orlix is upstream Linux `tmpfs`. Host temporary d
 
 ## Initramfs Policy
 
-Orlix supports normal Linux initramfs/initrd behavior. The release profile defaults to initramfs for early policy and root setup, but direct `root=/dev/vda` boot remains a supported Linux-shaped path.
+Orlix supports normal Linux initramfs/initrd behavior. Development currently uses a bundled product initramfs for OverlayFS root setup. Release currently uses direct `root=/dev/vda` immutable-root boot; initramfs-only proof boot remains a separate Linux-shaped mode.
 
 ## Release Initramfs
 
-The release profile uses an external initramfs artifact that is bundled with the app, signed as app content, immutable at runtime, and loaded by the bootloader through normal Linux boot data.
+When a profile selects initramfs-mediated root setup, the initramfs artifact is bundled with the app, signed as app content, immutable at runtime, and loaded by the bootloader through normal Linux boot data.
 
 ## Virtio-Block Semantics
 

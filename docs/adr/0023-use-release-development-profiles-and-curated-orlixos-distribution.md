@@ -39,7 +39,7 @@ Root storage is modeled as Linux-visible storage roles:
 - overlay root: writable-root mode using upstream OverlayFS.
 - future external mounts: explicit user/document mounts through virtio-fs or 9p.
 
-Profile device trees expose the selected root mode and the vda/vdb storage roles as Linux-visible boot data. Release and development currently select direct root while keeping overlay root as a distinct supported mode for the later writable-root implementation.
+Profile device trees expose the selected root mode and the vda/vdb storage roles as Linux-visible boot data. Release currently selects direct immutable root. Development currently selects overlay root through a bundled product initramfs so writable-root assembly is continuously exercised without making release updates look like post-install executable code mutation.
 
 `dlsym("start_kernel")` is not allowed in the product boot path. The Mach-O-native kernel product links the real Linux entry directly.
 

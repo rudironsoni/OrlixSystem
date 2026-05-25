@@ -5,7 +5,6 @@ import UIKit
 final class TerminalViewController: UIViewController {
     private static let lightThemeKey = "SelectedTheme.light"
     private static let darkThemeKey = "SelectedTheme.dark"
-    private static let defaultBootProfileName = "release"
 
     private var didStartBoot = false
     private let bootQueue = DispatchQueue(label: "org.orlix.terminal.boot", qos: .userInitiated)
@@ -85,7 +84,7 @@ final class TerminalViewController: UIViewController {
         didStartBoot = true
 
         terminalSession.receive("OrlixTerminal\r\n")
-        let profile = Self.defaultBootProfileName
+        let profile = Self.defaultBootProfileName()
         terminalSession.receive("Starting Orlix bootloader with the \(Self.profileDisplayName(profile)) profile.\r\n")
         bootQueue.async { [weak self] in
             let status = profile.withCString { OrlixTerminalBootProfileNamed($0) }
@@ -97,10 +96,33 @@ final class TerminalViewController: UIViewController {
         }
     }
 
+    private static func defaultBootProfileName() -> String {
+        payloadBootProfileName() ?? "release"
+    }
+
+    private static func payloadBootProfileName() -> String? {
+        guard
+            let kernelBundle = Bundle(identifier: "org.orlix.OrlixKernel"),
+            let payloadURL = kernelBundle.url(
+                forResource: "OrlixKernelPayload",
+                withExtension: "bundle"
+            ),
+            let payloadBundle = Bundle(url: payloadURL),
+            let profile = payloadBundle.object(
+                forInfoDictionaryKey: "OrlixSelectedProfile"
+            ) as? String,
+            profile == "release" || profile == "development"
+        else {
+            return nil
+        }
+
+        return profile
+    }
+
     private static func profileDisplayName(_ profile: String) -> String {
-	switch profile {
-	case "release":
-		return "release"
+        switch profile {
+        case "release":
+            return "release"
         case "development":
             return "development"
         default:

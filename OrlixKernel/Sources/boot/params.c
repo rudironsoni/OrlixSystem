@@ -19,7 +19,7 @@ static const struct OrlixProfileBootDefaults OrlixProfileBootDefaultsTable[] = {
     {
         .profile = ORLIX_BOOT_PROFILE_DEVELOPMENT,
         .profile_dtb_path = "arch/orlix/boot/dts/development.dtb",
-        .kernel_cmdline = "console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro debug ignore_loglevel orlix.profile=development",
+        .kernel_cmdline = "console=ttyS0 console=hvc0 rdinit=/init orlix.root=overlay debug ignore_loglevel orlix.profile=development",
         .root_device = "/dev/vda",
         .console_device = "hvc0",
     },
