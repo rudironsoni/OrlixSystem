@@ -7,7 +7,7 @@
 	interrupt-parent = <&intc>;
 
 	chosen {
-		bootargs = "console=ttyS0 root=/dev/vda rootfstype=ext4 ro debug ignore_loglevel orlix.profile=development";
+		bootargs = "console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro debug ignore_loglevel orlix.profile=development";
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -46,6 +46,13 @@
 		compatible = "virtio,mmio";
 		reg = <0x0 0x10001200 0x0 0x200>;
 		interrupts = <33>;
+		status = "okay";
+	};
+
+	virtio_console: virtio@10001400 {
+		compatible = "virtio,mmio";
+		reg = <0x0 0x10001400 0x0 0x200>;
+		interrupts = <34>;
 		status = "okay";
 	};
 };

@@ -4,5 +4,6 @@
 int OrlixTerminalBootProfileNamed(const char *profile_name);
 const char *OrlixTerminalBootStatusMessage(int status);
 void OrlixTerminalInstallConsoleOutputFileDescriptor(int fd);
+void OrlixTerminalSendConsoleInput(const void *bytes, unsigned long length);
 
 #endif

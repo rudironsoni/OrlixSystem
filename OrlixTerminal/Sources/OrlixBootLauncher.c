@@ -5,10 +5,17 @@
 #include <string.h>
 
 extern void orlix_host_console_set_output_fd(int fd);
+extern unsigned long orlix_host_console_enqueue_input(const void *bytes,
+                                                      unsigned long length);
 
 void OrlixTerminalInstallConsoleOutputFileDescriptor(int fd)
 {
     orlix_host_console_set_output_fd(fd);
+}
+
+void OrlixTerminalSendConsoleInput(const void *bytes, unsigned long length)
+{
+    (void)orlix_host_console_enqueue_input(bytes, length);
 }
 
 static int OrlixTerminalBootProfile(enum OrlixBootProfile profile)

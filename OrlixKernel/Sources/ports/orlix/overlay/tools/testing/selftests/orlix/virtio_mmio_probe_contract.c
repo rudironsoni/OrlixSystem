@@ -80,10 +80,11 @@ static void expect_virtio_mmio_node(const char *node, uint32_t address,
 
 int main(void)
 {
-	orlix_test_plan(6);
+	orlix_test_plan(9);
 
 	expect_virtio_mmio_node("virtio@10001000", 0x10001000, 32);
 	expect_virtio_mmio_node("virtio@10001200", 0x10001200, 33);
+	expect_virtio_mmio_node("virtio@10001400", 0x10001400, 34);
 
 	orlix_test_exit();
 }

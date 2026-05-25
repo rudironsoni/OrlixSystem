@@ -488,7 +488,9 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/block/virtio_blk.c \
 	drivers/char/mem.c \
 	drivers/char/random.c \
+	drivers/char/virtio_console.c \
 	drivers/net/loopback.c \
+	drivers/tty/hvc/hvc_console.c \
 	drivers/tty/tty_io.c \
 	drivers/tty/n_tty.c \
 	drivers/tty/tty_ioctl.c \
@@ -1604,6 +1606,8 @@ __kernel-archive:
 			case "$$src_rel" in \
 				init/version.c) extra_cflags="-include $(ORLIX_KERNEL_BUILD_DIR)/init/utsversion-tmp.h" ;; \
 				drivers/of/of_reserved_mem.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/of" ;; \
+				drivers/char/virtio_console.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty/hvc -I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty" ;; \
+				drivers/tty/hvc/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty/hvc -I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty" ;; \
 				drivers/tty/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty" ;; \
 				fs/iomap/trace.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/fs/iomap" ;; \
 				kernel/sched/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/kernel/sched" ;; \
