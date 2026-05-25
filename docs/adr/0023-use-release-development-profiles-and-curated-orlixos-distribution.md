@@ -39,6 +39,8 @@ Root storage is modeled as Linux-visible storage roles:
 - overlay root: writable-root mode using upstream OverlayFS.
 - future external mounts: explicit user/document mounts through virtio-fs or 9p.
 
+Profile device trees expose the selected root mode and the vda/vdb storage roles as Linux-visible boot data. Release and development currently select direct root while keeping overlay root as a distinct supported mode for the later writable-root implementation.
+
 `dlsym("start_kernel")` is not allowed in the product boot path. The Mach-O-native kernel product links the real Linux entry directly.
 
 Remaining device-like host services should use upstream virtio classes where they fit. Process model, signals, syscall semantics, lifecycle policy, and memory-management policy are not virtio devices; they remain owned by upstream Linux, `arch/orlix`, and narrow private `OrlixHostAdapter` mechanics.

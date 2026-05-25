@@ -36,6 +36,15 @@ static int mount_sysfs(void)
 	return 0;
 }
 
+static int mount_devtmpfs(void)
+{
+	if (mkdir("/dev", 0755) < 0 && errno != EEXIST)
+		return -1;
+	if (mount("devtmpfs", "/dev", "devtmpfs", 0, NULL) < 0 && errno != EBUSY)
+		return -1;
+	return 0;
+}
+
 static bool parse_orlix_test(const char *line, size_t len, const char **name,
 			     size_t *name_len)
 {
@@ -145,9 +154,10 @@ int main(void)
 				    sizeof(test_list), &list_size) == 0;
 	test_count = have_list ? count_orlix_tests(test_list, list_size) : 0;
 
-	orlix_test_plan(test_count + 3);
+	orlix_test_plan(test_count + 4);
 	orlix_test_result(mount_procfs() == 0, "procfs mounted for kselftest");
 	orlix_test_result(mount_sysfs() == 0, "sysfs mounted for kselftest");
+	orlix_test_result(mount_devtmpfs() == 0, "devtmpfs mounted for kselftest");
 	orlix_test_result(have_list && test_count > 0,
 			  "installed Orlix kselftest list is readable");
 	if (have_list)

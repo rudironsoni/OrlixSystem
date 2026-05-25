@@ -378,7 +378,7 @@ An opaque app-level name for a host-backed boot resource. The bootloader resolve
 
 ## Root Device
 
-The Linux-visible default root storage devices for Orlix. `/dev/vda` is the immutable bundled base image and `/dev/vdb` is the writable app-private state image; the mounted root is assembled above them with upstream Linux mechanisms.
+The Linux-visible default root storage devices for Orlix. `/dev/vda` is the immutable bundled base image and `/dev/vdb` is the writable app-private state image; the profile device tree labels these storage roles, and the mounted root is assembled above them with upstream Linux mechanisms.
 
 ## Root Filesystem
 
@@ -526,7 +526,7 @@ The ninth milestone for the upstream-Linux iOS port. It adds remaining virtio-fi
 
 ## Root Overlay
 
-The release root filesystem may be assembled with upstream Linux OverlayFS when writable-root mode is selected and supported by the lower and upper filesystems. Initramfs mounts the immutable base image and writable state image, then switches to the merged root. Direct immutable-root boot and initramfs-only proof boot remain separate, intentional Linux-shaped modes.
+The release root filesystem may be assembled with upstream Linux OverlayFS when writable-root mode is selected and supported by the lower and upper filesystems. Initramfs mounts the immutable base image and writable state image, then switches to the merged root. Direct immutable-root boot and initramfs-only proof boot remain separate, intentional Linux-shaped modes; current profile device trees select `direct` while advertising the distinct root modes.
 
 ## Writable State Layout
 

@@ -958,6 +958,10 @@ ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/payload/OrlixKernelPaylo
 ORLIX_KERNEL_ROOTFS_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/rootfs/$(PROFILE)
 ORLIX_KERNEL_BASE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/base.ext4
 ORLIX_KERNEL_BASE_ROOT_TREE_INPUT ?=
+ORLIX_KERNEL_ROOT_MODES := initramfs-only direct overlay
+ORLIX_KERNEL_SELECTED_ROOT_MODE := direct
+ORLIX_KERNEL_BASE_ROOT_DEVICE := /dev/vda
+ORLIX_KERNEL_STATE_ROOT_DEVICE := /dev/vdb
 ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework
 XCODEGEN ?= xcodegen
 XCODEBUILD_MCP ?= xcodebuildmcp
@@ -1897,6 +1901,10 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		[ "$$(sed -n 's/^rootfs_sha256=//p' "$$payload_stamp")" = "$$rootfs_sha256" ] && \
 		[ "$$(sed -n 's/^base_root_tree_input=//p' "$$payload_stamp")" = "$$base_root_tree_input" ] && \
 		[ "$$(sed -n 's/^base_root_tree_sha256=//p' "$$payload_stamp")" = "$$base_root_tree_sha256" ] && \
+		[ "$$(sed -n 's/^root_modes=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_ROOT_MODES)" ] && \
+		[ "$$(sed -n 's/^selected_root_mode=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_SELECTED_ROOT_MODE)" ] && \
+		[ "$$(sed -n 's/^base_root_device=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" ] && \
+		[ "$$(sed -n 's/^state_root_device=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" ] && \
 		[ -s "$$output/Info.plist" ] && \
 		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/release.dtb" ] && \
 		[ -s "$$output/arch/$(LINUX_ARCH)/boot/dts/development.dtb" ] && \
@@ -1951,11 +1959,19 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		printf '%s\n' '    <string>$(LINUX_VERSION)</string>'; \
 		printf '%s\n' '    <key>OrlixSelectedProfile</key>'; \
 		printf '%s\n' '    <string>$(PROFILE)</string>'; \
+		printf '%s\n' '    <key>OrlixRootModes</key>'; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_ROOT_MODES)</string>'; \
+		printf '%s\n' '    <key>OrlixSelectedRootMode</key>'; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_SELECTED_ROOT_MODE)</string>'; \
+		printf '%s\n' '    <key>OrlixBaseRootDevice</key>'; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_BASE_ROOT_DEVICE)</string>'; \
+		printf '%s\n' '    <key>OrlixStateRootDevice</key>'; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_STATE_ROOT_DEVICE)</string>'; \
 		printf '%s\n' '</dict>'; \
 		printf '%s\n' '</plist>'; \
 	} > "$$output/Info.plist"; \
 	plutil -lint "$$output/Info.plist" >/dev/null; \
-	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" > "$$payload_stamp"; \
+	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" "$(ORLIX_KERNEL_ROOT_MODES)" "$(ORLIX_KERNEL_SELECTED_ROOT_MODE)" "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" > "$$payload_stamp"; \
 	echo "packaged OrlixKernel payload: $$output (profile $(PROFILE))"
 
 __ios-simulator-framework: xcodeproj

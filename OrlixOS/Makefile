@@ -12,8 +12,10 @@ include $(PROJECT_DIR)/Sources/distribution/manifest.mk
 
 ifeq ($(PROFILE),release)
 ORLIXOS_PROFILE_PACKAGES := $(ORLIXOS_RELEASE_PACKAGES)
+ORLIXOS_PROFILE_ROOT_MODE := $(ORLIXOS_RELEASE_ROOT_MODE)
 else
 ORLIXOS_PROFILE_PACKAGES := $(ORLIXOS_DEVELOPMENT_PACKAGES)
+ORLIXOS_PROFILE_ROOT_MODE := $(ORLIXOS_DEVELOPMENT_ROOT_MODE)
 endif
 
 BASH_VERSION ?= 5.3
@@ -27,6 +29,7 @@ ORLIXOS_PACKAGE_BUILD_DIR := $(ORLIXOS_BUILD_ROOT)/build/$(PROFILE)
 ORLIXOS_PACKAGE_INSTALL_DIR := $(ORLIXOS_BUILD_ROOT)/packages/$(PROFILE)
 ORLIXOS_ROOTFS_DIR := $(ORLIXOS_BUILD_ROOT)/rootfs/$(PROFILE)
 ORLIXOS_BASE_ROOT_TREE := $(ORLIXOS_ROOTFS_DIR)/base-tree
+ORLIXOS_MANIFEST := $(PROJECT_DIR)/Sources/distribution/manifest.mk
 
 ORLIXOS_BASH_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/bash-$(BASH_VERSION).tar.gz
 ORLIXOS_BASH_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/bash-$(BASH_VERSION).sha256-ok
@@ -145,7 +148,7 @@ $(ORLIXOS_INIT_BINARY): $(ORLIXOS_INIT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixml
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\nprogram=init\nconsole=/dev/hvc0\nshell=/bin/sh\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/init.proof"; \
 	echo "built OrlixOS first-stage init: $(ORLIXOS_INIT_BINARY)"
 
-$(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_INIT_BINARY)
+$(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_INIT_BINARY) $(ORLIXOS_MANIFEST)
 	@set -euo pipefail; \
 	root_tree="$(ORLIXOS_BASE_ROOT_TREE)"; \
 	case "$$root_tree" in "$(REPO_ROOT)"/Build/OrlixOS/rootfs/*/base-tree) ;; *) echo "refusing to write OrlixOS root tree outside Build/OrlixOS/rootfs: $$root_tree" >&2; exit 1 ;; esac; \
@@ -164,6 +167,10 @@ $(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_INIT_BINARY)
 		printf 'distribution=%s\n' "$(ORLIXOS_DISTRIBUTION_ID)"; \
 		printf 'profile=%s\n' "$(PROFILE)"; \
 		printf 'channel=%s\n' "$(ORLIXOS_DISTRIBUTION_CHANNEL)"; \
+		printf 'root_modes=%s\n' "$(ORLIXOS_ROOT_MODES)"; \
+		printf 'selected_root_mode=%s\n' "$(ORLIXOS_PROFILE_ROOT_MODE)"; \
+		printf 'base_root_device=%s\n' "$(ORLIXOS_BASE_ROOT_DEVICE)"; \
+		printf 'state_root_device=%s\n' "$(ORLIXOS_STATE_ROOT_DEVICE)"; \
 		printf 'packages=%s\n' "$(ORLIXOS_PROFILE_PACKAGES)"; \
 		printf 'proof_ladder=%s\n' "$(ORLIXOS_PACKAGE_PROOF_LADDER)"; \
 		printf 'downloaded_binary_repositories=%s\n' "$(ORLIXOS_DOWNLOADED_BINARY_REPOSITORIES)"; \
@@ -171,7 +178,7 @@ $(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_INIT_BINARY)
 	chmod 0755 "$$root_tree" "$$root_tree/bin" "$$root_tree/dev" "$$root_tree/etc" "$$root_tree/proc" "$$root_tree/run" "$$root_tree/sbin" "$$root_tree/sys" "$$root_tree/usr" "$$root_tree/usr/bin" "$$root_tree/usr/share" "$$root_tree/usr/share/orlixos" "$$root_tree/var"; \
 	chmod 0700 "$$root_tree/root"; \
 	chmod 1777 "$$root_tree/tmp" "$$root_tree/var/tmp"; \
-	printf 'profile=%s\ndistribution=%s\nchannel=%s\ninit=/sbin/init\nshell=/bin/sh\npackages=%s\npackage_proof_ladder=%s\nbash_version=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ORLIXOS_PROFILE_PACKAGES)" "$(ORLIXOS_PACKAGE_PROOF_LADDER)" "$(BASH_VERSION)" > "$(ORLIXOS_ROOTFS_PROOF)"; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\ninit=/sbin/init\nshell=/bin/sh\npackages=%s\npackage_proof_ladder=%s\nbash_version=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ORLIXOS_ROOT_MODES)" "$(ORLIXOS_PROFILE_ROOT_MODE)" "$(ORLIXOS_BASE_ROOT_DEVICE)" "$(ORLIXOS_STATE_ROOT_DEVICE)" "$(ORLIXOS_PROFILE_PACKAGES)" "$(ORLIXOS_PACKAGE_PROOF_LADDER)" "$(BASH_VERSION)" > "$(ORLIXOS_ROOTFS_PROOF)"; \
 	echo "built OrlixOS base root tree: $$root_tree"
 
 clean:

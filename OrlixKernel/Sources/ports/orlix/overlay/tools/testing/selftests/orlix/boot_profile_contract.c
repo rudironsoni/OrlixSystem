@@ -8,6 +8,11 @@ static char cmdline[4096];
 static char bootargs[4096];
 static char compatible[1024];
 static char consoles[1024];
+static char root_mode[128];
+static char root_modes[256];
+static char base_storage_role[128];
+static char state_storage_role[128];
+static char block_dev[64];
 
 int main(void)
 {
@@ -15,15 +20,24 @@ int main(void)
 	size_t bootargs_size;
 	size_t compatible_size;
 	size_t consoles_size;
+	size_t root_mode_size;
+	size_t root_modes_size;
+	size_t base_storage_role_size;
+	size_t state_storage_role_size;
+	size_t block_dev_size;
 	bool has_cmdline;
 	bool has_bootargs;
 	bool has_compatible;
 	bool has_consoles;
+	bool has_root_mode;
+	bool has_root_modes;
+	bool has_base_storage_role;
+	bool has_state_storage_role;
 	bool release_profile;
 	bool development_profile;
 	const char *profile = NULL;
 
-	orlix_test_plan(9);
+	orlix_test_plan(17);
 
 	has_cmdline = orlix_read_file("/proc/cmdline", cmdline,
 				      sizeof(cmdline), &cmdline_size) == 0;
@@ -35,6 +49,20 @@ int main(void)
 		compatible, sizeof(compatible), &compatible_size) == 0;
 	has_consoles = orlix_read_file("/proc/consoles", consoles,
 				       sizeof(consoles), &consoles_size) == 0;
+	has_root_mode = orlix_read_file(
+		"/sys/firmware/devicetree/base/chosen/orlix,root-mode",
+		root_mode, sizeof(root_mode), &root_mode_size) == 0;
+	has_root_modes = orlix_read_file(
+		"/sys/firmware/devicetree/base/chosen/orlix,root-modes",
+		root_modes, sizeof(root_modes), &root_modes_size) == 0;
+	has_base_storage_role = orlix_read_file(
+		"/sys/firmware/devicetree/base/virtio@10001000/orlix,storage-role",
+		base_storage_role, sizeof(base_storage_role),
+		&base_storage_role_size) == 0;
+	has_state_storage_role = orlix_read_file(
+		"/sys/firmware/devicetree/base/virtio@10001200/orlix,storage-role",
+		state_storage_role, sizeof(state_storage_role),
+		&state_storage_role_size) == 0;
 
 	release_profile = has_cmdline &&
 		orlix_contains(cmdline, cmdline_size, "orlix.profile=release");
@@ -60,6 +88,12 @@ int main(void)
 	orlix_test_result(has_cmdline &&
 			  orlix_contains(cmdline, cmdline_size, "root=/dev/vda"),
 			  "cmdline selects the immutable virtio base image as root");
+	orlix_test_result(has_cmdline &&
+			  orlix_contains(cmdline, cmdline_size, "rootfstype=ext4"),
+			  "cmdline selects ext4 for direct immutable root");
+	orlix_test_result(has_cmdline &&
+			  orlix_contains(cmdline, cmdline_size, " ro "),
+			  "cmdline mounts the direct immutable root read-only");
 	orlix_test_result(profile && has_bootargs &&
 			  orlix_contains(bootargs, bootargs_size, profile),
 			  "live device tree bootargs match the selected profile");
@@ -72,6 +106,27 @@ int main(void)
 	orlix_test_result(has_consoles &&
 			  orlix_contains(consoles, consoles_size, "hvc0"),
 			  "live consoles include the Orlix virtio console");
+	orlix_test_result(has_root_mode &&
+			  orlix_contains(root_mode, root_mode_size, "direct"),
+			  "live device tree selects direct root mode explicitly");
+	orlix_test_result(has_root_modes &&
+			  orlix_contains(root_modes, root_modes_size, "direct") &&
+			  orlix_contains(root_modes, root_modes_size, "overlay"),
+			  "live device tree keeps direct and overlay root modes distinct");
+	orlix_test_result(has_base_storage_role &&
+			  orlix_contains(base_storage_role, base_storage_role_size,
+					 "immutable-base"),
+			  "live device tree labels vda as immutable base storage");
+	orlix_test_result(has_state_storage_role &&
+			  orlix_contains(state_storage_role, state_storage_role_size,
+					 "writable-state"),
+			  "live device tree labels vdb as writable state storage");
+	orlix_test_result(orlix_read_file("/sys/block/vda/dev", block_dev,
+					  sizeof(block_dev), &block_dev_size) == 0,
+			  "Linux exposes the immutable base block device");
+	orlix_test_result(orlix_read_file("/sys/block/vdb/dev", block_dev,
+					  sizeof(block_dev), &block_dev_size) == 0,
+			  "Linux exposes the writable state block device");
 
 	orlix_test_exit();
 }

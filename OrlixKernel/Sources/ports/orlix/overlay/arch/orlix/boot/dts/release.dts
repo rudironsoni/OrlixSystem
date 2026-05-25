@@ -8,6 +8,8 @@
 
 	chosen {
 		bootargs = "console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro orlix.profile=release";
+		orlix,root-mode = "direct";
+		orlix,root-modes = "initramfs-only", "direct", "overlay";
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -39,6 +41,7 @@
 		compatible = "virtio,mmio";
 		reg = <0x0 0x10001000 0x0 0x200>;
 		interrupts = <32>;
+		orlix,storage-role = "immutable-base";
 		status = "okay";
 	};
 
@@ -46,6 +49,7 @@
 		compatible = "virtio,mmio";
 		reg = <0x0 0x10001200 0x0 0x200>;
 		interrupts = <33>;
+		orlix,storage-role = "writable-state";
 		status = "okay";
 	};
 

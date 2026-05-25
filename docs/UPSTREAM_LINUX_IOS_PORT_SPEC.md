@@ -247,6 +247,8 @@ The release root storage model uses Linux-visible storage roles:
 
 The root filesystem is assembled using upstream Linux mechanisms. The release profile may use initramfs to mount the base and writable state images, assemble root with upstream OverlayFS, and switch to the merged root. Direct immutable-root boot and initramfs-only proof boot remain valid Linux-shaped modes when selected intentionally.
 
+Profile device trees must make the selected root mode and virtio storage roles explicit. The current release and development profiles select `direct`, advertise `initramfs-only`, `direct`, and `overlay` as distinct modes, label `/dev/vda` as immutable base storage, and label `/dev/vdb` as writable state storage.
+
 Writable state mirrors normal Linux paths, especially:
 
 - `/etc`
