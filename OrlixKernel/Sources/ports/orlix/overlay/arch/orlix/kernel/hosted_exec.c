@@ -119,6 +119,7 @@ void orlix_hosted_preserve_user_tls(void)
 		return;
 
 	current->thread.user_tls = user_tls;
+	WRITE_ONCE(orlix_hosted_active_user_tls, user_tls);
 }
 
 static void orlix_hosted_restore_trap_frame(
@@ -278,11 +279,16 @@ asm(
 "	ldp	x9, x12, [sp], #16\n"
 "	stp	x0, x9, [sp, #-16]!\n"
 "	bl	_orlix_hosted_prepare_user_entry\n"
+"	mov	x12, x0\n"
 "	ldp	x0, x9, [sp], #16\n"
 "	ldp	x29, x30, [sp], #16\n"
 "	adrp	x10, _orlix_hosted_kernel_sp@PAGE\n"
 "	mov	x11, sp\n"
 "	str	x11, [x10, _orlix_hosted_kernel_sp@PAGEOFF]\n"
+"	msr	tpidr_el0, x12\n"
+"	isb\n"
+"	adrp	x10, _orlix_hosted_active_user_tls@PAGE\n"
+"	str	x12, [x10, _orlix_hosted_active_user_tls@PAGEOFF]\n"
 "	adrp	x10, _orlix_hosted_user_active@PAGE\n"
 "	mov	x11, #1\n"
 "	str	x11, [x10, _orlix_hosted_user_active@PAGEOFF]\n"
@@ -334,9 +340,10 @@ void orlix_hosted_save_kernel_stack(unsigned long sp)
 	WRITE_ONCE(orlix_hosted_kernel_sp, sp);
 }
 
-void orlix_hosted_prepare_user_entry(void)
+unsigned long orlix_hosted_prepare_user_entry(void)
 {
 	orlix_hosted_restore_user_tls();
+	return current->thread.user_tls;
 }
 
 static void orlix_hosted_save_callee_registers(struct pt_regs *regs)
