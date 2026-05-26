@@ -37,10 +37,14 @@ void orlix_hosted_syscall_gate(void);
 
 static void orlix_hosted_save_current_kernel_stack(void)
 {
-	unsigned long sp;
-
-	asm volatile("mov %0, sp" : "=r"(sp));
-	orlix_hosted_save_kernel_stack(sp);
+	/*
+	 * Hosted user reentry is synthetic: Darwin resumes the same host
+	 * thread on the saved Linux kernel stack after a user fault, syscall,
+	 * or timer redirect.  Save a stable task-stack boundary instead of the
+	 * current C frame's SP so repeated user/kernel transitions cannot walk
+	 * the kernel stack downward.
+	 */
+	orlix_hosted_save_kernel_stack((unsigned long)task_pt_regs(current));
 }
 
 static void orlix_hosted_start_user_timer_once(void)

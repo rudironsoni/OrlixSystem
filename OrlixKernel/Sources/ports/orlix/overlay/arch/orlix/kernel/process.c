@@ -12,7 +12,10 @@
 #include <asm/processor.h>
 #include <asm/ptrace.h>
 
+struct task_struct *orlix_current_task = &init_task;
+#ifndef CONFIG_THREAD_INFO_IN_TASK
 struct thread_info *orlix_current_thread_info = &init_thread_info;
+#endif
 
 asmlinkage void ret_from_fork(void);
 asmlinkage void orlix_ret_from_fork_user(struct pt_regs *regs);
@@ -60,11 +63,9 @@ extern unsigned long orlix_hosted_active_user_tls;
 
 void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 {
-	unsigned long kernel_sp;
 	unsigned long user_tls = current->thread.user_tls;
 
-	asm volatile("mov %0, sp" : "=r"(kernel_sp));
-	orlix_hosted_save_kernel_stack(kernel_sp);
+	orlix_hosted_save_kernel_stack((unsigned long)task_pt_regs(current));
 
 	asm volatile(
 	"	mov	x9, %0\n"
@@ -156,6 +157,9 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 {
 	struct pt_regs *childregs = task_pt_regs(p);
 
+#ifndef CONFIG_THREAD_INFO_IN_TASK
+	task_thread_info(p)->task = p;
+#endif
 	memset(&p->thread.cpu_context, 0, sizeof(p->thread.cpu_context));
 #if defined(ORLIX_APP_HOSTED_BOOT)
 	p->thread.user_tls = 0;
@@ -203,7 +207,10 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 
 struct task_struct *__switch_to(struct task_struct *prev, struct task_struct *next)
 {
+	orlix_current_task = next;
+#ifndef CONFIG_THREAD_INFO_IN_TASK
 	orlix_current_thread_info = task_thread_info(next);
+#endif
 	return orlix_cpu_switch_context(&prev->thread.cpu_context,
 					&next->thread.cpu_context, prev);
 }

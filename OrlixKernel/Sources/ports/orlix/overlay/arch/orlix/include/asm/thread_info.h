@@ -15,13 +15,23 @@ struct task_struct;
 struct pt_regs;
 
 struct thread_info {
+#ifndef CONFIG_THREAD_INFO_IN_TASK
 	struct task_struct	*task;
+#endif
 	unsigned long		flags;
 	unsigned int		cpu;
 	int			preempt_count;
 	struct pt_regs		*regs;
 };
 
+#ifdef CONFIG_THREAD_INFO_IN_TASK
+#define INIT_THREAD_INFO(tsk)			\
+{						\
+	.flags		= 0,				\
+	.cpu		= 0,				\
+	.preempt_count	= INIT_PREEMPT_COUNT,		\
+}
+#else
 #define INIT_THREAD_INFO(tsk)			\
 {						\
 	.task		= &(tsk),			\
@@ -29,13 +39,16 @@ struct thread_info {
 	.cpu		= 0,				\
 	.preempt_count	= INIT_PREEMPT_COUNT,		\
 }
+#endif
 
+#ifndef CONFIG_THREAD_INFO_IN_TASK
 extern struct thread_info *orlix_current_thread_info;
 
 static inline struct thread_info *current_thread_info(void)
 {
 	return orlix_current_thread_info;
 }
+#endif
 
 #endif /* !__ASSEMBLY__ */
 

@@ -14,6 +14,7 @@ unsigned long orlix_hosted_prepare_user_entry(void);
 void __noreturn orlix_hosted_enter_user(struct pt_regs *regs);
 int orlix_hosted_sync_syscall_gate(void);
 void orlix_sync_current_user_mappings(struct pt_regs *regs);
+int orlix_sync_current_user_mapping_page(unsigned long address);
 int orlix_handle_host_user_fault(struct pt_regs *regs, unsigned long address,
 				 unsigned long fault_flags);
 long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,

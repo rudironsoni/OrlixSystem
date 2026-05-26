@@ -13,6 +13,7 @@ config ORLIX
 	select GENERIC_CPU_DEVICES
 	select LOCK_MM_AND_FIND_VMA
 	select CLONE_BACKWARDS
+	select THREAD_INFO_IN_TASK
 
 config 64BIT
 	bool

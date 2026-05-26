@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/export.h>
+#include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/linkage.h>
 #include <linux/memblock.h>
@@ -168,9 +169,27 @@ unmap:
 	return 0;
 }
 
+static int orlix_sync_user_vma(struct mm_struct *mm, struct vm_area_struct *vma)
+{
+	unsigned long address;
+	unsigned long start = vma->vm_start & PAGE_MASK;
+	unsigned long end = PAGE_ALIGN(vma->vm_end);
+
+	for (address = start; address < end; address += PAGE_SIZE) {
+		int ret = orlix_sync_user_page(mm, vma, address);
+
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
 void orlix_sync_current_user_mappings(struct pt_regs *regs)
 {
 	struct mm_struct *mm = current->mm;
+	unsigned long sp_page = regs->sp & PAGE_MASK;
+	unsigned long stack_access_page = regs->sp ?
+		((regs->sp - 1) & PAGE_MASK) : 0;
 	struct vm_area_struct *vma;
 	struct vma_iterator vmi;
 
@@ -181,22 +200,55 @@ void orlix_sync_current_user_mappings(struct pt_regs *regs)
 	vma_iter_init(&vmi, mm, 0);
 	mmap_read_lock(mm);
 	for_each_vma(vmi, vma) {
-		unsigned long address;
-		unsigned long start = vma->vm_start & PAGE_MASK;
-		unsigned long end = PAGE_ALIGN(vma->vm_end);
-
-		for (address = start; address < end; address += PAGE_SIZE) {
-			if (orlix_sync_user_page(mm, vma, address)) {
-				mmap_read_unlock(mm);
-				panic("Orlix: failed to synchronize hosted user mapping %#lx\n",
-				      address);
-			}
+		if (vma->vm_flags & VM_GROWSDOWN)
+			continue;
+		if (!(vma->vm_flags & (VM_EXEC | VM_WRITE)))
+			continue;
+		if (orlix_sync_user_vma(mm, vma)) {
+			mmap_read_unlock(mm);
+			panic("Orlix: failed to synchronize hosted user vma %#lx-%#lx\n",
+			      vma->vm_start, vma->vm_end);
 		}
 	}
 	mmap_read_unlock(mm);
 
+	if (stack_access_page &&
+	    orlix_sync_current_user_mapping_page(stack_access_page))
+		panic("Orlix: failed to synchronize hosted user stack page %#lx\n",
+		      stack_access_page);
+
+	if (sp_page != stack_access_page &&
+	    orlix_sync_current_user_mapping_page(sp_page))
+		panic("Orlix: failed to synchronize hosted user sp page %#lx\n",
+		      sp_page);
+
 	if (orlix_hosted_sync_syscall_gate())
 		panic("Orlix: failed to synchronize hosted syscall gate %#lx\n",
 		      ORLIX_HOSTED_SYSCALL_GATE);
+}
+
+int orlix_sync_current_user_mapping_page(unsigned long address)
+{
+	struct mm_struct *mm = current->mm;
+	struct vm_area_struct *vma;
+	unsigned long page = address & PAGE_MASK;
+	int ret = 0;
+
+	if (!mm)
+		return -EINVAL;
+
+	if (!page || page >= TASK_SIZE)
+		return 0;
+
+	mmap_read_lock(mm);
+	vma = vma_lookup(mm, page);
+	if (!vma) {
+		orlix_host_user_unmap_pages(page, PAGE_SIZE);
+		goto out;
+	}
+	ret = orlix_sync_user_page(mm, vma, page);
+out:
+	mmap_read_unlock(mm);
+	return ret;
 }
 #endif
