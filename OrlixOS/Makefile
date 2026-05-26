@@ -39,6 +39,14 @@ CURL_VERSION ?= 8.20.0
 CURL_URL ?= https://curl.se/download/curl-$(CURL_VERSION).tar.xz
 CURL_SHA256 ?= 63fe2dc148ba0ceae89922ef838f7e5c946272c2e78b7c59fab4b79d3ce2b896
 
+NCURSES_VERSION ?= 6.6
+NCURSES_URL ?= https://ftp.gnu.org/gnu/ncurses/ncurses-$(NCURSES_VERSION).tar.gz
+NCURSES_SHA256 ?= 355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11
+
+ZSH_VERSION ?= 5.9
+ZSH_URL ?= https://www.zsh.org/pub/zsh-$(ZSH_VERSION).tar.xz
+ZSH_SHA256 ?= 9b8d1ecedd5b5e81fbf1918e876752a7dd948e05c1a0dba10ab863842d45acd5
+
 ORLIXOS_BUILD_ROOT := $(REPO_ROOT)/Build/OrlixOS
 ORLIXOS_UPSTREAM_DIR := $(ORLIXOS_BUILD_ROOT)/upstream
 ORLIXOS_SRC_DIR := $(ORLIXOS_BUILD_ROOT)/src
@@ -81,6 +89,20 @@ ORLIXOS_CURL_SRC_DIR := $(ORLIXOS_SRC_DIR)/curl-$(CURL_VERSION)
 ORLIXOS_CURL_SOURCE_STAMP := $(ORLIXOS_CURL_SRC_DIR)/.orlix-source-ready
 ORLIXOS_CURL_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/curl-$(CURL_VERSION)
 ORLIXOS_CURL_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/curl
+ORLIXOS_NCURSES_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/ncurses-$(NCURSES_VERSION).tar.gz
+ORLIXOS_NCURSES_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/ncurses-$(NCURSES_VERSION).sha256-ok
+ORLIXOS_NCURSES_SRC_DIR := $(ORLIXOS_SRC_DIR)/ncurses-$(NCURSES_VERSION)
+ORLIXOS_NCURSES_SOURCE_STAMP := $(ORLIXOS_NCURSES_SRC_DIR)/.orlix-source-ready
+ORLIXOS_NCURSES_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/ncurses-$(NCURSES_VERSION)
+ORLIXOS_NCURSES_SYSROOT := $(ORLIXOS_PACKAGE_BUILD_DIR)/ncurses-$(NCURSES_VERSION)-sysroot
+ORLIXOS_NCURSES_LIBTINFO := $(ORLIXOS_NCURSES_SYSROOT)/usr/lib/libtinfo.a
+ORLIXOS_NCURSES_LIBNCURSES := $(ORLIXOS_NCURSES_SYSROOT)/usr/lib/libncursesw.a
+ORLIXOS_ZSH_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/zsh-$(ZSH_VERSION).tar.xz
+ORLIXOS_ZSH_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/zsh-$(ZSH_VERSION).sha256-ok
+ORLIXOS_ZSH_SRC_DIR := $(ORLIXOS_SRC_DIR)/zsh-$(ZSH_VERSION)
+ORLIXOS_ZSH_SOURCE_STAMP := $(ORLIXOS_ZSH_SRC_DIR)/.orlix-source-ready
+ORLIXOS_ZSH_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/zsh-$(ZSH_VERSION)
+ORLIXOS_ZSH_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/zsh
 ORLIXOS_INIT_SOURCE := $(PROJECT_DIR)/Sources/init/init.c
 ORLIXOS_INIT_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/sbin/init
 ORLIXOS_ROOT_INIT_SOURCE := $(PROJECT_DIR)/Sources/init/rootinit.c
@@ -97,6 +119,7 @@ ORLIXOS_LLVM_BIN ?= $(shell if command -v llvm-ar >/dev/null 2>&1; then dirname 
 ORLIXOS_AR ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-ar,llvm-ar)
 ORLIXOS_RANLIB ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-ranlib,llvm-ranlib)
 ORLIXOS_STRIP ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-strip,llvm-strip)
+ORLIXOS_READELF ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-readelf,llvm-readelf)
 ORLIXOS_PACKAGE_CFLAGS := -O2 -Wno-unknown-warning-option -Wno-incompatible-function-pointer-types -include limits.h
 
 .PHONY: all help build rootfs clean mrproper
@@ -109,7 +132,7 @@ help:
 	@printf '%s\n' '  rootfs   build the immutable OrlixOS base root tree'
 	@printf '%s\n' '  clean    remove generated OrlixOS outputs'
 
-build: $(ORLIXOS_BASH_BINARY) $(ORLIXOS_CAT_BINARY) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_JQ_BINARY) $(ORLIXOS_CURL_BINARY) $(ORLIXOS_INIT_BINARY)
+build: $(ORLIXOS_BASH_BINARY) $(ORLIXOS_CAT_BINARY) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_JQ_BINARY) $(ORLIXOS_CURL_BINARY) $(ORLIXOS_ZSH_BINARY) $(ORLIXOS_INIT_BINARY)
 
 rootfs: $(ORLIXOS_ROOTFS_PROOF)
 
@@ -247,6 +270,60 @@ $(ORLIXOS_CURL_SOURCE_STAMP): $(ORLIXOS_CURL_ARCHIVE_STAMP)
 	tar -xJf "$(ORLIXOS_CURL_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
 	touch "$(ORLIXOS_CURL_SOURCE_STAMP)"; \
 	echo "extracted curl source: $(ORLIXOS_CURL_SRC_DIR)"
+
+$(ORLIXOS_NCURSES_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch ncurses source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify ncurses source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_NCURSES_ARCHIVE)" ]; then curl -fL "$(NCURSES_URL)" -o "$(ORLIXOS_NCURSES_ARCHIVE)"; fi; \
+	echo "upstream ncurses archive ready: $(ORLIXOS_NCURSES_ARCHIVE)"
+
+$(ORLIXOS_NCURSES_ARCHIVE_STAMP): $(ORLIXOS_NCURSES_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify ncurses source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(NCURSES_SHA256)" "$(ORLIXOS_NCURSES_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_NCURSES_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_NCURSES_ARCHIVE_STAMP)"; \
+	echo "upstream ncurses ready: $(ORLIXOS_NCURSES_ARCHIVE)"
+
+$(ORLIXOS_NCURSES_SOURCE_STAMP): $(ORLIXOS_NCURSES_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_NCURSES_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xzf "$(ORLIXOS_NCURSES_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_NCURSES_SOURCE_STAMP)"; \
+	echo "extracted ncurses source: $(ORLIXOS_NCURSES_SRC_DIR)"
+
+$(ORLIXOS_ZSH_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch zsh source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify zsh source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_ZSH_ARCHIVE)" ]; then curl -fL "$(ZSH_URL)" -o "$(ORLIXOS_ZSH_ARCHIVE)"; fi; \
+	echo "upstream zsh archive ready: $(ORLIXOS_ZSH_ARCHIVE)"
+
+$(ORLIXOS_ZSH_ARCHIVE_STAMP): $(ORLIXOS_ZSH_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify zsh source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(ZSH_SHA256)" "$(ORLIXOS_ZSH_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_ZSH_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_ZSH_ARCHIVE_STAMP)"; \
+	echo "upstream zsh ready: $(ORLIXOS_ZSH_ARCHIVE)"
+
+$(ORLIXOS_ZSH_SOURCE_STAMP): $(ORLIXOS_ZSH_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_ZSH_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xJf "$(ORLIXOS_ZSH_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_ZSH_SOURCE_STAMP)"; \
+	echo "extracted zsh source: $(ORLIXOS_ZSH_SRC_DIR)"
 
 $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB):
 	@set -euo pipefail; \
@@ -428,6 +505,72 @@ $(ORLIXOS_CURL_BINARY): $(ORLIXOS_CURL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=curl\nversion=%s\nsha256=%s\nfeatures=static-no-external-tls\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(CURL_VERSION)" "$(CURL_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/curl.proof"; \
 	echo "built Orlix Linux curl package input: $(ORLIXOS_CURL_BINARY)"
 
+$(ORLIXOS_NCURSES_LIBTINFO): $(ORLIXOS_NCURSES_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_CC)" >/dev/null 2>&1 || { echo "clang is required to build ncurses; set ORLIXOS_CC=/path/to/clang" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_AR)" >/dev/null 2>&1 || { echo "llvm-ar is required to build ncurses; set ORLIXOS_AR=/path/to/llvm-ar" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_RANLIB)" >/dev/null 2>&1 || { echo "llvm-ranlib is required to build ncurses; set ORLIXOS_RANLIB=/path/to/llvm-ranlib" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_NCURSES_BUILD_DIR)" "$(ORLIXOS_NCURSES_SYSROOT)"; \
+	mkdir -p "$(ORLIXOS_NCURSES_BUILD_DIR)" "$(ORLIXOS_NCURSES_SYSROOT)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)"; \
+	cd "$(ORLIXOS_NCURSES_BUILD_DIR)"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
+	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -no-pie -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--no-dynamic-linker -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group -L$$sysroot/usr/lib -L$$(dirname "$$rtlib")"; \
+	export LIBS="-lc -lm -lpthread -lssp_nonshared -lssp -lorlix_compiler_rt -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
+	export AR="$(ORLIXOS_AR)"; \
+	export RANLIB="$(ORLIXOS_RANLIB)"; \
+	"$(ORLIXOS_NCURSES_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --with-normal --without-shared --without-debug --without-ada --without-cxx --without-cxx-binding --without-progs --without-tests --without-manpages --with-termlib=tinfo --with-ticlib=tic --disable-db-install --disable-home-terminfo --disable-stripping; \
+	$(MAKE) -j1 libs; \
+	$(MAKE) -j1 DESTDIR="$(ORLIXOS_NCURSES_SYSROOT)" install.libs install.includes; \
+	[ -s "$(ORLIXOS_NCURSES_LIBTINFO)" ] || { echo "missing ncurses terminfo archive: $(ORLIXOS_NCURSES_LIBTINFO)" >&2; exit 1; }; \
+	[ -s "$(ORLIXOS_NCURSES_LIBNCURSES)" ] || { echo "missing ncurses archive: $(ORLIXOS_NCURSES_LIBNCURSES)" >&2; exit 1; }; \
+	"$(ORLIXOS_AR)" t "$(ORLIXOS_NCURSES_LIBTINFO)" >/dev/null; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=ncurses\nversion=%s\nsha256=%s\nfeatures=static-zsh-build-dependency\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(NCURSES_VERSION)" "$(NCURSES_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/ncurses.proof"; \
+	echo "built Orlix Linux ncurses static package input: $(ORLIXOS_NCURSES_LIBTINFO)"
+
+$(ORLIXOS_ZSH_BINARY): $(ORLIXOS_ZSH_SOURCE_STAMP) $(ORLIXOS_NCURSES_LIBTINFO) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	[ -s "$(ORLIXOS_NCURSES_LIBTINFO)" ] || { echo "missing ncurses terminfo archive: $(ORLIXOS_NCURSES_LIBTINFO)" >&2; exit 1; }; \
+	[ -s "$(ORLIXOS_NCURSES_LIBNCURSES)" ] || { echo "missing ncurses archive: $(ORLIXOS_NCURSES_LIBNCURSES)" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_CC)" >/dev/null 2>&1 || { echo "clang is required to build zsh; set ORLIXOS_CC=/path/to/clang" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package zsh; set ORLIXOS_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_READELF)" >/dev/null 2>&1 || { echo "llvm-readelf is required to verify zsh; set ORLIXOS_READELF=/path/to/llvm-readelf" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_ZSH_BUILD_DIR)" "$(ORLIXOS_ZSH_BINARY)"; \
+	mkdir -p "$(ORLIXOS_ZSH_BUILD_DIR)" "$(dir $(ORLIXOS_ZSH_BINARY))"; \
+	cd "$(ORLIXOS_ZSH_BUILD_DIR)"; \
+	rtlib_dir="$$(dirname "$$rtlib")"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
+	export CPPFLAGS="-I$(ORLIXOS_NCURSES_SYSROOT)/usr/include"; \
+	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -no-pie -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--no-dynamic-linker -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group -L$(ORLIXOS_NCURSES_SYSROOT)/usr/lib -L$$sysroot/usr/lib -L$$rtlib_dir"; \
+	export LIBS="-ltinfo -lc -lm -lpthread -lssp_nonshared -lssp -lorlix_compiler_rt -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
+	export AR="$(ORLIXOS_AR)"; \
+	export RANLIB="$(ORLIXOS_RANLIB)"; \
+	export STRIP="$(ORLIXOS_STRIP)"; \
+	export zsh_cv_sys_dynamic_clash_ok=yes; \
+	export zsh_cv_sys_dynamic_execsyms=no; \
+	export zsh_cv_shared_environ=yes; \
+	"$(ORLIXOS_ZSH_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-dynamic --disable-gdbm --disable-pcre --disable-cap --disable-dynamic-nss --with-term-lib=tinfo --enable-etcdir=/etc/zsh --enable-zshenv=/etc/zsh/zshenv --enable-zshrc=/etc/zsh/zshrc --enable-zprofile=/etc/zsh/zprofile --enable-zlogin=/etc/zsh/zlogin --enable-zlogout=/etc/zsh/zlogout; \
+	$(MAKE) -C Src -j1 zsh; \
+	cp "$(ORLIXOS_ZSH_BUILD_DIR)/Src/zsh" "$(ORLIXOS_ZSH_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_ZSH_BINARY)"; \
+	file "$(ORLIXOS_ZSH_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_ZSH_BINARY)" >&2; exit 1; }; \
+	if "$(ORLIXOS_READELF)" -l "$(ORLIXOS_ZSH_BINARY)" | grep -F -q 'INTERP'; then echo "zsh must be a static Orlix Linux ELF without PT_INTERP" >&2; exit 1; fi; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=zsh\nversion=%s\nsha256=%s\nterminal_library=ncurses-%s-static\nfeatures=static-no-dynamic-modules\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ZSH_VERSION)" "$(ZSH_SHA256)" "$(NCURSES_VERSION)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/zsh.proof"; \
+	echo "built Orlix Linux zsh package input: $(ORLIXOS_ZSH_BINARY)"
+
 $(ORLIXOS_INIT_BINARY): $(ORLIXOS_INIT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \
 	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
@@ -485,7 +628,7 @@ $(ORLIXOS_INITRAMFS_CPIO): $(ORLIXOS_ROOT_INIT_BINARY) $(ORLIXOS_MANIFEST)
 	[ -s "$$output" ] || { echo "missing generated OrlixOS initramfs: $$output" >&2; exit 1; }; \
 	echo "built OrlixOS product initramfs: $$output"
 
-$(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_CAT_BINARY) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_JQ_BINARY) $(ORLIXOS_CURL_BINARY) $(ORLIXOS_INIT_BINARY) $(ORLIXOS_INITRAMFS_CPIO) $(ORLIXOS_MANIFEST)
+$(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_CAT_BINARY) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_JQ_BINARY) $(ORLIXOS_CURL_BINARY) $(ORLIXOS_ZSH_BINARY) $(ORLIXOS_INIT_BINARY) $(ORLIXOS_INITRAMFS_CPIO) $(ORLIXOS_MANIFEST)
 	@set -euo pipefail; \
 	root_tree="$(ORLIXOS_BASE_ROOT_TREE)"; \
 	state_tree="$(ORLIXOS_STATE_ROOT_TREE)"; \
@@ -495,15 +638,17 @@ $(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_CAT_BINARY) $(ORLIXOS_
 		if [ -L "$$path" ]; then echo "refusing to package OrlixOS root tree through symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
 	rm -rf "$$root_tree" "$$state_tree"; \
-	mkdir -p "$$root_tree/bin" "$$root_tree/dev" "$$root_tree/etc" "$$root_tree/proc" "$$root_tree/root" "$$root_tree/run" "$$root_tree/sbin" "$$root_tree/sys" "$$root_tree/tmp" "$$root_tree/usr/bin" "$$root_tree/usr/share/orlixos" "$$root_tree/var/tmp"; \
+	mkdir -p "$$root_tree/bin" "$$root_tree/dev" "$$root_tree/etc/zsh" "$$root_tree/proc" "$$root_tree/root" "$$root_tree/run" "$$root_tree/sbin" "$$root_tree/sys" "$$root_tree/tmp" "$$root_tree/usr/bin" "$$root_tree/usr/share/orlixos" "$$root_tree/var/tmp"; \
 	mkdir -p "$$state_tree/upper" "$$state_tree/work"; \
 	install -m 0755 "$(ORLIXOS_BASH_BINARY)" "$$root_tree/bin/bash"; \
 	install -m 0755 "$(ORLIXOS_CAT_BINARY)" "$$root_tree/bin/cat"; \
 	install -m 0755 "$(ORLIXOS_GREP_BINARY)" "$$root_tree/bin/grep"; \
 	install -m 0755 "$(ORLIXOS_JQ_BINARY)" "$$root_tree/usr/bin/jq"; \
 	install -m 0755 "$(ORLIXOS_CURL_BINARY)" "$$root_tree/usr/bin/curl"; \
+	install -m 0755 "$(ORLIXOS_ZSH_BINARY)" "$$root_tree/usr/bin/zsh"; \
 	install -m 0755 "$(ORLIXOS_INIT_BINARY)" "$$root_tree/sbin/init"; \
 	ln -s bash "$$root_tree/bin/sh"; \
+	: > "$$root_tree/etc/zsh/zshenv"; \
 	printf '%s\n' 'root:x:0:0:root:/root:/bin/sh' > "$$root_tree/etc/passwd"; \
 	printf '%s\n' 'root:x:0:root' > "$$root_tree/etc/group"; \
 	printf '%s\n' 'NAME=$(ORLIXOS_DISTRIBUTION_NAME)' 'ID=$(ORLIXOS_DISTRIBUTION_ID)' 'PRETTY_NAME=$(ORLIXOS_DISTRIBUTION_NAME)' > "$$root_tree/etc/os-release"; \
@@ -519,11 +664,11 @@ $(ORLIXOS_ROOTFS_PROOF): $(ORLIXOS_BASH_BINARY) $(ORLIXOS_CAT_BINARY) $(ORLIXOS_
 		printf 'proof_ladder=%s\n' "$(ORLIXOS_PACKAGE_PROOF_LADDER)"; \
 		printf 'downloaded_binary_repositories=%s\n' "$(ORLIXOS_DOWNLOADED_BINARY_REPOSITORIES)"; \
 	} > "$$root_tree/usr/share/orlixos/distribution.manifest"; \
-	chmod 0755 "$$root_tree" "$$root_tree/bin" "$$root_tree/dev" "$$root_tree/etc" "$$root_tree/proc" "$$root_tree/run" "$$root_tree/sbin" "$$root_tree/sys" "$$root_tree/usr" "$$root_tree/usr/bin" "$$root_tree/usr/share" "$$root_tree/usr/share/orlixos" "$$root_tree/var"; \
+	chmod 0755 "$$root_tree" "$$root_tree/bin" "$$root_tree/dev" "$$root_tree/etc" "$$root_tree/etc/zsh" "$$root_tree/proc" "$$root_tree/run" "$$root_tree/sbin" "$$root_tree/sys" "$$root_tree/usr" "$$root_tree/usr/bin" "$$root_tree/usr/share" "$$root_tree/usr/share/orlixos" "$$root_tree/var"; \
 	chmod 0700 "$$root_tree/root"; \
 	chmod 1777 "$$root_tree/tmp" "$$root_tree/var/tmp"; \
 	chmod 0755 "$$state_tree" "$$state_tree/upper" "$$state_tree/work"; \
-	printf 'profile=%s\ndistribution=%s\nchannel=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\ninitramfs=%s\nbase_root_tree=%s\nstate_root_tree=%s\ninit=/sbin/init\nshell=/bin/sh\npackages=%s\npackage_proof_ladder=%s\nbash_version=%s\ncoreutils_version=%s\ngrep_version=%s\njq_version=%s\ncurl_version=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ORLIXOS_ROOT_MODES)" "$(ORLIXOS_PROFILE_ROOT_MODE)" "$(ORLIXOS_BASE_ROOT_DEVICE)" "$(ORLIXOS_STATE_ROOT_DEVICE)" "$(ORLIXOS_INITRAMFS_CPIO)" "$$root_tree" "$$state_tree" "$(ORLIXOS_PROFILE_PACKAGES)" "$(ORLIXOS_PACKAGE_PROOF_LADDER)" "$(BASH_VERSION)" "$(COREUTILS_VERSION)" "$(GREP_VERSION)" "$(JQ_VERSION)" "$(CURL_VERSION)" > "$(ORLIXOS_ROOTFS_PROOF)"; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\ninitramfs=%s\nbase_root_tree=%s\nstate_root_tree=%s\ninit=/sbin/init\nshell=/bin/sh\npackages=%s\npackage_proof_ladder=%s\nbash_version=%s\ncoreutils_version=%s\ngrep_version=%s\njq_version=%s\ncurl_version=%s\nzsh_version=%s\nncurses_version=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ORLIXOS_ROOT_MODES)" "$(ORLIXOS_PROFILE_ROOT_MODE)" "$(ORLIXOS_BASE_ROOT_DEVICE)" "$(ORLIXOS_STATE_ROOT_DEVICE)" "$(ORLIXOS_INITRAMFS_CPIO)" "$$root_tree" "$$state_tree" "$(ORLIXOS_PROFILE_PACKAGES)" "$(ORLIXOS_PACKAGE_PROOF_LADDER)" "$(BASH_VERSION)" "$(COREUTILS_VERSION)" "$(GREP_VERSION)" "$(JQ_VERSION)" "$(CURL_VERSION)" "$(ZSH_VERSION)" "$(NCURSES_VERSION)" > "$(ORLIXOS_ROOTFS_PROOF)"; \
 	echo "built OrlixOS base root tree: $$root_tree"
 
 clean:
