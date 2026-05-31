@@ -2,11 +2,15 @@
 
 #include <linux/compiler.h>
 #include <linux/errno.h>
+#include <linux/hardirq.h>
 #include <linux/init.h>
 #include <linux/irq.h>
 #include <linux/irqdesc.h>
 #include <linux/irqdomain.h>
+#include <linux/irqflags.h>
 #include <linux/of.h>
+#include <asm/irq_regs.h>
+#include <asm/ptrace.h>
 
 unsigned long orlix_irq_flags = 1;
 
@@ -43,8 +47,21 @@ void __init init_IRQ(void)
 
 int orlix_irq_dispatch(unsigned int hwirq)
 {
+	struct pt_regs irq_regs = { };
+	struct pt_regs *old_regs;
+	unsigned long flags;
+	int ret;
+
 	if (!orlix_irq_domain)
 		return -ENODEV;
 
-	return generic_handle_domain_irq_safe(orlix_irq_domain, hwirq);
+	local_irq_save(flags);
+	old_regs = set_irq_regs(&irq_regs);
+	irq_enter();
+	ret = generic_handle_domain_irq(orlix_irq_domain, hwirq);
+	irq_exit();
+	set_irq_regs(old_regs);
+	local_irq_restore(flags);
+
+	return ret;
 }

@@ -146,6 +146,21 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixHostAdapterTests
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/OrlixHostAdapter/Sources
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTerminal.app/OrlixTerminal
+        BUNDLE_LOADER: $(TEST_HOST)
+  OrlixTerminalProofDriverTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OrlixTerminal/Tests/XCTest/OrlixTerminalProofDriverTests
+    dependencies:
+      - target: OrlixTerminal
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixTerminalProofDriverTests
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTerminal.app/OrlixTerminal
         BUNDLE_LOADER: $(TEST_HOST)
 schemes:
@@ -190,3 +205,13 @@ schemes:
       gatherCoverageData: false
       targets:
         - name: OrlixHostAdapterTests
+  OrlixTerminalProofDriverTests:
+    build:
+      targets:
+        OrlixTerminal: all
+        OrlixTerminalProofDriverTests: test
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: OrlixTerminalProofDriverTests

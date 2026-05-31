@@ -10,6 +10,14 @@ final class TerminalViewController: UIViewController {
     private let bootQueue = DispatchQueue(label: "org.orlix.terminal.boot", qos: .userInitiated)
     private let hostConsolePipe = Pipe()
     private lazy var terminalView = TerminalView(frame: .zero)
+    private lazy var proofDriver = TerminalProofDriver.fromProcessArguments { data in
+        data.withUnsafeBytes { buffer in
+            guard let baseAddress = buffer.baseAddress else {
+                return
+            }
+            OrlixTerminalSendConsoleInput(baseAddress, UInt(buffer.count))
+        }
+    }
     private lazy var terminalSession = InMemoryTerminalSession(
         write: { data in
             data.withUnsafeBytes { buffer in
@@ -78,6 +86,9 @@ final class TerminalViewController: UIViewController {
 
     private func activateTerminal() {
         terminalView.becomeFirstResponder()
+        guard !Self.isRunningUnitTests() else {
+            return
+        }
         guard !didStartBoot else {
             return
         }
@@ -98,6 +109,10 @@ final class TerminalViewController: UIViewController {
 
     private static func defaultBootProfileName() -> String {
         payloadBootProfileName() ?? "release"
+    }
+
+    private static func isRunningUnitTests() -> Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
     private static func payloadBootProfileName() -> String? {
@@ -142,6 +157,7 @@ final class TerminalViewController: UIViewController {
                 .replacingOccurrences(of: "\n", with: "\r\n")
 
             DispatchQueue.main.async { [weak self] in
+                self?.proofDriver?.receive(text)
                 self?.terminalSession.receive(text)
             }
         }
