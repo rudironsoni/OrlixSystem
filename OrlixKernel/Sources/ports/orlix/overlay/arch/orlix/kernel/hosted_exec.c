@@ -58,7 +58,7 @@ static void orlix_hosted_start_user_timer_once(void)
 	if (!IS_ENABLED(CONFIG_ORLIX_HOSTED_ASYNC_USER_TIMER))
 		return;
 
-	if (orlix_hosted_user_timer_ready || !current->thread.user_tls)
+	if (orlix_hosted_user_timer_ready)
 		return;
 
 	if (orlix_host_user_trap_start_timer(NSEC_PER_SEC / HZ))
@@ -92,7 +92,8 @@ static void orlix_hosted_restore_user_tls(void)
 static bool orlix_hosted_valid_user_tls(unsigned long user_tls)
 {
 	return user_tls >= ORLIX_HOSTED_USER_BASE &&
-		user_tls < ORLIX_HOSTED_STACK_TOP;
+		user_tls < ORLIX_HOSTED_STACK_TOP &&
+		!(user_tls & (sizeof(unsigned long) - 1));
 }
 
 static void orlix_hosted_apply_frame_user_state(
@@ -173,6 +174,7 @@ static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs)
 	orlix_hosted_save_current_kernel_stack();
 	orlix_hosted_save_trap_frame(&resume_frame, regs);
 	WRITE_ONCE(orlix_hosted_active_user_tls, resume_frame.user_tls);
+	orlix_hosted_start_user_timer_once();
 	orlix_host_user_trap_resume(&resume_frame);
 }
 

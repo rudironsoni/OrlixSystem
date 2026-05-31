@@ -2,6 +2,7 @@
 
 #include "OrlixHostAdapter/runtime/trap.h"
 #include "OrlixHostAdapter/runtime/host_tls.h"
+#include "OrlixHostAdapter/runtime/trap_decode.h"
 
 #include <signal.h>
 #include <stdbool.h>
@@ -23,14 +24,6 @@
 #define ORLIX_ARM_ESR_EC_DABT_LOWER 0x24U
 #define ORLIX_ARM_ESR_EC_DABT_CURRENT 0x25U
 #define ORLIX_ARM_ESR_DABT_WNR (1U << 6)
-#define ORLIX_ARM64_MRS_TPIDR_EL0 0xd53bd040U
-#define ORLIX_ARM64_MRS_TPIDR_EL0_MASK 0xffffffe0U
-#define ORLIX_ARM64_LOAD_STORE_CLASS_SHIFT 25U
-#define ORLIX_ARM64_LOAD_STORE_CLASS_MASK 0x7U
-#define ORLIX_ARM64_LOAD_STORE_CLASS_VALUE 0x4U
-#define ORLIX_ARM64_REGISTER_MASK 0x1fU
-#define ORLIX_ARM64_TLS_MRS_SEARCH_INSTRUCTIONS 4U
-
 struct OrlixHostUserTrapState {
     unsigned long user_base;
     unsigned long user_limit;
@@ -63,9 +56,9 @@ static bool OrlixHostUserTrapContains(unsigned long pc)
 
 static bool OrlixHostUserTrapValidUserTls(unsigned long tls)
 {
-    return OrlixHostUserTrap.user_base < OrlixHostUserTrap.user_limit &&
-           tls >= OrlixHostUserTrap.user_base &&
-           tls < OrlixHostUserTrap.user_limit;
+    return orlix_host_user_trap_valid_user_tls(OrlixHostUserTrap.user_base,
+                                               OrlixHostUserTrap.user_limit,
+                                               tls);
 }
 
 static bool OrlixHostUserTrapIsUserActive(void)
@@ -161,29 +154,38 @@ static bool OrlixHostUserTrapWriteRegister(mcontext_t machine_context,
     return false;
 }
 
-static bool OrlixHostUserTrapMemoryBaseRegister(uint32_t instruction,
-                                                unsigned int *base_register)
+static bool OrlixHostUserTrapReadRegister(mcontext_t machine_context,
+                                          unsigned int reg,
+                                          unsigned long *value)
 {
-    unsigned int instruction_class =
-        (instruction >> ORLIX_ARM64_LOAD_STORE_CLASS_SHIFT) &
-        ORLIX_ARM64_LOAD_STORE_CLASS_MASK;
-    unsigned int reg = (instruction >> 5U) & ORLIX_ARM64_REGISTER_MASK;
-
-    if (instruction_class != ORLIX_ARM64_LOAD_STORE_CLASS_VALUE || reg == 31U) {
+    if (!value) {
         return false;
     }
-
-    *base_register = reg;
-    return true;
+    if (reg < 29) {
+        *value = machine_context->__ss.__x[reg];
+        return true;
+    }
+    if (reg == 29) {
+        *value = machine_context->__ss.__fp;
+        return true;
+    }
+    if (reg == 30) {
+        *value = machine_context->__ss.__lr;
+        return true;
+    }
+    return false;
 }
 
 static bool OrlixHostUserTrapRepairUserTlsLoad(mcontext_t machine_context,
                                                unsigned long fault_address)
 {
     unsigned long active_tls;
+    unsigned long host_tls;
     unsigned long user_pc = (unsigned long)machine_context->__ss.__pc;
     uint32_t faulting_instruction;
     unsigned int base_register;
+    unsigned long base_value;
+    unsigned long rebased_value;
 
     if (fault_address >= OrlixHostUserTrap.user_base &&
         fault_address < OrlixHostUserTrap.user_limit) {
@@ -194,6 +196,11 @@ static bool OrlixHostUserTrapRepairUserTlsLoad(mcontext_t machine_context,
     if (!active_tls) {
         return false;
     }
+    host_tls = orlix_host_user_trap_host_tls_reference(
+        OrlixHostUserTrap.host_tls,
+        OrlixHostReadTls(),
+        OrlixHostUserTrap.user_base,
+        OrlixHostUserTrap.user_limit);
 
     if (user_pc < OrlixHostUserTrap.user_base + sizeof(uint32_t) ||
         user_pc >= OrlixHostUserTrap.user_limit) {
@@ -206,24 +213,27 @@ static bool OrlixHostUserTrapRepairUserTlsLoad(mcontext_t machine_context,
      * destination register repaired to the kernel-owned active user TLS.
      */
     faulting_instruction = *(const uint32_t *)user_pc;
-    if (!OrlixHostUserTrapMemoryBaseRegister(faulting_instruction, &base_register)) {
+    if (!orlix_host_user_trap_memory_base_register(faulting_instruction,
+                                                   &base_register)) {
         return false;
     }
 
     for (unsigned int offset = 1;
-         offset <= ORLIX_ARM64_TLS_MRS_SEARCH_INSTRUCTIONS;
+         offset <= ORLIX_HOST_USER_TRAP_TLS_MRS_SEARCH_INSTRUCTIONS;
          offset++) {
         unsigned long instruction_address = user_pc - offset * sizeof(uint32_t);
         uint32_t instruction;
+        unsigned int destination_register;
 
         if (instruction_address < OrlixHostUserTrap.user_base) {
             break;
         }
 
         instruction = *(const uint32_t *)instruction_address;
-        if ((instruction & ORLIX_ARM64_MRS_TPIDR_EL0_MASK) ==
-                ORLIX_ARM64_MRS_TPIDR_EL0 &&
-            (instruction & ORLIX_ARM64_REGISTER_MASK) == base_register) {
+        if (orlix_host_user_trap_mrs_tpidr_el0_destination(
+                instruction,
+                &destination_register) &&
+            destination_register == base_register) {
             if (!OrlixHostUserTrapWriteRegister(machine_context,
                                                 base_register,
                                                 active_tls)) {
@@ -232,6 +242,27 @@ static bool OrlixHostUserTrapRepairUserTlsLoad(mcontext_t machine_context,
             OrlixHostWriteTls(active_tls);
             return true;
         }
+        if (orlix_host_user_trap_integer_instruction_writes_register(
+                instruction,
+                base_register)) {
+            break;
+        }
+    }
+
+    if (OrlixHostUserTrapReadRegister(machine_context,
+                                      base_register,
+                                      &base_value) &&
+        orlix_host_user_trap_rebase_register_from_host_tls(host_tls,
+                                                           active_tls,
+                                                           base_value,
+                                                           OrlixHostUserTrap.user_base,
+                                                           OrlixHostUserTrap.user_limit,
+                                                           &rebased_value) &&
+        OrlixHostUserTrapWriteRegister(machine_context,
+                                       base_register,
+                                       rebased_value)) {
+        OrlixHostWriteTls(active_tls);
+        return true;
     }
 
     return false;
