@@ -1,0 +1,15 @@
+diff --git i/sysdeps/linux/generic/sysdeps.cpp w/sysdeps/linux/generic/sysdeps.cpp
+index 8e44b30f..0a38f724 100644
+--- i/sysdeps/linux/generic/sysdeps.cpp
++++ w/sysdeps/linux/generic/sysdeps.cpp
+@@ -2153,6 +2153,10 @@ int Sysdeps<Sysconf>::operator()(int num, long *ret) {
+ 			*ret = -1;
+ 			break;
+ 		}
++		case _SC_CLK_TCK: {
++			*ret = 100;
++			break;
++		}
+ 		default: {
+ 			return EINVAL;
+ 		}

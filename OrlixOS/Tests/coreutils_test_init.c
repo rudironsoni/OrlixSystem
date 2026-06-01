@@ -11,13 +11,14 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 static char test_list[131072];
 static unsigned int test_index;
 static unsigned int test_failures;
 static unsigned int test_skips;
-static const unsigned int test_timeout_seconds = 120;
+static const unsigned int test_timeout_seconds = 600;
 
 static char *const test_envp[] = {
 	"HOME=/root",
@@ -35,12 +36,14 @@ static char *const test_envp[] = {
 	"VERSION=9.11",
 	"PACKAGE_VERSION=9.11",
 	"PERL=/usr/bin/perl",
+	"PERL5LIB=/usr/lib/perl5/5.40.2",
+	"built_programs=[ b2sum base32 base64 basenc basename cat chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink users vdir wc who whoami yes ]",
 	"AWK=awk",
 	"EGREP=grep -E",
 	"EXEEXT=",
 	"MAKE=make",
 	"TMPDIR=/tmp",
-	"VERBOSE=no",
+	"VERBOSE=",
 	NULL,
 };
 
@@ -110,23 +113,37 @@ static int run_test(const char *name)
 	const char *interpreter = "/bin/bash";
 	char test_path[512];
 	char workdir[512];
+	struct timespec start_time;
+	bool is_perl = strlen(name) > 3 && !strcmp(name + strlen(name) - 3, ".pl");
 
 	snprintf(test_path, sizeof(test_path), "/coreutils/%s", name);
 	snprintf(workdir, sizeof(workdir), "/tmp/coreutils-test-%u", test_index + 1);
 	(void)mkdir(workdir, 0700);
-	if (strlen(name) > 3 && !strcmp(name + strlen(name) - 3, ".pl"))
+	if (is_perl)
 		interpreter = "/usr/bin/perl";
 
-	printf("# exec %s %s\n", interpreter, test_path);
+	printf("# exec %s%s %s\n", interpreter,
+	       is_perl ? " -w -I/coreutils/tests -MCuSkip -MCoreutils" : "",
+	       test_path);
 	fflush(stdout);
 
 	child = fork();
 	if (child == 0) {
-		char *const argv[] = {
+		char *const shell_argv[] = {
 			(char *)interpreter,
 			test_path,
 			NULL,
 		};
+		char *const perl_argv[] = {
+			(char *)interpreter,
+			"-w",
+			"-I/coreutils/tests",
+			"-MCuSkip",
+			"-MCoreutils",
+			test_path,
+			NULL,
+		};
+		char *const *argv = is_perl ? perl_argv : shell_argv;
 
 		if (chdir("/coreutils-build") != 0)
 			_exit(125);
@@ -137,26 +154,35 @@ static int run_test(const char *name)
 	}
 	if (child < 0)
 		return -1;
-	for (unsigned int elapsed = 0;; elapsed++) {
+	(void)clock_gettime(CLOCK_MONOTONIC, &start_time);
+	for (;;) {
+		struct timespec now;
 		pid_t waited = waitpid(child, &status, WNOHANG);
 
 		if (waited == child)
 			break;
-		if (waited < 0)
+		if (waited < 0) {
+			printf("# waitpid failed for %s: %s (%d)\n", name,
+			       strerror(errno), errno);
+			fflush(stdout);
 			return -1;
-		if (elapsed >= test_timeout_seconds) {
+		}
+		(void)clock_gettime(CLOCK_MONOTONIC, &now);
+		if ((unsigned int)(now.tv_sec - start_time.tv_sec) >=
+		    test_timeout_seconds) {
 			printf("# %s timed out after %u seconds\n", name,
 			       test_timeout_seconds);
 			fflush(stdout);
 			(void)kill(child, SIGKILL);
-			for (unsigned int reap_wait = 0; reap_wait < 5; reap_wait++) {
+			for (unsigned int reap_wait_ms = 0; reap_wait_ms < 5000;
+			     reap_wait_ms += 100) {
 				if (waitpid(child, &status, WNOHANG) == child)
 					break;
-				sleep(1);
+				usleep(100000);
 			}
 			return 124;
 		}
-		sleep(1);
+		usleep(100000);
 	}
 	if (WIFEXITED(status)) {
 		int exit_status = WEXITSTATUS(status);

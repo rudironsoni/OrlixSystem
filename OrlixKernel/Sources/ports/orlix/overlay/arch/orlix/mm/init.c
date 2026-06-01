@@ -12,9 +12,11 @@
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task_stack.h>
+#include <linux/atomic.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/hosted_exec.h>
+#include <internal/asm/host_trap.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
 #include <internal/asm/host_memory.h>
@@ -231,36 +233,20 @@ unmap:
 	return ret ? ret : -EFAULT;
 }
 
-static int orlix_sync_current_user_stack_vma(unsigned long address);
-
 void orlix_sync_current_user_mappings(struct pt_regs *regs)
 {
 	struct mm_struct *mm = current->mm;
 	unsigned long sp_page = regs->sp & PAGE_MASK;
-	unsigned long stack_access_page = regs->sp ?
-		((regs->sp - 1) & PAGE_MASK) : 0;
 
 	if (!mm)
 		panic("Orlix: current task has no user mm for pc %#llx\n",
 		      regs->pc);
 
-	/*
-	 * Darwin does not reliably route initial unmapped instruction fetches or
-	 * first stack accesses through the hosted trap handler. If a userspace
-	 * stack adjustment moves SP below the mirrored host page before the first
-	 * store, Darwin cannot deliver our signal handler on that unmapped SP.
-	 * Pre-map the writable stack VMA and keep other user pages lazy.
-	 */
 	if (regs->pc && regs->pc < TASK_SIZE &&
 	    orlix_sync_current_user_mapping_page(regs->pc))
 		panic("Orlix: failed to synchronize hosted user pc %#llx\n",
 		      regs->pc);
-	if (stack_access_page &&
-	    orlix_sync_current_user_stack_vma(stack_access_page))
-		panic("Orlix: failed to synchronize hosted user stack VMA %#lx\n",
-		      stack_access_page);
-	if (sp_page != stack_access_page &&
-	    orlix_sync_current_user_mapping_page(sp_page))
+	if (sp_page && orlix_sync_current_user_mapping_page(sp_page))
 		panic("Orlix: failed to synchronize hosted user sp page %#lx\n",
 		      sp_page);
 
@@ -283,35 +269,65 @@ int orlix_sync_current_user_mapping_page(unsigned long address)
 	return orlix_sync_user_page(mm, address, page);
 }
 
-static int orlix_sync_current_user_stack_vma(unsigned long address)
+#define ORLIX_HOSTED_FAULT_WINDOW_PAGES	16
+
+int orlix_sync_current_user_fault_window(unsigned long address,
+					 unsigned long fault_flags)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
-	unsigned long start = 0;
-	unsigned long end = 0;
-	unsigned long page;
+	unsigned long page = address & PAGE_MASK;
+	unsigned long start;
+	unsigned long end;
+	unsigned long window_start;
+	unsigned long window_end;
+	unsigned long loop_page;
 	int ret;
 
 	if (!address || address >= TASK_SIZE)
 		return 0;
 
+	if (!mm)
+		return -EINVAL;
+
+	if (fault_flags & ORLIX_HOST_USER_FAULT_BUS)
+		return orlix_sync_current_user_mapping_page(address);
+
 	mmap_read_lock(mm);
 	vma = vma_lookup(mm, address);
-	if (vma && (vma->vm_flags & VM_WRITE)) {
-		start = vma->vm_start;
-		end = vma->vm_end;
+	if (!vma) {
+		mmap_read_unlock(mm);
+		return orlix_sync_current_user_mapping_page(address);
+	}
+	start = vma->vm_start;
+	end = vma->vm_end;
+	if ((fault_flags & ORLIX_HOST_USER_FAULT_WRITE) &&
+	    !(vma->vm_flags & VM_GROWSDOWN)) {
+		mmap_read_unlock(mm);
+		return orlix_sync_current_user_mapping_page(address);
 	}
 	mmap_read_unlock(mm);
 
 	if (!start || start >= end)
 		return orlix_sync_current_user_mapping_page(address);
 
-	for (page = start; page < end; page += PAGE_SIZE) {
-		ret = orlix_sync_current_user_mapping_page(page);
+	window_start = page;
+	if (window_start > start + (ORLIX_HOSTED_FAULT_WINDOW_PAGES / 2) * PAGE_SIZE)
+		window_start -= (ORLIX_HOSTED_FAULT_WINDOW_PAGES / 2) * PAGE_SIZE;
+	else
+		window_start = start;
+
+	window_end = window_start + ORLIX_HOSTED_FAULT_WINDOW_PAGES * PAGE_SIZE;
+	if (window_end > end || window_end < window_start)
+		window_end = end;
+
+	for (loop_page = window_start; loop_page < window_end; loop_page += PAGE_SIZE) {
+		ret = orlix_sync_current_user_mapping_page(loop_page);
 		if (ret)
 			return ret;
 	}
 
 	return 0;
 }
+
 #endif

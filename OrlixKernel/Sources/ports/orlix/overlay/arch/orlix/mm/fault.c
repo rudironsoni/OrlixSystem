@@ -60,7 +60,7 @@ retry:
 	if (fault_signal_pending(fault, regs))
 		return 0;
 	if (fault & VM_FAULT_COMPLETED)
-		return orlix_sync_current_user_mapping_page(address) ?
+		return orlix_sync_current_user_fault_window(address, fault_flags) ?
 			-EFAULT : 0;
 	if (unlikely(fault & VM_FAULT_ERROR)) {
 		if (fault & VM_FAULT_OOM)
@@ -79,7 +79,8 @@ retry:
 	}
 
 	mmap_read_unlock(mm);
-	return orlix_sync_current_user_mapping_page(address) ? -EFAULT : 0;
+	return orlix_sync_current_user_fault_window(address, fault_flags) ?
+		-EFAULT : 0;
 
 bad_area:
 	mmap_read_unlock(mm);

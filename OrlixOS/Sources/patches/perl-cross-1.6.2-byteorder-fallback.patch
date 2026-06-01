@@ -1,0 +1,16 @@
+diff --git a/cnf/configure_type_sel.sh b/cnf/configure_type_sel.sh
+--- a/cnf/configure_type_sel.sh
++++ b/cnf/configure_type_sel.sh
+@@ -120,6 +120,12 @@ if not hinted 'byteorder'; then
+ 	if [ -n "$bo" ]; then
+ 		define byteorder "$bo"
+ 		result "$bo"
++	elif [ "$uvsize" = 8 ]; then
++		define byteorder "12345678"
++		result "12345678"
++	elif [ "$uvsize" = 4 ]; then
++		define byteorder "1234"
++		result "1234"
+ 	else
+ 		result "unknown"
+ 		msg "Cannot determine byteorder for this target,"

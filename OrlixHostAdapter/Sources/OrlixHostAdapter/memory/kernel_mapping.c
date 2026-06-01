@@ -14,7 +14,16 @@ struct OrlixHostIOMapping {
     struct OrlixHostIOMapping *next;
 };
 
+struct OrlixHostUserMapping {
+    unsigned long target_address;
+    const void *source_page;
+    vm_size_t length;
+    vm_prot_t protection;
+    struct OrlixHostUserMapping *next;
+};
+
 static struct OrlixHostIOMapping *OrlixHostIOMappings;
+static struct OrlixHostUserMapping *OrlixHostUserMappings;
 
 static vm_size_t OrlixHostRoundPageLength(unsigned long length)
 {
@@ -84,6 +93,79 @@ static void OrlixHostUnmapPages(unsigned long target_address,
                         (vm_size_t)length);
 }
 
+static bool OrlixHostUserMappingMatches(unsigned long target_address,
+                                        const void *source_page,
+                                        unsigned long length,
+                                        vm_prot_t protection)
+{
+    vm_size_t rounded_length = OrlixHostRoundPageLength(length);
+
+    for (struct OrlixHostUserMapping *mapping = OrlixHostUserMappings;
+         mapping;
+         mapping = mapping->next) {
+        if (mapping->target_address == target_address &&
+            mapping->source_page == source_page &&
+            mapping->length == rounded_length &&
+            mapping->protection == protection) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void OrlixHostUserUnmapMappedRange(unsigned long target_address,
+                                          unsigned long length)
+{
+    vm_size_t rounded_length = OrlixHostRoundPageLength(length);
+    unsigned long end = target_address + rounded_length;
+    struct OrlixHostUserMapping **link = &OrlixHostUserMappings;
+
+    if (target_address == 0 || rounded_length == 0 || end < target_address) {
+        return;
+    }
+
+    while (*link) {
+        struct OrlixHostUserMapping *mapping = *link;
+        unsigned long mapping_end = mapping->target_address + mapping->length;
+
+        if (target_address < mapping_end && mapping->target_address < end) {
+            (void)vm_deallocate(mach_task_self(),
+                                (vm_address_t)mapping->target_address,
+                                (vm_size_t)mapping->length);
+            *link = mapping->next;
+            free(mapping);
+            continue;
+        }
+
+        link = &mapping->next;
+    }
+}
+
+static int OrlixHostUserRememberMapping(unsigned long target_address,
+                                        const void *source_page,
+                                        unsigned long length,
+                                        vm_prot_t protection)
+{
+    vm_size_t rounded_length = OrlixHostRoundPageLength(length);
+    struct OrlixHostUserMapping *mapping;
+
+    OrlixHostUserUnmapMappedRange(target_address, length);
+
+    mapping = malloc(sizeof(*mapping));
+    if (!mapping) {
+        return -1;
+    }
+
+    mapping->target_address = target_address;
+    mapping->source_page = source_page;
+    mapping->length = rounded_length;
+    mapping->protection = protection;
+    mapping->next = OrlixHostUserMappings;
+    OrlixHostUserMappings = mapping;
+    return 0;
+}
+
 __attribute__((visibility("hidden"))) int orlix_host_kernel_map_page(
     unsigned long target_address,
     const void *source_page,
@@ -128,11 +210,28 @@ __attribute__((visibility("hidden"))) int orlix_host_user_map_page(
     unsigned long active_tls = OrlixHostEnterHostTls();
     int result;
 
+    if (OrlixHostUserMappingMatches(target_address,
+                                    source_page,
+                                    length,
+                                    protection)) {
+        OrlixHostLeaveHostTls(active_tls);
+        return 0;
+    }
+
+    OrlixHostUserUnmapMappedRange(target_address, length);
     OrlixHostUnmapPages(target_address, length);
     result = OrlixHostMapPageWithProtection(target_address,
                                             source_page,
                                             length,
                                             protection);
+    if (result == 0 &&
+        OrlixHostUserRememberMapping(target_address,
+                                     source_page,
+                                     length,
+                                     protection) != 0) {
+        OrlixHostUnmapPages(target_address, length);
+        result = -1;
+    }
     OrlixHostLeaveHostTls(active_tls);
     return result;
 }
@@ -143,7 +242,7 @@ __attribute__((visibility("hidden"))) void orlix_host_user_unmap_pages(
 {
     unsigned long active_tls = OrlixHostEnterHostTls();
 
-    OrlixHostUnmapPages(target_address, length);
+    OrlixHostUserUnmapMappedRange(target_address, length);
     OrlixHostLeaveHostTls(active_tls);
 }
 

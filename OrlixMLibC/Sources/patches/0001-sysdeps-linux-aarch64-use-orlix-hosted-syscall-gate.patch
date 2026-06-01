@@ -255,10 +255,12 @@ diff --git i/sysdeps/linux/generic/sysdeps.cpp w/sysdeps/linux/generic/sysdeps.c
 index a07ed53e..8e44b30f 100644
 --- i/sysdeps/linux/generic/sysdeps.cpp
 +++ w/sysdeps/linux/generic/sysdeps.cpp
-@@ -44,6 +44,99 @@
+@@ -44,6 +44,98 @@
  #include "generic-helpers/netlink.hpp"
  #endif
  
++#include <mlibc/tid.hpp>
++
 +#if defined(__aarch64__) && defined(ORLIX_HOSTED_EXEC)
 +namespace {
 +struct orlix_emutls_object {
@@ -280,10 +282,7 @@ index a07ed53e..8e44b30f 100644
 +
 +uintptr_t orlix_current_thread_id()
 +{
-+	auto ret = mlibc::do_syscall(SYS_gettid);
-+	if (mlibc::sc_error(ret))
-+		__builtin_trap();
-+	return static_cast<uintptr_t>(mlibc::sc_int_result<long>(ret));
++	return static_cast<uintptr_t>(mlibc::this_tid());
 +}
 +
 +void orlix_emutls_lock()
@@ -355,7 +354,7 @@ index a07ed53e..8e44b30f 100644
  #ifndef MLIBC_BUILDING_RTLD
  extern "C" long __do_syscall_ret(unsigned long ret) {
  	if(ret > -4096UL) {
-@@ -180,6 +272,12 @@ int Sysdeps<TcbSet>::operator()(void *pointer) {
+@@ -180,6 +271,12 @@ int Sysdeps<TcbSet>::operator()(void *pointer) {
  #elif defined (__aarch64__)
  	uintptr_t thread_data = reinterpret_cast<uintptr_t>(pointer) + sizeof(Tcb) - 0x10;
  	asm volatile ("msr tpidr_el0, %0" :: "r"(thread_data));

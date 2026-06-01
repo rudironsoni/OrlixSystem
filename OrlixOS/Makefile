@@ -35,6 +35,13 @@ SED_VERSION ?= 4.9
 SED_URL ?= https://ftp.gnu.org/gnu/sed/sed-$(SED_VERSION).tar.xz
 SED_SHA256 ?= 6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631d24975181
 
+PERL_VERSION ?= 5.40.2
+PERL_URL ?= https://www.cpan.org/src/5.0/perl-$(PERL_VERSION).tar.gz
+PERL_SHA256 ?= 10d4647cfbb543a7f9ae3e5f6851ec49305232ea7621aed24c7cfbb0bef4b70d
+PERL_CROSS_VERSION ?= 1.6.2
+PERL_CROSS_URL ?= https://github.com/arsv/perl-cross/raw/releases/perl-cross-$(PERL_CROSS_VERSION).tar.gz
+PERL_CROSS_SHA256 ?= 131f7496152ee32067dbac2bc9b44b2f582fc778140e545701b3b2faee782f1d
+
 JQ_VERSION ?= 1.7.1
 JQ_URL ?= https://github.com/jqlang/jq/releases/download/jq-$(JQ_VERSION)/jq-$(JQ_VERSION).tar.gz
 JQ_SHA256 ?= 478c9ca129fd2e3443fe27314b455e211e0d8c60bc8ff7df703873deeee580c2
@@ -95,6 +102,16 @@ ORLIXOS_SED_SRC_DIR := $(ORLIXOS_SRC_DIR)/sed-$(SED_VERSION)
 ORLIXOS_SED_SOURCE_STAMP := $(ORLIXOS_SED_SRC_DIR)/.orlix-source-ready
 ORLIXOS_SED_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/sed-$(SED_VERSION)
 ORLIXOS_SED_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/sed
+ORLIXOS_PERL_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/perl-$(PERL_VERSION).tar.gz
+ORLIXOS_PERL_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/perl-$(PERL_VERSION).sha256-ok
+ORLIXOS_PERL_CROSS_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/perl-cross-$(PERL_CROSS_VERSION).tar.gz
+ORLIXOS_PERL_CROSS_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/perl-cross-$(PERL_CROSS_VERSION).sha256-ok
+ORLIXOS_PERL_SRC_DIR := $(ORLIXOS_SRC_DIR)/perl-$(PERL_VERSION)
+ORLIXOS_PERL_SOURCE_STAMP := $(ORLIXOS_PERL_SRC_DIR)/.orlix-source-ready
+ORLIXOS_PERL_TOOLCHAIN_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/perl-toolchain
+ORLIXOS_PERL_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/perl
+ORLIXOS_PERL_LIB_DIR := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib/perl5/$(PERL_VERSION)
+ORLIXOS_PERL_PROOF := $(ORLIXOS_PACKAGE_INSTALL_DIR)/perl.proof
 ORLIXOS_JQ_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/jq-$(JQ_VERSION).tar.gz
 ORLIXOS_JQ_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/jq-$(JQ_VERSION).sha256-ok
 ORLIXOS_JQ_SRC_DIR := $(ORLIXOS_SRC_DIR)/jq-$(JQ_VERSION)
@@ -136,8 +153,10 @@ ORLIXOS_CC ?= clang
 ORLIXOS_LLVM_BIN ?= $(shell if command -v llvm-ar >/dev/null 2>&1; then dirname "$$(command -v llvm-ar)"; elif [ -x /opt/homebrew/opt/llvm/bin/llvm-ar ]; then printf '%s\n' /opt/homebrew/opt/llvm/bin; fi)
 ORLIXOS_AR ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-ar,llvm-ar)
 ORLIXOS_RANLIB ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-ranlib,llvm-ranlib)
+ORLIXOS_NM ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-nm,llvm-nm)
 ORLIXOS_STRIP ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-strip,llvm-strip)
 ORLIXOS_READELF ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-readelf,llvm-readelf)
+ORLIXOS_OBJDUMP ?= $(if $(ORLIXOS_LLVM_BIN),$(ORLIXOS_LLVM_BIN)/llvm-objdump,llvm-objdump)
 ORLIXOS_PACKAGE_CFLAGS := -O2 -Wno-unknown-warning-option -Wno-incompatible-function-pointer-types -include limits.h
 
 .PHONY: all help build rootfs test coreutils-test clean mrproper
@@ -276,6 +295,52 @@ $(ORLIXOS_SED_SOURCE_STAMP): $(ORLIXOS_SED_ARCHIVE_STAMP)
 	tar -xJf "$(ORLIXOS_SED_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
 	touch "$(ORLIXOS_SED_SOURCE_STAMP)"; \
 	echo "extracted sed source: $(ORLIXOS_SED_SRC_DIR)"
+
+$(ORLIXOS_PERL_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch perl source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify perl source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_PERL_ARCHIVE)" ]; then curl -fL "$(PERL_URL)" -o "$(ORLIXOS_PERL_ARCHIVE)"; fi; \
+	echo "upstream perl archive ready: $(ORLIXOS_PERL_ARCHIVE)"
+
+$(ORLIXOS_PERL_ARCHIVE_STAMP): $(ORLIXOS_PERL_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify perl source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(PERL_SHA256)" "$(ORLIXOS_PERL_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_PERL_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_PERL_ARCHIVE_STAMP)"; \
+	echo "upstream perl ready: $(ORLIXOS_PERL_ARCHIVE)"
+
+$(ORLIXOS_PERL_CROSS_ARCHIVE):
+	@set -euo pipefail; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch perl-cross source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify perl-cross source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_PERL_CROSS_ARCHIVE)" ]; then curl -fL "$(PERL_CROSS_URL)" -o "$(ORLIXOS_PERL_CROSS_ARCHIVE)"; fi; \
+	echo "upstream perl-cross archive ready: $(ORLIXOS_PERL_CROSS_ARCHIVE)"
+
+$(ORLIXOS_PERL_CROSS_ARCHIVE_STAMP): $(ORLIXOS_PERL_CROSS_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify perl-cross source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(PERL_CROSS_SHA256)" "$(ORLIXOS_PERL_CROSS_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_PERL_CROSS_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_PERL_CROSS_ARCHIVE_STAMP)"; \
+	echo "upstream perl-cross ready: $(ORLIXOS_PERL_CROSS_ARCHIVE)"
+
+$(ORLIXOS_PERL_SOURCE_STAMP): $(ORLIXOS_PERL_ARCHIVE_STAMP) $(ORLIXOS_PERL_CROSS_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_PERL_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xzf "$(ORLIXOS_PERL_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	tar -xzf "$(ORLIXOS_PERL_CROSS_ARCHIVE)" -C "$(ORLIXOS_PERL_SRC_DIR)" --strip-components=1; \
+	patch -d "$(ORLIXOS_PERL_SRC_DIR)" -p1 < "$(PROJECT_DIR)/Sources/patches/perl-cross-1.6.2-darwin-readelf-size.patch"; \
+	patch -d "$(ORLIXOS_PERL_SRC_DIR)" -p1 < "$(PROJECT_DIR)/Sources/patches/perl-cross-1.6.2-byteorder-fallback.patch"; \
+	touch "$(ORLIXOS_PERL_SOURCE_STAMP)"; \
+	echo "extracted perl source: $(ORLIXOS_PERL_SRC_DIR)"
 
 $(ORLIXOS_JQ_ARCHIVE):
 	@set -euo pipefail; \
@@ -460,6 +525,11 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 
 $(ORLIXOS_COREUTILS_TEST_LIST): $(ORLIXOS_COREUTILS_PROOF)
 	@set -euo pipefail; \
+	if [ "$(origin ORLIXOS_COREUTILS_TEST_LIST)" = "command line" ]; then \
+		[ -s "$(ORLIXOS_COREUTILS_TEST_LIST)" ] || { echo "missing command-line Coreutils test list: $(ORLIXOS_COREUTILS_TEST_LIST)" >&2; exit 1; }; \
+		echo "using command-line Coreutils test list: $(ORLIXOS_COREUTILS_TEST_LIST) ($$(wc -l < "$(ORLIXOS_COREUTILS_TEST_LIST)") tests)"; \
+		exit 0; \
+	fi; \
 	makefile="$(ORLIXOS_COREUTILS_BUILD_DIR)/Makefile"; \
 	[ -s "$$makefile" ] || { echo "missing configured Coreutils Makefile: $$makefile" >&2; exit 1; }; \
 	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_LIST))"; \
@@ -493,7 +563,7 @@ $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(O
 	file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" >&2; exit 1; }; \
 	echo "built OrlixOS Coreutils test init: $(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"
 
-$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY)
+$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_PERL_PROOF)
 	@set -euo pipefail; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
@@ -521,11 +591,23 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		for program in $(ORLIXOS_COREUTILS_PROGRAMS); do printf 'file /bin/%s %s 0755 0 0\n' "$$program" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
 		printf 'file /bin/grep %s 0755 0 0\n' "$(ORLIXOS_GREP_BINARY)"; \
 		printf 'file /bin/sed %s 0755 0 0\n' "$(ORLIXOS_SED_BINARY)"; \
+		printf 'slink /bin/perl /usr/bin/perl 0777 0 0\n'; \
 		printf 'slink /bin/egrep grep 0777 0 0\n'; \
 		printf 'slink /usr/bin/bash /bin/bash 0777 0 0\n'; \
 		printf 'slink /usr/bin/sh /bin/sh 0777 0 0\n'; \
 		printf 'slink /usr/bin/grep /bin/grep 0777 0 0\n'; \
 		printf 'slink /usr/bin/sed /bin/sed 0777 0 0\n'; \
+		printf 'file /usr/bin/perl %s 0755 0 0\n' "$(ORLIXOS_PERL_BINARY)"; \
+		printf 'dir /usr/lib 0755 0 0\n'; \
+		printf 'dir /usr/lib/perl5 0755 0 0\n'; \
+		find "$(ORLIXOS_PERL_LIB_DIR)" -type d | sort | while read -r dir; do \
+			rel="$${dir#"$(ORLIXOS_PACKAGE_INSTALL_DIR)"}"; \
+			printf 'dir %s 0755 0 0\n' "$$rel"; \
+		done; \
+		find "$(ORLIXOS_PERL_LIB_DIR)" -type f | sort | while read -r file; do \
+			rel="$${file#"$(ORLIXOS_PACKAGE_INSTALL_DIR)"}"; \
+			printf 'file %s %s 0644 0 0\n' "$$rel" "$$file"; \
+		done; \
 		find "$(ORLIXOS_COREUTILS_SRC_DIR)/tests" -type d | sort | while read -r dir; do \
 			rel="$${dir#"$(ORLIXOS_COREUTILS_SRC_DIR)"}"; \
 			[ -n "$$rel" ] || rel=""; \
@@ -605,6 +687,76 @@ $(ORLIXOS_SED_BINARY): $(ORLIXOS_SED_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orl
 	file "$(ORLIXOS_SED_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_SED_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=sed\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(SED_VERSION)" "$(SED_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/sed.proof"; \
 	echo "built Orlix Linux sed package input: $(ORLIXOS_SED_BINARY)"
+
+$(ORLIXOS_PERL_PROOF): $(ORLIXOS_PERL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_CC)" >/dev/null 2>&1 || { echo "clang is required to build perl; set ORLIXOS_CC=/path/to/clang" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_AR)" >/dev/null 2>&1 || { echo "llvm-ar is required to build perl; set ORLIXOS_AR=/path/to/llvm-ar" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_RANLIB)" >/dev/null 2>&1 || { echo "llvm-ranlib is required to build perl; set ORLIXOS_RANLIB=/path/to/llvm-ranlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_NM)" >/dev/null 2>&1 || { echo "llvm-nm is required to build perl; set ORLIXOS_NM=/path/to/llvm-nm" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package perl; set ORLIXOS_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_READELF)" >/dev/null 2>&1 || { echo "llvm-readelf is required to build perl; set ORLIXOS_READELF=/path/to/llvm-readelf" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_OBJDUMP)" >/dev/null 2>&1 || { echo "llvm-objdump is required to build perl; set ORLIXOS_OBJDUMP=/path/to/llvm-objdump" >&2; exit 1; }; \
+	command -v gsed >/dev/null 2>&1 || { echo "GNU sed is required to configure perl; install gsed or put it on PATH" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_PERL_TOOLCHAIN_DIR)" "$(ORLIXOS_PERL_BINARY)" "$(ORLIXOS_PERL_LIB_DIR)" "$(ORLIXOS_PERL_PROOF)"; \
+	mkdir -p "$(ORLIXOS_PERL_TOOLCHAIN_DIR)" "$(dir $(ORLIXOS_PERL_BINARY))" "$(dir $(ORLIXOS_PERL_LIB_DIR))"; \
+	{ \
+		printf '%s\n' '#!/bin/bash'; \
+		printf '%s\n' 'set -euo pipefail'; \
+		printf '%s\n' 'cc="$(ORLIXOS_CC)"'; \
+		printf '%s\n' 'sysroot="$(ORLIXOS_MLIBC_SYSROOT)"'; \
+		printf '%s\n' 'headers="$(ORLIXOS_MLIBC_HEADERS)"'; \
+		printf '%s\n' 'rtlib="$(ORLIXOS_MLIBC_RTLIB)"'; \
+		printf '%s\n' 'link=1'; \
+		printf '%s\n' 'for arg in "$$@"; do'; \
+		printf '%s\n' '  case "$$arg" in -c|-E|-S) link=0 ;; esac'; \
+		printf '%s\n' 'done'; \
+		printf '%s\n' 'common=(--target=aarch64-linux-gnu "--sysroot=$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie)'; \
+		printf '%s\n' 'if [ "$$link" -eq 1 ]; then'; \
+		printf '%s\n' '  exec "$$cc" "$${common[@]}" "$$@" -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o"'; \
+		printf '%s\n' 'fi'; \
+		printf '%s\n' 'exec "$$cc" "$${common[@]}" "$$@"'; \
+	} > "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/aarch64-linux-gnu-gcc"; \
+	chmod +x "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/aarch64-linux-gnu-gcc"; \
+	ln -sf "$(ORLIXOS_AR)" "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/aarch64-linux-gnu-ar"; \
+	ln -sf "$(ORLIXOS_RANLIB)" "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/aarch64-linux-gnu-ranlib"; \
+	ln -sf "$(ORLIXOS_NM)" "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/aarch64-linux-gnu-nm"; \
+	ln -sf "$(ORLIXOS_OBJDUMP)" "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/aarch64-linux-gnu-objdump"; \
+	ln -sf "$(ORLIXOS_READELF)" "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/readelf"; \
+	ln -sf "$$(command -v gsed)" "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/sed"; \
+	cd "$(ORLIXOS_PERL_SRC_DIR)"; \
+	PATH="$(ORLIXOS_PERL_TOOLCHAIN_DIR):$$PATH" READELF=readelf ./configure --target=aarch64-linux-gnu --prefix=/usr --sysroot="$$sysroot" --target-tools-prefix=aarch64-linux-gnu- --no-dynaloader --disable-mod=re --host-cc="$(ORLIXOS_CC)" --host-set=d_nanosleep=define -Ud_syscall -Ud_syscallproto -Dcharsize=1 -Dshortsize=2 -Dintsize=4 -Dlongsize=8 -Ddoublesize=8 -Dptrsize=8 -Dlongdblsize=16 -Dlonglongsize=8; \
+	perl -0pi -e 's/^# HAS_NANOSLEEP/#define HAS_NANOSLEEP/m' xconfig.h; \
+	PATH="$(ORLIXOS_PERL_TOOLCHAIN_DIR):$$PATH" READELF=readelf $(MAKE) -j1 perl; \
+	cp "$(ORLIXOS_PERL_SRC_DIR)/perl" "$(ORLIXOS_PERL_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_PERL_BINARY)"; \
+	cp -Rf "$(ORLIXOS_PERL_SRC_DIR)/lib/." "$(ORLIXOS_PERL_LIB_DIR)/"; \
+	for module_lib in "$(ORLIXOS_PERL_SRC_DIR)"/cpan/*/lib "$(ORLIXOS_PERL_SRC_DIR)"/dist/*/lib "$(ORLIXOS_PERL_SRC_DIR)"/ext/*/lib; do \
+		[ -d "$$module_lib" ] || continue; \
+		cp -Rf "$$module_lib/." "$(ORLIXOS_PERL_LIB_DIR)/"; \
+	done; \
+	chmod -R u+w "$(ORLIXOS_PERL_LIB_DIR)"; \
+	for module_pm in "$(ORLIXOS_PERL_SRC_DIR)"/cpan/*/*.pm "$(ORLIXOS_PERL_SRC_DIR)"/dist/*/*.pm "$(ORLIXOS_PERL_SRC_DIR)"/ext/*/*.pm; do \
+		[ -f "$$module_pm" ] || continue; \
+		[ -f "$$(dirname "$$module_pm")/Makefile" ] || continue; \
+		module_path="$$(perl -ne 'if (/^package[[:space:]]+([A-Za-z0-9_:]+)[[:space:]]*;/) { $$m=$$1; $$m =~ s!::!/!g; print "$$m.pm"; exit }' "$$module_pm")"; \
+		[ -n "$$module_path" ] || continue; \
+		mkdir -p "$(ORLIXOS_PERL_LIB_DIR)/$$(dirname "$$module_path")"; \
+		rm -f "$(ORLIXOS_PERL_LIB_DIR)/$$module_path"; \
+		cp "$$module_pm" "$(ORLIXOS_PERL_LIB_DIR)/$$module_path"; \
+	done; \
+	if [ -f "$(ORLIXOS_PERL_SRC_DIR)/dist/IO/IO.pm" ]; then rm -f "$(ORLIXOS_PERL_LIB_DIR)/IO.pm"; cp "$(ORLIXOS_PERL_SRC_DIR)/dist/IO/IO.pm" "$(ORLIXOS_PERL_LIB_DIR)/IO.pm"; fi; \
+	cd "$(ORLIXOS_PERL_SRC_DIR)/dist/XSLoader"; ../../miniperl_top -I../../lib XSLoader_pm.PL; rm -f "$(ORLIXOS_PERL_LIB_DIR)/XSLoader.pm"; cp XSLoader.pm "$(ORLIXOS_PERL_LIB_DIR)/XSLoader.pm"; \
+	cd "$(ORLIXOS_PERL_SRC_DIR)/ext/DynaLoader"; ../../miniperl_top -I../../lib DynaLoader_pm.PL; rm -f "$(ORLIXOS_PERL_LIB_DIR)/DynaLoader.pm"; cp DynaLoader.pm "$(ORLIXOS_PERL_LIB_DIR)/DynaLoader.pm"; \
+	file "$(ORLIXOS_PERL_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_PERL_BINARY)" >&2; exit 1; }; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=perl\nversion=%s\nsha256=%s\nperl_cross_version=%s\nperl_cross_sha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(PERL_VERSION)" "$(PERL_SHA256)" "$(PERL_CROSS_VERSION)" "$(PERL_CROSS_SHA256)" > "$(ORLIXOS_PERL_PROOF)"; \
+	echo "built Orlix Linux perl package input: $(ORLIXOS_PERL_BINARY)"
 
 $(ORLIXOS_JQ_BINARY): $(ORLIXOS_JQ_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \

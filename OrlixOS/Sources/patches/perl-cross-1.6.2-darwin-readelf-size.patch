@@ -1,0 +1,13 @@
+diff --git a/cnf/configure_type.sh b/cnf/configure_type.sh
+--- a/cnf/configure_type.sh
++++ b/cnf/configure_type.sh
+@@ -45,6 +45,9 @@ checksize() {
+ 	fi
+ 
+ 	result=`grep foo try.out | sed -r -e 's/.*: [0-9]+ +//' -e 's/ .*//' -e 's/^0+//g'`
++	if [ -z "$result" ]; then
++		result=`awk '/Name: _?foo[[:space:]]/ { seen = 1 } seen && /Value: 0x/ { sub(/.*Value: 0x/, ""); print; exit }' try.out`
++	fi
+ 	if [ -z "$result" ]; then
+ 		result "unknown"
+ 		die "Cannot determine sizeof($2)"
