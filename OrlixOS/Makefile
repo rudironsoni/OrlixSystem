@@ -101,6 +101,7 @@ ORLIXOS_COREUTILS_TEST_INIT_BINARY := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-tes
 ORLIXOS_COREUTILS_TEST_INITRAMFS_DIR := $(ORLIXOS_BUILD_ROOT)/test-initramfs/$(PROFILE)/CoreutilsTestInitramfs.bundle
 ORLIXOS_COREUTILS_TEST_INITRAMFS := $(ORLIXOS_COREUTILS_TEST_INITRAMFS_DIR)/rootfs/initramfs.cpio.gz
 override ORLIXOS_COREUTILS_TEST_LIST := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-list.txt
+ORLIXOS_COREUTILS_CONFIG_HEADER := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-config.h
 ORLIXOS_COREUTILS_TEST_RUN_LOG := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-run-output.log
 ORLIXOS_COREUTILS_PROGRAMS := [ b2sum base32 base64 basenc basename cat chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink users vdir wc who whoami yes
 ORLIXOS_GREP_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/grep-$(GREP_VERSION).tar.xz
@@ -135,6 +136,7 @@ ORLIXOS_UTIL_LINUX_SRC_DIR := $(ORLIXOS_SRC_DIR)/util-linux-$(UTIL_LINUX_VERSION
 ORLIXOS_UTIL_LINUX_SOURCE_STAMP := $(ORLIXOS_UTIL_LINUX_SRC_DIR)/.orlix-source-ready
 ORLIXOS_UTIL_LINUX_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/util-linux-$(UTIL_LINUX_VERSION)
 ORLIXOS_SETSID_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/setsid
+ORLIXOS_GETLIMITS_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/getlimits
 ORLIXOS_GETCONF_SOURCE := $(PROJECT_DIR)/Sources/tools/getconf.c
 ORLIXOS_GETCONF_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/getconf
 ORLIXOS_PERL_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/perl-$(PERL_VERSION).tar.gz
@@ -607,6 +609,7 @@ $(ORLIXOS_BASH_BINARY): $(ORLIXOS_BASH_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_BASH_BINARY)"; \
 	file "$(ORLIXOS_BASH_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_BASH_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=bash\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(BASH_VERSION)" "$(BASH_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/bash.proof"; \
+	rm -rf "$(ORLIXOS_BASH_BUILD_DIR)" "$(ORLIXOS_BASH_SRC_DIR)"; \
 	echo "built Orlix Linux Bash package input: $(ORLIXOS_BASH_BINARY)"
 
 $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
@@ -638,6 +641,9 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	"$(ORLIXOS_COREUTILS_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --without-selinux --disable-acl --disable-xattr --disable-libcap --disable-gcc-warnings; \
 	$(MAKE) -j1 all; \
 	$(MAKE) -j1 install DESTDIR="$(ORLIXOS_PACKAGE_INSTALL_DIR)"; \
+	cp "$(ORLIXOS_COREUTILS_BUILD_DIR)/src/getlimits" "$(ORLIXOS_GETLIMITS_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_GETLIMITS_BINARY)"; \
+	file "$(ORLIXOS_GETLIMITS_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GETLIMITS_BINARY)" >&2; exit 1; }; \
 	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
 		"$(ORLIXOS_STRIP)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; \
 		file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" >&2; exit 1; }; \
@@ -664,7 +670,15 @@ $(ORLIXOS_COREUTILS_TEST_LIST): $(ORLIXOS_COREUTILS_PROOF)
 		collecting { flush($$0); if ($$0 !~ /\\$$/) collecting = 0 } \
 	' "$$makefile" | sort -u > "$(ORLIXOS_COREUTILS_TEST_LIST)"; \
 	[ -s "$(ORLIXOS_COREUTILS_TEST_LIST)" ] || { echo "empty Coreutils upstream test list" >&2; exit 1; }; \
+	cp "$(ORLIXOS_COREUTILS_BUILD_DIR)/lib/config.h" "$(ORLIXOS_COREUTILS_CONFIG_HEADER)"; \
+	[ -s "$(ORLIXOS_COREUTILS_CONFIG_HEADER)" ] || { echo "missing Coreutils config snapshot: $(ORLIXOS_COREUTILS_CONFIG_HEADER)" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_COREUTILS_BUILD_DIR)"; \
 	echo "wrote upstream Coreutils test list: $(ORLIXOS_COREUTILS_TEST_LIST) ($$(wc -l < "$(ORLIXOS_COREUTILS_TEST_LIST)") tests)"
+
+$(ORLIXOS_GETLIMITS_BINARY): $(ORLIXOS_COREUTILS_PROOF)
+	@set -euo pipefail; \
+	[ -x "$(ORLIXOS_GETLIMITS_BINARY)" ] || { echo "missing upstream Coreutils getlimits helper: $(ORLIXOS_GETLIMITS_BINARY)" >&2; exit 1; }; \
+	file "$(ORLIXOS_GETLIMITS_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GETLIMITS_BINARY)" >&2; exit 1; }
 
 $(ORLIXOS_SETSID_BINARY): $(ORLIXOS_UTIL_LINUX_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \
@@ -688,6 +702,7 @@ $(ORLIXOS_SETSID_BINARY): $(ORLIXOS_UTIL_LINUX_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYS
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_SETSID_BINARY)"; \
 	file "$(ORLIXOS_SETSID_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_SETSID_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=util-linux\nprogram=setsid\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(UTIL_LINUX_VERSION)" "$(UTIL_LINUX_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/util-linux-setsid.proof"; \
+	rm -rf "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)" "$(ORLIXOS_UTIL_LINUX_SRC_DIR)"; \
 	echo "built Orlix Linux util-linux setsid package input: $(ORLIXOS_SETSID_BINARY)"
 
 $(ORLIXOS_GETCONF_BINARY): $(ORLIXOS_GETCONF_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
@@ -717,7 +732,7 @@ $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(O
 	file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" >&2; exit 1; }; \
 	echo "built OrlixOS Coreutils test init: $(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"
 
-$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_PERL_PROOF)
+$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_GETLIMITS_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_PERL_PROOF)
 	@set -euo pipefail; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
@@ -749,6 +764,7 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'slink /bin/awk gawk 0777 0 0\n'; \
 		for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do printf 'file /bin/%s %s 0755 0 0\n' "$$program" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
 		printf 'file /bin/setsid %s 0755 0 0\n' "$(ORLIXOS_SETSID_BINARY)"; \
+		printf 'file /bin/getlimits %s 0755 0 0\n' "$(ORLIXOS_GETLIMITS_BINARY)"; \
 		printf 'file /bin/getconf %s 0755 0 0\n' "$(ORLIXOS_GETCONF_BINARY)"; \
 		printf 'slink /bin/perl /usr/bin/perl 0777 0 0\n'; \
 		printf 'slink /bin/egrep grep 0777 0 0\n'; \
@@ -760,6 +776,7 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'slink /usr/bin/awk /bin/awk 0777 0 0\n'; \
 		for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do printf 'slink /usr/bin/%s /bin/%s 0777 0 0\n' "$$program" "$$program"; done; \
 		printf 'slink /usr/bin/setsid /bin/setsid 0777 0 0\n'; \
+		printf 'slink /usr/bin/getlimits /bin/getlimits 0777 0 0\n'; \
 		printf 'slink /usr/bin/getconf /bin/getconf 0777 0 0\n'; \
 		printf 'file /usr/bin/perl %s 0755 0 0\n' "$(ORLIXOS_PERL_BINARY)"; \
 		printf 'dir /usr/lib 0755 0 0\n'; \
@@ -785,7 +802,7 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'dir /coreutils-build/src 0755 0 0\n'; \
 		for program in $(ORLIXOS_COREUTILS_PROGRAMS); do printf 'file /coreutils-build/src/%s %s 0755 0 0\n' "$$program" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
 		printf 'dir /coreutils-build/lib 0755 0 0\n'; \
-		if [ -s "$(ORLIXOS_COREUTILS_BUILD_DIR)/lib/config.h" ]; then printf 'file /coreutils-build/lib/config.h %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_BUILD_DIR)/lib/config.h"; fi; \
+		if [ -s "$(ORLIXOS_COREUTILS_CONFIG_HEADER)" ]; then printf 'file /coreutils-build/lib/config.h %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_CONFIG_HEADER)"; fi; \
 	} > "$$cpio_list"; \
 	"$$gen_init_cpio" "$$cpio_list" > "$$output/rootfs/initramfs.cpio"; \
 	gzip -n -f "$$output/rootfs/initramfs.cpio"; \
@@ -822,6 +839,7 @@ $(ORLIXOS_GREP_BINARY): $(ORLIXOS_GREP_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_GREP_BINARY)"; \
 	file "$(ORLIXOS_GREP_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GREP_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=grep\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(GREP_VERSION)" "$(GREP_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/grep.proof"; \
+	rm -rf "$(ORLIXOS_GREP_BUILD_DIR)" "$(ORLIXOS_GREP_SRC_DIR)"; \
 	echo "built Orlix Linux grep package input: $(ORLIXOS_GREP_BINARY)"
 
 $(ORLIXOS_SED_BINARY): $(ORLIXOS_SED_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
@@ -851,6 +869,7 @@ $(ORLIXOS_SED_BINARY): $(ORLIXOS_SED_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orl
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_SED_BINARY)"; \
 	file "$(ORLIXOS_SED_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_SED_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=sed\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(SED_VERSION)" "$(SED_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/sed.proof"; \
+	rm -rf "$(ORLIXOS_SED_BUILD_DIR)" "$(ORLIXOS_SED_SRC_DIR)"; \
 	echo "built Orlix Linux sed package input: $(ORLIXOS_SED_BINARY)"
 
 $(ORLIXOS_DIFF_BINARY): $(ORLIXOS_DIFFUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
@@ -886,6 +905,7 @@ $(ORLIXOS_DIFF_BINARY): $(ORLIXOS_DIFFUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROO
 		file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" >&2; exit 1; }; \
 	done; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=diffutils\nversion=%s\nsha256=%s\nprograms=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(DIFFUTILS_VERSION)" "$(DIFFUTILS_SHA256)" "$(ORLIXOS_DIFFUTILS_PROGRAMS)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/diffutils.proof"; \
+	rm -rf "$(ORLIXOS_DIFFUTILS_BUILD_DIR)" "$(ORLIXOS_DIFFUTILS_SRC_DIR)"; \
 	echo "built Orlix Linux diffutils package inputs: $(ORLIXOS_DIFFUTILS_PROGRAMS)"
 
 $(ORLIXOS_GAWK_BINARY): $(ORLIXOS_GAWK_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
@@ -933,6 +953,7 @@ $(ORLIXOS_GAWK_BINARY): $(ORLIXOS_GAWK_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_GAWK_BINARY)"; \
 	file "$(ORLIXOS_GAWK_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GAWK_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=gawk\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(GAWK_VERSION)" "$(GAWK_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/gawk.proof"; \
+	rm -rf "$(ORLIXOS_GAWK_BUILD_DIR)" "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)" "$(ORLIXOS_GAWK_SRC_DIR)"; \
 	echo "built Orlix Linux gawk package input: $(ORLIXOS_GAWK_BINARY)"
 
 $(ORLIXOS_PERL_PROOF): $(ORLIXOS_PERL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
@@ -978,7 +999,7 @@ $(ORLIXOS_PERL_PROOF): $(ORLIXOS_PERL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.or
 	ln -sf "$(ORLIXOS_READELF)" "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/readelf"; \
 	ln -sf "$$(command -v gsed)" "$(ORLIXOS_PERL_TOOLCHAIN_DIR)/sed"; \
 	cd "$(ORLIXOS_PERL_SRC_DIR)"; \
-	PATH="$(ORLIXOS_PERL_TOOLCHAIN_DIR):$$PATH" READELF=readelf ./configure --target=aarch64-linux-gnu --prefix=/usr --sysroot="$$sysroot" --target-tools-prefix=aarch64-linux-gnu- --no-dynaloader --disable-mod=re --host-cc="$(ORLIXOS_CC)" --host-set=d_nanosleep=define -Ud_syscall -Ud_syscallproto -Dcharsize=1 -Dshortsize=2 -Dintsize=4 -Dlongsize=8 -Ddoublesize=8 -Dptrsize=8 -Dlongdblsize=16 -Dlonglongsize=8; \
+	PATH="$(ORLIXOS_PERL_TOOLCHAIN_DIR):$$PATH" READELF=readelf ./configure --target=aarch64-linux-gnu --prefix=/usr --sysroot="$$sysroot" --target-tools-prefix=aarch64-linux-gnu- --no-dynaloader --only-mod=Errno,Fcntl,IO --host-cc="$(ORLIXOS_CC)" --host-set=d_nanosleep=define -Ud_syscall -Ud_syscallproto -Dcharsize=1 -Dshortsize=2 -Dintsize=4 -Dlongsize=8 -Ddoublesize=8 -Dptrsize=8 -Dlongdblsize=16 -Dlonglongsize=8; \
 	perl -0pi -e 's/^# HAS_NANOSLEEP/#define HAS_NANOSLEEP/m' xconfig.h; \
 	PATH="$(ORLIXOS_PERL_TOOLCHAIN_DIR):$$PATH" READELF=readelf $(MAKE) -j1 perl; \
 	cp "$(ORLIXOS_PERL_SRC_DIR)/perl" "$(ORLIXOS_PERL_BINARY)"; \
@@ -1003,6 +1024,7 @@ $(ORLIXOS_PERL_PROOF): $(ORLIXOS_PERL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.or
 	cd "$(ORLIXOS_PERL_SRC_DIR)/ext/DynaLoader"; ../../miniperl_top -I../../lib DynaLoader_pm.PL; rm -f "$(ORLIXOS_PERL_LIB_DIR)/DynaLoader.pm"; cp DynaLoader.pm "$(ORLIXOS_PERL_LIB_DIR)/DynaLoader.pm"; \
 	file "$(ORLIXOS_PERL_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_PERL_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=perl\nversion=%s\nsha256=%s\nperl_cross_version=%s\nperl_cross_sha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(PERL_VERSION)" "$(PERL_SHA256)" "$(PERL_CROSS_VERSION)" "$(PERL_CROSS_SHA256)" > "$(ORLIXOS_PERL_PROOF)"; \
+	rm -rf "$(ORLIXOS_PERL_TOOLCHAIN_DIR)" "$(ORLIXOS_PERL_SRC_DIR)"; \
 	echo "built Orlix Linux perl package input: $(ORLIXOS_PERL_BINARY)"
 
 $(ORLIXOS_JQ_BINARY): $(ORLIXOS_JQ_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)

@@ -332,6 +332,7 @@ __headers-install:
 
 __ensure-kernel-headers:
 	@set -euo pipefail; \
+	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)"; \
 	if [ ! -d "$(MLIBC_KERNEL_HEADERS)" ]; then \
 		$(KERNEL_MAKE) headers_install PROFILE="$(PROFILE)"; \
 	fi; \
