@@ -27,6 +27,7 @@ COREUTILS_VERSION ?= 9.11
 COREUTILS_GIT_URL ?= https://github.com/coreutils/coreutils.git
 COREUTILS_GIT_REF ?= v$(COREUTILS_VERSION)
 COREUTILS_GIT_COMMIT ?= c01fd163a47468a8296fb369f5233853bb551bb6
+COREUTILS_GNULIB_GIT_URL ?= https://github.com/coreutils/gnulib.git
 
 GREP_VERSION ?= 3.12
 GREP_URL ?= https://ftp.gnu.org/gnu/grep/grep-$(GREP_VERSION).tar.xz
@@ -35,6 +36,10 @@ GREP_SHA256 ?= 2649b27c0e90e632eadcd757be06c6e9a4f48d941de51e7c0f83ff76408a07b9
 SED_VERSION ?= 4.9
 SED_URL ?= https://ftp.gnu.org/gnu/sed/sed-$(SED_VERSION).tar.xz
 SED_SHA256 ?= 6e226b732e1cd739464ad6862bd1a1aba42d7982922da7a53519631d24975181
+
+DIFFUTILS_VERSION ?= 3.12
+DIFFUTILS_URL ?= https://ftp.gnu.org/gnu/diffutils/diffutils-$(DIFFUTILS_VERSION).tar.xz
+DIFFUTILS_SHA256 ?= 7c8b7f9fc8609141fdea9cece85249d308624391ff61dedaf528fcb337727dfd
 
 PERL_VERSION ?= 5.40.2
 PERL_URL ?= https://www.cpan.org/src/5.0/perl-$(PERL_VERSION).tar.gz
@@ -102,6 +107,13 @@ ORLIXOS_SED_SRC_DIR := $(ORLIXOS_SRC_DIR)/sed-$(SED_VERSION)
 ORLIXOS_SED_SOURCE_STAMP := $(ORLIXOS_SED_SRC_DIR)/.orlix-source-ready
 ORLIXOS_SED_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/sed-$(SED_VERSION)
 ORLIXOS_SED_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/sed
+ORLIXOS_DIFFUTILS_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/diffutils-$(DIFFUTILS_VERSION).tar.xz
+ORLIXOS_DIFFUTILS_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/diffutils-$(DIFFUTILS_VERSION).sha256-ok
+ORLIXOS_DIFFUTILS_SRC_DIR := $(ORLIXOS_SRC_DIR)/diffutils-$(DIFFUTILS_VERSION)
+ORLIXOS_DIFFUTILS_SOURCE_STAMP := $(ORLIXOS_DIFFUTILS_SRC_DIR)/.orlix-source-ready
+ORLIXOS_DIFFUTILS_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/diffutils-$(DIFFUTILS_VERSION)
+ORLIXOS_DIFFUTILS_PROGRAMS := cmp diff diff3 sdiff
+ORLIXOS_DIFF_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/diff
 ORLIXOS_PERL_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/perl-$(PERL_VERSION).tar.gz
 ORLIXOS_PERL_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/perl-$(PERL_VERSION).sha256-ok
 ORLIXOS_PERL_CROSS_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/perl-cross-$(PERL_CROSS_VERSION).tar.gz
@@ -185,7 +197,7 @@ test coreutils-test: $(ORLIXOS_COREUTILS_TEST_INITRAMFS)
 		grep -F -q 'ORLIX-COREUTILS-TEST-END' "$$runtime_log" && break; \
 		sleep 1; \
 	done; \
-	grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0' "$$runtime_log" || { echo "Coreutils upstream tests did not complete successfully: $$runtime_log" >&2; exit 1; }; \
+	grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0' "$$runtime_log" || { echo "Coreutils upstream tests did not complete successfully: $$runtime_log" >&2; exit 1; }; \
 	echo "verified upstream Coreutils tests in simulator log: $$runtime_log"
 
 $(ORLIXOS_BASH_ARCHIVE):
@@ -232,7 +244,11 @@ $(ORLIXOS_COREUTILS_SOURCE_STAMP): FORCE
 	command -v texi2pdf >/dev/null 2>&1 || { echo "texi2pdf is required to bootstrap Coreutils from git" >&2; exit 1; }; \
 	rm -rf "$(ORLIXOS_COREUTILS_SRC_DIR)"; \
 	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
-	git clone --depth 1 --branch "$(COREUTILS_GIT_REF)" --recurse-submodules --shallow-submodules "$(COREUTILS_GIT_URL)" "$(ORLIXOS_COREUTILS_SRC_DIR)"; \
+	git clone --filter=blob:none --no-tags --no-checkout "$(COREUTILS_GIT_URL)" "$(ORLIXOS_COREUTILS_SRC_DIR)"; \
+	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" fetch --depth 1 --no-tags origin "$(COREUTILS_GIT_COMMIT)"; \
+	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" checkout --detach "$(COREUTILS_GIT_COMMIT)"; \
+	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" config submodule.gnulib.url "$(COREUTILS_GNULIB_GIT_URL)"; \
+	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" submodule update --init --depth 1 --recommend-shallow --recursive --jobs 4; \
 	actual="$$(git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" rev-parse HEAD)"; \
 	[ "$$actual" = "$(COREUTILS_GIT_COMMIT)" ] || { echo "Coreutils clone resolved $$actual, expected $(COREUTILS_GIT_COMMIT)" >&2; exit 1; }; \
 	cd "$(ORLIXOS_COREUTILS_SRC_DIR)"; \
@@ -293,6 +309,33 @@ $(ORLIXOS_SED_SOURCE_STAMP): $(ORLIXOS_SED_ARCHIVE_STAMP)
 	tar -xJf "$(ORLIXOS_SED_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
 	touch "$(ORLIXOS_SED_SOURCE_STAMP)"; \
 	echo "extracted sed source: $(ORLIXOS_SED_SRC_DIR)"
+
+$(ORLIXOS_DIFFUTILS_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch diffutils source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify diffutils source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_DIFFUTILS_ARCHIVE)" ]; then curl -fL "$(DIFFUTILS_URL)" -o "$(ORLIXOS_DIFFUTILS_ARCHIVE)"; fi; \
+	echo "upstream diffutils archive ready: $(ORLIXOS_DIFFUTILS_ARCHIVE)"
+
+$(ORLIXOS_DIFFUTILS_ARCHIVE_STAMP): $(ORLIXOS_DIFFUTILS_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify diffutils source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(DIFFUTILS_SHA256)" "$(ORLIXOS_DIFFUTILS_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_DIFFUTILS_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_DIFFUTILS_ARCHIVE_STAMP)"; \
+	echo "upstream diffutils ready: $(ORLIXOS_DIFFUTILS_ARCHIVE)"
+
+$(ORLIXOS_DIFFUTILS_SOURCE_STAMP): $(ORLIXOS_DIFFUTILS_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_DIFFUTILS_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xJf "$(ORLIXOS_DIFFUTILS_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_DIFFUTILS_SOURCE_STAMP)"; \
+	echo "extracted diffutils source: $(ORLIXOS_DIFFUTILS_SRC_DIR)"
 
 $(ORLIXOS_PERL_ARCHIVE):
 	@set -euo pipefail; \
@@ -519,7 +562,7 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 		"$(ORLIXOS_STRIP)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; \
 		file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" >&2; exit 1; }; \
 	done; \
-	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=coreutils\nprograms=%s\nversion=%s\ngit_url=%s\ngit_ref=%s\ngit_commit=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ORLIXOS_COREUTILS_PROGRAMS)" "$(COREUTILS_VERSION)" "$(COREUTILS_GIT_URL)" "$(COREUTILS_GIT_REF)" "$(COREUTILS_GIT_COMMIT)" > "$(ORLIXOS_COREUTILS_PROOF)"; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=coreutils\nprograms=%s\nversion=%s\ngit_url=%s\ngit_ref=%s\ngit_commit=%s\ngnulib_git_url=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ORLIXOS_COREUTILS_PROGRAMS)" "$(COREUTILS_VERSION)" "$(COREUTILS_GIT_URL)" "$(COREUTILS_GIT_REF)" "$(COREUTILS_GIT_COMMIT)" "$(COREUTILS_GNULIB_GIT_URL)" > "$(ORLIXOS_COREUTILS_PROOF)"; \
 	echo "built Orlix Linux coreutils package inputs: $(ORLIXOS_COREUTILS_PROGRAMS)"
 
 $(ORLIXOS_COREUTILS_TEST_LIST): $(ORLIXOS_COREUTILS_PROOF)
@@ -562,7 +605,7 @@ $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(O
 	file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" >&2; exit 1; }; \
 	echo "built OrlixOS Coreutils test init: $(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"
 
-$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_PERL_PROOF)
+$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_PERL_PROOF)
 	@set -euo pipefail; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
@@ -590,12 +633,14 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		for program in $(ORLIXOS_COREUTILS_PROGRAMS); do printf 'file /bin/%s %s 0755 0 0\n' "$$program" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
 		printf 'file /bin/grep %s 0755 0 0\n' "$(ORLIXOS_GREP_BINARY)"; \
 		printf 'file /bin/sed %s 0755 0 0\n' "$(ORLIXOS_SED_BINARY)"; \
+		for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do printf 'file /bin/%s %s 0755 0 0\n' "$$program" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
 		printf 'slink /bin/perl /usr/bin/perl 0777 0 0\n'; \
 		printf 'slink /bin/egrep grep 0777 0 0\n'; \
 		printf 'slink /usr/bin/bash /bin/bash 0777 0 0\n'; \
 		printf 'slink /usr/bin/sh /bin/sh 0777 0 0\n'; \
 		printf 'slink /usr/bin/grep /bin/grep 0777 0 0\n'; \
 		printf 'slink /usr/bin/sed /bin/sed 0777 0 0\n'; \
+		for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do printf 'slink /usr/bin/%s /bin/%s 0777 0 0\n' "$$program" "$$program"; done; \
 		printf 'file /usr/bin/perl %s 0755 0 0\n' "$(ORLIXOS_PERL_BINARY)"; \
 		printf 'dir /usr/lib 0755 0 0\n'; \
 		printf 'dir /usr/lib/perl5 0755 0 0\n'; \
@@ -686,6 +731,41 @@ $(ORLIXOS_SED_BINARY): $(ORLIXOS_SED_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orl
 	file "$(ORLIXOS_SED_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_SED_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=sed\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(SED_VERSION)" "$(SED_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/sed.proof"; \
 	echo "built Orlix Linux sed package input: $(ORLIXOS_SED_BINARY)"
+
+$(ORLIXOS_DIFF_BINARY): $(ORLIXOS_DIFFUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_CC)" >/dev/null 2>&1 || { echo "clang is required to build diffutils; set ORLIXOS_CC=/path/to/clang" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_AR)" >/dev/null 2>&1 || { echo "llvm-ar is required to build diffutils; set ORLIXOS_AR=/path/to/llvm-ar" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_RANLIB)" >/dev/null 2>&1 || { echo "llvm-ranlib is required to build diffutils; set ORLIXOS_RANLIB=/path/to/llvm-ranlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package diffutils; set ORLIXOS_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_DIFFUTILS_BUILD_DIR)"; \
+	for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do rm -f "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
+	mkdir -p "$(ORLIXOS_DIFFUTILS_BUILD_DIR)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin"; \
+	cd "$(ORLIXOS_DIFFUTILS_BUILD_DIR)"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
+	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group"; \
+	export LIBS="$$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
+	export AR="$(ORLIXOS_AR)"; \
+	export RANLIB="$(ORLIXOS_RANLIB)"; \
+	export gl_cv_func_getopt_gnu=yes; \
+	export gl_cv_func_getopt_long_gnu=yes; \
+	export gl_cv_func_strcasecmp_works=yes; \
+	"$(ORLIXOS_DIFFUTILS_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --disable-gcc-warnings; \
+	$(MAKE) -j1 all; \
+	$(MAKE) -j1 install DESTDIR="$(ORLIXOS_PACKAGE_INSTALL_DIR)"; \
+	for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do \
+		"$(ORLIXOS_STRIP)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; \
+		file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" >&2; exit 1; }; \
+	done; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=diffutils\nversion=%s\nsha256=%s\nprograms=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(DIFFUTILS_VERSION)" "$(DIFFUTILS_SHA256)" "$(ORLIXOS_DIFFUTILS_PROGRAMS)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/diffutils.proof"; \
+	echo "built Orlix Linux diffutils package inputs: $(ORLIXOS_DIFFUTILS_PROGRAMS)"
 
 $(ORLIXOS_PERL_PROOF): $(ORLIXOS_PERL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \
