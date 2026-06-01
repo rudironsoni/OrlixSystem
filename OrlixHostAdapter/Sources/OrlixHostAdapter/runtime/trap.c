@@ -43,6 +43,7 @@ static struct OrlixHostUserTrapState OrlixHostUserTrap;
 static struct orlix_host_user_trap_frame OrlixHostUserTrapFrame;
 static struct orlix_host_user_trap_frame OrlixHostUserResumeFrame;
 static atomic_bool OrlixHostUserResumePending;
+static unsigned char OrlixHostUserTrapSignalStack[SIGSTKSZ * 4];
 static pthread_mutex_t OrlixHostUserTimerMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t OrlixHostUserTimerCond = PTHREAD_COND_INITIALIZER;
 static bool OrlixHostUserTrapInstalled;
@@ -466,9 +467,7 @@ static void OrlixHostUserTimerSleep(unsigned long long delay_ns)
 
 static void OrlixHostUserTimerWake(void)
 {
-    (void)pthread_mutex_lock(&OrlixHostUserTimerMutex);
     (void)pthread_cond_signal(&OrlixHostUserTimerCond);
-    (void)pthread_mutex_unlock(&OrlixHostUserTimerMutex);
 }
 
 static bool OrlixHostUserResumeRedirect(void)
@@ -548,6 +547,7 @@ __attribute__((visibility("hidden"))) int orlix_host_user_trap_install(
     const int signals[] = { SIGTRAP, SIGILL, SIGBUS, SIGSEGV, SIGABRT,
                             ORLIX_HOST_USER_TIMER_SIGNAL };
     struct sigaction action;
+    stack_t signal_stack;
     sigset_t timer_signal_set;
 
     if (!kernel_sp || !active_user_tls || !user_active || !entry ||
@@ -571,9 +571,16 @@ __attribute__((visibility("hidden"))) int orlix_host_user_trap_install(
         return 0;
     }
 
+    signal_stack.ss_sp = OrlixHostUserTrapSignalStack;
+    signal_stack.ss_size = sizeof(OrlixHostUserTrapSignalStack);
+    signal_stack.ss_flags = 0;
+    if (sigaltstack(&signal_stack, NULL) != 0) {
+        return -1;
+    }
+
     sigemptyset(&action.sa_mask);
     action.sa_sigaction = OrlixHostUserTrapHandler;
-    action.sa_flags = SA_SIGINFO;
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK;
     for (unsigned int index = 0; index < sizeof(signals) / sizeof(signals[0]); index++) {
         if (sigaction(signals[index], &action, NULL) != 0) {
             return -1;

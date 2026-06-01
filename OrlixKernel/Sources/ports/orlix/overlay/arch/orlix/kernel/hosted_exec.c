@@ -210,7 +210,7 @@ static void __noreturn orlix_hosted_user_trap_entry(
 	    !orlix_handle_host_user_fault(regs, frame->fault_address,
 					  frame->fault_flags)) {
 		orlix_exit_to_user_mode_work(regs);
-		orlix_hosted_resume_current_user(task_pt_regs(current), true);
+		orlix_hosted_resume_current_user(task_pt_regs(current), false);
 	}
 
 	if (!exit_code)

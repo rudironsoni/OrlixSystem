@@ -41,6 +41,10 @@ DIFFUTILS_VERSION ?= 3.12
 DIFFUTILS_URL ?= https://ftp.gnu.org/gnu/diffutils/diffutils-$(DIFFUTILS_VERSION).tar.xz
 DIFFUTILS_SHA256 ?= 7c8b7f9fc8609141fdea9cece85249d308624391ff61dedaf528fcb337727dfd
 
+GAWK_VERSION ?= 5.3.2
+GAWK_URL ?= https://ftp.gnu.org/gnu/gawk/gawk-$(GAWK_VERSION).tar.xz
+GAWK_SHA256 ?= f8c3486509de705192138b00ef2c00bbbdd0e84c30d5c07d23fc73a9dc4cc9cc
+
 UTIL_LINUX_VERSION ?= 2.40.2
 UTIL_LINUX_URL ?= https://www.kernel.org/pub/linux/utils/util-linux/v2.40/util-linux-$(UTIL_LINUX_VERSION).tar.xz
 UTIL_LINUX_SHA256 ?= d78b37a66f5922d70edf3bdfb01a6b33d34ed3c3cafd6628203b2a2b67c8e8b3
@@ -96,7 +100,7 @@ ORLIXOS_COREUTILS_TEST_INIT_SOURCE := $(PROJECT_DIR)/Tests/coreutils_test_init.c
 ORLIXOS_COREUTILS_TEST_INIT_BINARY := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-init
 ORLIXOS_COREUTILS_TEST_INITRAMFS_DIR := $(ORLIXOS_BUILD_ROOT)/test-initramfs/$(PROFILE)/CoreutilsTestInitramfs.bundle
 ORLIXOS_COREUTILS_TEST_INITRAMFS := $(ORLIXOS_COREUTILS_TEST_INITRAMFS_DIR)/rootfs/initramfs.cpio.gz
-ORLIXOS_COREUTILS_TEST_LIST := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-list.txt
+override ORLIXOS_COREUTILS_TEST_LIST := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-list.txt
 ORLIXOS_COREUTILS_TEST_RUN_LOG := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-run-output.log
 ORLIXOS_COREUTILS_PROGRAMS := [ b2sum base32 base64 basenc basename cat chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink users vdir wc who whoami yes
 ORLIXOS_GREP_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/grep-$(GREP_VERSION).tar.xz
@@ -118,6 +122,13 @@ ORLIXOS_DIFFUTILS_SOURCE_STAMP := $(ORLIXOS_DIFFUTILS_SRC_DIR)/.orlix-source-rea
 ORLIXOS_DIFFUTILS_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/diffutils-$(DIFFUTILS_VERSION)
 ORLIXOS_DIFFUTILS_PROGRAMS := cmp diff diff3 sdiff
 ORLIXOS_DIFF_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/diff
+ORLIXOS_GAWK_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/gawk-$(GAWK_VERSION).tar.xz
+ORLIXOS_GAWK_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/gawk-$(GAWK_VERSION).sha256-ok
+ORLIXOS_GAWK_SRC_DIR := $(ORLIXOS_SRC_DIR)/gawk-$(GAWK_VERSION)
+ORLIXOS_GAWK_SOURCE_STAMP := $(ORLIXOS_GAWK_SRC_DIR)/.orlix-source-ready
+ORLIXOS_GAWK_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/gawk-$(GAWK_VERSION)
+ORLIXOS_GAWK_TOOLCHAIN_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/gawk-toolchain
+ORLIXOS_GAWK_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/gawk
 ORLIXOS_UTIL_LINUX_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/util-linux-$(UTIL_LINUX_VERSION).tar.xz
 ORLIXOS_UTIL_LINUX_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/util-linux-$(UTIL_LINUX_VERSION).sha256-ok
 ORLIXOS_UTIL_LINUX_SRC_DIR := $(ORLIXOS_SRC_DIR)/util-linux-$(UTIL_LINUX_VERSION)
@@ -204,9 +215,12 @@ test coreutils-test: $(ORLIXOS_COREUTILS_TEST_INITRAMFS)
 	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_RUN_LOG))"; \
 	$(KERNEL_MAKE) run PROFILE="$(PROFILE)" type=coreutils libc=orlixmlibc ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(ORLIXOS_COREUTILS_TEST_INITRAMFS)" | tee "$$run_log"; \
 	runtime_log="$$(awk -F'"' '/runtimeLogPath/ { print $$4 }' "$$run_log" | tail -n 1)"; \
+	process_id="$$(awk -F'[^0-9]+' '/"processId"/ { print $$2; exit }' "$$run_log")"; \
 	[ -n "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log path in $$run_log" >&2; exit 1; }; \
+	[ -n "$$process_id" ] || { echo "missing OrlixTerminal process id in $$run_log" >&2; exit 1; }; \
 	for _ in $$(seq 1 3600); do \
 		grep -F -q 'ORLIX-COREUTILS-TEST-END' "$$runtime_log" && break; \
+		kill -0 "$$process_id" 2>/dev/null || { echo "OrlixTerminal exited before Coreutils upstream tests completed: pid=$$process_id log=$$runtime_log" >&2; exit 1; }; \
 		sleep 1; \
 	done; \
 	grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0' "$$runtime_log" || { echo "Coreutils upstream tests did not complete successfully: $$runtime_log" >&2; exit 1; }; \
@@ -348,6 +362,33 @@ $(ORLIXOS_DIFFUTILS_SOURCE_STAMP): $(ORLIXOS_DIFFUTILS_ARCHIVE_STAMP)
 	tar -xJf "$(ORLIXOS_DIFFUTILS_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
 	touch "$(ORLIXOS_DIFFUTILS_SOURCE_STAMP)"; \
 	echo "extracted diffutils source: $(ORLIXOS_DIFFUTILS_SRC_DIR)"
+
+$(ORLIXOS_GAWK_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch gawk source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify gawk source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_GAWK_ARCHIVE)" ]; then curl -fL "$(GAWK_URL)" -o "$(ORLIXOS_GAWK_ARCHIVE)"; fi; \
+	echo "upstream gawk archive ready: $(ORLIXOS_GAWK_ARCHIVE)"
+
+$(ORLIXOS_GAWK_ARCHIVE_STAMP): $(ORLIXOS_GAWK_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify gawk source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(GAWK_SHA256)" "$(ORLIXOS_GAWK_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_GAWK_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_GAWK_ARCHIVE_STAMP)"; \
+	echo "upstream gawk ready: $(ORLIXOS_GAWK_ARCHIVE)"
+
+$(ORLIXOS_GAWK_SOURCE_STAMP): $(ORLIXOS_GAWK_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_GAWK_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xJf "$(ORLIXOS_GAWK_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_GAWK_SOURCE_STAMP)"; \
+	echo "extracted gawk source: $(ORLIXOS_GAWK_SRC_DIR)"
 
 $(ORLIXOS_UTIL_LINUX_ARCHIVE):
 	@set -euo pipefail; \
@@ -606,11 +647,6 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 
 $(ORLIXOS_COREUTILS_TEST_LIST): $(ORLIXOS_COREUTILS_PROOF)
 	@set -euo pipefail; \
-	if [ "$(origin ORLIXOS_COREUTILS_TEST_LIST)" = "command line" ]; then \
-		[ -s "$(ORLIXOS_COREUTILS_TEST_LIST)" ] || { echo "missing command-line Coreutils test list: $(ORLIXOS_COREUTILS_TEST_LIST)" >&2; exit 1; }; \
-		echo "using command-line Coreutils test list: $(ORLIXOS_COREUTILS_TEST_LIST) ($$(wc -l < "$(ORLIXOS_COREUTILS_TEST_LIST)") tests)"; \
-		exit 0; \
-	fi; \
 	makefile="$(ORLIXOS_COREUTILS_BUILD_DIR)/Makefile"; \
 	[ -s "$$makefile" ] || { echo "missing configured Coreutils Makefile: $$makefile" >&2; exit 1; }; \
 	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_LIST))"; \
@@ -681,7 +717,7 @@ $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(O
 	file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" >&2; exit 1; }; \
 	echo "built OrlixOS Coreutils test init: $(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"
 
-$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_PERL_PROOF)
+$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_PERL_PROOF)
 	@set -euo pipefail; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
@@ -709,6 +745,8 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		for program in $(ORLIXOS_COREUTILS_PROGRAMS); do printf 'file /bin/%s %s 0755 0 0\n' "$$program" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
 		printf 'file /bin/grep %s 0755 0 0\n' "$(ORLIXOS_GREP_BINARY)"; \
 		printf 'file /bin/sed %s 0755 0 0\n' "$(ORLIXOS_SED_BINARY)"; \
+		printf 'file /bin/gawk %s 0755 0 0\n' "$(ORLIXOS_GAWK_BINARY)"; \
+		printf 'slink /bin/awk gawk 0777 0 0\n'; \
 		for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do printf 'file /bin/%s %s 0755 0 0\n' "$$program" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
 		printf 'file /bin/setsid %s 0755 0 0\n' "$(ORLIXOS_SETSID_BINARY)"; \
 		printf 'file /bin/getconf %s 0755 0 0\n' "$(ORLIXOS_GETCONF_BINARY)"; \
@@ -718,6 +756,8 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'slink /usr/bin/sh /bin/sh 0777 0 0\n'; \
 		printf 'slink /usr/bin/grep /bin/grep 0777 0 0\n'; \
 		printf 'slink /usr/bin/sed /bin/sed 0777 0 0\n'; \
+		printf 'slink /usr/bin/gawk /bin/gawk 0777 0 0\n'; \
+		printf 'slink /usr/bin/awk /bin/awk 0777 0 0\n'; \
 		for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do printf 'slink /usr/bin/%s /bin/%s 0777 0 0\n' "$$program" "$$program"; done; \
 		printf 'slink /usr/bin/setsid /bin/setsid 0777 0 0\n'; \
 		printf 'slink /usr/bin/getconf /bin/getconf 0777 0 0\n'; \
@@ -847,6 +887,53 @@ $(ORLIXOS_DIFF_BINARY): $(ORLIXOS_DIFFUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROO
 	done; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=diffutils\nversion=%s\nsha256=%s\nprograms=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(DIFFUTILS_VERSION)" "$(DIFFUTILS_SHA256)" "$(ORLIXOS_DIFFUTILS_PROGRAMS)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/diffutils.proof"; \
 	echo "built Orlix Linux diffutils package inputs: $(ORLIXOS_DIFFUTILS_PROGRAMS)"
+
+$(ORLIXOS_GAWK_BINARY): $(ORLIXOS_GAWK_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_CC)" >/dev/null 2>&1 || { echo "clang is required to build gawk; set ORLIXOS_CC=/path/to/clang" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_AR)" >/dev/null 2>&1 || { echo "llvm-ar is required to build gawk; set ORLIXOS_AR=/path/to/llvm-ar" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_RANLIB)" >/dev/null 2>&1 || { echo "llvm-ranlib is required to build gawk; set ORLIXOS_RANLIB=/path/to/llvm-ranlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package gawk; set ORLIXOS_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_GAWK_BUILD_DIR)" "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)" "$(ORLIXOS_GAWK_BINARY)"; \
+	mkdir -p "$(ORLIXOS_GAWK_BUILD_DIR)" "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)" "$(dir $(ORLIXOS_GAWK_BINARY))"; \
+	{ \
+		printf '%s\n' '#!/bin/bash'; \
+		printf '%s\n' 'set -euo pipefail'; \
+		printf '%s\n' 'cc="$(ORLIXOS_CC)"'; \
+		printf '%s\n' 'sysroot="$(ORLIXOS_MLIBC_SYSROOT)"'; \
+		printf '%s\n' 'headers="$(ORLIXOS_MLIBC_HEADERS)"'; \
+		printf '%s\n' 'rtlib="$(ORLIXOS_MLIBC_RTLIB)"'; \
+		printf '%s\n' 'link=1'; \
+		printf '%s\n' 'for arg in "$$@"; do'; \
+		printf '%s\n' '  case "$$arg" in -c|-E|-S) link=0 ;; esac'; \
+		printf '%s\n' 'done'; \
+		printf '%s\n' 'common=(--target=aarch64-linux-gnu "--sysroot=$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie)'; \
+		printf '%s\n' 'if [ "$$link" -eq 1 ]; then'; \
+		printf '%s\n' '  exec "$$cc" "$${common[@]}" "$$@" -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o"'; \
+		printf '%s\n' 'fi'; \
+		printf '%s\n' 'exec "$$cc" "$${common[@]}" "$$@"'; \
+	} > "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-gcc"; \
+	chmod +x "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-gcc"; \
+	cd "$(ORLIXOS_GAWK_BUILD_DIR)"; \
+	export CC="$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-gcc"; \
+	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS) -D__KLIBC__"; \
+	export LDFLAGS=""; \
+	export LIBS=""; \
+	export AR="$(ORLIXOS_AR)"; \
+	export RANLIB="$(ORLIXOS_RANLIB)"; \
+	"$(ORLIXOS_GAWK_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --disable-mpfr --without-readline; \
+	$(MAKE) -j1 all; \
+	cp "$(ORLIXOS_GAWK_BUILD_DIR)/gawk" "$(ORLIXOS_GAWK_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_GAWK_BINARY)"; \
+	file "$(ORLIXOS_GAWK_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GAWK_BINARY)" >&2; exit 1; }; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=gawk\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(GAWK_VERSION)" "$(GAWK_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/gawk.proof"; \
+	echo "built Orlix Linux gawk package input: $(ORLIXOS_GAWK_BINARY)"
 
 $(ORLIXOS_PERL_PROOF): $(ORLIXOS_PERL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \

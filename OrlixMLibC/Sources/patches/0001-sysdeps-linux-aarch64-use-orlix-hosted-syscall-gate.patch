@@ -255,11 +255,11 @@ diff --git i/sysdeps/linux/generic/sysdeps.cpp w/sysdeps/linux/generic/sysdeps.c
 index a07ed53e..8e44b30f 100644
 --- i/sysdeps/linux/generic/sysdeps.cpp
 +++ w/sysdeps/linux/generic/sysdeps.cpp
-@@ -44,6 +44,98 @@
+@@ -44,6 +44,102 @@
  #include "generic-helpers/netlink.hpp"
  #endif
  
-+#include <mlibc/tid.hpp>
++#include <mlibc/thread.hpp>
 +
 +#if defined(__aarch64__) && defined(ORLIX_HOSTED_EXEC)
 +namespace {
@@ -271,7 +271,7 @@ index a07ed53e..8e44b30f 100644
 +};
 +
 +struct orlix_emutls_record {
-+	uintptr_t thread_id;
++	uintptr_t thread_key;
 +	orlix_emutls_object *object;
 +	void *address;
 +	orlix_emutls_record *next;
@@ -280,9 +280,9 @@ index a07ed53e..8e44b30f 100644
 +orlix_emutls_record *orlix_emutls_records;
 +unsigned int orlix_emutls_lock_word;
 +
-+uintptr_t orlix_current_thread_id()
++uintptr_t orlix_current_thread_key()
 +{
-+	return static_cast<uintptr_t>(mlibc::this_tid());
++	return reinterpret_cast<uintptr_t>(mlibc::get_current_tcb());
 +}
 +
 +void orlix_emutls_lock()
@@ -305,8 +305,12 @@ index a07ed53e..8e44b30f 100644
 +{
 +	auto ret = mlibc::do_syscall(SYS_mmap, nullptr, size,
 +			PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-+	if (mlibc::sc_error(ret))
-+		__builtin_trap();
++	if (mlibc::sc_error(ret)) {
++		mlibc::do_syscall(SYS_exit_group, 127);
++		mlibc::do_syscall(SYS_exit, 127);
++		for (;;)
++			;
++	}
 +	return mlibc::sc_ptr_result<void>(ret);
 +}
 +
@@ -327,11 +331,11 @@ index a07ed53e..8e44b30f 100644
 +
 +extern "C" void *__emutls_get_address(orlix_emutls_object *object)
 +{
-+	uintptr_t thread_id = orlix_current_thread_id();
++	uintptr_t thread_key = orlix_current_thread_key();
 +
 +	orlix_emutls_lock();
 +	for (orlix_emutls_record *record = orlix_emutls_records; record; record = record->next) {
-+		if (record->thread_id == thread_id && record->object == object) {
++		if (record->thread_key == thread_key && record->object == object) {
 +			void *address = record->address;
 +			orlix_emutls_unlock();
 +			return address;
@@ -341,7 +345,7 @@ index a07ed53e..8e44b30f 100644
 +	void *address = orlix_emutls_allocate_storage(object);
 +	orlix_emutls_record *record =
 +			static_cast<orlix_emutls_record *>(orlix_emutls_mmap(sizeof(orlix_emutls_record)));
-+	record->thread_id = thread_id;
++	record->thread_key = thread_key;
 +	record->object = object;
 +	record->address = address;
 +	record->next = orlix_emutls_records;
@@ -354,6 +358,21 @@ index a07ed53e..8e44b30f 100644
  #ifndef MLIBC_BUILDING_RTLD
  extern "C" long __do_syscall_ret(unsigned long ret) {
  	if(ret > -4096UL) {
+@@ -126,7 +222,14 @@ void Sysdeps<LibcLog>::operator()(const char *message) {
+ }
+ 
+ void Sysdeps<LibcPanic>::operator()() {
++#if defined(ORLIX_HOSTED_EXEC)
++	do_syscall(SYS_exit_group, 127);
++	do_syscall(SYS_exit, 127);
++	for (;;)
++		;
++#else
+ 	__builtin_trap();
++#endif
+ }
+ 
+ pid_t Sysdeps<FutexTid>::operator()() {
 @@ -180,6 +271,12 @@ int Sysdeps<TcbSet>::operator()(void *pointer) {
  #elif defined (__aarch64__)
  	uintptr_t thread_data = reinterpret_cast<uintptr_t>(pointer) + sizeof(Tcb) - 0x10;
