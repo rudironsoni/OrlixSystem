@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #define ORLIX_HOST_USER_TIMER_NS 1000000ULL
+#define ORLIX_HOST_USER_TIMER_SIGNAL SIGUSR1
 #define ORLIX_ARM_ESR_EC_MASK 0xfc000000U
 #define ORLIX_ARM_ESR_EC_SHIFT 26U
 #define ORLIX_ARM_ESR_EC_IABT_LOWER 0x20U
@@ -33,6 +34,7 @@ struct OrlixHostUserTrapState {
     const unsigned long *active_user_tls;
     unsigned long *user_active;
     orlix_host_user_trap_entry_t entry;
+    pthread_t target_pthread;
     thread_act_t target_thread;
     unsigned long host_tls;
 };
@@ -107,15 +109,6 @@ static void OrlixHostWriteTls(unsigned long tls)
         :
         : "r"(tls)
         : "memory");
-}
-
-__attribute__((naked))
-static void OrlixHostUserTimerEntry(void)
-{
-    __asm__ volatile(
-        "msr tpidr_el0, x3\n"
-        "isb\n"
-        "br x2\n");
 }
 
 static unsigned long OrlixHostUserTrapCurrentTls(void)
@@ -387,24 +380,6 @@ static void OrlixHostUserTrapSetFrameTls(unsigned long user_tls)
     OrlixHostUserTrapFrame.frame_flags |= ORLIX_HOST_USER_FRAME_HAS_TLS;
 }
 
-static void OrlixHostUserTrapSaveMachFrame(const arm_thread_state64_t *state,
-                                           const arm_neon_state64_t *neon)
-{
-    for (unsigned int index = 0; index < 29; index++) {
-        OrlixHostUserTrapFrame.regs[index] = (unsigned long)state->__x[index];
-    }
-    OrlixHostUserTrapFrame.regs[29] = (unsigned long)state->__fp;
-    OrlixHostUserTrapFrame.regs[30] = (unsigned long)state->__lr;
-    OrlixHostUserTrapFrame.sp = (unsigned long)state->__sp;
-    OrlixHostUserTrapFrame.pc = (unsigned long)state->__pc;
-    OrlixHostUserTrapFrame.pstate = (unsigned long)state->__cpsr;
-    OrlixHostUserTrapFrame.fault_address = 0;
-    OrlixHostUserTrapFrame.fault_flags = 0;
-    OrlixHostUserTrapFrame.user_tls = 0;
-    OrlixHostUserTrapFrame.frame_flags = 0;
-    OrlixHostUserTrapSaveNeon(neon);
-}
-
 static void OrlixHostUserTrapHandler(int signal_number,
                                      siginfo_t *info,
                                      void *context)
@@ -416,17 +391,27 @@ static void OrlixHostUserTrapHandler(int signal_number,
     unsigned long kernel_sp;
     unsigned long fault_address;
     unsigned long user_tls;
+    bool timer_signal = signal_number == ORLIX_HOST_USER_TIMER_SIGNAL;
 
     if (!user_context || !user_context->uc_mcontext) {
-        OrlixHostUserTrapReraise(signal_number);
+        if (!timer_signal) {
+            OrlixHostUserTrapReraise(signal_number);
+        }
         return;
     }
 
     machine_context = user_context->uc_mcontext;
     user_pc = (unsigned long)machine_context->__ss.__pc;
-    if (!OrlixHostUserTrapContains(user_pc)) {
+    if (!OrlixHostUserTrapContains(user_pc) ||
+        OrlixHostUserTrapInSyscallGate(user_pc)) {
+        if (timer_signal) {
+            return;
+        }
         OrlixHostUserTrapReraise(signal_number);
         return;
+    }
+    if (timer_signal) {
+        trap_number = ORLIX_HOST_USER_TRAP_TIMER;
     }
 
     fault_address = (unsigned long)machine_context->__es.__far;
@@ -460,31 +445,21 @@ static void OrlixHostUserTrapHandler(int signal_number,
 
 static void OrlixHostUserTimerSleep(unsigned long long delay_ns)
 {
-    struct timespec deadline;
+    struct timespec delay;
 
     if (atomic_load_explicit(&OrlixHostUserResumePending, memory_order_acquire)) {
         return;
     }
 
-    if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) {
-        return;
-    }
-    deadline.tv_sec += (time_t)(delay_ns / 1000000000ULL);
-    deadline.tv_nsec += (long)(delay_ns % 1000000000ULL);
-    if (deadline.tv_nsec >= 1000000000L) {
-        deadline.tv_sec++;
-        deadline.tv_nsec -= 1000000000L;
-    }
+    delay.tv_sec = (time_t)(delay_ns / 1000000000ULL);
+    delay.tv_nsec = (long)(delay_ns % 1000000000ULL);
 
     (void)pthread_mutex_lock(&OrlixHostUserTimerMutex);
     if (!atomic_load_explicit(&OrlixHostUserResumePending,
                               memory_order_acquire)) {
-        while (pthread_cond_timedwait(&OrlixHostUserTimerCond,
-                                      &OrlixHostUserTimerMutex,
-                                      &deadline) == 0 &&
-               !atomic_load_explicit(&OrlixHostUserResumePending,
-                                     memory_order_acquire)) {
-        }
+        (void)pthread_cond_timedwait_relative_np(&OrlixHostUserTimerCond,
+                                                 &OrlixHostUserTimerMutex,
+                                                 &delay);
     }
     (void)pthread_mutex_unlock(&OrlixHostUserTimerMutex);
 }
@@ -538,58 +513,11 @@ static bool OrlixHostUserResumeRedirect(void)
     return status == KERN_SUCCESS;
 }
 
-static bool OrlixHostUserTimerRedirect(arm_thread_state64_t *state)
-{
-    arm_neon_state64_t neon;
-    mach_msg_type_number_t neon_count = ARM_NEON_STATE64_COUNT;
-    unsigned long active_tls;
-    unsigned long kernel_sp;
-    unsigned long user_pc = (unsigned long)state->__pc;
-    kern_return_t status;
-
-    if (!OrlixHostUserTrapContains(user_pc) ||
-        OrlixHostUserTrapInSyscallGate(user_pc)) {
-        return false;
-    }
-
-    active_tls = OrlixHostUserTrapActiveTls();
-    if (!active_tls) {
-        return false;
-    }
-
-    kernel_sp = *OrlixHostUserTrap.kernel_sp;
-    if (!kernel_sp) {
-        return false;
-    }
-
-    status = thread_get_state(OrlixHostUserTrap.target_thread,
-                              ARM_NEON_STATE64,
-                              (thread_state_t)&neon,
-                              &neon_count);
-    if (status != KERN_SUCCESS || neon_count != ARM_NEON_STATE64_COUNT) {
-        return false;
-    }
-
-    OrlixHostUserTrapSaveMachFrame(state, &neon);
-    OrlixHostUserTrapSetFrameTls(active_tls);
-    state->__x[0] = (uint64_t)ORLIX_HOST_USER_TRAP_TIMER;
-    state->__x[1] = (uint64_t)&OrlixHostUserTrapFrame;
-    state->__x[2] = (uint64_t)OrlixHostUserTrap.entry;
-    state->__x[3] = (uint64_t)OrlixHostUserTrap.host_tls;
-    state->__pc = (uint64_t)OrlixHostUserTimerEntry;
-    state->__sp = (uint64_t)kernel_sp;
-    return true;
-}
-
 static void *OrlixHostUserTimerMain(void *context)
 {
     (void)context;
 
     for (;;) {
-        arm_thread_state64_t state;
-        mach_msg_type_number_t count = ARM_THREAD_STATE64_COUNT;
-        kern_return_t status;
-
         if (OrlixHostUserResumeRedirect()) {
             continue;
         }
@@ -602,33 +530,8 @@ static void *OrlixHostUserTimerMain(void *context)
             continue;
         }
 
-        status = thread_suspend(OrlixHostUserTrap.target_thread);
-        if (status != KERN_SUCCESS) {
-            continue;
-        }
-
-        if (!OrlixHostUserTrapIsUserActive()) {
-            (void)thread_resume(OrlixHostUserTrap.target_thread);
-            continue;
-        }
-
-        status = thread_get_state(OrlixHostUserTrap.target_thread,
-                                  ARM_THREAD_STATE64,
-                                  (thread_state_t)&state,
-                                  &count);
-        if (status == KERN_SUCCESS && count == ARM_THREAD_STATE64_COUNT &&
-            OrlixHostUserTimerRedirect(&state)) {
-            __atomic_store_n(OrlixHostUserTrap.user_active, 0, __ATOMIC_RELEASE);
-            status = thread_set_state(OrlixHostUserTrap.target_thread,
-                                      ARM_THREAD_STATE64,
-                                      (thread_state_t)&state,
-                                      ARM_THREAD_STATE64_COUNT);
-            if (status != KERN_SUCCESS) {
-                __atomic_store_n(OrlixHostUserTrap.user_active, 1, __ATOMIC_RELEASE);
-            }
-        }
-
-        (void)thread_resume(OrlixHostUserTrap.target_thread);
+        (void)pthread_kill(OrlixHostUserTrap.target_pthread,
+                           ORLIX_HOST_USER_TIMER_SIGNAL);
     }
 }
 
@@ -642,8 +545,10 @@ __attribute__((visibility("hidden"))) int orlix_host_user_trap_install(
     unsigned long *user_active,
     orlix_host_user_trap_entry_t entry)
 {
-    const int signals[] = { SIGTRAP, SIGILL, SIGBUS, SIGSEGV, SIGABRT };
+    const int signals[] = { SIGTRAP, SIGILL, SIGBUS, SIGSEGV, SIGABRT,
+                            ORLIX_HOST_USER_TIMER_SIGNAL };
     struct sigaction action;
+    sigset_t timer_signal_set;
 
     if (!kernel_sp || !active_user_tls || !user_active || !entry ||
         user_base >= user_limit) {
@@ -658,6 +563,7 @@ __attribute__((visibility("hidden"))) int orlix_host_user_trap_install(
     OrlixHostUserTrap.active_user_tls = active_user_tls;
     OrlixHostUserTrap.user_active = user_active;
     OrlixHostUserTrap.entry = entry;
+    OrlixHostUserTrap.target_pthread = pthread_self();
     OrlixHostUserTrap.target_thread = pthread_mach_thread_np(pthread_self());
     OrlixHostUserTrap.host_tls = OrlixHostReadTls();
 
@@ -673,6 +579,10 @@ __attribute__((visibility("hidden"))) int orlix_host_user_trap_install(
             return -1;
         }
     }
+
+    sigemptyset(&timer_signal_set);
+    sigaddset(&timer_signal_set, ORLIX_HOST_USER_TIMER_SIGNAL);
+    pthread_sigmask(SIG_UNBLOCK, &timer_signal_set, NULL);
 
     OrlixHostUserTrapInstalled = true;
     return 0;

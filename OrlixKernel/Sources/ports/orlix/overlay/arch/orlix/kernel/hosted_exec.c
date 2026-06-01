@@ -61,7 +61,7 @@ static void orlix_hosted_start_user_timer_once(void)
 	if (orlix_hosted_user_timer_ready)
 		return;
 
-	if (orlix_host_user_trap_start_timer(NSEC_PER_SEC / HZ))
+	if (orlix_host_user_trap_start_timer(NSEC_PER_SEC / 2))
 		panic("Orlix: failed to start hosted user timer transport\n");
 	orlix_hosted_user_timer_ready = true;
 }
@@ -166,11 +166,15 @@ static void orlix_hosted_save_trap_frame(
 	}
 }
 
-static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs)
+static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
+							bool full_stack_window)
 {
 	struct orlix_host_user_trap_frame resume_frame;
 
-	orlix_sync_current_user_mappings(regs);
+	if (full_stack_window)
+		orlix_sync_current_user_mappings(regs);
+	else
+		orlix_sync_current_user_minimal_mappings(regs);
 	orlix_hosted_save_current_kernel_stack();
 	orlix_hosted_save_trap_frame(&resume_frame, regs);
 	WRITE_ONCE(orlix_hosted_active_user_tls, resume_frame.user_tls);
@@ -189,16 +193,24 @@ static void __noreturn orlix_hosted_user_trap_entry(
 	orlix_hosted_apply_frame_user_state(frame);
 
 	if (signal_number == ORLIX_HOST_USER_TRAP_TIMER) {
+		struct pt_regs *resume_regs;
+		unsigned long old_pc = regs->pc;
+		unsigned long old_sp = regs->sp;
+
 		orlix_timer_poll();
 		orlix_exit_to_user_mode_work(regs);
-		orlix_hosted_resume_current_user(task_pt_regs(current));
+		resume_regs = task_pt_regs(current);
+		orlix_hosted_resume_current_user(resume_regs,
+						 resume_regs != regs ||
+						 resume_regs->pc != old_pc ||
+						 resume_regs->sp != old_sp);
 	}
 
 	if (frame->fault_address &&
 	    !orlix_handle_host_user_fault(regs, frame->fault_address,
 					  frame->fault_flags)) {
 		orlix_exit_to_user_mode_work(regs);
-		orlix_hosted_resume_current_user(task_pt_regs(current));
+		orlix_hosted_resume_current_user(task_pt_regs(current), true);
 	}
 
 	if (!exit_code)

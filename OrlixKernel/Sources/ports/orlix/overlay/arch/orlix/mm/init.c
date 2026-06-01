@@ -236,7 +236,7 @@ unmap:
 static int orlix_sync_current_user_stack_window(unsigned long start,
 						unsigned long end);
 
-#define ORLIX_HOSTED_STACK_ENTRY_WINDOW_PAGES	4
+#define ORLIX_HOSTED_STACK_ENTRY_WINDOW_PAGES	16
 
 void orlix_sync_current_user_mappings(struct pt_regs *regs)
 {
@@ -244,7 +244,8 @@ void orlix_sync_current_user_mappings(struct pt_regs *regs)
 	unsigned long sp_page = regs->sp & PAGE_MASK;
 	unsigned long stack_access_page = regs->sp ?
 		((regs->sp - 1) & PAGE_MASK) : 0;
-	unsigned long stack_window_page = 0;
+	unsigned long stack_window_start = 0;
+	unsigned long stack_window_end = 0;
 
 	if (!mm)
 		panic("Orlix: current task has no user mm for pc %#llx\n",
@@ -260,17 +261,55 @@ void orlix_sync_current_user_mappings(struct pt_regs *regs)
 		panic("Orlix: failed to synchronize hosted user pc %#llx\n",
 		      regs->pc);
 
+	if (stack_access_page) {
+		stack_window_end = sp_page +
+			(ORLIX_HOSTED_STACK_ENTRY_WINDOW_PAGES + 1) * PAGE_SIZE;
+		if (stack_window_end > TASK_SIZE || stack_window_end < sp_page)
+			stack_window_end = TASK_SIZE;
+	}
 	if (stack_access_page >
 	    ORLIX_HOSTED_STACK_ENTRY_WINDOW_PAGES * PAGE_SIZE)
-		stack_window_page = stack_access_page -
+		stack_window_start = stack_access_page -
 			ORLIX_HOSTED_STACK_ENTRY_WINDOW_PAGES * PAGE_SIZE;
+	else
+		stack_window_start = stack_access_page;
 
 	if (stack_access_page &&
-	    orlix_sync_current_user_stack_window(stack_window_page ?
-						stack_window_page :
-						stack_access_page,
-						stack_access_page + PAGE_SIZE))
+	    orlix_sync_current_user_stack_window(stack_window_start,
+						stack_window_end))
 		panic("Orlix: failed to synchronize hosted user stack window %#lx\n",
+		      stack_access_page);
+	if (stack_access_page &&
+	    orlix_sync_current_user_mapping_page(stack_access_page))
+		panic("Orlix: failed to synchronize hosted user stack access page %#lx\n",
+		      stack_access_page);
+	if (sp_page != stack_access_page &&
+	    orlix_sync_current_user_mapping_page(sp_page))
+		panic("Orlix: failed to synchronize hosted user sp page %#lx\n",
+		      sp_page);
+
+	if (orlix_hosted_sync_syscall_gate())
+		panic("Orlix: failed to synchronize hosted syscall gate %#lx\n",
+		      ORLIX_HOSTED_SYSCALL_GATE);
+}
+
+void orlix_sync_current_user_minimal_mappings(struct pt_regs *regs)
+{
+	unsigned long sp_page = regs->sp & PAGE_MASK;
+	unsigned long stack_access_page = regs->sp ?
+		((regs->sp - 1) & PAGE_MASK) : 0;
+
+	if (!current->mm)
+		panic("Orlix: current task has no user mm for pc %#llx\n",
+		      regs->pc);
+
+	if (regs->pc && regs->pc < TASK_SIZE &&
+	    orlix_sync_current_user_mapping_page(regs->pc))
+		panic("Orlix: failed to synchronize hosted user pc %#llx\n",
+		      regs->pc);
+	if (stack_access_page &&
+	    orlix_sync_current_user_mapping_page(stack_access_page))
+		panic("Orlix: failed to synchronize hosted user stack access page %#lx\n",
 		      stack_access_page);
 	if (sp_page != stack_access_page &&
 	    orlix_sync_current_user_mapping_page(sp_page))
@@ -310,7 +349,7 @@ static int orlix_sync_current_user_stack_window(unsigned long start,
 	for (page = start; page < end; page += PAGE_SIZE) {
 		ret = orlix_sync_current_user_mapping_page(page);
 		if (ret)
-			return ret;
+			continue;
 	}
 
 	return 0;

@@ -149,6 +149,12 @@ static int run_test(const char *name)
 				test_path, strerror(errno), errno);
 			_exit(125);
 		}
+		if (dup2(STDERR_FILENO, 9) < 0) {
+			dprintf(STDERR_FILENO,
+				"# dup2 stderr to fd 9 failed for %s: %s (%d)\n",
+				test_path, strerror(errno), errno);
+			_exit(125);
+		}
 		execve(argv[0], argv, test_envp);
 		dprintf(STDERR_FILENO, "# execve %s failed for %s: %s (%d)\n",
 			argv[0], test_path, strerror(errno), errno);
