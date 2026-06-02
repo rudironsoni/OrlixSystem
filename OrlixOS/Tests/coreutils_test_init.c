@@ -202,11 +202,15 @@ static void ensure_runtime_filesystems(void)
 	gid_t test_groups[] = {0, 2};
 
 	(void)mkdir("/proc", 0555);
+	(void)mkdir("/sys", 0555);
 	(void)mkdir("/tmp", 01777);
 	(void)mkdir("/dev", 0755);
 	(void)mount("proc", "/proc", "proc", 0, NULL);
+	(void)mount("sysfs", "/sys", "sysfs", 0, NULL);
 	(void)mount("tmpfs", "/tmp", "tmpfs", 0, "mode=1777");
 	(void)mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
+	(void)mkdir("/dev/pts", 0755);
+	(void)mount("devpts", "/dev/pts", "devpts", 0, "gid=5,mode=620");
 	if (setgroups(2, test_groups) != 0) {
 		printf("# setgroups for Coreutils group tests failed: %s (%d)\n",
 		       strerror(errno), errno);
