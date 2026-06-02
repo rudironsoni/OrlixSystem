@@ -1,0 +1,76 @@
+diff --git i/options/ansi/generic/stdlib.cpp w/options/ansi/generic/stdlib.cpp
+index ac05b7a5..0153843f 100644
+--- i/options/ansi/generic/stdlib.cpp
++++ w/options/ansi/generic/stdlib.cpp
+@@ -20,6 +20,7 @@
+ #include <mlibc/charcode.hpp>
+ #include <mlibc/strtofp.hpp>
+ #include <mlibc/strtol.hpp>
++#include <mlibc/locale.hpp>
+ #include <mlibc/threads.hpp>
+ #include <mlibc/global-config.hpp>
+ #include <mlibc/exit.hpp>
+@@ -41,6 +42,14 @@ namespace {
+ 	__mlibc_mutex exit_mutex = __MLIBC_THREAD_MUTEX_INITIALIZER;
+ } // namespace
+ 
++extern "C" size_t __ctype_get_mb_cur_max(void) {
++	auto max = mlibc::getActiveLocale()->ctype.get(_NL_CTYPE_MB_CUR_MAX).asUint32();
++	if(!max)
++		return 1;
++
++	return max;
++}
++
+ double atof(const char *string) {
+ 	return strtod(string, nullptr);
+ }
+diff --git i/options/ansi/include/stdlib.h w/options/ansi/include/stdlib.h
+index 7a82bf35..4fcb1f4c 100644
+--- i/options/ansi/include/stdlib.h
++++ w/options/ansi/include/stdlib.h
+@@ -34,9 +34,18 @@ typedef struct {
+ 
+ #define RAND_MAX 0x7FFFFFFF
+ 
+-/* TODO: this should not be a compile-time constant */
++#ifndef __MLIBC_ABI_ONLY
++
++size_t __ctype_get_mb_cur_max(void);
++
++#define MB_CUR_MAX (__ctype_get_mb_cur_max())
++
++#else
++
+ #define MB_CUR_MAX ((size_t)4)
+ 
++#endif
++
+ #ifndef __MLIBC_ABI_ONLY
+ 
+ /* [7.22.1] Numeric conversion functions */
+@@ -136,4 +145,3 @@ size_t wcstombs(char *__restrict __mb_string, const wchar_t *__restrict __wc_str
+ #endif
+ 
+ #endif /* _STDLIB_H */
+-
+diff --git i/tests/ansi/locale.c w/tests/ansi/locale.c
+index 224bc3a7..77a42c2f 100644
+--- i/tests/ansi/locale.c
++++ w/tests/ansi/locale.c
+@@ -4,6 +4,7 @@
+ #include <locale.h>
+ #include <stdbool.h>
+ #include <stdio.h>
++#include <stdlib.h>
+ #include <string.h>
+ #include <wchar.h>
+ 
+@@ -18,6 +19,7 @@ int main() {
+ 			&& buf[2] == '\0' && buf[3] == '\0');
+ 
+ 	setlocale(LC_ALL, "C");
++	assert(MB_CUR_MAX == 1);
+ 
+ 	snprintf(buf, sizeof(buf), "%2.2f", 12.34);
+ 	assert(!strcmp("12.34", buf));

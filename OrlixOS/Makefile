@@ -645,7 +645,12 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	export gl_cv_func_getopt_long_gnu=yes; \
 	export gl_cv_func_strtod_works=yes; \
 	"$(ORLIXOS_COREUTILS_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --without-selinux --disable-acl --disable-xattr --disable-libcap --disable-gcc-warnings; \
-	$(MAKE) -j1 all MANS= INFO_DEPS=; \
+	$(MAKE) -j1 all PROGRAMS= LIBRARIES= MANS= INFO_DEPS=; \
+	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
+		source_program="$$program"; \
+		if [ "$$program" = install ]; then source_program=ginstall; fi; \
+		$(MAKE) -j1 "src/$$source_program" MANS= INFO_DEPS=; \
+	done; \
 	$(MAKE) -j1 src/getlimits; \
 	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
 		source_program="$$program"; \
