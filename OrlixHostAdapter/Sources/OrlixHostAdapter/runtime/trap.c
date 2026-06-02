@@ -381,6 +381,11 @@ static void OrlixHostUserTrapSetFrameTls(unsigned long user_tls)
     OrlixHostUserTrapFrame.frame_flags |= ORLIX_HOST_USER_FRAME_HAS_TLS;
 }
 
+static bool OrlixHostUserTrapIsMemoryFaultSignal(int signal_number)
+{
+    return signal_number == SIGBUS || signal_number == SIGSEGV;
+}
+
 static void OrlixHostUserTrapHandler(int signal_number,
                                      siginfo_t *info,
                                      void *context)
@@ -419,7 +424,8 @@ static void OrlixHostUserTrapHandler(int signal_number,
     if (!fault_address && info) {
         fault_address = (unsigned long)info->si_addr;
     }
-    if (OrlixHostUserTrapRepairUserTlsLoad(machine_context, fault_address)) {
+    if (OrlixHostUserTrapIsMemoryFaultSignal(signal_number) &&
+        OrlixHostUserTrapRepairUserTlsLoad(machine_context, fault_address)) {
         return;
     }
 
