@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <grp.h>
 #include <signal.h>
@@ -104,6 +105,84 @@ static bool read_file(const char *path, char *buffer, size_t capacity,
 	buffer[*size] = '\0';
 	fclose(file);
 	return true;
+}
+
+static void dump_process_file(pid_t pid, const char *name)
+{
+	char path[64];
+	char data[4096];
+	size_t size = 0;
+
+	snprintf(path, sizeof(path), "/proc/%ld/%s", (long)pid, name);
+	if (!read_file(path, data, sizeof(data), &size))
+		return;
+	printf("# --- %s ---\n", path);
+	fwrite(data, 1, size, stdout);
+	if (size && data[size - 1] != '\n')
+		putchar('\n');
+}
+
+static pid_t process_parent(pid_t pid)
+{
+	char path[64];
+	char data[4096];
+	size_t size = 0;
+	const char *needle = "\nPPid:";
+	char *ppid;
+	long value;
+
+	snprintf(path, sizeof(path), "/proc/%ld/status", (long)pid);
+	if (!read_file(path, data, sizeof(data), &size))
+		return -1;
+	ppid = strstr(data, needle);
+	if (!ppid)
+		return -1;
+	ppid += strlen(needle);
+	errno = 0;
+	value = strtol(ppid, NULL, 10);
+	if (errno || value <= 0)
+		return -1;
+	return (pid_t)value;
+}
+
+static void dump_process_snapshot(pid_t pid)
+{
+	dump_process_file(pid, "status");
+	dump_process_file(pid, "wchan");
+}
+
+static void dump_descendants(pid_t root)
+{
+	DIR *proc;
+	struct dirent *entry;
+
+	proc = opendir("/proc");
+	if (!proc)
+		return;
+	while ((entry = readdir(proc))) {
+		char *end = NULL;
+		long pid;
+		pid_t parent;
+
+		errno = 0;
+		pid = strtol(entry->d_name, &end, 10);
+		if (errno || !end || *end || pid <= 0 || pid == root)
+			continue;
+		parent = process_parent((pid_t)pid);
+		if (parent == root) {
+			printf("# descendant of %ld: %ld\n", (long)root, pid);
+			dump_process_snapshot((pid_t)pid);
+		}
+	}
+	closedir(proc);
+}
+
+static void dump_timeout_process_tree(pid_t child)
+{
+	printf("# timeout process snapshot for pid %ld\n", (long)child);
+	dump_process_snapshot(child);
+	dump_descendants(child);
+	fflush(stdout);
 }
 
 static unsigned int count_tests(char *data, size_t size)
@@ -277,6 +356,7 @@ static int run_test(enum test_mode mode, const char *name)
 		if (timed_out) {
 			printf("# %s timed out after %u seconds\n", name,
 			       test_timeout_seconds);
+			dump_timeout_process_tree(child);
 			fflush(stdout);
 			(void)kill(-child, SIGKILL);
 			(void)kill(child, SIGKILL);
