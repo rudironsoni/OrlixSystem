@@ -2,7 +2,7 @@ diff --git a/options/posix/generic/posix_stdio.cpp b/options/posix/generic/posix
 index 6353bc74..8e4659e3 100644
 --- a/options/posix/generic/posix_stdio.cpp
 +++ b/options/posix/generic/posix_stdio.cpp
-@@ -233,7 +233,16 @@ int renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_p
+@@ -233,7 +233,17 @@ int renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_p
  	return 0;
  }
  
@@ -10,18 +10,76 @@ index 6353bc74..8e4659e3 100644
 -	__ensure(!"Not implemented");
 -	__builtin_unreachable();
 +int renameat2(int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags) {
-+	if(flags) {
-+		errno = ENOSYS;
-+		return -1;
++	int e = mlibc::sysdep_or_enosys<Renameat2>(olddirfd, old_path, newdirfd, new_path, flags);
++	if(!e)
++		return 0;
++
++	if(!flags && e == ENOSYS) {
++		e = mlibc::sysdep_or_enosys<Renameat>(olddirfd, old_path, newdirfd, new_path);
++		if(!e)
++			return 0;
 +	}
 +
-+	if(int e = mlibc::sysdep_or_enosys<Renameat>(olddirfd, old_path, newdirfd, new_path); e) {
-+		errno = e;
-+		return -1;
-+	}
-+
-+	return 0;
++	errno = e;
++	return -1;
  }
+diff --git a/options/internal/include/mlibc/sysdep-tags.hpp b/options/internal/include/mlibc/sysdep-tags.hpp
+index 789d322c..08bed257 100644
+--- a/options/internal/include/mlibc/sysdep-tags.hpp
++++ b/options/internal/include/mlibc/sysdep-tags.hpp
+@@ -315,6 +315,8 @@ struct Symlink {};
+ struct Symlinkat {};
+ // int sys_renameat(int olddirfd, const char *old_path, int newdirfd, const char *new_path);
+ struct Renameat {};
++// int sys_renameat2(int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags);
++struct Renameat2 {};
+ // int sys_fcntl(int fd, int request, va_list args, int *result);
+ struct Fcntl {};
+ // int sys_ttyname(int fd, char *buf, size_t size);
+diff --git a/options/internal/include/mlibc/sysdep-signatures.hpp b/options/internal/include/mlibc/sysdep-signatures.hpp
+index f8dbe603..cc74c765 100644
+--- a/options/internal/include/mlibc/sysdep-signatures.hpp
++++ b/options/internal/include/mlibc/sysdep-signatures.hpp
+@@ -155,6 +155,7 @@ SYSDEP_FUNC(Linkat, int olddirfd, const char *old_path, int newdirfd, const char
+ SYSDEP_FUNC(Symlink, const char *target_path, const char *link_path);
+ SYSDEP_FUNC(Symlinkat, const char *target_path, int dirfd, const char *link_path);
+ SYSDEP_FUNC(Renameat, int olddirfd, const char *old_path, int newdirfd, const char *new_path);
++SYSDEP_FUNC(Renameat2, int olddirfd, const char *old_path, int newdirfd, const char *new_path, unsigned int flags);
+ SYSDEP_FUNC(Fcntl, int fd, int request, va_list args, int *result);
+ SYSDEP_FUNC(Ttyname, int fd, char *buf, size_t size);
+ SYSDEP_FUNC(Fadvise, int fd, off_t offset, off_t length, int advice);
+diff --git a/sysdeps/linux/generic/sysdeps.cpp b/sysdeps/linux/generic/sysdeps.cpp
+index 8fc4e0f5..34ce2d95 100644
+--- a/sysdeps/linux/generic/sysdeps.cpp
++++ b/sysdeps/linux/generic/sysdeps.cpp
+@@ -1169,5 +1169,15 @@ int Sysdeps<Renameat>::operator()(int old_dirfd, const char *old_path, int new_d
+ 	return 0;
+ }
+ 
++int Sysdeps<Renameat2>::operator()(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path, unsigned int flags) {
++#ifdef SYS_renameat2
++	auto ret = do_syscall(SYS_renameat2, old_dirfd, old_path, new_dirfd, new_path, flags);
++	if (int e = sc_error(ret); e)
++		return e;
++	return 0;
++#endif /* defined(SYS_renameat2) */
++	return ENOSYS;
++}
++
+ int Sysdeps<Fcntl>::operator()(int fd, int cmd, va_list args, int *result) {
+ 	auto arg = va_arg(args, unsigned long);
+diff --git a/sysdeps/linux/include/mlibc/sysdeps.hpp b/sysdeps/linux/include/mlibc/sysdeps.hpp
+index 2a1affba..a8ee2807 100644
+--- a/sysdeps/linux/include/mlibc/sysdeps.hpp
++++ b/sysdeps/linux/include/mlibc/sysdeps.hpp
+@@ -72,6 +72,7 @@ enum {
+ 	Symlink,
+ 	Symlinkat,
+ 	Renameat,
++	Renameat2,
+ 	Fcntl,
+ 	Ttyname,
+ 	Fadvise,
 diff --git a/tests/meson.build b/tests/meson.build
 index 4932c435..b19dca36 100644
 --- a/tests/meson.build
@@ -39,7 +97,7 @@ new file mode 100644
 index 00000000..7e833d82
 --- /dev/null
 +++ b/tests/posix/renameat2.c
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,60 @@
 +#ifndef _GNU_SOURCE
 +#define _GNU_SOURCE
 +#endif
@@ -47,6 +105,7 @@ index 00000000..7e833d82
 +#include <assert.h>
 +#include <errno.h>
 +#include <fcntl.h>
++#include <linux/fs.h>
 +#include <stdio.h>
 +#include <string.h>
 +#include <unistd.h>
@@ -72,9 +131,27 @@ index 00000000..7e833d82
 +	assert(!strcmp(buffer, "renameat2\n"));
 +	assert(!fclose(file));
 +
++	file = fopen(old_path, "w");
++	assert(file);
++	assert(fputs("noreplace\n", file) >= 0);
++	assert(!fclose(file));
++
++	errno = 0;
++	assert(renameat2(AT_FDCWD, old_path, AT_FDCWD, new_path, RENAME_NOREPLACE) == -1);
++	assert(errno == EEXIST);
++	assert(!unlink(new_path));
++
++	assert(!renameat2(AT_FDCWD, old_path, AT_FDCWD, new_path, RENAME_NOREPLACE));
++
++	file = fopen(new_path, "r");
++	assert(file);
++	assert(fgets(buffer, sizeof(buffer), file));
++	assert(!strcmp(buffer, "noreplace\n"));
++	assert(!fclose(file));
++
 +	errno = 0;
 +	assert(renameat2(AT_FDCWD, new_path, AT_FDCWD, old_path, 0xFFFFFFFFu) == -1);
-+	assert(errno == ENOSYS);
++	assert(errno == EINVAL || errno == ENOSYS);
 +
 +	unlink(old_path);
 +	unlink(new_path);
