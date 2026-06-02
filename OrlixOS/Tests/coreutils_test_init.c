@@ -22,6 +22,7 @@ static unsigned int test_skips;
 static const unsigned int test_timeout_seconds = 600;
 static const uid_t test_user_uid = 65534;
 static const gid_t test_user_gid = 65534;
+static volatile sig_atomic_t test_alarm_expired;
 
 enum test_mode {
 	TEST_MODE_USER,
@@ -78,6 +79,12 @@ static void test_result(const char *state, const char *name)
 		test_skips++;
 	printf("%s %u - %s\n", state, test_index, name);
 	fflush(stdout);
+}
+
+static void test_alarm_handler(int signal)
+{
+	(void)signal;
+	test_alarm_expired = 1;
 }
 
 static bool read_file(const char *path, char *buffer, size_t capacity,
@@ -163,6 +170,7 @@ static int run_test(enum test_mode mode, const char *name)
 	const char *interpreter = "/bin/bash";
 	char test_path[512];
 	struct timespec start_time;
+	bool timed_out = false;
 	bool is_perl = strlen(name) > 3 && !strcmp(name + strlen(name) - 3, ".pl");
 
 	snprintf(test_path, sizeof(test_path), "/coreutils/%s", name);
@@ -215,6 +223,8 @@ static int run_test(enum test_mode mode, const char *name)
 	if (child < 0)
 		return -1;
 	(void)clock_gettime(CLOCK_MONOTONIC, &start_time);
+	test_alarm_expired = 0;
+	(void)alarm(test_timeout_seconds);
 	for (;;) {
 		struct timespec now;
 		pid_t waited = waitpid(child, &status, WNOHANG);
@@ -222,14 +232,19 @@ static int run_test(enum test_mode mode, const char *name)
 		if (waited == child)
 			break;
 		if (waited < 0) {
+			if (errno == EINTR)
+				continue;
+			(void)alarm(0);
 			printf("# waitpid failed for %s: %s (%d)\n", name,
 			       strerror(errno), errno);
 			fflush(stdout);
 			return -1;
 		}
 		(void)clock_gettime(CLOCK_MONOTONIC, &now);
-		if ((unsigned int)(now.tv_sec - start_time.tv_sec) >=
+		if (test_alarm_expired ||
+		    (unsigned int)(now.tv_sec - start_time.tv_sec) >=
 		    test_timeout_seconds) {
+			timed_out = true;
 			printf("# %s timed out after %u seconds\n", name,
 			       test_timeout_seconds);
 			fflush(stdout);
@@ -240,10 +255,14 @@ static int run_test(enum test_mode mode, const char *name)
 					break;
 				usleep(100000);
 			}
+			(void)alarm(0);
 			return 124;
 		}
 		usleep(100000);
 	}
+	(void)alarm(0);
+	if (timed_out)
+		return 124;
 	if (WIFEXITED(status)) {
 		int exit_status = WEXITSTATUS(status);
 
@@ -305,11 +324,15 @@ static void run_tests(char *data, size_t size)
 
 int main(void)
 {
+	struct sigaction alarm_action = {0};
 	size_t list_size = 0;
 	unsigned int test_count = 0;
 	bool have_list;
 
 	puts("ORLIX-COREUTILS-TEST-INIT");
+	alarm_action.sa_handler = test_alarm_handler;
+	(void)sigemptyset(&alarm_action.sa_mask);
+	(void)sigaction(SIGALRM, &alarm_action, NULL);
 	ensure_runtime_filesystems();
 
 	have_list = read_file("/coreutils-test-list.txt", test_list,
