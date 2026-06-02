@@ -1,0 +1,61 @@
+diff --git a/options/elf/generic/startup.cpp b/options/elf/generic/startup.cpp
+index 97043b35..953908f0 100644
+--- a/options/elf/generic/startup.cpp
++++ b/options/elf/generic/startup.cpp
+@@ -45,6 +45,10 @@ void parse_exec_stack(void *opaque_sp, exec_stack_data *data) {
+ 	__ensure(!*sp); // Skip the terminating null element.
+ 	sp++;
+ 	data->envp = reinterpret_cast<char **>(sp);
++	while(*sp)
++		sp++;
++	sp++;
++	data->auxv = sp;
+ }
+ 
+ // TODO: This does not have to be here; we could also move it to options/internal.
+diff --git a/options/elf/include/mlibc/elf/startup.h b/options/elf/include/mlibc/elf/startup.h
+index fc438553..eee2b92c 100644
+--- a/options/elf/include/mlibc/elf/startup.h
++++ b/options/elf/include/mlibc/elf/startup.h
+@@ -7,6 +7,7 @@ struct exec_stack_data {
+ 	int argc;
+ 	char **argv;
+ 	char **envp;
++	void *auxv;
+ };
+ 
+ extern exec_stack_data entry_stack;
+diff --git a/options/lsb/generic/auxv.cpp b/options/lsb/generic/auxv.cpp
+index a4d2c8f2..34469803 100644
+--- a/options/lsb/generic/auxv.cpp
++++ b/options/lsb/generic/auxv.cpp
+@@ -5,10 +5,14 @@
+ 
+ #include <bits/ensure.h>
+ 
++#include <mlibc/elf/startup.h>
++
+ extern "C" uintptr_t *__dlapi_entrystack();
+ 
+-int peekauxval(unsigned long type, unsigned long *out) {
+-	// Find the auxiliary vector by skipping args and environment.
++static uintptr_t *initial_auxv() {
++	if(mlibc::entry_stack.auxv)
++		return reinterpret_cast<uintptr_t *>(mlibc::entry_stack.auxv);
++
+ 	auto aux = __dlapi_entrystack();
+ 	aux += *aux + 1; // Skip argc and all arguments
+ 	__ensure(!*aux);
+@@ -17,6 +21,12 @@ int peekauxval(unsigned long type, unsigned long *out) {
+ 		aux++;
+ 	aux++;
+ 
++	return aux;
++}
++
++int peekauxval(unsigned long type, unsigned long *out) {
++	auto aux = initial_auxv();
++
+ 	// Parse the auxiliary vector.
+ 	while(true) {
+ 		auto value = aux + 1;
