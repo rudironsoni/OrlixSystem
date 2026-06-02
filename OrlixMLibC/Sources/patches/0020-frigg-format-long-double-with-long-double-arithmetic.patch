@@ -1,0 +1,118 @@
+diff --git i/subprojects/frigg.wrap w/subprojects/frigg.wrap
+--- i/subprojects/frigg.wrap
++++ w/subprojects/frigg.wrap
+@@ -1,4 +1,4 @@
+ [wrap-git]
+ url = https://github.com/managarm/frigg.git
+ revision = b0dbea66bc19f7c5546f0039a3be842feb02678c
+-diff_files = frigg-positional-printf-arg-cache.diff
++diff_files = frigg-positional-printf-arg-cache.diff, frigg-long-double-printf-arithmetic.diff
+diff --git i/subprojects/packagefiles/frigg-long-double-printf-arithmetic.diff w/subprojects/packagefiles/frigg-long-double-printf-arithmetic.diff
+new file mode 100644
+--- /dev/null
++++ w/subprojects/packagefiles/frigg-long-double-printf-arithmetic.diff
+@@ -0,0 +1,104 @@
++diff --git i/include/frg/formatting.hpp w/include/frg/formatting.hpp
++index a5de22c..24eaf29 100644
++--- i/include/frg/formatting.hpp
+++++ w/include/frg/formatting.hpp
++@@ -390,10 +390,51 @@ namespace _fmt_basics {
++ 		// At this point, we've already printed the sign, so pretend it's positive.
++ 		if (__builtin_signbit(number))
++ 			number = -number;
+++		T positive_number = number;
+++		auto frexp_for_type = [] (T value, int *exp) {
+++			if constexpr (std::is_same_v<T, float>)
+++				return frexpf(value, exp);
+++			else if constexpr (std::is_same_v<T, long double>)
+++				return frexpl(value, exp);
+++			else
+++				return frexp(value, exp);
+++		};
+++		auto log10_for_type = [] (T value) {
+++			if constexpr (std::is_same_v<T, float>)
+++				return log10f(value);
+++			else if constexpr (std::is_same_v<T, long double>)
+++				return log10l(value);
+++			else
+++				return log10(value);
+++		};
+++		auto pow10_for_type = [] (int exp) {
+++			if constexpr (std::is_same_v<T, float>)
+++				return powf(10.0F, exp);
+++			else if constexpr (std::is_same_v<T, long double>)
+++				return powl(10.0L, exp);
+++			else
+++				return pow(10.0, exp);
+++		};
+++		auto modf_for_type = [] (T value, T *integral) {
+++			if constexpr (std::is_same_v<T, float>)
+++				return modff(value, integral);
+++			else if constexpr (std::is_same_v<T, long double>)
+++				return modfl(value, integral);
+++			else
+++				return modf(value, integral);
+++		};
+++		auto rint_for_type = [] (T value) {
+++			if constexpr (std::is_same_v<T, float>)
+++				return rintf(value);
+++			else if constexpr (std::is_same_v<T, long double>)
+++				return rintl(value);
+++			else
+++				return rint(value);
+++		};
++ 
++ 		if (print_hexfloat) {
++ 			int exp = 0;
++-			double frac = frexp(number, &exp);
+++			T frac = frexp_for_type(positive_number, &exp);
++ 
++ 			if (frac != 0.0 || exp != 0) {
++ 				frac = (frac * 2.0) - 1.0;
++@@ -486,19 +527,19 @@ namespace _fmt_basics {
++ 		// declare the variables here, but defer initialization to when (if) we need it.
++ 		bool exp_mantissa_init = false;
++ 		int exponent;
++-		double mantissa;
+++		T mantissa;
++ 
++ 		// defer floating-point calculations for as long as possible
++ 		auto deferredMantissaExpInit = [&] () {
++-			if (number == 0.0) {
+++			if (positive_number == 0.0) {
++ 				mantissa = 0.0;
++ 				exponent = 0;
++ 				exp_mantissa_init = true;
++ 				return;
++ 			}
++ 
++-			exponent = (int) floor(log10(number));
++-			mantissa = number / pow(10, exponent);
+++			exponent = (int) floor(log10_for_type(positive_number));
+++			mantissa = positive_number / pow10_for_type(exponent);
++ 
++ 			if (__builtin_isinf(mantissa)) {
++ 				mantissa = 0.0;
++@@ -536,17 +577,17 @@ namespace _fmt_basics {
++ 			if (!exp_mantissa_init)
++ 				deferredMantissaExpInit();
++ 
++-			number = mantissa;
+++			positive_number = mantissa;
++ 		}
++ 
++ 		// do rounding
++-		double intpart, fracpart;
++-		fracpart = modf(number, &intpart);
+++		T intpart, fracpart;
+++		fracpart = modf_for_type(positive_number, &intpart);
++ 		uint64_t integralDigits = static_cast<uint64_t>(intpart);
++ 		// TODO: improve perf with a lookup table? precision would need clamping then
++-		double shift = pow(10, *precision);
+++		T shift = pow10_for_type(*precision);
++ 		// safe because we ensure above that `number` (and therefore `fracpart`) are non-negative
++-		uint64_t fracDigits = static_cast<uint64_t>(rint(fracpart * shift));
+++		uint64_t fracDigits = static_cast<uint64_t>(rint_for_type(fracpart * shift));
++ 
++ 		if (fracDigits == shift) {
++ 			integralDigits++;
