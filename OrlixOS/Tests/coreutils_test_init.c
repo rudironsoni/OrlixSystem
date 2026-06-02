@@ -20,11 +20,19 @@ static unsigned int test_index;
 static unsigned int test_failures;
 static unsigned int test_skips;
 static const unsigned int test_timeout_seconds = 600;
+static const uid_t test_user_uid = 65534;
+static const gid_t test_user_gid = 65534;
+
+enum test_mode {
+	TEST_MODE_USER,
+	TEST_MODE_ROOT,
+};
 
 static char *const test_envp[] = {
-	"HOME=/root",
+	"HOME=/tmp",
 	"LANG=C",
 	"LC_ALL=C",
+	"LOGNAME=nobody",
 	"PATH=/coreutils-build/src:/bin:/usr/bin",
 	"PWD=/coreutils-build",
 	"SHELL=/bin/bash",
@@ -45,7 +53,12 @@ static char *const test_envp[] = {
 	"EGREP=grep -E",
 	"EXEEXT=",
 	"MAKE=make",
+	"NON_ROOT_GID=65534",
+	"NON_ROOT_USERNAME=nobody",
+	"RUN_EXPENSIVE_TESTS=yes",
+	"RUN_VERY_EXPENSIVE_TESTS=yes",
 	"TMPDIR=/tmp",
+	"USER=nobody",
 	"VERBOSE=",
 	NULL,
 };
@@ -116,7 +129,34 @@ static void ensure_runtime_filesystems(void)
 	(void)chdir("/coreutils-build");
 }
 
-static int run_test(const char *name)
+static int enter_test_identity(enum test_mode mode, const char *name)
+{
+	gid_t groups[] = {test_user_gid};
+
+	if (mode == TEST_MODE_ROOT)
+		return 0;
+	if (setgroups(1, groups) != 0) {
+		dprintf(STDERR_FILENO,
+			"# setgroups for unprivileged test %s failed: %s (%d)\n",
+			name, strerror(errno), errno);
+		return -1;
+	}
+	if (setgid(test_user_gid) != 0) {
+		dprintf(STDERR_FILENO,
+			"# setgid for unprivileged test %s failed: %s (%d)\n",
+			name, strerror(errno), errno);
+		return -1;
+	}
+	if (setuid(test_user_uid) != 0) {
+		dprintf(STDERR_FILENO,
+			"# setuid for unprivileged test %s failed: %s (%d)\n",
+			name, strerror(errno), errno);
+		return -1;
+	}
+	return 0;
+}
+
+static int run_test(enum test_mode mode, const char *name)
 {
 	pid_t child;
 	int status;
@@ -129,7 +169,8 @@ static int run_test(const char *name)
 	if (is_perl)
 		interpreter = "/usr/bin/perl";
 
-	printf("# exec %s%s %s\n", interpreter,
+	printf("# exec %s %s%s %s\n", mode == TEST_MODE_ROOT ? "root" : "user",
+	       interpreter,
 	       is_perl ? " -w -I/coreutils/tests -MCuSkip -MCoreutils" : "",
 	       test_path);
 	fflush(stdout);
@@ -152,6 +193,8 @@ static int run_test(const char *name)
 		};
 		char *const *argv = is_perl ? perl_argv : shell_argv;
 
+		if (enter_test_identity(mode, name) != 0)
+			_exit(125);
 		if (chdir("/coreutils-build") != 0) {
 			dprintf(STDERR_FILENO,
 				"# chdir /coreutils-build failed for %s: %s (%d)\n",
@@ -230,13 +273,31 @@ static void run_tests(char *data, size_t size)
 			newline = data + size;
 		*newline = '\0';
 		if (*line != '\0' && *line != '#') {
-			result = run_test(line);
+			enum test_mode mode = TEST_MODE_USER;
+			char *name = line;
+			char *space = strchr(line, ' ');
+
+			if (space) {
+				*space = '\0';
+				name = space + 1;
+				if (!strcmp(line, "root"))
+					mode = TEST_MODE_ROOT;
+				else if (strcmp(line, "user")) {
+					printf("# unknown Coreutils test mode %s for %s\n",
+					       line, name);
+					fflush(stdout);
+					test_result("not ok", name);
+					cursor = newline + 1;
+					continue;
+				}
+			}
+			result = run_test(mode, name);
 			if (result == 0)
-				test_result("ok", line);
+				test_result("ok", name);
 			else if (result == 77)
-				test_result("ok # SKIP", line);
+				test_result("ok # SKIP", name);
 			else
-				test_result("not ok", line);
+				test_result("not ok", name);
 		}
 		cursor = newline + 1;
 	}

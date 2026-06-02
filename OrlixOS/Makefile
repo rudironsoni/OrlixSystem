@@ -653,24 +653,35 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=coreutils\nprograms=%s\nversion=%s\ngit_url=%s\ngit_ref=%s\ngit_commit=%s\ngnulib_git_url=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ORLIXOS_COREUTILS_PROGRAMS)" "$(COREUTILS_VERSION)" "$(COREUTILS_GIT_URL)" "$(COREUTILS_GIT_REF)" "$(COREUTILS_GIT_COMMIT)" "$(COREUTILS_GNULIB_GIT_URL)" > "$(ORLIXOS_COREUTILS_PROOF)"; \
 	echo "built Orlix Linux coreutils package inputs: $(ORLIXOS_COREUTILS_PROGRAMS)"
 
-$(ORLIXOS_COREUTILS_TEST_LIST): $(ORLIXOS_COREUTILS_PROOF)
+$(ORLIXOS_COREUTILS_TEST_LIST): $(ORLIXOS_COREUTILS_PROOF) $(PROJECT_DIR)/Makefile
 	@set -euo pipefail; \
 	makefile="$(ORLIXOS_COREUTILS_BUILD_DIR)/Makefile"; \
 	[ -s "$$makefile" ] || { echo "missing configured Coreutils Makefile: $$makefile" >&2; exit 1; }; \
 	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_LIST))"; \
+	raw_list="$(ORLIXOS_COREUTILS_TEST_LIST).raw"; \
 	awk '\
-		function flush(line, i, value) { \
+		function flush(mode, line, i, value) { \
 			gsub(/\\/, "", line); \
 			for (i = 1; i <= split(line, fields, /[[:space:]]+/); i++) { \
 				value = fields[i]; \
 				if (value == "" || value == "=") continue; \
 				gsub(/\044[(]tf[)]/, "tests/factor", value); \
-				if (value ~ /^tests\//) print value; \
+				if (value ~ /^tests\//) print mode " " value; \
 			} \
 		} \
-		/^(all_tests|factor_tests|all_root_tests) =/ { collecting = 1; flush($$0); if ($$0 !~ /\\$$/) collecting = 0; next } \
-		collecting { flush($$0); if ($$0 !~ /\\$$/) collecting = 0 } \
-	' "$$makefile" | sort -u > "$(ORLIXOS_COREUTILS_TEST_LIST)"; \
+		/^(all_tests|factor_tests) =/ { mode = "user"; collecting = 1; flush(mode, $$0); if ($$0 !~ /\\$$/) collecting = 0; next } \
+		/^all_root_tests =/ { mode = "root"; collecting = 1; flush(mode, $$0); if ($$0 !~ /\\$$/) collecting = 0; next } \
+		collecting { flush(mode, $$0); if ($$0 !~ /\\$$/) collecting = 0 } \
+	' "$$makefile" | sort -u > "$$raw_list"; \
+	awk '\
+		$$1 == "root" { root[$$2] = $$0; next } \
+		$$1 == "user" { user[$$2] = $$0; next } \
+		END { \
+			for (test in user) if (!(test in root)) print user[test]; \
+			for (test in root) print root[test]; \
+		} \
+	' "$$raw_list" | sort -k2,2 > "$(ORLIXOS_COREUTILS_TEST_LIST)"; \
+	rm -f "$$raw_list"; \
 	[ -s "$(ORLIXOS_COREUTILS_TEST_LIST)" ] || { echo "empty Coreutils upstream test list" >&2; exit 1; }; \
 	cp "$(ORLIXOS_COREUTILS_BUILD_DIR)/lib/config.h" "$(ORLIXOS_COREUTILS_CONFIG_HEADER)"; \
 	[ -s "$(ORLIXOS_COREUTILS_CONFIG_HEADER)" ] || { echo "missing Coreutils config snapshot: $(ORLIXOS_COREUTILS_CONFIG_HEADER)" >&2; exit 1; }; \
@@ -755,7 +766,7 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'dir /root 0700 0 0\n'; \
 		printf 'dir /tmp 1777 0 0\n'; \
 		printf 'dir /coreutils 0755 0 0\n'; \
-		printf 'dir /coreutils-build 0755 0 0\n'; \
+		printf 'dir /coreutils-build 0777 0 0\n'; \
 		printf 'file /init %s 0755 0 0\n' "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"; \
 		printf 'file /etc/passwd %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_TEST_PASSWD)"; \
 		printf 'file /etc/group %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_TEST_GROUP)"; \
