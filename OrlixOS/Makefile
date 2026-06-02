@@ -930,6 +930,15 @@ $(ORLIXOS_SED_BINARY): $(ORLIXOS_SED_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orl
 	export LIBS="$$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
 	export AR="$(ORLIXOS_AR)"; \
 	export RANLIB="$(ORLIXOS_RANLIB)"; \
+	export gl_cv_func_mbrtowc_incomplete_state=yes; \
+	export gl_cv_func_mbrtowc_sanitycheck=yes; \
+	export gl_cv_func_mbrtowc_null_arg1=yes; \
+	export gl_cv_func_mbrtowc_null_arg2=yes; \
+	export gl_cv_func_mbrtowc_retval=yes; \
+	export gl_cv_func_mbrtowc_nul_retval=yes; \
+	export gl_cv_func_mbrtowc_stores_incomplete=no; \
+	export gl_cv_func_mbrtowc_empty_input=yes; \
+	export gl_cv_func_mbrtowc_C_locale_sans_EILSEQ=no; \
 	"$(ORLIXOS_SED_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --disable-acl --disable-gcc-warnings; \
 	$(MAKE) -j1 all; \
 	$(MAKE) -j1 install DESTDIR="$(ORLIXOS_PACKAGE_INSTALL_DIR)"; \
