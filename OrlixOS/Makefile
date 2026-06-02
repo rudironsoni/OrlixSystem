@@ -107,6 +107,8 @@ ORLIXOS_COREUTILS_CONFIG_HEADER := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-config
 ORLIXOS_COREUTILS_TEST_RUN_LOG := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-run-output.log
 ORLIXOS_COREUTILS_TEST_FILTER ?=
 ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS ?= 600
+ORLIXOS_COREUTILS_TEST_SHELL_TRACE ?= 0
+ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE ?= 0
 ORLIXOS_COREUTILS_PROGRAMS := [ b2sum base32 base64 basenc basename cat chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink users vdir wc who whoami yes
 ORLIXOS_GREP_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/grep-$(GREP_VERSION).tar.xz
 ORLIXOS_GREP_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/grep-$(GREP_VERSION).sha256-ok
@@ -780,7 +782,7 @@ $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(O
 	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
 	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
 	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_INIT_BINARY))"; \
-	"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -DORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS=$(ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS) -std=c17 -O2 -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_COREUTILS_TEST_INIT_SOURCE)" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"; \
+	"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -DORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS=$(ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS) -DORLIXOS_COREUTILS_TEST_SHELL_TRACE=$(ORLIXOS_COREUTILS_TEST_SHELL_TRACE) -DORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE=$(ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE) -std=c17 -O2 -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_COREUTILS_TEST_INIT_SOURCE)" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"; \
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"; \
 	file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" >&2; exit 1; }; \
 	echo "built OrlixOS Coreutils test init: $(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"

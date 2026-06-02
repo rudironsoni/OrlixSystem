@@ -24,6 +24,12 @@ static unsigned int test_skips;
 #ifndef ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS
 #define ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS 600
 #endif
+#ifndef ORLIXOS_COREUTILS_TEST_SHELL_TRACE
+#define ORLIXOS_COREUTILS_TEST_SHELL_TRACE 0
+#endif
+#ifndef ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE
+#define ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE 0
+#endif
 static const unsigned int test_timeout_seconds =
 	ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS;
 static const uid_t test_user_uid = 65534;
@@ -187,6 +193,9 @@ static int run_test(enum test_mode mode, const char *name)
 	if (child == 0) {
 		char *const shell_argv[] = {
 			(char *)interpreter,
+#if ORLIXOS_COREUTILS_TEST_SHELL_TRACE
+			(char *)"-x",
+#endif
 			test_path,
 			NULL,
 		};
@@ -304,6 +313,105 @@ static int run_test(enum test_mode mode, const char *name)
 	return -1;
 }
 
+#if ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE
+static void run_getlimits_probe(void)
+{
+	pid_t child;
+	int timeout_fd = -1;
+	int status = 0;
+	bool timed_out = false;
+	char *const argv[] = {
+		(char *)"/bin/getlimits",
+		NULL,
+	};
+
+	printf("# getlimits probe start\n");
+	fflush(stdout);
+
+	child = fork();
+	if (child == 0) {
+		(void)setpgid(0, 0);
+		if (enter_test_identity(TEST_MODE_USER, "getlimits-probe") != 0)
+			_exit(125);
+		if (chdir("/coreutils-build") != 0) {
+			dprintf(STDERR_FILENO,
+				"# getlimits probe chdir failed: %s (%d)\n",
+				strerror(errno), errno);
+			_exit(125);
+		}
+		execve(argv[0], argv, test_envp);
+		dprintf(STDERR_FILENO, "# getlimits probe execve failed: %s (%d)\n",
+			strerror(errno), errno);
+		_exit(127);
+	}
+	if (child < 0) {
+		printf("# getlimits probe fork failed: %s (%d)\n", strerror(errno),
+		       errno);
+		fflush(stdout);
+		return;
+	}
+	(void)setpgid(child, child);
+	timeout_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+	if (timeout_fd >= 0) {
+		struct itimerspec timeout = {0};
+
+		timeout.it_value.tv_sec = test_timeout_seconds;
+		if (timerfd_settime(timeout_fd, 0, &timeout, NULL) != 0) {
+			close(timeout_fd);
+			timeout_fd = -1;
+		}
+	}
+	for (;;) {
+		pid_t waited = waitpid(child, &status, WNOHANG);
+
+		if (waited == child)
+			break;
+		if (waited < 0) {
+			if (errno == EINTR)
+				continue;
+			printf("# getlimits probe waitpid failed: %s (%d)\n",
+			       strerror(errno), errno);
+			break;
+		}
+		if (timeout_fd >= 0) {
+			uint64_t expirations;
+			ssize_t bytes = read(timeout_fd, &expirations,
+					     sizeof(expirations));
+
+			if (bytes == (ssize_t)sizeof(expirations) &&
+			    expirations > 0)
+				timed_out = true;
+		}
+		if (timed_out) {
+			printf("# getlimits probe timed out after %u seconds\n",
+			       test_timeout_seconds);
+			(void)kill(-child, SIGKILL);
+			(void)kill(child, SIGKILL);
+			for (unsigned int reap_wait_ms = 0; reap_wait_ms < 5000;
+			     reap_wait_ms += 100) {
+				if (waitpid(child, &status, WNOHANG) == child)
+					break;
+				usleep(100000);
+			}
+			break;
+		}
+		usleep(100000);
+	}
+	if (timeout_fd >= 0)
+		close(timeout_fd);
+	if (timed_out)
+		return;
+	if (WIFEXITED(status))
+		printf("# getlimits probe exited with status %d\n",
+		       WEXITSTATUS(status));
+	else if (WIFSIGNALED(status))
+		printf("# getlimits probe killed by signal %d\n", WTERMSIG(status));
+	else
+		printf("# getlimits probe ended with wait status 0x%x\n", status);
+	fflush(stdout);
+}
+#endif
+
 static void run_tests(char *data, size_t size)
 {
 	char *cursor = data;
@@ -355,6 +463,9 @@ int main(void)
 
 	puts("ORLIX-COREUTILS-TEST-INIT");
 	ensure_runtime_filesystems();
+#if ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE
+	run_getlimits_probe();
+#endif
 
 	have_list = read_file("/coreutils-test-list.txt", test_list,
 			      sizeof(test_list), &list_size);
