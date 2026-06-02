@@ -577,6 +577,11 @@ static void run_sed_probe(void)
 		(char *)"-c",
 		(char *)"set -x; rm -f out t; "
 			"printf '%s\\n' foo > out; "
+			"printf 'SED-PROBE-CAT='; cat out; "
+			"printf 'SED-PROBE-WC='; wc -c out; "
+			"printf 'SED-PROBE-GREP='; grep foo out; "
+			"printf 'SED-PROBE-STDIN='; printf '%s\\n' foo | sed -n p; "
+			"printf 'SED-PROBE-VERSION='; sed --version | head -n 1; "
 			"printf 'SED-PROBE-PRINT='; sed -n p out; "
 			"printf 'SED-PROBE-DELETE='; sed d out; printf ':END\\n'; "
 			"printf 'SED-PROBE-TRANSLIT='; sed 'y/foo/bar/' out; "
