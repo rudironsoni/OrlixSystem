@@ -4,6 +4,9 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <langinfo.h>
+#include <limits.h>
+#include <locale.h>
 #include <regex.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -18,6 +21,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <wchar.h>
 
 static char test_list[131072];
 static unsigned int test_index;
@@ -535,6 +539,35 @@ static void run_regex_probe(void)
 	fflush(stdout);
 }
 
+static void run_multibyte_probe(void)
+{
+	mbstate_t state = {0};
+	wchar_t wc = 0;
+	char mb[MB_LEN_MAX] = {0};
+	const char *locale = setlocale(LC_ALL, NULL);
+	size_t result;
+	int saved_errno;
+
+	printf("# multibyte probe locale=%s codeset=%s MB_CUR_MAX=%zu\n",
+	       locale ? locale : "(null)", nl_langinfo(CODESET), MB_CUR_MAX);
+
+	errno = 0;
+	result = mbrtowc(&wc, "foo", 3, &state);
+	saved_errno = errno;
+	printf("# multibyte probe mbrtowc(foo)=%zu errno=%d wc=%lu mbsinit=%d\n",
+	       result, saved_errno, (unsigned long)wc, mbsinit(&state));
+
+	state = (mbstate_t){0};
+	errno = 0;
+	result = wcrtomb(mb, L'f', &state);
+	saved_errno = errno;
+	printf("# multibyte probe wcrtomb(f)=%zu errno=%d byte=%u mbsinit=%d\n",
+	       result, saved_errno, (unsigned char)mb[0], mbsinit(&state));
+
+	printf("# multibyte probe btowc(f)=%lu\n", (unsigned long)btowc('f'));
+	fflush(stdout);
+}
+
 static void run_sed_probe(void)
 {
 	pid_t child;
@@ -652,6 +685,7 @@ int main(void)
 	run_getlimits_probe();
 #endif
 #if ORLIXOS_COREUTILS_TEST_SED_PROBE
+	run_multibyte_probe();
 	run_regex_probe();
 	run_sed_probe();
 #endif
