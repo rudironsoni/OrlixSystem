@@ -577,6 +577,10 @@ static void run_sed_probe(void)
 		(char *)"-c",
 		(char *)"set -x; rm -f out t; "
 			"printf '%s\\n' foo > out; "
+			"printf 'SED-PROBE-PRINT='; sed -n p out; "
+			"printf 'SED-PROBE-DELETE='; sed d out; printf ':END\\n'; "
+			"printf 'SED-PROBE-TRANSLIT='; sed 'y/foo/bar/' out; "
+			"printf 'SED-PROBE-DOT='; sed 's/.*/bar/' out; "
 			"sed 's/foo/bar/' out > t && mv t out; "
 			"printf 'SED-PROBE-SIMPLE='; cat out; "
 			"printf '%s\\n' \"chgrp: cannot access 'd/no-x/y': Access denied (EACCESS)\" > out; "
