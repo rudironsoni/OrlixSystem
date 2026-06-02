@@ -21,7 +21,11 @@ static char test_list[131072];
 static unsigned int test_index;
 static unsigned int test_failures;
 static unsigned int test_skips;
-static const unsigned int test_timeout_seconds = 600;
+#ifndef ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS
+#define ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS 600
+#endif
+static const unsigned int test_timeout_seconds =
+	ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS;
 static const uid_t test_user_uid = 65534;
 static const gid_t test_user_gid = 65534;
 
@@ -197,6 +201,7 @@ static int run_test(enum test_mode mode, const char *name)
 		};
 		char *const *argv = is_perl ? perl_argv : shell_argv;
 
+		(void)setpgid(0, 0);
 		if (enter_test_identity(mode, name) != 0)
 			_exit(125);
 		if (chdir("/coreutils-build") != 0) {
@@ -218,6 +223,7 @@ static int run_test(enum test_mode mode, const char *name)
 	}
 	if (child < 0)
 		return -1;
+	(void)setpgid(child, child);
 	(void)clock_gettime(CLOCK_MONOTONIC, &start_time);
 	timeout_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
 	if (timeout_fd >= 0) {
@@ -264,6 +270,7 @@ static int run_test(enum test_mode mode, const char *name)
 			printf("# %s timed out after %u seconds\n", name,
 			       test_timeout_seconds);
 			fflush(stdout);
+			(void)kill(-child, SIGKILL);
 			(void)kill(child, SIGKILL);
 			for (unsigned int reap_wait_ms = 0; reap_wait_ms < 5000;
 			     reap_wait_ms += 100) {
