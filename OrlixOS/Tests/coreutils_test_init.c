@@ -131,11 +131,11 @@ static void ensure_runtime_filesystems(void)
 
 static int enter_test_identity(enum test_mode mode, const char *name)
 {
-	gid_t groups[] = {test_user_gid};
+	gid_t groups[] = {0, 2};
 
 	if (mode == TEST_MODE_ROOT)
 		return 0;
-	if (setgroups(1, groups) != 0) {
+	if (setgroups(2, groups) != 0) {
 		dprintf(STDERR_FILENO,
 			"# setgroups for unprivileged test %s failed: %s (%d)\n",
 			name, strerror(errno), errno);

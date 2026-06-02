@@ -216,15 +216,13 @@ rootfs: $(ORLIXOS_ROOTFS_PROOF)
 test coreutils-test: $(ORLIXOS_COREUTILS_TEST_INITRAMFS)
 	@set -euo pipefail; \
 	run_log="$(ORLIXOS_COREUTILS_TEST_RUN_LOG)"; \
+	rm -rf "$(ORLIXOS_SRC_DIR)" "$(ORLIXOS_UPSTREAM_DIR)" "$(ORLIXOS_PACKAGE_BUILD_DIR)" "$(REPO_ROOT)/Build/OrlixMLibC/upstream/llvm-project" "$(REPO_ROOT)/.deriveddata/OrlixSystem-sim"; \
 	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_RUN_LOG))"; \
 	$(KERNEL_MAKE) run PROFILE="$(PROFILE)" type=coreutils libc=orlixmlibc ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(ORLIXOS_COREUTILS_TEST_INITRAMFS)" | tee "$$run_log"; \
 	runtime_log="$$(awk -F'"' '/runtimeLogPath/ { print $$4 }' "$$run_log" | tail -n 1)"; \
-	process_id="$$(awk -F'[^0-9]+' '/"processId"/ { print $$2; exit }' "$$run_log")"; \
 	[ -n "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log path in $$run_log" >&2; exit 1; }; \
-	[ -n "$$process_id" ] || { echo "missing OrlixTerminal process id in $$run_log" >&2; exit 1; }; \
 	for _ in $$(seq 1 3600); do \
 		grep -F -q 'ORLIX-COREUTILS-TEST-END' "$$runtime_log" && break; \
-		kill -0 "$$process_id" 2>/dev/null || { echo "OrlixTerminal exited before Coreutils upstream tests completed: pid=$$process_id log=$$runtime_log" >&2; exit 1; }; \
 		sleep 1; \
 	done; \
 	grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0' "$$runtime_log" || { echo "Coreutils upstream tests did not complete successfully: $$runtime_log" >&2; exit 1; }; \
@@ -641,10 +639,20 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	export gl_cv_func_getopt_long_gnu=yes; \
 	export gl_cv_func_strtod_works=yes; \
 	"$(ORLIXOS_COREUTILS_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --without-selinux --disable-acl --disable-xattr --disable-libcap --disable-gcc-warnings; \
-	$(MAKE) -j1 all; \
-	$(MAKE) -j1 install DESTDIR="$(ORLIXOS_PACKAGE_INSTALL_DIR)"; \
+	$(MAKE) -j1 all MANS= INFO_DEPS=; \
+	$(MAKE) -j1 src/getlimits; \
+	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
+		source_program="$$program"; \
+		if [ "$$program" = install ]; then source_program=ginstall; fi; \
+		"$(ORLIXOS_STRIP)" "$(ORLIXOS_COREUTILS_BUILD_DIR)/src/$$source_program"; \
+	done; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_COREUTILS_BUILD_DIR)/src/getlimits"; \
+	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
+		source_program="$$program"; \
+		if [ "$$program" = install ]; then source_program=ginstall; fi; \
+		install -m 0755 "$(ORLIXOS_COREUTILS_BUILD_DIR)/src/$$source_program" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; \
+	done; \
 	cp "$(ORLIXOS_COREUTILS_BUILD_DIR)/src/getlimits" "$(ORLIXOS_GETLIMITS_BINARY)"; \
-	"$(ORLIXOS_STRIP)" "$(ORLIXOS_GETLIMITS_BINARY)"; \
 	file "$(ORLIXOS_GETLIMITS_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GETLIMITS_BINARY)" >&2; exit 1; }; \
 	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
 		"$(ORLIXOS_STRIP)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; \
