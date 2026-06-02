@@ -110,6 +110,7 @@ ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS ?= 600
 ORLIXOS_COREUTILS_TEST_SHELL_TRACE ?= 0
 ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE ?= 0
 ORLIXOS_COREUTILS_TEST_SED_PROBE ?= 0
+ORLIXOS_KEEP_SED_BUILD ?= 0
 ORLIXOS_COREUTILS_PROGRAMS := [ b2sum base32 base64 basenc basename cat chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink users vdir wc who whoami yes
 ORLIXOS_GREP_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/grep-$(GREP_VERSION).tar.xz
 ORLIXOS_GREP_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/grep-$(GREP_VERSION).sha256-ok
@@ -935,7 +936,7 @@ $(ORLIXOS_SED_BINARY): $(ORLIXOS_SED_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orl
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_SED_BINARY)"; \
 	file "$(ORLIXOS_SED_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_SED_BINARY)" >&2; exit 1; }; \
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=sed\nversion=%s\nsha256=%s\nregex=bundled-gnulib\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(SED_VERSION)" "$(SED_SHA256)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/sed.proof"; \
-	rm -rf "$(ORLIXOS_SED_BUILD_DIR)" "$(ORLIXOS_SED_SRC_DIR)"; \
+	if [ "$(ORLIXOS_KEEP_SED_BUILD)" != "1" ]; then rm -rf "$(ORLIXOS_SED_BUILD_DIR)" "$(ORLIXOS_SED_SRC_DIR)"; fi; \
 	echo "built Orlix Linux sed package input: $(ORLIXOS_SED_BINARY)"
 
 $(ORLIXOS_DIFF_BINARY): $(ORLIXOS_DIFFUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
