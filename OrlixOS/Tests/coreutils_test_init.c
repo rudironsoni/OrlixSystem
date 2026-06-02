@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <grp.h>
+#include <regex.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -30,6 +31,9 @@ static unsigned int test_skips;
 #endif
 #ifndef ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE
 #define ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE 0
+#endif
+#ifndef ORLIXOS_COREUTILS_TEST_SED_PROBE
+#define ORLIXOS_COREUTILS_TEST_SED_PROBE 0
 #endif
 static const unsigned int test_timeout_seconds =
 	ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS;
@@ -499,6 +503,100 @@ static void run_getlimits_probe(void)
 }
 #endif
 
+#if ORLIXOS_COREUTILS_TEST_SED_PROBE
+static void run_regex_probe(void)
+{
+	regex_t regex;
+	int error;
+
+	error = regcomp(&regex, "^chgrp: cannot access ", 0);
+	if (error != 0) {
+		printf("# regex probe regcomp anchor failed: %d\n", error);
+		fflush(stdout);
+		return;
+	}
+	error = regexec(&regex,
+			"chgrp: cannot access 'd/no-x/y': Access denied (EACCESS)",
+			0, NULL, 0);
+	printf("# regex probe anchor regexec=%d\n", error);
+	regfree(&regex);
+
+	error = regcomp(&regex, "d/no-x/y", 0);
+	if (error != 0) {
+		printf("# regex probe regcomp path failed: %d\n", error);
+		fflush(stdout);
+		return;
+	}
+	error = regexec(&regex,
+			"chgrp: cannot access 'd/no-x/y': Access denied (EACCESS)",
+			0, NULL, 0);
+	printf("# regex probe path regexec=%d\n", error);
+	regfree(&regex);
+	fflush(stdout);
+}
+
+static void run_sed_probe(void)
+{
+	pid_t child;
+	int status = 0;
+	char *const argv[] = {
+		(char *)"/bin/bash",
+		(char *)"-c",
+		(char *)"set -x; rm -f out t; "
+			"printf '%s\\n' foo > out; "
+			"sed 's/foo/bar/' out > t && mv t out; "
+			"printf 'SED-PROBE-SIMPLE='; cat out; "
+			"printf '%s\\n' \"chgrp: cannot access 'd/no-x/y': Access denied (EACCESS)\" > out; "
+			"sed 's/^chgrp: cannot access /chgrp: /' out > t && mv t out; "
+			"sed 's/^chgrp: cannot read directory /chgrp: /' out > t && mv t out; "
+			"sed 's,d/no-x/y,d/no-x,' out > t && mv t out; "
+			"printf 'SED-PROBE-OUT='; cat out",
+		NULL,
+	};
+
+	printf("# sed probe start\n");
+	fflush(stdout);
+	child = fork();
+	if (child == 0) {
+		(void)setpgid(0, 0);
+		if (enter_test_identity(TEST_MODE_USER, "sed-probe") != 0)
+			_exit(125);
+		if (chdir("/coreutils-build") != 0) {
+			dprintf(STDERR_FILENO,
+				"# sed probe chdir failed: %s (%d)\n",
+				strerror(errno), errno);
+			_exit(125);
+		}
+		execve(argv[0], argv, test_envp);
+		dprintf(STDERR_FILENO, "# sed probe execve failed: %s (%d)\n",
+			strerror(errno), errno);
+		_exit(127);
+	}
+	if (child < 0) {
+		printf("# sed probe fork failed: %s (%d)\n", strerror(errno),
+		       errno);
+		fflush(stdout);
+		return;
+	}
+	(void)setpgid(child, child);
+	while (waitpid(child, &status, 0) < 0) {
+		if (errno != EINTR) {
+			printf("# sed probe waitpid failed: %s (%d)\n",
+			       strerror(errno), errno);
+			fflush(stdout);
+			return;
+		}
+	}
+	if (WIFEXITED(status))
+		printf("# sed probe exit status %d\n", WEXITSTATUS(status));
+	else if (WIFSIGNALED(status))
+		printf("# sed probe signal %d\n", WTERMSIG(status));
+	else
+		printf("# sed probe wait status 0x%x\n", status);
+	fflush(stdout);
+}
+#endif
+
 static void run_tests(char *data, size_t size)
 {
 	char *cursor = data;
@@ -552,6 +650,10 @@ int main(void)
 	ensure_runtime_filesystems();
 #if ORLIXOS_COREUTILS_TEST_GETLIMITS_PROBE
 	run_getlimits_probe();
+#endif
+#if ORLIXOS_COREUTILS_TEST_SED_PROBE
+	run_regex_probe();
+	run_sed_probe();
 #endif
 
 	have_list = read_file("/coreutils-test-list.txt", test_list,
