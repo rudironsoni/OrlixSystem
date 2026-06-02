@@ -1,0 +1,19 @@
+diff --git a/options/internal/generic/locale.cpp b/options/internal/generic/locale.cpp
+index 437f64d4..67b25ebf 100644
+--- a/options/internal/generic/locale.cpp
++++ b/options/internal/generic/locale.cpp
+@@ -829,7 +829,13 @@ char *nl_langinfo_l(nl_item item, localeinfo * loc) {
+ 		case CODESET:
+ 			return const_cast<char *>(l->ctype.get(CODESET).asString().data());
+ 
+-		case ABDAY_1 ... ALT_DIGITS:
++		case ABDAY_1 ... ALT_DIGITS:
++		case _DATE_FMT:
++		case _NL_TIME_CODESET:
++		case ALTMON_1 ... ALTMON_12:
++		case ABALTMON_1 ... ABALTMON_12:
++		case _NL_TIME_TIMEZONE:
++		case _NL_TIME_ERA_ENTRIES:
+ 			return const_cast<char *>(l->time.get(item).asString().data());
+ 
+ 		case DECIMAL_POINT:

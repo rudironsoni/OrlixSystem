@@ -7,7 +7,7 @@ index 6ef827df..71c2bb42 100644
  }
  
 +int euidaccess(const char *path, int mode) {
-+	return access(path, mode);
++	return faccessat(AT_FDCWD, path, mode, AT_EACCESS);
 +}
 +
 +int eaccess(const char *path, int mode) {
