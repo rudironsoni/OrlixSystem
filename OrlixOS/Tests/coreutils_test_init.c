@@ -267,14 +267,13 @@ static int run_test(enum test_mode mode, const char *name)
 			if (bytes == (ssize_t)sizeof(expirations) &&
 			    expirations > 0)
 				timed_out = true;
-		} else {
-			struct timespec now;
-
-			(void)clock_gettime(CLOCK_MONOTONIC, &now);
-			if ((unsigned int)(now.tv_sec - start_time.tv_sec) >=
-			    test_timeout_seconds)
-				timed_out = true;
 		}
+		struct timespec now;
+
+		(void)clock_gettime(CLOCK_MONOTONIC, &now);
+		if ((unsigned int)(now.tv_sec - start_time.tv_sec) >=
+		    test_timeout_seconds)
+			timed_out = true;
 		if (timed_out) {
 			printf("# %s timed out after %u seconds\n", name,
 			       test_timeout_seconds);
@@ -320,6 +319,7 @@ static void run_getlimits_probe(void)
 	int timeout_fd = -1;
 	int status = 0;
 	bool timed_out = false;
+	struct timespec start_time;
 	char *const argv[] = {
 		(char *)"/bin/getlimits",
 		NULL,
@@ -351,6 +351,7 @@ static void run_getlimits_probe(void)
 		return;
 	}
 	(void)setpgid(child, child);
+	(void)clock_gettime(CLOCK_MONOTONIC, &start_time);
 	timeout_fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
 	if (timeout_fd >= 0) {
 		struct itimerspec timeout = {0};
@@ -382,6 +383,12 @@ static void run_getlimits_probe(void)
 			    expirations > 0)
 				timed_out = true;
 		}
+		struct timespec now;
+
+		(void)clock_gettime(CLOCK_MONOTONIC, &now);
+		if ((unsigned int)(now.tv_sec - start_time.tv_sec) >=
+		    test_timeout_seconds)
+			timed_out = true;
 		if (timed_out) {
 			printf("# getlimits probe timed out after %u seconds\n",
 			       test_timeout_seconds);

@@ -1,3 +1,17 @@
+diff --git a/options/posix/include/bits/posix/posix_stdio.h b/options/posix/include/bits/posix/posix_stdio.h
+index 4efc13a9..afad7f3c 100644
+--- a/options/posix/include/bits/posix/posix_stdio.h
++++ b/options/posix/include/bits/posix/posix_stdio.h
+@@ -63,7 +63,9 @@ char *fgetln(FILE *__stream, size_t *__size);
+ #endif /* !__MLIBC_ABI_ONLY */
+ 
+ #if defined(_GNU_SOURCE)
++#define RENAME_NOREPLACE (1 << 0)
+ #define RENAME_EXCHANGE (1 << 1)
++#define RENAME_WHITEOUT (1 << 2)
+ 
+ /* GNU extensions */
+ typedef ssize_t (cookie_read_function_t)(void *__cookie, char *__buffer, size_t __size);
 diff --git a/options/posix/generic/posix_stdio.cpp b/options/posix/generic/posix_stdio.cpp
 index 6353bc74..8e4659e3 100644
 --- a/options/posix/generic/posix_stdio.cpp
