@@ -588,6 +588,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/pipe.c \
 	fs/pidfs.c \
 	fs/pnode.c \
+	fs/posix_acl.c \
 	fs/proc_namespace.c \
 	fs/notify/fsnotify.c \
 	fs/notify/notification.c \
@@ -662,6 +663,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/ext4/xattr_trusted.c \
 	fs/ext4/xattr_user.c \
 	fs/ext4/fast_commit.c \
+	fs/ext4/acl.c \
 	fs/ext4/orphan.c \
 	fs/iomap/trace.c \
 	fs/iomap/iter.c \

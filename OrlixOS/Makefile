@@ -101,6 +101,8 @@ ORLIXOS_COREUTILS_BUILD_DIR := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-$(COREUTIL
 ORLIXOS_CAT_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/cat
 ORLIXOS_COREUTILS_PROOF := $(ORLIXOS_PACKAGE_INSTALL_DIR)/coreutils.proof
 ORLIXOS_COREUTILS_TEST_INIT_SOURCE := $(PROJECT_DIR)/Tests/coreutils_test_init.c
+ORLIXOS_COREUTILS_TEST_RUNNER := $(PROJECT_DIR)/Tests/coreutils-run-upstream-check.sh
+ORLIXOS_COREUTILS_TEST_ENV := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-env.sh
 ORLIXOS_COREUTILS_TEST_PASSWD := $(PROJECT_DIR)/Tests/coreutils-passwd
 ORLIXOS_COREUTILS_TEST_GROUP := $(PROJECT_DIR)/Tests/coreutils-group
 ORLIXOS_COREUTILS_TEST_INIT_BINARY := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-init
@@ -234,7 +236,6 @@ rootfs: $(ORLIXOS_ROOTFS_PROOF)
 test coreutils-test: $(ORLIXOS_COREUTILS_TEST_INITRAMFS)
 	@set -euo pipefail; \
 	run_log="$(ORLIXOS_COREUTILS_TEST_RUN_LOG)"; \
-	rm -rf "$(ORLIXOS_SRC_DIR)" "$(ORLIXOS_UPSTREAM_DIR)" "$(ORLIXOS_PACKAGE_BUILD_DIR)" "$(REPO_ROOT)/Build/OrlixMLibC/upstream/llvm-project" "$(REPO_ROOT)/.deriveddata/OrlixSystem-sim"; \
 	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_RUN_LOG))"; \
 	$(KERNEL_MAKE) run PROFILE="$(PROFILE)" type=coreutils libc=orlixmlibc ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(ORLIXOS_COREUTILS_TEST_INITRAMFS)" | tee "$$run_log"; \
 	runtime_log="$$(awk -F'"' '/runtimeLogPath/ { print $$4 }' "$$run_log" | tail -n 1)"; \
@@ -746,6 +747,18 @@ $(ORLIXOS_COREUTILS_TEST_LIST): $(ORLIXOS_COREUTILS_PROOF) $(PROJECT_DIR)/Makefi
 	rm -rf "$(ORLIXOS_COREUTILS_BUILD_DIR)"; \
 	echo "wrote upstream Coreutils test list: $(ORLIXOS_COREUTILS_TEST_LIST) ($$(wc -l < "$(ORLIXOS_COREUTILS_TEST_LIST)") tests)"
 
+$(ORLIXOS_COREUTILS_TEST_ENV): $(ORLIXOS_COREUTILS_PROOF) $(PROJECT_DIR)/Makefile
+	@set -euo pipefail; \
+	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_ENV))"; \
+	{ \
+		printf '%s\n' '# generated from OrlixOS/Makefile package inputs'; \
+		printf 'export VERSION=%s\n' "$(COREUTILS_VERSION)"; \
+		printf 'export PACKAGE_VERSION=%s\n' "$(COREUTILS_VERSION)"; \
+		printf 'export PERL5LIB=/usr/lib/perl5/%s\n' "$(PERL_VERSION)"; \
+		printf "export built_programs='%s'\n" "$(ORLIXOS_COREUTILS_PROGRAMS)"; \
+	} > "$(ORLIXOS_COREUTILS_TEST_ENV)"; \
+	echo "wrote Coreutils upstream test environment: $(ORLIXOS_COREUTILS_TEST_ENV)"
+
 $(ORLIXOS_GETLIMITS_BINARY): $(ORLIXOS_COREUTILS_PROOF)
 	@set -euo pipefail; \
 	[ -x "$(ORLIXOS_GETLIMITS_BINARY)" ] || { echo "missing upstream Coreutils getlimits helper: $(ORLIXOS_GETLIMITS_BINARY)" >&2; exit 1; }; \
@@ -885,7 +898,7 @@ $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(O
 	file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" >&2; exit 1; }; \
 	echo "built OrlixOS Coreutils test init: $(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"
 
-$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_COREUTILS_TEST_PASSWD) $(ORLIXOS_COREUTILS_TEST_GROUP) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_FINDUTILS_PROOF) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_MOUNT_BINARY) $(ORLIXOS_UMOUNT_BINARY) $(ORLIXOS_GETLIMITS_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_PERL_PROOF)
+$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_RUNNER) $(ORLIXOS_COREUTILS_TEST_ENV) $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_COREUTILS_TEST_PASSWD) $(ORLIXOS_COREUTILS_TEST_GROUP) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_FINDUTILS_PROOF) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_MOUNT_BINARY) $(ORLIXOS_UMOUNT_BINARY) $(ORLIXOS_GETLIMITS_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_PERL_PROOF)
 	@set -euo pipefail; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
@@ -909,6 +922,8 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'dir /coreutils 0755 0 0\n'; \
 		printf 'dir /coreutils-build 0777 0 0\n'; \
 		printf 'file /init %s 0755 0 0\n' "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"; \
+		printf 'file /coreutils-build/run-upstream-coreutils-tests.sh %s 0755 0 0\n' "$(ORLIXOS_COREUTILS_TEST_RUNNER)"; \
+		printf 'file /coreutils-build/coreutils-test-env.sh %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_TEST_ENV)"; \
 		printf 'file /etc/passwd %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_TEST_PASSWD)"; \
 		printf 'file /etc/group %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_TEST_GROUP)"; \
 		printf 'file /coreutils-test-list.txt %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_TEST_LIST)"; \
@@ -960,6 +975,16 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		find "$(ORLIXOS_COREUTILS_SRC_DIR)/tests" -type f | sort | while read -r file; do \
 			rel="$${file#"$(ORLIXOS_COREUTILS_SRC_DIR)"}"; \
 			printf 'file /coreutils%s %s 0644 0 0\n' "$$rel" "$$file"; \
+		done; \
+		find "$(ORLIXOS_COREUTILS_SRC_DIR)/build-aux" -type d | sort | while read -r dir; do \
+			rel="$${dir#"$(ORLIXOS_COREUTILS_SRC_DIR)"}"; \
+			printf 'dir /coreutils%s 0755 0 0\n' "$$rel"; \
+		done; \
+		find "$(ORLIXOS_COREUTILS_SRC_DIR)/build-aux" -type f | sort | while read -r file; do \
+			rel="$${file#"$(ORLIXOS_COREUTILS_SRC_DIR)"}"; \
+			mode=0644; \
+			[ -x "$$file" ] && mode=0755; \
+			printf 'file /coreutils%s %s %s 0 0\n' "$$rel" "$$file" "$$mode"; \
 		done; \
 		printf 'file /coreutils/init.cfg %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_SRC_DIR)/init.cfg"; \
 		printf 'dir /coreutils-build/src 0755 0 0\n'; \
