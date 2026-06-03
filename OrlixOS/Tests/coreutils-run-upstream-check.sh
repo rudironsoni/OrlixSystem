@@ -38,7 +38,9 @@ if [ ! -r /coreutils-build/coreutils-test-env.sh ]; then
 fi
 . /coreutils-build/coreutils-test-env.sh
 
+chmod 0777 /coreutils-build
 mkdir -p test-logs
+chmod 0777 test-logs
 
 if [ ! -s /coreutils-test-list.txt ]; then
   echo 'ORLIX-COREUTILS-TEST-END failures=1 skips=0 total=0'

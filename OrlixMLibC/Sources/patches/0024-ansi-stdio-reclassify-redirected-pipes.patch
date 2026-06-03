@@ -1,0 +1,21 @@
+diff --git i/options/ansi/generic/file-io.cpp w/options/ansi/generic/file-io.cpp
+index 81e65c17..15ce372a 100644
+--- i/options/ansi/generic/file-io.cpp
++++ w/options/ansi/generic/file-io.cpp
+@@ -408,6 +408,16 @@ int abstract_file::_save_pos() {
+ 		off_t new_offset;
+ 		auto seek_offset = (off_t(__offset) - off_t(__io_offset));
+ 		if (int e = io_seek(seek_offset, SEEK_CUR, &new_offset); e) {
++			/*
++			 * Shells can redirect a builtin's already-initialized stdio fd to a
++			 * pipe. If there is no buffered position adjustment to preserve,
++			 * an ESPIPE here only means the underlying open file description is
++			 * now pipe-like.
++			 */
++			if (e == ESPIPE && !seek_offset) {
++				_type = stream_type::pipe_like;
++				return 0;
++			}
+ 			__status_bits |= __MLIBC_ERROR_BIT;
+ 			if(!mlibc::processIsExiting.load(std::memory_order_relaxed))
+ 				mlibc::infoLogger() << "hit io_seek() error " << e << frg::endlog;

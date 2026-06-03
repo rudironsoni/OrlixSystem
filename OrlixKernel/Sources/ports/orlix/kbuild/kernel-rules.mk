@@ -1757,9 +1757,14 @@ __orlixmlibc-sysroot: __validate-profile
 	case "$$selected_libc" in orlixmlibc) ;; *) echo "unsupported libc=$$selected_libc (expected orlixmlibc)" >&2; exit 1 ;; esac; \
 	sysroot="$(KSELFTEST_SYSROOT)"; \
 	sysroot_stamp="$$sysroot/.orlixmlibc-sysroot-ready"; \
+	patches_newer=0; \
+	if [ -d "OrlixMLibC/Sources/patches" ] && [ -s "$$sysroot_stamp" ] && \
+		find "OrlixMLibC/Sources/patches" -name '*.patch' -newer "$$sysroot_stamp" -print -quit | grep -q .; then \
+		patches_newer=1; \
+	fi; \
 	if [ -s "$$sysroot_stamp" ] && \
 		[ "$$sysroot_stamp" -nt "OrlixMLibC/Makefile" ] && \
-		[ "$$sysroot_stamp" -nt "OrlixMLibC/Sources/patches/0001-sysdeps-linux-aarch64-use-orlix-hosted-syscall-gate.patch" ] && \
+		[ "$$patches_newer" -eq 0 ] && \
 		[ -d "$$sysroot/usr/include" ] && \
 		[ -d "$$sysroot/usr/lib" ] && \
 		[ -s "$$sysroot/usr/lib/libc.a" ]; then \

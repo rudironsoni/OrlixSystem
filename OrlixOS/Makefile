@@ -206,6 +206,7 @@ ORLIXOS_ROOTFS_PROOF := $(ORLIXOS_ROOTFS_DIR)/rootfs.proof
 ORLIXOS_MLIBC_SYSROOT := $(REPO_ROOT)/Build/OrlixMLibC/sysroot/$(PROFILE)
 ORLIXOS_MLIBC_HEADERS := $(REPO_ROOT)/Build/OrlixMLibC/kernel-headers/$(PROFILE)/include
 ORLIXOS_MLIBC_RTLIB := $(REPO_ROOT)/Build/OrlixMLibC/compiler-rt/$(PROFILE)/liborlix_compiler_rt.a
+ORLIXOS_MLIBC_PATCHES := $(wildcard $(REPO_ROOT)/OrlixMLibC/Sources/patches/*.patch)
 ORLIXOS_HOSTED_USER_BASE_ADDRESS ?= 0x0000600000000000
 
 ORLIXOS_CC ?= clang
@@ -619,7 +620,7 @@ $(ORLIXOS_ZSH_SOURCE_STAMP): $(ORLIXOS_ZSH_ARCHIVE_STAMP)
 	touch "$(ORLIXOS_ZSH_SOURCE_STAMP)"; \
 	echo "extracted zsh source: $(ORLIXOS_ZSH_SRC_DIR)"
 
-$(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB):
+$(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB): $(REPO_ROOT)/OrlixMLibC/Makefile $(ORLIXOS_MLIBC_PATCHES)
 	@set -euo pipefail; \
 	$(MLIBC_MAKE) build PROFILE="$(PROFILE)"; \
 	[ -s "$(ORLIXOS_MLIBC_SYSROOT)/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $(ORLIXOS_MLIBC_SYSROOT)/usr/lib/libc.a" >&2; exit 1; }; \
