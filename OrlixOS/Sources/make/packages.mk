@@ -114,6 +114,14 @@ $(ORLIXOS_COREUTILS_TEST_LIST): $(ORLIXOS_COREUTILS_PROOF) $(PROJECT_DIR)/Makefi
 			for (test in root) print root[test]; \
 		} \
 	' "$$raw_list" | sort -k2,2 > "$(ORLIXOS_COREUTILS_TEST_LIST)"; \
+	if [ -n "$(ORLIXOS_COREUTILS_TESTS)" ]; then \
+		filtered_list="$(ORLIXOS_COREUTILS_TEST_LIST).filtered"; \
+		: > "$$filtered_list"; \
+		for test in $(ORLIXOS_COREUTILS_TESTS); do \
+			awk -v selected="$$test" '$$2 == selected { print }' "$(ORLIXOS_COREUTILS_TEST_LIST)" >> "$$filtered_list"; \
+		done; \
+		mv "$$filtered_list" "$(ORLIXOS_COREUTILS_TEST_LIST)"; \
+	fi; \
 	rm -f "$$raw_list"; \
 	[ -s "$(ORLIXOS_COREUTILS_TEST_LIST)" ] || { echo "empty Coreutils upstream test list" >&2; exit 1; }; \
 	cp "$(ORLIXOS_COREUTILS_BUILD_DIR)/lib/config.h" "$(ORLIXOS_COREUTILS_CONFIG_HEADER)"; \

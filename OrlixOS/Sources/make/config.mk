@@ -91,6 +91,7 @@ override ORLIXOS_COREUTILS_TEST_LIST := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-t
 ORLIXOS_COREUTILS_CONFIG_HEADER := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-config.h
 ORLIXOS_COREUTILS_TEST_RUN_LOG := $(ORLIXOS_PACKAGE_BUILD_DIR)/coreutils-test-run-output.log
 ORLIXOS_COREUTILS_TEST_TIMEOUT_SECONDS ?= 14400
+ORLIXOS_COREUTILS_TESTS ?=
 ORLIXOS_KEEP_SED_BUILD ?= 0
 ORLIXOS_COREUTILS_PROGRAMS := [ b2sum base32 base64 basenc basename cat chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink users vdir wc who whoami yes
 ORLIXOS_GREP_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/grep-$(GREP_VERSION).tar.xz
