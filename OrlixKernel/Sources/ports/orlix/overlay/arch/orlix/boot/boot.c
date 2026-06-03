@@ -8,7 +8,7 @@
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
 #define __orlix_boot_init
-#define ORLIX_APP_HOSTED_BOOT_MEMORY_SIZE	(512UL * 1024 * 1024)
+#define ORLIX_APP_HOSTED_BOOT_MEMORY_SIZE	(1024UL * 1024 * 1024)
 static unsigned long app_hosted_boot_memory[ORLIX_APP_HOSTED_BOOT_MEMORY_SIZE /
 					    sizeof(unsigned long)]
 	__aligned(PAGE_SIZE);

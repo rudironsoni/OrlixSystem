@@ -957,6 +957,11 @@ ORLIX_IOS_SIMULATOR_NAME ?= iPhone 17 Pro
 ORLIX_IOS_SIMULATOR_ID ?=
 ORLIX_IOS_SIMULATOR_DERIVED_DATA ?= $(CURDIR)/.deriveddata/OrlixSystem-sim
 ORLIX_IOS_SIMULATOR_FRAMEWORK := $(ORLIX_IOS_SIMULATOR_DERIVED_DATA)/Build/Products/Debug-iphonesimulator/OrlixKernel.framework
+ORLIX_IOS_SIMULATOR_RUN_LOG_DIR ?= $(CURDIR)/Build/OrlixKernel/run/$(PROFILE)
+ORLIX_TERMINAL_BUNDLE_ID ?= org.orlix.OrlixTerminal
+ORLIX_KERNEL_RUN_UNTIL_MARKER ?=
+ORLIX_KERNEL_RUN_TIMEOUT_SECONDS ?= 120
+ORLIX_KERNEL_RUN_STARTUP_TIMEOUT_SECONDS ?= 30
 ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/payload/OrlixKernelPayload.bundle
 ORLIX_KERNEL_ROOTFS_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/rootfs/$(PROFILE)
 ORLIX_KERNEL_BASE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/base.ext4
@@ -1067,19 +1072,74 @@ __xcodeproj-generate:
 run: __ios-simulator-framework xcodeproj
 	@set -euo pipefail; \
 	command -v "$(XCODEBUILD_MCP)" >/dev/null 2>&1 || { echo "XcodeBuildMCP is required; install xcodebuildmcp or set XCODEBUILD_MCP=/path/to/xcodebuildmcp" >&2; exit 1; }; \
+	command -v xcrun >/dev/null 2>&1 || { echo "xcrun is required to launch OrlixTerminal in the simulator" >&2; exit 1; }; \
 	selector=(); \
+	install_selector=(); \
+	simctl_device="booted"; \
 	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
 		selector=(--simulator-id "$(ORLIX_IOS_SIMULATOR_ID)"); \
+		install_selector=(--simulator-id "$(ORLIX_IOS_SIMULATOR_ID)"); \
+		simctl_device="$(ORLIX_IOS_SIMULATOR_ID)"; \
 	else \
 		selector=(--simulator-name "$(ORLIX_IOS_SIMULATOR_NAME)" --use-latest-os); \
+		install_selector=(--simulator-name "$(ORLIX_IOS_SIMULATOR_NAME)"); \
 	fi; \
-	ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator build-and-run \
+	ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator build \
 		--project-path "$(CURDIR)/$(ORLIX_XCODE_PROJECT)" \
 		--scheme "OrlixTerminal" \
 		--configuration "Debug" \
 		--derived-data-path "$(ORLIX_IOS_SIMULATOR_DERIVED_DATA)" \
 		"$${selector[@]}" \
-		--output json
+		--output json; \
+	app_json="$$(ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator get-app-path \
+		--project-path "$(CURDIR)/$(ORLIX_XCODE_PROJECT)" \
+		--scheme "OrlixTerminal" \
+		--configuration "Debug" \
+		--platform "iOS Simulator" \
+		--derived-data-path "$(ORLIX_IOS_SIMULATOR_DERIVED_DATA)" \
+		"$${selector[@]}" \
+		--output json)"; \
+	app_path="$$(printf '%s\n' "$$app_json" | awk -F'"' '/appPath/ { print $$4; exit }')"; \
+	[ -n "$$app_path" ] || { echo "missing OrlixTerminal app path" >&2; printf '%s\n' "$$app_json" >&2; exit 1; }; \
+	ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator install \
+		"$${install_selector[@]}" \
+		--app-path "$$app_path" \
+		--output json; \
+	mkdir -p "$(ORLIX_IOS_SIMULATOR_RUN_LOG_DIR)"; \
+	runtime_log="$(ORLIX_IOS_SIMULATOR_RUN_LOG_DIR)/OrlixTerminal-runtime.log"; \
+	os_log="$(ORLIX_IOS_SIMULATOR_RUN_LOG_DIR)/OrlixTerminal-os.log"; \
+	: > "$$runtime_log"; \
+	: > "$$os_log"; \
+	xcrun simctl spawn "$$simctl_device" log stream --style compact --predicate 'process == "OrlixTerminal" || subsystem == "org.orlix.OrlixTerminal"' >> "$$runtime_log" 2>&1 & \
+	log_pid="$$!"; \
+	xcrun simctl launch --terminate-running-process --console "$$simctl_device" "$(ORLIX_TERMINAL_BUNDLE_ID)" >> "$$runtime_log" 2>&1 & \
+	launch_pid="$$!"; \
+	cleanup() { kill "$$log_pid" "$$launch_pid" >/dev/null 2>&1 || true; }; \
+	trap cleanup EXIT INT TERM; \
+	app_is_running() { kill -0 "$$launch_pid" >/dev/null 2>&1; }; \
+	printf '{"runtimeLogPath":"%s","osLogPath":"%s","bundleId":"%s"}\n' "$$runtime_log" "$$os_log" "$(ORLIX_TERMINAL_BUNDLE_ID)"; \
+	if [ -n "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" ]; then \
+		for _ in $$(seq 1 "$(ORLIX_KERNEL_RUN_STARTUP_TIMEOUT_SECONDS)"); do \
+			grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && break; \
+			app_is_running && break; \
+			sleep 1; \
+		done; \
+		if ! grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && ! app_is_running; then \
+			echo "OrlixTerminal did not start before marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; \
+			exit 1; \
+		fi; \
+		for _ in $$(seq 1 "$(ORLIX_KERNEL_RUN_TIMEOUT_SECONDS)"); do \
+			grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && break; \
+			if ! app_is_running; then \
+				echo "OrlixTerminal exited before marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; \
+				exit 1; \
+			fi; \
+			sleep 1; \
+		done; \
+		grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" || { echo "timed out waiting for marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; exit 1; }; \
+	else \
+		sleep "$(ORLIX_KERNEL_RUN_TIMEOUT_SECONDS)"; \
+	fi
 
 clean:
 	@set -euo pipefail; \
