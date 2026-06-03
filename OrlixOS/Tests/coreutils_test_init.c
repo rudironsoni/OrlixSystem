@@ -12,6 +12,8 @@
 
 static const uid_t test_user_uid = 65534;
 static const gid_t test_user_gid = 65534;
+static const uid_t root_uid = 0;
+static const gid_t root_gid = 0;
 
 static void park_init(void)
 {
@@ -33,26 +35,39 @@ static void ensure_runtime_filesystems(void)
 	(void)mount("devpts", "/dev/pts", "devpts", 0, "gid=5,mode=620");
 }
 
-static int enter_user_identity(void)
+static int enter_identity(uid_t uid, gid_t gid, size_t ngroups,
+			  const gid_t *groups)
 {
-	gid_t groups[] = {0, 2};
-
-	if (setgroups(2, groups) != 0) {
+	if (setgroups(ngroups, groups) != 0) {
 		fprintf(stderr, "orlix-coreutils-init: setgroups failed: %s (%d)\n",
 			strerror(errno), errno);
 		return -1;
 	}
-	if (setgid(test_user_gid) != 0) {
+	if (setgid(gid) != 0) {
 		fprintf(stderr, "orlix-coreutils-init: setgid failed: %s (%d)\n",
 			strerror(errno), errno);
 		return -1;
 	}
-	if (setuid(test_user_uid) != 0) {
+	if (setuid(uid) != 0) {
 		fprintf(stderr, "orlix-coreutils-init: setuid failed: %s (%d)\n",
 			strerror(errno), errno);
 		return -1;
 	}
 	return 0;
+}
+
+static int enter_root_identity(void)
+{
+	gid_t groups[] = {root_gid};
+
+	return enter_identity(root_uid, root_gid, 1, groups);
+}
+
+static int enter_user_identity(void)
+{
+	gid_t groups[] = {root_gid, 2};
+
+	return enter_identity(test_user_uid, test_user_gid, 2, groups);
 }
 
 static int run_as(int argc, char **argv)
@@ -62,13 +77,15 @@ static int run_as(int argc, char **argv)
 			argv[0]);
 		return 125;
 	}
-	if (!strcmp(argv[2], "user") && enter_user_identity() != 0)
-		return 125;
 	if (strcmp(argv[2], "root") && strcmp(argv[2], "user")) {
 		fprintf(stderr, "orlix-coreutils-init: unknown identity: %s\n",
 			argv[2]);
 		return 125;
 	}
+	if (!strcmp(argv[2], "root") && enter_root_identity() != 0)
+		return 125;
+	if (!strcmp(argv[2], "user") && enter_user_identity() != 0)
+		return 125;
 	execv(argv[3], &argv[3]);
 	fprintf(stderr, "orlix-coreutils-init: execv %s failed: %s (%d)\n",
 		argv[3], strerror(errno), errno);
