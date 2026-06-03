@@ -30,7 +30,7 @@ export RUN_EXPENSIVE_TESTS=yes
 export RUN_VERY_EXPENSIVE_TESTS=yes
 export TMPDIR=/tmp
 export USER=nobody
-export VERBOSE=yes
+export VERBOSE=
 
 if [ ! -r /coreutils-build/coreutils-test-env.sh ]; then
   echo 'ORLIX-COREUTILS-TEST-END failures=1 skips=0 total=0'
@@ -93,7 +93,6 @@ while read -r mode test_name; do
     SKIP)
       skips=$((skips + 1))
       echo "ok $total - $test_name # SKIP"
-      [ -s "$log_file" ] && sed 's/^/# /' "$log_file"
       ;;
     *)
       failures=$((failures + 1))
