@@ -682,6 +682,7 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	export AR="$(ORLIXOS_AR)"; \
 	export RANLIB="$(ORLIXOS_RANLIB)"; \
 	export PATH="$(ORLIXOS_COREUTILS_BOOTSTRAP_PATH)"; \
+	export gl_cv_header_working_fcntl_h=yes; \
 	export gl_cv_func_getopt_gnu=yes; \
 	export gl_cv_func_getopt_long_gnu=yes; \
 	export gl_cv_func_strtod_works=yes; \
