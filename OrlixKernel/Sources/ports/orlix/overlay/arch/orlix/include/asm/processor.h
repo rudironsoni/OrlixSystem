@@ -35,6 +35,10 @@ struct task_struct;
 
 void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp);
 unsigned long __get_wchan(struct task_struct *p);
+#if defined(ORLIX_APP_HOSTED_BOOT)
+void orlix_timer_poll(void);
+#define arch_cond_resched() orlix_timer_poll()
+#endif
 
 struct orlix_cpu_context {
 	unsigned long x19;

@@ -1,0 +1,19 @@
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 8084d5bb10e7..d3f8d5146d7b 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -2060,9 +2060,14 @@ static inline int _cond_resched(void)
+ 
+ #endif /* !CONFIG_PREEMPTION || CONFIG_PREEMPT_DYNAMIC */
+ 
++#ifndef arch_cond_resched
++#define arch_cond_resched() do { } while (0)
++#endif
++
+ #define cond_resched() ({			\
+ 	__might_resched(__FILE__, __LINE__, 0);	\
++	arch_cond_resched();			\
+ 	_cond_resched();			\
+ })
+ 
+ extern int __cond_resched_lock(spinlock_t *lock);
