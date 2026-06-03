@@ -66,6 +66,11 @@ static void orlix_hosted_start_user_timer_once(void)
 	orlix_hosted_user_timer_ready = true;
 }
 
+static bool orlix_hosted_user_trap_is_memory_fault(int signal_number)
+{
+	return signal_number == SIGBUS || signal_number == SIGSEGV;
+}
+
 static void orlix_hosted_restore_user_tls(void)
 {
 	unsigned long user_tls = current->thread.user_tls;
@@ -206,7 +211,7 @@ static void __noreturn orlix_hosted_user_trap_entry(
 						 resume_regs->sp != old_sp);
 	}
 
-	if (frame->fault_address &&
+	if (orlix_hosted_user_trap_is_memory_fault(signal_number) &&
 	    !orlix_handle_host_user_fault(regs, frame->fault_address,
 					  frame->fault_flags)) {
 		orlix_exit_to_user_mode_work(regs);
