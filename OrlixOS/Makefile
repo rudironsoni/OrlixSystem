@@ -161,6 +161,8 @@ ORLIXOS_UTIL_LINUX_PROOF := $(ORLIXOS_PACKAGE_INSTALL_DIR)/util-linux.proof
 ORLIXOS_GETLIMITS_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/getlimits
 ORLIXOS_GETCONF_SOURCE := $(PROJECT_DIR)/Sources/tools/getconf.c
 ORLIXOS_GETCONF_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/getconf
+ORLIXOS_GETENT_SOURCE := $(PROJECT_DIR)/Sources/tools/getent.c
+ORLIXOS_GETENT_BINARY := $(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/getent
 ORLIXOS_PERL_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/perl-$(PERL_VERSION).tar.gz
 ORLIXOS_PERL_ARCHIVE_STAMP := $(ORLIXOS_UPSTREAM_DIR)/perl-$(PERL_VERSION).sha256-ok
 ORLIXOS_PERL_CROSS_ARCHIVE := $(ORLIXOS_UPSTREAM_DIR)/perl-cross-$(PERL_CROSS_VERSION).tar.gz
@@ -230,7 +232,7 @@ help:
 	@printf '%s\n' '  test     run OrlixOS package tests in the app-hosted Orlix path'
 	@printf '%s\n' '  clean    remove generated OrlixOS outputs'
 
-build: $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_FINDUTILS_PROOF) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_INIT_BINARY)
+build: $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_FINDUTILS_PROOF) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_GETENT_BINARY) $(ORLIXOS_INIT_BINARY)
 
 rootfs: $(ORLIXOS_ROOTFS_PROOF)
 
@@ -886,6 +888,20 @@ $(ORLIXOS_GETCONF_BINARY): $(ORLIXOS_GETCONF_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	file "$(ORLIXOS_GETCONF_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GETCONF_BINARY)" >&2; exit 1; }; \
 	echo "built Orlix Linux getconf package input: $(ORLIXOS_GETCONF_BINARY)"
 
+$(ORLIXOS_GETENT_BINARY): $(ORLIXOS_GETENT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	mkdir -p "$(dir $(ORLIXOS_GETENT_BINARY))"; \
+	"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -std=c17 -O2 -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_GETENT_SOURCE)" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_GETENT_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_GETENT_BINARY)"; \
+	file "$(ORLIXOS_GETENT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GETENT_BINARY)" >&2; exit 1; }; \
+	echo "built Orlix Linux getent package input: $(ORLIXOS_GETENT_BINARY)"
+
 $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \
 	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
@@ -900,7 +916,7 @@ $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(O
 	file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" >&2; exit 1; }; \
 	echo "built OrlixOS Coreutils test init: $(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"
 
-$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_RUNNER) $(ORLIXOS_COREUTILS_TEST_ENV) $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_COREUTILS_TEST_PASSWD) $(ORLIXOS_COREUTILS_TEST_GROUP) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_FINDUTILS_PROOF) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_MOUNT_BINARY) $(ORLIXOS_UMOUNT_BINARY) $(ORLIXOS_GETLIMITS_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_PERL_PROOF)
+$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_RUNNER) $(ORLIXOS_COREUTILS_TEST_ENV) $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_COREUTILS_TEST_PASSWD) $(ORLIXOS_COREUTILS_TEST_GROUP) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_FINDUTILS_PROOF) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_MOUNT_BINARY) $(ORLIXOS_UMOUNT_BINARY) $(ORLIXOS_GETLIMITS_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_GETENT_BINARY) $(ORLIXOS_PERL_PROOF)
 	@set -euo pipefail; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
@@ -920,10 +936,11 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'dir /proc 0555 0 0\n'; \
 		printf 'dir /sys 0555 0 0\n'; \
 		printf 'dir /root 0700 0 0\n'; \
-		printf 'dir /tmp 1777 0 0\n'; \
-		printf 'dir /coreutils 0755 0 0\n'; \
-		printf 'dir /coreutils-build 0777 0 0\n'; \
-		printf 'file /init %s 0755 0 0\n' "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"; \
+			printf 'dir /tmp 1777 0 0\n'; \
+			printf 'dir /coreutils 0755 0 0\n'; \
+			printf 'dir /coreutils-build 0777 0 0\n'; \
+			printf 'slink /coreutils-build/coreutils /coreutils 0777 0 0\n'; \
+			printf 'file /init %s 0755 0 0\n' "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"; \
 		printf 'file /coreutils-build/run-upstream-coreutils-tests.sh %s 0755 0 0\n' "$(ORLIXOS_COREUTILS_TEST_RUNNER)"; \
 		printf 'file /coreutils-build/coreutils-test-env.sh %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_TEST_ENV)"; \
 		printf 'file /etc/passwd %s 0644 0 0\n' "$(ORLIXOS_COREUTILS_TEST_PASSWD)"; \
@@ -941,8 +958,9 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'file /bin/setsid %s 0755 0 0\n' "$(ORLIXOS_SETSID_BINARY)"; \
 		printf 'file /bin/mount %s 0755 0 0\n' "$(ORLIXOS_MOUNT_BINARY)"; \
 		printf 'file /bin/umount %s 0755 0 0\n' "$(ORLIXOS_UMOUNT_BINARY)"; \
-		printf 'file /bin/getlimits %s 0755 0 0\n' "$(ORLIXOS_GETLIMITS_BINARY)"; \
-		printf 'file /bin/getconf %s 0755 0 0\n' "$(ORLIXOS_GETCONF_BINARY)"; \
+			printf 'file /bin/getlimits %s 0755 0 0\n' "$(ORLIXOS_GETLIMITS_BINARY)"; \
+			printf 'file /bin/getconf %s 0755 0 0\n' "$(ORLIXOS_GETCONF_BINARY)"; \
+			printf 'file /bin/getent %s 0755 0 0\n' "$(ORLIXOS_GETENT_BINARY)"; \
 		printf 'slink /bin/perl /usr/bin/perl 0777 0 0\n'; \
 		printf 'slink /bin/egrep grep 0777 0 0\n'; \
 		printf 'slink /usr/bin/bash /bin/bash 0777 0 0\n'; \
@@ -956,8 +974,9 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'slink /usr/bin/setsid /bin/setsid 0777 0 0\n'; \
 		printf 'slink /usr/bin/mount /bin/mount 0777 0 0\n'; \
 		printf 'slink /usr/bin/umount /bin/umount 0777 0 0\n'; \
-		printf 'slink /usr/bin/getlimits /bin/getlimits 0777 0 0\n'; \
-		printf 'slink /usr/bin/getconf /bin/getconf 0777 0 0\n'; \
+			printf 'slink /usr/bin/getlimits /bin/getlimits 0777 0 0\n'; \
+			printf 'slink /usr/bin/getconf /bin/getconf 0777 0 0\n'; \
+			printf 'slink /usr/bin/getent /bin/getent 0777 0 0\n'; \
 		printf 'file /usr/bin/perl %s 0755 0 0\n' "$(ORLIXOS_PERL_BINARY)"; \
 		printf 'dir /usr/lib 0755 0 0\n'; \
 		printf 'dir /usr/lib/perl5 0755 0 0\n'; \

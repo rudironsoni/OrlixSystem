@@ -79,7 +79,8 @@ while read -r mode test_name; do
     command=(/bin/bash "/coreutils/$test_name")
   fi
 
-  /init --run-as "$mode" "${runner[@]}" "${command[@]}"
+  echo "ORLIX-COREUTILS-TEST-RUNNING $total $test_name"
+  /init --run-as "$mode" "${runner[@]}" "${command[@]}" 9>&2
   result='FAIL'
   if [ -s "$trs_file" ]; then
     result="$(sed -n 's/^:test-result: //p' "$trs_file" | tail -n 1)"
