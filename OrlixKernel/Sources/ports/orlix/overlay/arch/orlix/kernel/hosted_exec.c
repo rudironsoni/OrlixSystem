@@ -316,6 +316,7 @@ asm(
 "	add	sp, sp, #528\n"
 "	ldp	x9, x12, [sp], #16\n"
 "	stp	x0, x9, [sp, #-16]!\n"
+"	mov	x0, x12\n"
 "	bl	_orlix_hosted_prepare_user_entry\n"
 "	mov	x12, x0\n"
 "	ldp	x0, x9, [sp], #16\n"
@@ -380,9 +381,15 @@ void orlix_hosted_save_kernel_stack(unsigned long sp)
 	WRITE_ONCE(orlix_hosted_kernel_sp, sp);
 }
 
-unsigned long orlix_hosted_prepare_user_entry(void)
+unsigned long orlix_hosted_prepare_user_entry(unsigned long entry_user_tls)
 {
-	orlix_hosted_restore_user_tls();
+	if (current->mm && orlix_hosted_valid_user_tls(entry_user_tls)) {
+		current->thread.user_tls = entry_user_tls;
+		WRITE_ONCE(orlix_hosted_active_user_tls, entry_user_tls);
+	} else {
+		orlix_hosted_restore_user_tls();
+	}
+
 	return current->thread.user_tls;
 }
 
