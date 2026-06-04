@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Orlix <orlix@localhost>
+Date: Thu, 4 Jun 2026 20:56:00 +0200
+Subject: [PATCH] ansi: use Linux strerror text for ENOENT
+
+GNU Coreutils' upstream tests assert Linux/glibc-style strerror text for
+ENOENT in diagnostics such as cp's dangling symlink errors. Keep the Linux
+userspace surface free of the symbolic errno suffix.
+---
+ options/ansi/generic/string.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/options/ansi/generic/string.cpp b/options/ansi/generic/string.cpp
+index 000000000..000000000 100644
+--- a/options/ansi/generic/string.cpp
++++ b/options/ansi/generic/string.cpp
+@@ -480,7 +480,7 @@ char *strerror(int e) {
+ 	case EINVAL: s = "Invalid argument (EINVAL)"; break;
+ 	case EIO:    s = "I/O error (EIO)"; break;
+ 	case EISDIR: s = "Resource is directory (EISDIR)"; break;
+-	case ENOENT: s = "No such file or directory (ENOENT)"; break;
++	case ENOENT: s = "No such file or directory"; break;
+ 	case ENOMEM: s = "Out of memory (ENOMEM)"; break;
+ 	case ENOTDIR: s = "Expected directory instead of file (ENOTDIR)"; break;
+ 	case ENOSYS: s = "Operation not implemented (ENOSYS)"; break;
+-- 
+2.39.5

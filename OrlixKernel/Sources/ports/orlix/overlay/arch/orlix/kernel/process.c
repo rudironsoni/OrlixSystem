@@ -59,8 +59,6 @@ asm(
 	);
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
-extern unsigned long orlix_hosted_active_user_tls;
-
 void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 {
 	unsigned long user_tls = current->thread.user_tls;
@@ -207,6 +205,9 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 
 struct task_struct *__switch_to(struct task_struct *prev, struct task_struct *next)
 {
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	orlix_hosted_switch_user_tls(next);
+#endif
 	orlix_current_task = next;
 #ifndef CONFIG_THREAD_INFO_IN_TASK
 	orlix_current_thread_info = task_thread_info(next);

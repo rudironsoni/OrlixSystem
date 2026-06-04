@@ -72,10 +72,13 @@ static bool orlix_hosted_user_trap_is_memory_fault(int signal_number)
 	return signal_number == SIGBUS || signal_number == SIGSEGV;
 }
 
-static void orlix_hosted_restore_user_tls(void)
+static void orlix_hosted_restore_task_user_tls(struct task_struct *task)
 {
-	unsigned long user_tls = current->thread.user_tls;
+	unsigned long user_tls = task->thread.user_tls;
 	unsigned long hw_tls;
+
+	if (!task->mm)
+		return;
 
 	WRITE_ONCE(orlix_hosted_active_user_tls, user_tls);
 	asm volatile(
@@ -93,6 +96,11 @@ static void orlix_hosted_restore_user_tls(void)
 		: "r"(user_tls)
 		: "memory");
 	}
+}
+
+static void orlix_hosted_restore_user_tls(void)
+{
+	orlix_hosted_restore_task_user_tls(current);
 }
 
 static bool orlix_hosted_valid_user_tls(unsigned long user_tls)
@@ -131,6 +139,12 @@ void orlix_hosted_preserve_user_tls(void)
 
 	current->thread.user_tls = user_tls;
 	WRITE_ONCE(orlix_hosted_active_user_tls, user_tls);
+}
+
+void orlix_hosted_switch_user_tls(struct task_struct *next)
+{
+	orlix_hosted_preserve_user_tls();
+	orlix_hosted_restore_task_user_tls(next);
 }
 
 static void orlix_hosted_restore_trap_frame(
