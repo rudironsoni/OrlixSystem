@@ -23,6 +23,17 @@ static inline bool orlix_host_user_trap_valid_user_tls(unsigned long user_base,
            (tls & (sizeof(uintptr_t) - 1U)) == 0;
 }
 
+static inline bool orlix_host_user_trap_can_repair_user_tls(
+    unsigned long user_base,
+    unsigned long user_limit,
+    unsigned long active_user_tls)
+{
+    return active_user_tls &&
+           orlix_host_user_trap_valid_user_tls(user_base,
+                                               user_limit,
+                                               active_user_tls);
+}
+
 static inline unsigned long orlix_host_user_trap_host_tls_reference(
     unsigned long installed_host_tls,
     unsigned long live_tls,

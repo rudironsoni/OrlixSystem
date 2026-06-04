@@ -193,7 +193,9 @@ static bool OrlixHostUserTrapRepairUserTlsLoad(mcontext_t machine_context,
     }
     active_tls = __atomic_load_n(OrlixHostUserTrap.active_user_tls,
                                  __ATOMIC_ACQUIRE);
-    if (active_tls && !OrlixHostUserTrapValidUserTls(active_tls)) {
+    if (!orlix_host_user_trap_can_repair_user_tls(OrlixHostUserTrap.user_base,
+                                                  OrlixHostUserTrap.user_limit,
+                                                  active_tls)) {
         return false;
     }
     host_tls = orlix_host_user_trap_host_tls_reference(

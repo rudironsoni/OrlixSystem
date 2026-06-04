@@ -89,4 +89,17 @@
                                                        0x6000002bff7e));
 }
 
+- (void)testRejectsTlsRepairWithoutActiveUserTls
+{
+    XCTAssertFalse(orlix_host_user_trap_can_repair_user_tls(0x600000000000,
+                                                            0x700000000000,
+                                                            0));
+    XCTAssertFalse(orlix_host_user_trap_can_repair_user_tls(0x600000000000,
+                                                            0x700000000000,
+                                                            0x1005));
+    XCTAssertTrue(orlix_host_user_trap_can_repair_user_tls(0x600000000000,
+                                                           0x700000000000,
+                                                           0x6000002bff80));
+}
+
 @end
