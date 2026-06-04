@@ -430,7 +430,7 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 	regs->syscallno = scno;
 
 	ret = orlix_syscall_dispatch(regs);
-	orlix_sync_current_user_mappings(regs);
+	orlix_sync_current_user_minimal_mappings(regs);
 	full_user_entry = regs->pc != entry_pc || regs->sp != user_sp;
 	WRITE_ONCE(orlix_hosted_syscall_full_user_entry, full_user_entry);
 	return ret;
