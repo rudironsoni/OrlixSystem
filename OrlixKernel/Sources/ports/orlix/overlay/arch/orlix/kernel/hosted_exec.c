@@ -6,6 +6,7 @@
 #include <linux/linkage.h>
 #include <linux/mm.h>
 #include <linux/panic.h>
+#include <linux/param.h>
 #include <linux/sched.h>
 #include <linux/sched/task.h>
 #include <linux/sched/task_stack.h>
@@ -61,7 +62,7 @@ static void orlix_hosted_start_user_timer_once(void)
 	if (orlix_hosted_user_timer_ready)
 		return;
 
-	if (orlix_host_user_trap_start_timer(NSEC_PER_SEC / 2))
+	if (orlix_host_user_trap_start_timer(NSEC_PER_SEC / HZ))
 		panic("Orlix: failed to start hosted user timer transport\n");
 	orlix_hosted_user_timer_ready = true;
 }
