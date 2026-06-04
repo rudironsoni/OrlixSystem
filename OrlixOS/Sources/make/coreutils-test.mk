@@ -9,7 +9,11 @@ test coreutils-test: $(ORLIXOS_COREUTILS_TEST_INITRAMFS)
 		grep -F -q 'ORLIX-COREUTILS-TEST-END' "$$runtime_log" && break; \
 		sleep 1; \
 	done; \
-	grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0' "$$runtime_log" || { echo "Coreutils upstream tests did not complete successfully: $$runtime_log" >&2; exit 1; }; \
+	if [ -n "$(ORLIXOS_COREUTILS_TESTS)" ]; then \
+		grep -E -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=[1-9][0-9]*$$' "$$runtime_log" || { echo "Coreutils upstream test subset did not complete successfully: $$runtime_log" >&2; exit 1; }; \
+	else \
+		grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=733' "$$runtime_log" || { echo "Coreutils full upstream test suite did not complete successfully with failures=0 skips=0 total=733: $$runtime_log" >&2; exit 1; }; \
+	fi; \
 	echo "verified upstream Coreutils tests in simulator log: $$runtime_log"
 $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \
