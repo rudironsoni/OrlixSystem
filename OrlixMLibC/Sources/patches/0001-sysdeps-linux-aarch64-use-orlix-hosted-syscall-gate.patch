@@ -255,7 +255,7 @@ diff --git i/sysdeps/linux/generic/sysdeps.cpp w/sysdeps/linux/generic/sysdeps.c
 index a07ed53e..8e44b30f 100644
 --- i/sysdeps/linux/generic/sysdeps.cpp
 +++ w/sysdeps/linux/generic/sysdeps.cpp
-@@ -44,6 +44,102 @@
+@@ -44,6 +44,109 @@
  #include "generic-helpers/netlink.hpp"
  #endif
  
@@ -282,7 +282,14 @@ index a07ed53e..8e44b30f 100644
 +
 +uintptr_t orlix_current_thread_key()
 +{
-+	return reinterpret_cast<uintptr_t>(mlibc::get_current_tcb());
++	auto ret = mlibc::do_syscall(SYS_gettid);
++	if (mlibc::sc_error(ret)) {
++		mlibc::do_syscall(SYS_exit_group, 127);
++		mlibc::do_syscall(SYS_exit, 127);
++		for (;;)
++			;
++	}
++	return static_cast<uintptr_t>(ret);
 +}
 +
 +void orlix_emutls_lock()
@@ -358,7 +365,7 @@ index a07ed53e..8e44b30f 100644
  #ifndef MLIBC_BUILDING_RTLD
  extern "C" long __do_syscall_ret(unsigned long ret) {
  	if(ret > -4096UL) {
-@@ -126,7 +222,14 @@ void Sysdeps<LibcLog>::operator()(const char *message) {
+@@ -126,7 +229,14 @@ void Sysdeps<LibcLog>::operator()(const char *message) {
  }
  
  void Sysdeps<LibcPanic>::operator()() {
@@ -373,7 +380,7 @@ index a07ed53e..8e44b30f 100644
  }
  
  pid_t Sysdeps<FutexTid>::operator()() {
-@@ -180,6 +271,12 @@ int Sysdeps<TcbSet>::operator()(void *pointer) {
+@@ -180,6 +278,12 @@ int Sysdeps<TcbSet>::operator()(void *pointer) {
  #elif defined (__aarch64__)
  	uintptr_t thread_data = reinterpret_cast<uintptr_t>(pointer) + sizeof(Tcb) - 0x10;
  	asm volatile ("msr tpidr_el0, %0" :: "r"(thread_data));
