@@ -358,26 +358,6 @@ static void OrlixHostUserTrapLoadMachFrame(
     state->__pad = 0;
 }
 
-static void OrlixHostUserTrapSaveMachFrame(
-    const arm_thread_state64_t *state,
-    const arm_neon_state64_t *neon)
-{
-    for (unsigned int index = 0; index < 29; index++) {
-        OrlixHostUserTrapFrame.regs[index] = (unsigned long)state->__x[index];
-    }
-
-    OrlixHostUserTrapFrame.regs[29] = (unsigned long)state->__fp;
-    OrlixHostUserTrapFrame.regs[30] = (unsigned long)state->__lr;
-    OrlixHostUserTrapFrame.sp = (unsigned long)state->__sp;
-    OrlixHostUserTrapFrame.pc = (unsigned long)state->__pc;
-    OrlixHostUserTrapFrame.pstate = (unsigned long)state->__cpsr;
-    OrlixHostUserTrapFrame.fault_address = 0;
-    OrlixHostUserTrapFrame.fault_flags = 0;
-    OrlixHostUserTrapFrame.user_tls = 0;
-    OrlixHostUserTrapFrame.frame_flags = 0;
-    OrlixHostUserTrapSaveNeon(neon);
-}
-
 static void OrlixHostUserTrapSaveFrame(mcontext_t machine_context)
 {
     for (unsigned int index = 0; index < 29; index++) {
@@ -538,77 +518,6 @@ static bool OrlixHostUserResumeRedirect(void)
     return status == KERN_SUCCESS;
 }
 
-static bool OrlixHostUserTimerRedirect(void)
-{
-    arm_thread_state64_t state;
-    arm_neon_state64_t neon;
-    mach_msg_type_number_t state_count = ARM_THREAD_STATE64_COUNT;
-    mach_msg_type_number_t neon_count = ARM_NEON_STATE64_COUNT;
-    kern_return_t status;
-    unsigned long user_pc;
-    unsigned long kernel_sp;
-    unsigned long user_tls;
-
-    status = thread_suspend(OrlixHostUserTrap.target_thread);
-    if (status != KERN_SUCCESS) {
-        return false;
-    }
-
-    status = thread_get_state(OrlixHostUserTrap.target_thread,
-                              ARM_THREAD_STATE64,
-                              (thread_state_t)&state,
-                              &state_count);
-    if (status != KERN_SUCCESS) {
-        (void)thread_resume(OrlixHostUserTrap.target_thread);
-        return false;
-    }
-
-    user_pc = (unsigned long)state.__pc;
-    if (!OrlixHostUserTrapContains(user_pc) ||
-        OrlixHostUserTrapInSyscallGate(user_pc)) {
-        (void)thread_resume(OrlixHostUserTrap.target_thread);
-        return false;
-    }
-
-    kernel_sp = *OrlixHostUserTrap.kernel_sp;
-    user_tls = OrlixHostUserTrapActiveTls();
-    if (!kernel_sp || !user_tls) {
-        (void)thread_resume(OrlixHostUserTrap.target_thread);
-        return false;
-    }
-
-    status = thread_get_state(OrlixHostUserTrap.target_thread,
-                              ARM_NEON_STATE64,
-                              (thread_state_t)&neon,
-                              &neon_count);
-    if (status != KERN_SUCCESS) {
-        (void)thread_resume(OrlixHostUserTrap.target_thread);
-        return false;
-    }
-
-    OrlixHostUserTrapSaveMachFrame(&state, &neon);
-    OrlixHostUserTrapSetFrameTls(user_tls);
-
-    state.__x[0] = (uint64_t)ORLIX_HOST_USER_TRAP_TIMER;
-    state.__x[1] = (uint64_t)&OrlixHostUserTrapFrame;
-    state.__pc = (uint64_t)OrlixHostUserTrap.entry;
-    state.__sp = (uint64_t)kernel_sp;
-
-    __atomic_store_n(OrlixHostUserTrap.user_active, 0, __ATOMIC_RELEASE);
-    status = thread_set_state(OrlixHostUserTrap.target_thread,
-                              ARM_THREAD_STATE64,
-                              (thread_state_t)&state,
-                              ARM_THREAD_STATE64_COUNT);
-    if (status != KERN_SUCCESS) {
-        __atomic_store_n(OrlixHostUserTrap.user_active, 1, __ATOMIC_RELEASE);
-        (void)thread_resume(OrlixHostUserTrap.target_thread);
-        return false;
-    }
-
-    (void)thread_resume(OrlixHostUserTrap.target_thread);
-    return true;
-}
-
 static void *OrlixHostUserTimerMain(void *context)
 {
     (void)context;
@@ -626,10 +535,8 @@ static void *OrlixHostUserTimerMain(void *context)
             continue;
         }
 
-        if (!OrlixHostUserTimerRedirect()) {
-            (void)pthread_kill(OrlixHostUserTrap.target_pthread,
-                               ORLIX_HOST_USER_TIMER_SIGNAL);
-        }
+        (void)pthread_kill(OrlixHostUserTrap.target_pthread,
+                           ORLIX_HOST_USER_TIMER_SIGNAL);
     }
 }
 
