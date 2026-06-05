@@ -217,6 +217,87 @@ $(ORLIXOS_UTIL_LINUX_SOURCE_STAMP): $(ORLIXOS_UTIL_LINUX_ARCHIVE_STAMP)
 	touch "$(ORLIXOS_UTIL_LINUX_SOURCE_STAMP)"; \
 	echo "extracted util-linux source: $(ORLIXOS_UTIL_LINUX_SRC_DIR)"
 
+$(ORLIXOS_E2FSPROGS_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch e2fsprogs source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify e2fsprogs source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_E2FSPROGS_ARCHIVE)" ]; then curl -fL "$(E2FSPROGS_URL)" -o "$(ORLIXOS_E2FSPROGS_ARCHIVE)"; fi; \
+	echo "upstream e2fsprogs archive ready: $(ORLIXOS_E2FSPROGS_ARCHIVE)"
+
+$(ORLIXOS_E2FSPROGS_ARCHIVE_STAMP): $(ORLIXOS_E2FSPROGS_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify e2fsprogs source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(E2FSPROGS_SHA256)" "$(ORLIXOS_E2FSPROGS_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_E2FSPROGS_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_E2FSPROGS_ARCHIVE_STAMP)"; \
+	echo "upstream e2fsprogs ready: $(ORLIXOS_E2FSPROGS_ARCHIVE)"
+
+$(ORLIXOS_E2FSPROGS_SOURCE_STAMP): $(ORLIXOS_E2FSPROGS_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_E2FSPROGS_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xJf "$(ORLIXOS_E2FSPROGS_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_E2FSPROGS_SOURCE_STAMP)"; \
+	echo "extracted e2fsprogs source: $(ORLIXOS_E2FSPROGS_SRC_DIR)"
+
+$(ORLIXOS_ATTR_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch attr source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify attr source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_ATTR_ARCHIVE)" ]; then curl -fL "$(ATTR_URL)" -o "$(ORLIXOS_ATTR_ARCHIVE)"; fi; \
+	echo "upstream attr archive ready: $(ORLIXOS_ATTR_ARCHIVE)"
+
+$(ORLIXOS_ATTR_ARCHIVE_STAMP): $(ORLIXOS_ATTR_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify attr source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(ATTR_SHA256)" "$(ORLIXOS_ATTR_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_ATTR_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_ATTR_ARCHIVE_STAMP)"; \
+	echo "upstream attr ready: $(ORLIXOS_ATTR_ARCHIVE)"
+
+$(ORLIXOS_ATTR_SOURCE_STAMP): $(ORLIXOS_ATTR_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_ATTR_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xJf "$(ORLIXOS_ATTR_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_ATTR_SOURCE_STAMP)"; \
+	echo "extracted attr source: $(ORLIXOS_ATTR_SRC_DIR)"
+
+$(ORLIXOS_ACL_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch acl source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify acl source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_ACL_ARCHIVE)" ]; then curl -fL "$(ACL_URL)" -o "$(ORLIXOS_ACL_ARCHIVE)"; fi; \
+	echo "upstream acl archive ready: $(ORLIXOS_ACL_ARCHIVE)"
+
+$(ORLIXOS_ACL_ARCHIVE_STAMP): $(ORLIXOS_ACL_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify acl source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(ACL_SHA256)" "$(ORLIXOS_ACL_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_ACL_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_ACL_ARCHIVE_STAMP)"; \
+	echo "upstream acl ready: $(ORLIXOS_ACL_ARCHIVE)"
+
+$(ORLIXOS_ACL_SOURCE_STAMP): $(ORLIXOS_ACL_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_ACL_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xJf "$(ORLIXOS_ACL_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_ACL_SOURCE_STAMP)"; \
+	echo "extracted acl source: $(ORLIXOS_ACL_SRC_DIR)"
+
 $(ORLIXOS_PERL_ARCHIVE):
 	@set -euo pipefail; \
 	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \

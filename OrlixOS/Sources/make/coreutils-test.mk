@@ -10,9 +10,9 @@ test coreutils-test: $(ORLIXOS_COREUTILS_TEST_INITRAMFS)
 		sleep 1; \
 	done; \
 	if [ -n "$(ORLIXOS_COREUTILS_TESTS)" ]; then \
-		grep -E -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=[1-9][0-9]*$$' "$$runtime_log" || { echo "Coreutils upstream test subset did not complete successfully: $$runtime_log" >&2; exit 1; }; \
+		tr -d '\r' < "$$runtime_log" | grep -E -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=[1-9][0-9]*$$' || { echo "Coreutils upstream test subset did not complete successfully: $$runtime_log" >&2; exit 1; }; \
 	else \
-		grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=733' "$$runtime_log" || { echo "Coreutils full upstream test suite did not complete successfully with failures=0 skips=0 total=733: $$runtime_log" >&2; exit 1; }; \
+		tr -d '\r' < "$$runtime_log" | grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=733' || { echo "Coreutils full upstream test suite did not complete successfully with failures=0 skips=0 total=733: $$runtime_log" >&2; exit 1; }; \
 	fi; \
 	echo "verified upstream Coreutils tests in simulator log: $$runtime_log"
 $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
@@ -29,7 +29,7 @@ $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(O
 	file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" >&2; exit 1; }; \
 	echo "built OrlixOS Coreutils test init: $(ORLIXOS_COREUTILS_TEST_INIT_BINARY)"
 
-$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_RUNNER) $(ORLIXOS_COREUTILS_TEST_ENV) $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_COREUTILS_TEST_PASSWD) $(ORLIXOS_COREUTILS_TEST_GROUP) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_FINDUTILS_PROOF) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_MOUNT_BINARY) $(ORLIXOS_UMOUNT_BINARY) $(ORLIXOS_GETLIMITS_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_GETENT_BINARY) $(ORLIXOS_PERL_BINARY) $(ORLIXOS_PERL_PROOF)
+$(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORLIXOS_COREUTILS_TEST_RUNNER) $(ORLIXOS_COREUTILS_TEST_ENV) $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_COREUTILS_TEST_LIST) $(ORLIXOS_COREUTILS_TEST_PASSWD) $(ORLIXOS_COREUTILS_TEST_GROUP) $(ORLIXOS_BASH_BINARY) $(ORLIXOS_COREUTILS_PROOF) $(ORLIXOS_GREP_BINARY) $(ORLIXOS_SED_BINARY) $(ORLIXOS_DIFF_BINARY) $(ORLIXOS_GAWK_BINARY) $(ORLIXOS_FINDUTILS_PROOF) $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_MOUNT_BINARY) $(ORLIXOS_UMOUNT_BINARY) $(ORLIXOS_MKFS_BINARY) $(ORLIXOS_MKE2FS_BINARY) $(ORLIXOS_MKFS_EXT2_BINARY) $(ORLIXOS_GETLIMITS_BINARY) $(ORLIXOS_GETCONF_BINARY) $(ORLIXOS_GETENT_BINARY) $(ORLIXOS_GETFATTR_BINARY) $(ORLIXOS_SETFATTR_BINARY) $(ORLIXOS_GETFACL_BINARY) $(ORLIXOS_SETFACL_BINARY) $(ORLIXOS_PERL_BINARY) $(ORLIXOS_PERL_PROOF)
 	@set -euo pipefail; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
@@ -41,7 +41,7 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 	[ -d "$(ORLIXOS_COREUTILS_SRC_DIR)/build-aux" ] || { echo "missing upstream Coreutils build-aux directory: $(ORLIXOS_COREUTILS_SRC_DIR)/build-aux" >&2; exit 1; }; \
 	[ -s "$(ORLIXOS_COREUTILS_SRC_DIR)/init.cfg" ] || { echo "missing upstream Coreutils init.cfg: $(ORLIXOS_COREUTILS_SRC_DIR)/init.cfg" >&2; exit 1; }; \
 	[ -s "$(ORLIXOS_COREUTILS_CONFIG_HEADER)" ] || { echo "missing Coreutils config snapshot: $(ORLIXOS_COREUTILS_CONFIG_HEADER)" >&2; exit 1; }; \
-	for path in "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" "$(ORLIXOS_BASH_BINARY)" "$(ORLIXOS_GREP_BINARY)" "$(ORLIXOS_SED_BINARY)" "$(ORLIXOS_DIFF_BINARY)" "$(ORLIXOS_GAWK_BINARY)" "$(ORLIXOS_SETSID_BINARY)" "$(ORLIXOS_MOUNT_BINARY)" "$(ORLIXOS_UMOUNT_BINARY)" "$(ORLIXOS_GETLIMITS_BINARY)" "$(ORLIXOS_GETCONF_BINARY)" "$(ORLIXOS_GETENT_BINARY)" "$(ORLIXOS_PERL_BINARY)"; do \
+	for path in "$(ORLIXOS_COREUTILS_TEST_INIT_BINARY)" "$(ORLIXOS_BASH_BINARY)" "$(ORLIXOS_GREP_BINARY)" "$(ORLIXOS_SED_BINARY)" "$(ORLIXOS_DIFF_BINARY)" "$(ORLIXOS_GAWK_BINARY)" "$(ORLIXOS_SETSID_BINARY)" "$(ORLIXOS_MOUNT_BINARY)" "$(ORLIXOS_UMOUNT_BINARY)" "$(ORLIXOS_MKFS_BINARY)" "$(ORLIXOS_MKE2FS_BINARY)" "$(ORLIXOS_MKFS_EXT2_BINARY)" "$(ORLIXOS_GETLIMITS_BINARY)" "$(ORLIXOS_GETCONF_BINARY)" "$(ORLIXOS_GETENT_BINARY)" "$(ORLIXOS_GETFATTR_BINARY)" "$(ORLIXOS_SETFATTR_BINARY)" "$(ORLIXOS_GETFACL_BINARY)" "$(ORLIXOS_SETFACL_BINARY)" "$(ORLIXOS_PERL_BINARY)"; do \
 		[ -x "$$path" ] || { echo "missing executable package input: $$path" >&2; exit 1; }; \
 	done; \
 	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
@@ -87,6 +87,13 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'file /bin/setsid %s 0755 0 0\n' "$(ORLIXOS_SETSID_BINARY)"; \
 		printf 'file /bin/mount %s 0755 0 0\n' "$(ORLIXOS_MOUNT_BINARY)"; \
 		printf 'file /bin/umount %s 0755 0 0\n' "$(ORLIXOS_UMOUNT_BINARY)"; \
+		printf 'file /bin/mkfs %s 0755 0 0\n' "$(ORLIXOS_MKFS_BINARY)"; \
+		printf 'file /bin/mke2fs %s 0755 0 0\n' "$(ORLIXOS_MKE2FS_BINARY)"; \
+		printf 'file /bin/mkfs.ext2 %s 0755 0 0\n' "$(ORLIXOS_MKFS_EXT2_BINARY)"; \
+		printf 'file /bin/getfattr %s 0755 0 0\n' "$(ORLIXOS_GETFATTR_BINARY)"; \
+		printf 'file /bin/setfattr %s 0755 0 0\n' "$(ORLIXOS_SETFATTR_BINARY)"; \
+		printf 'file /bin/getfacl %s 0755 0 0\n' "$(ORLIXOS_GETFACL_BINARY)"; \
+		printf 'file /bin/setfacl %s 0755 0 0\n' "$(ORLIXOS_SETFACL_BINARY)"; \
 			printf 'file /bin/getlimits %s 0755 0 0\n' "$(ORLIXOS_GETLIMITS_BINARY)"; \
 			printf 'file /bin/getconf %s 0755 0 0\n' "$(ORLIXOS_GETCONF_BINARY)"; \
 			printf 'file /bin/getent %s 0755 0 0\n' "$(ORLIXOS_GETENT_BINARY)"; \
@@ -103,6 +110,13 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf 'slink /usr/bin/setsid /bin/setsid 0777 0 0\n'; \
 		printf 'slink /usr/bin/mount /bin/mount 0777 0 0\n'; \
 		printf 'slink /usr/bin/umount /bin/umount 0777 0 0\n'; \
+		printf 'slink /usr/bin/mkfs /bin/mkfs 0777 0 0\n'; \
+		printf 'slink /usr/bin/mke2fs /bin/mke2fs 0777 0 0\n'; \
+		printf 'slink /usr/bin/mkfs.ext2 /bin/mkfs.ext2 0777 0 0\n'; \
+		printf 'slink /usr/bin/getfattr /bin/getfattr 0777 0 0\n'; \
+		printf 'slink /usr/bin/setfattr /bin/setfattr 0777 0 0\n'; \
+		printf 'slink /usr/bin/getfacl /bin/getfacl 0777 0 0\n'; \
+		printf 'slink /usr/bin/setfacl /bin/setfacl 0777 0 0\n'; \
 			printf 'slink /usr/bin/getlimits /bin/getlimits 0777 0 0\n'; \
 			printf 'slink /usr/bin/getconf /bin/getconf 0777 0 0\n'; \
 			printf 'slink /usr/bin/getent /bin/getent 0777 0 0\n'; \

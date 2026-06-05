@@ -31,7 +31,7 @@ $(ORLIXOS_BASH_BINARY): $(ORLIXOS_BASH_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	rm -rf "$(ORLIXOS_BASH_BUILD_DIR)"; \
 	echo "built Orlix Linux Bash package input: $(ORLIXOS_BASH_BINARY)"
 
-$(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+$(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_ACL_PROOF) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \
 	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
 	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
@@ -48,9 +48,10 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	mkdir -p "$(ORLIXOS_COREUTILS_BUILD_DIR)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin"; \
 	cd "$(ORLIXOS_COREUTILS_BUILD_DIR)"; \
 	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CPPFLAGS="-I$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
-	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group"; \
-	export LIBS="$$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
+	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -L$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group"; \
+	export LIBS="$(ORLIXOS_LIBACL_A) $(ORLIXOS_LIBATTR_A) $$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
 	export AR="$(ORLIXOS_AR)"; \
 	export RANLIB="$(ORLIXOS_RANLIB)"; \
 	export PATH="$(ORLIXOS_COREUTILS_BOOTSTRAP_PATH)"; \
@@ -58,7 +59,7 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	export gl_cv_func_getopt_gnu=yes; \
 	export gl_cv_func_getopt_long_gnu=yes; \
 	export gl_cv_func_strtod_works=yes; \
-	"$(ORLIXOS_COREUTILS_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --without-selinux --disable-acl --disable-xattr --disable-libcap --disable-gcc-warnings; \
+	"$(ORLIXOS_COREUTILS_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --without-selinux --disable-libcap --disable-gcc-warnings; \
 	$(MAKE) -j1 all PROGRAMS= LIBRARIES= MANS= INFO_DEPS=; \
 	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
 		source_program="$$program"; \
@@ -209,7 +210,7 @@ $(ORLIXOS_UTIL_LINUX_PROOF): $(ORLIXOS_UTIL_LINUX_SOURCE_STAMP) $(ORLIXOS_MLIBC_
 	command -v "$(ORLIXOS_AR)" >/dev/null 2>&1 || { echo "llvm-ar is required to package util-linux mount; set ORLIXOS_AR=/path/to/llvm-ar" >&2; exit 1; }; \
 	command -v "$(ORLIXOS_RANLIB)" >/dev/null 2>&1 || { echo "llvm-ranlib is required to package util-linux mount; set ORLIXOS_RANLIB=/path/to/llvm-ranlib" >&2; exit 1; }; \
 	command -v "$(ORLIXOS_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package util-linux package inputs; set ORLIXOS_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
-	rm -rf "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)" "$(ORLIXOS_SETSID_BINARY)" "$(ORLIXOS_MOUNT_BINARY)" "$(ORLIXOS_UMOUNT_BINARY)" "$(ORLIXOS_UTIL_LINUX_PROOF)"; \
+	rm -rf "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)" "$(ORLIXOS_SETSID_BINARY)" "$(ORLIXOS_MOUNT_BINARY)" "$(ORLIXOS_UMOUNT_BINARY)" "$(ORLIXOS_MKFS_BINARY)" "$(ORLIXOS_UTIL_LINUX_PROOF)"; \
 	mkdir -p "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)" "$(dir $(ORLIXOS_SETSID_BINARY))"; \
 	cd "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)"; \
 	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fPIC"; \
@@ -219,22 +220,26 @@ $(ORLIXOS_UTIL_LINUX_PROOF): $(ORLIXOS_UTIL_LINUX_SOURCE_STAMP) $(ORLIXOS_MLIBC_
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS) -include signal.h"; \
 	export LDFLAGS="$$ldflags"; \
 	export LIBS="$$libs"; \
-	"$(ORLIXOS_UTIL_LINUX_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --without-python --without-systemd --without-systemdsystemunitdir --without-cap-ng --without-libz --without-libmagic --without-udev --disable-nls --enable-static --disable-shared --enable-static-programs=mount,umount; \
-	$(MAKE) -C "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)" V=0 mount umount -j1 LDFLAGS="$$ldflags" LIBS="$$libs"; \
+	"$(ORLIXOS_UTIL_LINUX_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --without-python --without-systemd --without-systemdsystemunitdir --without-cap-ng --without-libz --without-libmagic --without-udev --disable-nls --enable-static --disable-shared --enable-static-programs=mount,umount,mkfs; \
+	$(MAKE) -C "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)" V=0 mount umount mkfs -j1 LDFLAGS="$$ldflags" LIBS="$$libs"; \
 	cp "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)/mount" "$(ORLIXOS_MOUNT_BINARY)"; \
 	cp "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)/umount" "$(ORLIXOS_UMOUNT_BINARY)"; \
+	cp "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)/mkfs" "$(ORLIXOS_MKFS_BINARY)"; \
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_MOUNT_BINARY)"; \
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_UMOUNT_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_MKFS_BINARY)"; \
 	file "$(ORLIXOS_MOUNT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_MOUNT_BINARY)" >&2; exit 1; }; \
 	file "$(ORLIXOS_UMOUNT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_UMOUNT_BINARY)" >&2; exit 1; }; \
+	file "$(ORLIXOS_MKFS_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_MKFS_BINARY)" >&2; exit 1; }; \
 	file "$(ORLIXOS_MOUNT_BINARY)" | grep -F -q 'statically linked' || { file "$(ORLIXOS_MOUNT_BINARY)" >&2; exit 1; }; \
 	file "$(ORLIXOS_UMOUNT_BINARY)" | grep -F -q 'statically linked' || { file "$(ORLIXOS_UMOUNT_BINARY)" >&2; exit 1; }; \
+	file "$(ORLIXOS_MKFS_BINARY)" | grep -F -q 'statically linked' || { file "$(ORLIXOS_MKFS_BINARY)" >&2; exit 1; }; \
 	"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -DHAVE_CONFIG_H -include "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)/config.h" -I"$(ORLIXOS_UTIL_LINUX_BUILD_DIR)" -I"$(ORLIXOS_UTIL_LINUX_SRC_DIR)/include" -I"$(ORLIXOS_UTIL_LINUX_SRC_DIR)" $(ORLIXOS_PACKAGE_CFLAGS) -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_UTIL_LINUX_SRC_DIR)/sys-utils/setsid.c" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_SETSID_BINARY)"; \
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_SETSID_BINARY)"; \
 	file "$(ORLIXOS_SETSID_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_SETSID_BINARY)" >&2; exit 1; }; \
-	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=util-linux\nprograms=setsid,mount,umount\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(UTIL_LINUX_VERSION)" "$(UTIL_LINUX_SHA256)" > "$(ORLIXOS_UTIL_LINUX_PROOF)"; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=util-linux\nprograms=setsid,mount,umount,mkfs\nversion=%s\nsha256=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(UTIL_LINUX_VERSION)" "$(UTIL_LINUX_SHA256)" > "$(ORLIXOS_UTIL_LINUX_PROOF)"; \
 	rm -rf "$(ORLIXOS_UTIL_LINUX_BUILD_DIR)"; \
-	echo "built Orlix Linux util-linux package inputs: $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_MOUNT_BINARY) $(ORLIXOS_UMOUNT_BINARY)"
+	echo "built Orlix Linux util-linux package inputs: $(ORLIXOS_SETSID_BINARY) $(ORLIXOS_MOUNT_BINARY) $(ORLIXOS_UMOUNT_BINARY) $(ORLIXOS_MKFS_BINARY)"
 
 $(ORLIXOS_SETSID_BINARY): $(ORLIXOS_UTIL_LINUX_PROOF)
 	@set -euo pipefail; \
@@ -252,6 +257,12 @@ $(ORLIXOS_UMOUNT_BINARY): $(ORLIXOS_UTIL_LINUX_PROOF)
 	[ -x "$(ORLIXOS_UMOUNT_BINARY)" ] || { echo "missing util-linux umount package input: $(ORLIXOS_UMOUNT_BINARY)" >&2; exit 1; }; \
 	file "$(ORLIXOS_UMOUNT_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_UMOUNT_BINARY)" >&2; exit 1; }; \
 	file "$(ORLIXOS_UMOUNT_BINARY)" | grep -F -q 'statically linked' || { file "$(ORLIXOS_UMOUNT_BINARY)" >&2; exit 1; }
+
+$(ORLIXOS_MKFS_BINARY): $(ORLIXOS_UTIL_LINUX_PROOF)
+	@set -euo pipefail; \
+	[ -x "$(ORLIXOS_MKFS_BINARY)" ] || { echo "missing util-linux mkfs package input: $(ORLIXOS_MKFS_BINARY)" >&2; exit 1; }; \
+	file "$(ORLIXOS_MKFS_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_MKFS_BINARY)" >&2; exit 1; }; \
+	file "$(ORLIXOS_MKFS_BINARY)" | grep -F -q 'statically linked' || { file "$(ORLIXOS_MKFS_BINARY)" >&2; exit 1; }
 
 $(ORLIXOS_GETCONF_BINARY): $(ORLIXOS_GETCONF_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \

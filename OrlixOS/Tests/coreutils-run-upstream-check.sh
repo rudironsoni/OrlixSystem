@@ -2,22 +2,40 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -uo pipefail
 
-cd /coreutils-build || exit 125
+packaged_build_dir=/coreutils-build
+build_dir=/tmp/coreutils-build
+
+if [ ! -r "$packaged_build_dir/coreutils-test-env.sh" ]; then
+  echo 'ORLIX-COREUTILS-TEST-END failures=1 skips=0 total=0'
+  exit 1
+fi
+
+mkdir -p "$build_dir/src" "$build_dir/lib" "$build_dir/test-logs" || exit 125
+chmod 0777 "$build_dir" "$build_dir/test-logs" || exit 125
+
+ln -s /coreutils "$build_dir/coreutils" 2>/dev/null || [ -e "$build_dir/coreutils" ] || exit 125
+for program in "$packaged_build_dir"/src/*; do
+  [ -x "$program" ] || continue
+  ln -s "$program" "$build_dir/src/${program##*/}" 2>/dev/null || [ -e "$build_dir/src/${program##*/}" ] || exit 125
+done
+ln -s "$packaged_build_dir/lib/config.h" "$build_dir/lib/config.h" 2>/dev/null || [ -e "$build_dir/lib/config.h" ] || exit 125
+
+cd "$build_dir" || exit 125
 
 export HOME=/tmp
 export LANG=C
 export LC_ALL=C
 export LOGNAME=nobody
-export PATH=/coreutils-build/src:/bin:/usr/bin
-export PWD=/coreutils-build
+export PATH="$build_dir/src:/bin:/usr/bin"
+export PWD="$build_dir"
 export SHELL=/bin/bash
 export CONFIG_SHELL=/bin/bash
 export srcdir=/coreutils
 export top_srcdir=/coreutils
 export abs_srcdir=/coreutils
 export abs_top_srcdir=/coreutils
-export abs_top_builddir=/coreutils-build
-export CONFIG_HEADER=/coreutils-build/lib/config.h
+export abs_top_builddir="$build_dir"
+export CONFIG_HEADER="$build_dir/lib/config.h"
 export PERL=/usr/bin/perl
 export AWK=awk
 export COREUTILS_GROUPS='0 2'
@@ -32,13 +50,8 @@ export TMPDIR=/tmp
 export USER=nobody
 export VERBOSE=
 
-if [ ! -r /coreutils-build/coreutils-test-env.sh ]; then
-  echo 'ORLIX-COREUTILS-TEST-END failures=1 skips=0 total=0'
-  exit 1
-fi
-. /coreutils-build/coreutils-test-env.sh
+. "$packaged_build_dir/coreutils-test-env.sh"
 
-chmod 0777 /coreutils-build
 mkdir -p test-logs
 chmod 0777 test-logs
 
