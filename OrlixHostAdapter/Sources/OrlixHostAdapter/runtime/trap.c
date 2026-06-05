@@ -388,6 +388,24 @@ static bool OrlixHostUserTrapIsMemoryFaultSignal(int signal_number)
     return signal_number == SIGBUS || signal_number == SIGSEGV;
 }
 
+static unsigned long OrlixHostUserTrapFaultAddress(unsigned long user_pc,
+                                                   unsigned long fault_flags,
+                                                   siginfo_t *info,
+                                                   mcontext_t machine_context)
+{
+    unsigned long fault_address;
+
+    if (fault_flags & ORLIX_HOST_USER_FAULT_EXEC) {
+        return user_pc;
+    }
+
+    fault_address = (unsigned long)machine_context->__es.__far;
+    if (!fault_address && info) {
+        fault_address = (unsigned long)info->si_addr;
+    }
+    return fault_address;
+}
+
 static void OrlixHostUserTrapHandler(int signal_number,
                                      siginfo_t *info,
                                      void *context)
@@ -398,6 +416,7 @@ static void OrlixHostUserTrapHandler(int signal_number,
     unsigned long user_pc;
     unsigned long kernel_sp;
     unsigned long fault_address;
+    unsigned long fault_flags;
     unsigned long user_tls;
     bool timer_signal = signal_number == ORLIX_HOST_USER_TIMER_SIGNAL;
 
@@ -422,10 +441,9 @@ static void OrlixHostUserTrapHandler(int signal_number,
         trap_number = ORLIX_HOST_USER_TRAP_TIMER;
     }
 
-    fault_address = (unsigned long)machine_context->__es.__far;
-    if (!fault_address && info) {
-        fault_address = (unsigned long)info->si_addr;
-    }
+    fault_flags = OrlixHostUserFaultFlags(signal_number, machine_context);
+    fault_address = OrlixHostUserTrapFaultAddress(user_pc, fault_flags, info,
+                                                  machine_context);
     if (OrlixHostUserTrapIsMemoryFaultSignal(signal_number) &&
         OrlixHostUserTrapRepairUserTlsLoad(machine_context, fault_address)) {
         return;
@@ -442,8 +460,7 @@ static void OrlixHostUserTrapHandler(int signal_number,
 
     OrlixHostUserTrapSaveFrame(machine_context);
     OrlixHostUserTrapFrame.fault_address = fault_address;
-    OrlixHostUserTrapFrame.fault_flags =
-        OrlixHostUserFaultFlags(signal_number, machine_context);
+    OrlixHostUserTrapFrame.fault_flags = fault_flags;
     OrlixHostUserTrapSetFrameTls(user_tls);
 
     machine_context->__ss.__x[0] = (uint64_t)trap_number;
@@ -511,7 +528,14 @@ static bool OrlixHostUserResumeRedirect(void)
     }
 
     if (status == KERN_SUCCESS) {
-        __atomic_store_n(OrlixHostUserTrap.user_active, 1, __ATOMIC_RELEASE);
+        unsigned long resumed_tls = 0;
+
+        if (OrlixHostUserResumeFrame.frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS) {
+            resumed_tls = OrlixHostUserResumeFrame.user_tls;
+        }
+        __atomic_store_n(OrlixHostUserTrap.user_active,
+                         OrlixHostUserTrapValidUserTls(resumed_tls) ? 1UL : 0UL,
+                         __ATOMIC_RELEASE);
     }
     atomic_store_explicit(&OrlixHostUserResumePending, false,
                           memory_order_release);

@@ -64,6 +64,7 @@ void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 	unsigned long user_tls = current->thread.user_tls;
 
 	orlix_hosted_save_kernel_stack((unsigned long)task_pt_regs(current));
+	orlix_hosted_note_user_entry_tls(user_tls);
 
 	asm volatile(
 	"	mov	x9, %0\n"
@@ -83,12 +84,6 @@ void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 	"	ldp	x0, x1, [x9, #%c[x0_offset]]\n"
 	"	msr	tpidr_el0, x12\n"
 	"	isb\n"
-	"	mrs	x12, tpidr_el0\n"
-	"	adrp	x13, _orlix_hosted_active_user_tls@PAGE\n"
-	"	str	x12, [x13, _orlix_hosted_active_user_tls@PAGEOFF]\n"
-	"	adrp	x13, _orlix_hosted_user_active@PAGE\n"
-	"	mov	x14, #1\n"
-	"	str	x14, [x13, _orlix_hosted_user_active@PAGEOFF]\n"
 	"	mov	sp, x11\n"
 	"	br	x10\n"
 	:
