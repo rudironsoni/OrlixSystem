@@ -240,7 +240,7 @@ $(ORLIXOS_LIBSEPOL_A): $(ORLIXOS_LIBSEPOL_PROOF)
 	@set -euo pipefail; \
 	[ -s "$(ORLIXOS_LIBSEPOL_A)" ] || { echo "missing libsepol archive: $(ORLIXOS_LIBSEPOL_A)" >&2; exit 1; }
 
-$(ORLIXOS_LIBSELINUX_PROOF): $(ORLIXOS_LIBSELINUX_SOURCE_STAMP) $(ORLIXOS_LIBSEPOL_PROOF) $(ORLIXOS_PCRE2_PROOF) $(ORLIXOS_FTS_STANDALONE_PROOF) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+$(ORLIXOS_LIBSELINUX_PROOF): $(ORLIXOS_LIBSELINUX_SOURCE_STAMP) $(ORLIXOS_LIBSEPOL_PROOF) $(ORLIXOS_PCRE2_PROOF) $(ORLIXOS_FTS_STANDALONE_PROOF) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB) $(PROJECT_DIR)/Sources/make/linux-feature-packages.mk
 	@set -euo pipefail; \
 	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
 	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
@@ -248,24 +248,90 @@ $(ORLIXOS_LIBSELINUX_PROOF): $(ORLIXOS_LIBSELINUX_SOURCE_STAMP) $(ORLIXOS_LIBSEP
 	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
 	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
 	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
-	rm -rf "$(ORLIXOS_LIBSELINUX_BUILD_DIR)" "$(ORLIXOS_LIBSELINUX_A)" "$(ORLIXOS_GETENFORCE_BINARY)" "$(ORLIXOS_SETENFORCE_BINARY)" "$(ORLIXOS_LIBSELINUX_PROOF)"; \
+	rm -rf "$(ORLIXOS_LIBSELINUX_BUILD_DIR)" "$(ORLIXOS_LIBSELINUX_A)" "$(ORLIXOS_GETENFORCE_BINARY)" "$(ORLIXOS_SETENFORCE_BINARY)" "$(ORLIXOS_SELINUXENABLED_BINARY)" "$(ORLIXOS_POLICYVERS_BINARY)" "$(ORLIXOS_GETPOLICYLOAD_BINARY)" "$(ORLIXOS_LIBSELINUX_PROOF)"; \
 	cp -R "$(ORLIXOS_LIBSELINUX_SRC_DIR)" "$(ORLIXOS_LIBSELINUX_BUILD_DIR)"; \
 	$(MAKE) -C "$(ORLIXOS_LIBSELINUX_BUILD_DIR)/include" install DESTDIR="$(ORLIXOS_PACKAGE_INSTALL_DIR)" PREFIX=/usr; \
 	$(MAKE) -C "$(ORLIXOS_LIBSELINUX_BUILD_DIR)/src" -j1 OS=Linux DISABLE_SHARED=y DISABLE_RPM=y DISABLE_SETRANS=y DISABLE_X11=y DISABLE_FLAGS="-DNO_X_BACKEND -DNO_ANDROID_BACKEND" PKG_CONFIG_LIBDIR="$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib/pkgconfig" PKG_CONFIG_PATH="$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib/pkgconfig" PCRE_MODULE=libpcre2-8 PCRE_CFLAGS="-DUSE_PCRE2 -DPCRE2_CODE_UNIT_WIDTH=8 -I$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include -DPCRE2_STATIC" PCRE_LDLIBS="$(ORLIXOS_LIBPCRE2_8_A)" FTS_LDLIBS="$(ORLIXOS_LIBFTS_A)" LIBSEPOLA="$(ORLIXOS_LIBSEPOL_A)" CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -I$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fPIC" AR="$(ORLIXOS_AR)" RANLIB="$(ORLIXOS_RANLIB)" CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS) -DHAVE_REALLOCARRAY -DHAVE_STRLCPY -DLIBSELINUX_USE_STRONG_PTHREAD_ONCE -Wno-error" LDFLAGS="-L$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib"; \
 	$(MAKE) -C "$(ORLIXOS_LIBSELINUX_BUILD_DIR)/src" install OS=Linux DISABLE_SHARED=y DISABLE_RPM=y DISABLE_SETRANS=y DISABLE_X11=y DISABLE_FLAGS="-DNO_X_BACKEND -DNO_ANDROID_BACKEND" PKG_CONFIG_LIBDIR="$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib/pkgconfig" PKG_CONFIG_PATH="$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib/pkgconfig" PCRE_MODULE=libpcre2-8 PCRE_CFLAGS="-DUSE_PCRE2 -DPCRE2_CODE_UNIT_WIDTH=8 -I$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include -DPCRE2_STATIC" PCRE_LDLIBS="$(ORLIXOS_LIBPCRE2_8_A)" FTS_LDLIBS="$(ORLIXOS_LIBFTS_A)" LIBSEPOLA="$(ORLIXOS_LIBSEPOL_A)" CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -I$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fPIC" AR="$(ORLIXOS_AR)" RANLIB="$(ORLIXOS_RANLIB)" CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS) -DHAVE_REALLOCARRAY -DHAVE_STRLCPY -DLIBSELINUX_USE_STRONG_PTHREAD_ONCE -Wno-error" LDFLAGS="-L$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib" DESTDIR="$(ORLIXOS_PACKAGE_INSTALL_DIR)" PREFIX=/usr LIBDIR=/usr/lib; \
 	mkdir -p "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin"; \
-	for program in getenforce setenforce; do \
+	for program in getenforce setenforce selinuxenabled policyvers getpolicyload; do \
 		"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -I"$(ORLIXOS_LIBSELINUX_BUILD_DIR)/include" -I"$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include" -D_GNU_SOURCE $(ORLIXOS_PACKAGE_CFLAGS) -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_LIBSELINUX_BUILD_DIR)/utils/$$program.c" -Wl,--start-group "$(ORLIXOS_LIBSELINUX_A)" "$(ORLIXOS_LIBSEPOL_A)" "$(ORLIXOS_LIBPCRE2_8_A)" "$(ORLIXOS_LIBFTS_A)" "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; \
 		"$(ORLIXOS_STRIP)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; \
 		file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program" >&2; exit 1; }; \
 	done; \
 	[ -s "$(ORLIXOS_LIBSELINUX_A)" ] || { echo "missing libselinux archive: $(ORLIXOS_LIBSELINUX_A)" >&2; exit 1; }; \
-	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=libselinux\nversion=%s\nsha256=%s\nlibraries=libselinux.a\nprograms=getenforce,setenforce\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(LIBSELINUX_VERSION)" "$(LIBSELINUX_SHA256)" > "$(ORLIXOS_LIBSELINUX_PROOF)"; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=libselinux\nversion=%s\nsha256=%s\nlibraries=libselinux.a\nprograms=getenforce,setenforce,selinuxenabled,policyvers,getpolicyload\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(LIBSELINUX_VERSION)" "$(LIBSELINUX_SHA256)" > "$(ORLIXOS_LIBSELINUX_PROOF)"; \
 	rm -rf "$(ORLIXOS_LIBSELINUX_BUILD_DIR)"; \
-	echo "built Orlix Linux libselinux package inputs: $(ORLIXOS_LIBSELINUX_A) $(ORLIXOS_GETENFORCE_BINARY) $(ORLIXOS_SETENFORCE_BINARY)"
+	echo "built Orlix Linux libselinux package inputs: $(ORLIXOS_LIBSELINUX_A) $(ORLIXOS_GETENFORCE_BINARY) $(ORLIXOS_SETENFORCE_BINARY) $(ORLIXOS_SELINUXENABLED_BINARY) $(ORLIXOS_POLICYVERS_BINARY) $(ORLIXOS_GETPOLICYLOAD_BINARY)"
 
-$(ORLIXOS_LIBSELINUX_A) $(ORLIXOS_GETENFORCE_BINARY) $(ORLIXOS_SETENFORCE_BINARY): $(ORLIXOS_LIBSELINUX_PROOF)
+$(ORLIXOS_LIBSELINUX_A) $(ORLIXOS_GETENFORCE_BINARY) $(ORLIXOS_SETENFORCE_BINARY) $(ORLIXOS_SELINUXENABLED_BINARY) $(ORLIXOS_POLICYVERS_BINARY) $(ORLIXOS_GETPOLICYLOAD_BINARY): $(ORLIXOS_LIBSELINUX_PROOF)
 	@set -euo pipefail; \
 	[ -s "$(ORLIXOS_LIBSELINUX_A)" ] || { echo "missing libselinux archive: $(ORLIXOS_LIBSELINUX_A)" >&2; exit 1; }; \
 	[ -x "$(ORLIXOS_GETENFORCE_BINARY)" ] || { echo "missing getenforce package input: $(ORLIXOS_GETENFORCE_BINARY)" >&2; exit 1; }; \
-	[ -x "$(ORLIXOS_SETENFORCE_BINARY)" ] || { echo "missing setenforce package input: $(ORLIXOS_SETENFORCE_BINARY)" >&2; exit 1; }
+	[ -x "$(ORLIXOS_SETENFORCE_BINARY)" ] || { echo "missing setenforce package input: $(ORLIXOS_SETENFORCE_BINARY)" >&2; exit 1; }; \
+	[ -x "$(ORLIXOS_SELINUXENABLED_BINARY)" ] || { echo "missing selinuxenabled package input: $(ORLIXOS_SELINUXENABLED_BINARY)" >&2; exit 1; }; \
+	[ -x "$(ORLIXOS_POLICYVERS_BINARY)" ] || { echo "missing policyvers package input: $(ORLIXOS_POLICYVERS_BINARY)" >&2; exit 1; }; \
+	[ -x "$(ORLIXOS_GETPOLICYLOAD_BINARY)" ] || { echo "missing getpolicyload package input: $(ORLIXOS_GETPOLICYLOAD_BINARY)" >&2; exit 1; }
+
+$(ORLIXOS_CHECKPOLICY_PROOF): $(ORLIXOS_CHECKPOLICY_SOURCE_STAMP) $(ORLIXOS_LIBSEPOL_SOURCE_STAMP) $(ORLIXOS_CHECKPOLICY_HOST_COMPAT) $(PROJECT_DIR)/Sources/make/linux-feature-packages.mk
+	@set -euo pipefail; \
+	command -v bison >/dev/null 2>&1 || { echo "bison is required to build upstream checkpolicy" >&2; exit 1; }; \
+	command -v flex >/dev/null 2>&1 || { echo "flex is required to build upstream checkpolicy" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_CHECKPOLICY_BUILD_DIR)" "$(ORLIXOS_CHECKPOLICY_HOST_BINARY)" "$(ORLIXOS_CHECKPOLICY_PROOF)"; \
+	mkdir -p "$(ORLIXOS_CHECKPOLICY_BUILD_DIR)" "$(dir $(ORLIXOS_CHECKPOLICY_HOST_BINARY))"; \
+	cp -R "$(ORLIXOS_LIBSEPOL_SRC_DIR)" "$(ORLIXOS_CHECKPOLICY_BUILD_DIR)/libsepol"; \
+	cp -R "$(ORLIXOS_CHECKPOLICY_SRC_DIR)" "$(ORLIXOS_CHECKPOLICY_BUILD_DIR)/checkpolicy"; \
+	$(MAKE) -C "$(ORLIXOS_CHECKPOLICY_BUILD_DIR)/libsepol/src" -j1 DISABLE_SHARED=y DISABLE_CIL=y CC=cc AR=ar RANLIB=ranlib CFLAGS="-O2 -Wall -Wno-error"; \
+	$(MAKE) -C "$(ORLIXOS_CHECKPOLICY_BUILD_DIR)/checkpolicy" -j1 checkpolicy CPPFLAGS="-include $(ORLIXOS_CHECKPOLICY_HOST_COMPAT) -I$(ORLIXOS_CHECKPOLICY_BUILD_DIR)/libsepol/include" LIBSEPOLA="$(ORLIXOS_CHECKPOLICY_BUILD_DIR)/libsepol/src/libsepol.a" CFLAGS="-O2 -Wall -Wshadow -fno-strict-aliasing -Wno-error"; \
+	cp "$(ORLIXOS_CHECKPOLICY_BUILD_DIR)/checkpolicy/checkpolicy" "$(ORLIXOS_CHECKPOLICY_HOST_BINARY)"; \
+	"$(ORLIXOS_CHECKPOLICY_HOST_BINARY)" -V >/dev/null; \
+	printf 'profile=%s\npackage=checkpolicy\nversion=%s\nsha256=%s\nhost_tool=checkpolicy\n' "$(PROFILE)" "$(CHECKPOLICY_VERSION)" "$(CHECKPOLICY_SHA256)" > "$(ORLIXOS_CHECKPOLICY_PROOF)"; \
+	rm -rf "$(ORLIXOS_CHECKPOLICY_BUILD_DIR)"; \
+	echo "built upstream checkpolicy host tool: $(ORLIXOS_CHECKPOLICY_HOST_BINARY)"
+
+$(ORLIXOS_CHECKPOLICY_HOST_BINARY): $(ORLIXOS_CHECKPOLICY_PROOF)
+	@set -euo pipefail; \
+	[ -x "$(ORLIXOS_CHECKPOLICY_HOST_BINARY)" ] || { echo "missing checkpolicy host tool: $(ORLIXOS_CHECKPOLICY_HOST_BINARY)" >&2; exit 1; }
+
+$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE): $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_GENERATOR) $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BODY)
+	@set -euo pipefail; \
+	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BINARY))"; \
+	[ -s "$(ORLIXOS_KERNEL_SELINUX_CLASSMAP)" ] || { echo "missing Linux SELinux class map: $(ORLIXOS_KERNEL_SELINUX_CLASSMAP)" >&2; exit 1; }; \
+	[ -s "$(ORLIXOS_KERNEL_SELINUX_INITIAL_SIDS)" ] || { echo "missing Linux SELinux initial SID map: $(ORLIXOS_KERNEL_SELINUX_INITIAL_SIDS)" >&2; exit 1; }; \
+	perl "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_GENERATOR)" "$(ORLIXOS_KERNEL_SELINUX_CLASSMAP)" "$(ORLIXOS_KERNEL_SELINUX_INITIAL_SIDS)" > "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)"; \
+	class_set="$$(sed -n 's/^# ORLIX_SELINUX_ALL_CLASSES //p' "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)")"; \
+	[ -n "$$class_set" ] || { echo "missing generated Linux SELinux class set" >&2; exit 1; }; \
+	printf '\n' >> "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)"; \
+	sed "s/@ORLIX_SELINUX_ALL_CLASSES@/$$class_set/g" "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BODY)" >> "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)"; \
+	[ -s "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)" ] || { echo "missing generated Coreutils SELinux test policy: $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)" >&2; exit 1; }; \
+	echo "generated Coreutils SELinux test policy from Linux SELinux class map: $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)"
+
+$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BINARY): $(ORLIXOS_CHECKPOLICY_HOST_BINARY) $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)
+	@set -euo pipefail; \
+	mkdir -p "$(dir $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BINARY))"; \
+	"$(ORLIXOS_CHECKPOLICY_HOST_BINARY)" -M -c 33 -o "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BINARY)" "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_SOURCE)"; \
+	[ -s "$(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BINARY)" ] || { echo "missing compiled Coreutils SELinux test policy: $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BINARY)" >&2; exit 1; }; \
+	echo "compiled Coreutils SELinux test policy: $(ORLIXOS_COREUTILS_TEST_SELINUX_POLICY_BINARY)"
+
+$(ORLIXOS_POLICYCOREUTILS_PROOF): $(ORLIXOS_POLICYCOREUTILS_SOURCE_STAMP) $(ORLIXOS_LIBSELINUX_PROOF) $(ORLIXOS_LIBSEPOL_PROOF) $(ORLIXOS_PCRE2_PROOF) $(ORLIXOS_FTS_STANDALONE_PROOF) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB) $(PROJECT_DIR)/Sources/make/linux-feature-packages.mk
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_POLICYCOREUTILS_BUILD_DIR)" "$(ORLIXOS_SESTATUS_BINARY)" "$(ORLIXOS_POLICYCOREUTILS_PROOF)"; \
+	cp -R "$(ORLIXOS_POLICYCOREUTILS_SRC_DIR)" "$(ORLIXOS_POLICYCOREUTILS_BUILD_DIR)"; \
+	mkdir -p "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin"; \
+	"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -I"$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include" -D_GNU_SOURCE $(ORLIXOS_PACKAGE_CFLAGS) -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_POLICYCOREUTILS_BUILD_DIR)/sestatus/sestatus.c" -Wl,--start-group "$(ORLIXOS_LIBSELINUX_A)" "$(ORLIXOS_LIBSEPOL_A)" "$(ORLIXOS_LIBPCRE2_8_A)" "$(ORLIXOS_LIBFTS_A)" "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_SESTATUS_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_SESTATUS_BINARY)"; \
+	file "$(ORLIXOS_SESTATUS_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_SESTATUS_BINARY)" >&2; exit 1; }; \
+	printf 'profile=%s\npackage=policycoreutils\nversion=%s\nsha256=%s\nprograms=sestatus\n' "$(PROFILE)" "$(POLICYCOREUTILS_VERSION)" "$(POLICYCOREUTILS_SHA256)" > "$(ORLIXOS_POLICYCOREUTILS_PROOF)"; \
+	rm -rf "$(ORLIXOS_POLICYCOREUTILS_BUILD_DIR)"; \
+	echo "built upstream policycoreutils package input: $(ORLIXOS_SESTATUS_BINARY)"
+
+$(ORLIXOS_SESTATUS_BINARY): $(ORLIXOS_POLICYCOREUTILS_PROOF)
+	@set -euo pipefail; \
+	[ -x "$(ORLIXOS_SESTATUS_BINARY)" ] || { echo "missing policycoreutils sestatus package input: $(ORLIXOS_SESTATUS_BINARY)" >&2; exit 1; }

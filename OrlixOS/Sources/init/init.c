@@ -85,6 +85,12 @@ static void mount_runtime_filesystems(void)
 	    mount_if_needed("tmpfs", "/tmp", "tmpfs", MS_NOSUID | MS_NODEV,
 			    "mode=1777") != 0)
 		write_literal(STDERR_FILENO, "orlix-init: mount /tmp failed\n");
+
+	if (ensure_dir("/sys/fs", 0755) == 0 &&
+	    ensure_dir("/sys/fs/selinux", 0755) == 0 &&
+	    mount_if_needed("selinuxfs", "/sys/fs/selinux", "selinuxfs",
+			    MS_NOSUID | MS_NOEXEC, NULL) != 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /sys/fs/selinux failed\n");
 }
 
 static void install_stdio(int fd)

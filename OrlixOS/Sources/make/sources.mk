@@ -407,6 +407,60 @@ $(ORLIXOS_LIBSELINUX_SOURCE_STAMP): $(ORLIXOS_LIBSELINUX_ARCHIVE_STAMP)
 	touch "$(ORLIXOS_LIBSELINUX_SOURCE_STAMP)"; \
 	echo "extracted libselinux source: $(ORLIXOS_LIBSELINUX_SRC_DIR)"
 
+$(ORLIXOS_CHECKPOLICY_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch checkpolicy source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify checkpolicy source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_CHECKPOLICY_ARCHIVE)" ]; then curl -fL "$(CHECKPOLICY_URL)" -o "$(ORLIXOS_CHECKPOLICY_ARCHIVE)"; fi; \
+	echo "upstream checkpolicy archive ready: $(ORLIXOS_CHECKPOLICY_ARCHIVE)"
+
+$(ORLIXOS_CHECKPOLICY_ARCHIVE_STAMP): $(ORLIXOS_CHECKPOLICY_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify checkpolicy source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(CHECKPOLICY_SHA256)" "$(ORLIXOS_CHECKPOLICY_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_CHECKPOLICY_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_CHECKPOLICY_ARCHIVE_STAMP)"; \
+	echo "upstream checkpolicy ready: $(ORLIXOS_CHECKPOLICY_ARCHIVE)"
+
+$(ORLIXOS_CHECKPOLICY_SOURCE_STAMP): $(ORLIXOS_CHECKPOLICY_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_CHECKPOLICY_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xzf "$(ORLIXOS_CHECKPOLICY_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_CHECKPOLICY_SOURCE_STAMP)"; \
+	echo "extracted checkpolicy source: $(ORLIXOS_CHECKPOLICY_SRC_DIR)"
+
+$(ORLIXOS_POLICYCOREUTILS_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch policycoreutils source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify policycoreutils source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_POLICYCOREUTILS_ARCHIVE)" ]; then curl -fL "$(POLICYCOREUTILS_URL)" -o "$(ORLIXOS_POLICYCOREUTILS_ARCHIVE)"; fi; \
+	echo "upstream policycoreutils archive ready: $(ORLIXOS_POLICYCOREUTILS_ARCHIVE)"
+
+$(ORLIXOS_POLICYCOREUTILS_ARCHIVE_STAMP): $(ORLIXOS_POLICYCOREUTILS_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify policycoreutils source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(POLICYCOREUTILS_SHA256)" "$(ORLIXOS_POLICYCOREUTILS_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_POLICYCOREUTILS_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_POLICYCOREUTILS_ARCHIVE_STAMP)"; \
+	echo "upstream policycoreutils ready: $(ORLIXOS_POLICYCOREUTILS_ARCHIVE)"
+
+$(ORLIXOS_POLICYCOREUTILS_SOURCE_STAMP): $(ORLIXOS_POLICYCOREUTILS_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_POLICYCOREUTILS_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xzf "$(ORLIXOS_POLICYCOREUTILS_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_POLICYCOREUTILS_SOURCE_STAMP)"; \
+	echo "extracted policycoreutils source: $(ORLIXOS_POLICYCOREUTILS_SRC_DIR)"
+
 $(ORLIXOS_PERL_ARCHIVE):
 	@set -euo pipefail; \
 	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \

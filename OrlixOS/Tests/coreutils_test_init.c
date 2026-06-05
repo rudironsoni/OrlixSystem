@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <errno.h>
+#include <fcntl.h>
 #include <grp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,59 @@ static void park_init(void)
 		(void)pause();
 }
 
+static void load_selinux_policy(void)
+{
+	static const char policy_path[] =
+		"/etc/selinux/targeted/policy/policy.33";
+	static const char load_path[] = "/sys/fs/selinux/load";
+	struct stat st;
+	char *policy;
+	ssize_t nread;
+	int policy_fd;
+	int load_fd;
+
+	if (stat(policy_path, &st) != 0 || st.st_size <= 0)
+		return;
+
+	policy = malloc((size_t)st.st_size);
+	if (!policy) {
+		fprintf(stderr, "orlix-coreutils-init: malloc SELinux policy failed\n");
+		return;
+	}
+
+	policy_fd = open(policy_path, O_RDONLY);
+	if (policy_fd < 0) {
+		fprintf(stderr, "orlix-coreutils-init: open %s failed: %s (%d)\n",
+			policy_path, strerror(errno), errno);
+		free(policy);
+		return;
+	}
+
+	nread = read(policy_fd, policy, (size_t)st.st_size);
+	close(policy_fd);
+	if (nread != st.st_size) {
+		fprintf(stderr, "orlix-coreutils-init: read %s failed: %s (%d)\n",
+			policy_path, strerror(errno), errno);
+		free(policy);
+		return;
+	}
+
+	load_fd = open(load_path, O_RDWR);
+	if (load_fd < 0) {
+		fprintf(stderr, "orlix-coreutils-init: open %s failed: %s (%d)\n",
+			load_path, strerror(errno), errno);
+		free(policy);
+		return;
+	}
+
+	if (write(load_fd, policy, (size_t)st.st_size) != st.st_size)
+		fprintf(stderr, "orlix-coreutils-init: load SELinux policy failed: %s (%d)\n",
+			strerror(errno), errno);
+
+	close(load_fd);
+	free(policy);
+}
+
 static void ensure_runtime_filesystems(void)
 {
 	(void)mkdir("/proc", 0555);
@@ -29,6 +83,11 @@ static void ensure_runtime_filesystems(void)
 	(void)mkdir("/dev", 0755);
 	(void)mount("proc", "/proc", "proc", 0, NULL);
 	(void)mount("sysfs", "/sys", "sysfs", 0, NULL);
+	(void)mkdir("/sys/fs", 0755);
+	(void)mkdir("/sys/fs/selinux", 0755);
+	(void)mount("selinuxfs", "/sys/fs/selinux", "selinuxfs",
+		     MS_NOSUID | MS_NOEXEC, NULL);
+	load_selinux_policy();
 	(void)mount("tmpfs", "/tmp", "tmpfs", 0, "mode=1777");
 	(void)mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
 	(void)mkdir("/dev/pts", 0755);

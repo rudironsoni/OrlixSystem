@@ -75,7 +75,9 @@ ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__DATA,__initcall6s \
 	__DATA,__initcall7 \
 	__DATA,__initcall7s \
-	__DATA,__con_initcall
+	__DATA,__con_initcall \
+	__DATA,__lsm_info \
+	__DATA,__early_lsm_info
 
 define orlix_product_adapter_flags
 $(ORLIX_PRODUCT_ADAPTER_CFLAGS)
@@ -102,7 +104,9 @@ if [ -s "$$adapter_stamp" ] && \
 	[ -s "$$adapter_include/linux/moduleparam.h" ] && \
 	[ -s "$$adapter_root/source/kernel/sched/core.c" ] && \
 	[ -s "$$adapter_root/source/lib/crc32.c" ] && \
-	[ -s "$$adapter_root/source/mm/page_alloc.c" ]; then \
+	[ -s "$$adapter_root/source/mm/page_alloc.c" ] && \
+	[ -s "$$adapter_root/source/security/selinux/flask.h" ] && \
+	[ -s "$$adapter_root/source/security/selinux/av_permissions.h" ]; then \
 	echo "reusing Orlix product compile adapter: $$adapter_root"; \
 else \
 	rm -rf "$$adapter_root"; \
@@ -116,6 +120,8 @@ else \
 	mkdir -p "$$adapter_root/source/drivers/tty/vt"; \
 	mkdir -p "$$adapter_root/source/kernel/sched"; \
 	mkdir -p "$$adapter_root/source/mm"; \
+	mkdir -p "$$adapter_root/source/security/selinux"; \
+	mkdir -p "$$adapter_root/source/security/selinux/ss"; \
 	echo "preparing Orlix product compile adapter: $$adapter_root"; \
 $(call orlix_product_adapter_validate_linux_truth); \
 $(call orlix_product_adapter_validate_macho_projection); \
@@ -146,6 +152,8 @@ for required in \
 	"$$linux_root/include/linux/interrupt.h" \
 	"$$linux_root/include/linux/mmdebug.h" \
 	"$$linux_root/include/linux/once.h" \
+	"$$linux_root/include/linux/lsm_hooks.h" \
+	"$$linux_root/include/linux/lsm_hook_defs.h" \
 	"$$linux_root/include/linux/percpu-defs.h" \
 	"$$linux_root/include/linux/sched/debug.h" \
 	"$$linux_root/include/linux/syscalls.h" \
@@ -168,6 +176,8 @@ for required in \
 	"$$linux_root/lib/Makefile" \
 	"$$linux_root/lib/buildid.c" \
 	"$$linux_root/lib/crypto/blake2s-generic.c" \
+	"$(ORLIX_KERNEL_BUILD_DIR)/security/selinux/flask.h" \
+	"$(ORLIX_KERNEL_BUILD_DIR)/security/selinux/av_permissions.h" \
 	"$$linux_root/scripts/mod/modpost.c" \
 	"$$linux_root/scripts/mksysmap" \
 	"$$linux_root/scripts/link-vmlinux.sh"; do \
@@ -198,6 +208,8 @@ require_text "$$linux_root/include/linux/cache.h" '__section(".data..ro_after_in
 	require_text "$$linux_root/include/linux/interrupt.h" '# define __irq_entry	 __section(".irqentry.text")'; \
 	require_text "$$linux_root/include/linux/interrupt.h" '#define __softirq_entry  __section(".softirqentry.text")'; \
 	require_text "$$linux_root/include/linux/mmdebug.h" '__section(".data.once")'; \
+	require_text "$$linux_root/include/linux/lsm_hooks.h" '__used __section(".lsm_info.init")'; \
+	require_text "$$linux_root/include/linux/lsm_hooks.h" '__used __section(".early_lsm_info.init")'; \
 	require_text "$$linux_root/include/linux/module.h" '__section("__modver")'; \
 	require_text "$$linux_root/include/linux/once.h" '__section(".data.once")'; \
 	require_text "$$linux_root/include/linux/of.h" '__used __section("__" #table "_of_table")'; \
@@ -344,6 +356,8 @@ cp "$$linux_root/include/linux/init_task.h" "$$adapter_include/linux/init_task.h
 cp "$$linux_root/include/linux/interrupt.h" "$$adapter_include/linux/interrupt.h"; \
 cp "$$linux_root/include/linux/mmdebug.h" "$$adapter_include/linux/mmdebug.h"; \
 cp "$$linux_root/include/linux/once.h" "$$adapter_include/linux/once.h"; \
+cp "$$linux_root/include/linux/lsm_hooks.h" "$$adapter_include/linux/lsm_hooks.h"; \
+cp "$$linux_root/include/linux/lsm_hook_defs.h" "$$adapter_include/linux/lsm_hook_defs.h"; \
 cp "$$linux_root/include/linux/percpu-defs.h" "$$adapter_include/linux/percpu-defs.h"; \
 cp "$$linux_root/include/linux/sched/debug.h" "$$adapter_include/linux/sched/debug.h"; \
 cp "$$linux_root/include/linux/syscalls.h" "$$adapter_include/linux/syscalls.h"; \
@@ -376,6 +390,8 @@ replace_once "$$adapter_include/linux/init_task.h" '__section(".data..init_threa
 replace_once "$$adapter_include/linux/interrupt.h" '# define __irq_entry	 __section(".irqentry.text")' '# define __irq_entry	 __section("__TEXT,__irqentry_text")'; \
 replace_once "$$adapter_include/linux/interrupt.h" '#define __softirq_entry  __section(".softirqentry.text")' '#define __softirq_entry  __section("__TEXT,__softirq_text")'; \
 replace_all "$$adapter_include/linux/mmdebug.h" '__section(".data.once")' '__section("__DATA,__data_once")'; \
+replace_once "$$adapter_include/linux/lsm_hooks.h" '__used __section(".lsm_info.init")' '__used __section("__DATA,__lsm_info")'; \
+replace_once "$$adapter_include/linux/lsm_hooks.h" '__used __section(".early_lsm_info.init")' '__used __section("__DATA,__early_lsm_info")'; \
 replace_once "$$adapter_include/linux/module.h" '__section("__modver")' '__section("__DATA,__modver")'; \
 replace_once "$$adapter_include/linux/moduleparam.h" '__section(".modinfo")' '__section("__DATA,__modinfo")'; \
 replace_once "$$adapter_include/linux/moduleparam.h" '__section("__param")' '__section("__DATA,__param")'; \
@@ -410,6 +426,8 @@ adapter_root="$(ORLIX_PRODUCT_ADAPTER_ROOT)"; \
 	cp "$$linux_root/mm/page_reporting.h" "$$adapter_root/source/mm/page_reporting.h"; \
 for sched_src in core.c fair.c build_policy.c build_utility.c; do cp "$$linux_root/kernel/sched/$$sched_src" "$$adapter_root/source/kernel/sched/$$sched_src"; done; \
 cp "$$linux_root/kernel/sched/sched.h" "$$adapter_root/source/kernel/sched/sched.h"; \
+cp "$(ORLIX_KERNEL_BUILD_DIR)/security/selinux/flask.h" "$$adapter_root/source/security/selinux/flask.h"; \
+cp "$(ORLIX_KERNEL_BUILD_DIR)/security/selinux/av_permissions.h" "$$adapter_root/source/security/selinux/av_permissions.h"; \
 replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure crc32_le_base(u32, unsigned char const *, size_t) __alias(crc32_le);' 'u32 __pure crc32_le_base(u32 crc, unsigned char const *p, size_t len) { return crc32_le(crc, p, len); }'; \
 replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure __crc32c_le_base(u32, unsigned char const *, size_t) __alias(__crc32c_le);' 'u32 __pure __crc32c_le_base(u32 crc, unsigned char const *p, size_t len) { return __crc32c_le(crc, p, len); }'; \
 	replace_once "$$adapter_root/source/lib/crc32.c" 'u32 __pure crc32_be_base(u32, unsigned char const *, size_t) __alias(crc32_be);' 'u32 __pure crc32_be_base(u32 crc, unsigned char const *p, size_t len) { return crc32_be(crc, p, len); }'; \
@@ -740,6 +758,8 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___per_cpu_start ___per_cpu_end __DATA __percpu; \
 		if undefined_symbol_present ___bss_start || undefined_symbol_present ___bss_stop; then if section_present __DATA __bss && ! section_present __DATA __common; then emit_section_pair ___bss_start ___bss_stop __DATA __bss; else emit_empty_pair ___bss_start ___bss_stop; fi; fi; \
 		emit_section_pair_if_needed ___start___param ___stop___param __DATA __param; \
+		emit_section_pair_if_needed ___start_lsm_info ___end_lsm_info __DATA __lsm_info; \
+		emit_section_pair_if_needed ___start_early_lsm_info ___end_early_lsm_info __DATA __early_lsm_info; \
 		emit_section_pair_if_needed ___start___modver ___stop___modver __DATA __modver; \
 		emit_section_pair_if_needed ___start_notes ___stop_notes __DATA __note; \
 		emit_reservedmem_table_if_needed; \
@@ -750,7 +770,7 @@ orlix_product_adapter_generate_boundaries() { \
 		emit_section_pair_if_needed ___start___bug_table ___stop___bug_table __DATA __bug_table; \
 	} > "$$boundary_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$boundary_src" -o "$$boundary_obj"; \
-	for symbol in _jiffies _init_stack _init_thread_union ___start_init_stack ___end_init_stack __sdata __edata ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___start_builtin_fw ___end_builtin_fw ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start___modver ___stop___modver ___start_notes ___stop_notes ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
+	for symbol in _jiffies _init_stack _init_thread_union ___start_init_stack ___end_init_stack __sdata __edata ___init_begin ___init_end ___cpuidle_text_start ___cpuidle_text_end ___irqentry_text_start ___irqentry_text_end ___noinstr_text_start ___noinstr_text_end ___sched_text_start ___sched_text_end ___softirqentry_text_start ___softirqentry_text_end ___start_rodata ___end_rodata ___sched_class_highest ___sched_class_lowest ___setup_start ___setup_end ___initcall_start ___initcall0_start ___initcall1_start ___initcall2_start ___initcall3_start ___initcall4_start ___initcall5_start ___initcall6_start ___initcall7_start ___initcall_end ___con_initcall_start ___con_initcall_end ___start_once ___end_once ___start_ro_after_init ___end_ro_after_init ___start_builtin_fw ___end_builtin_fw ___per_cpu_start ___per_cpu_end ___bss_start ___bss_stop ___start___param ___stop___param ___start_lsm_info ___end_lsm_info ___start_early_lsm_info ___end_early_lsm_info ___start___modver ___stop___modver ___start_notes ___stop_notes ___start___ksymtab ___stop___ksymtab ___start___kcrctab ___stop___kcrctab ___start___ex_table ___stop___ex_table ___start___jump_table ___stop___jump_table ___start___bug_table ___stop___bug_table; do if undefined_symbol_present "$$symbol"; then "$$nm_cmd" -m "$$boundary_obj" | grep -F -q "$$symbol" || { echo "product boundary object missing requested symbol: $$symbol" >&2; exit 1; }; fi; done; \
 	objs+=("$$boundary_obj"); \
 	echo "generated Orlix product boundary object: $$boundary_obj"; \
 };

@@ -86,6 +86,7 @@ ORLIX_KERNEL_ARCHIVE_PLATFORMS ?= iphoneos iphonesimulator
 ORLIX_IOS_TARGET := arm64-apple-ios
 ORLIX_IOS_SIMULATOR_TARGET := arm64-apple-ios-simulator
 ORLIX_HOSTED_SYSCALL_GATE_ADDRESS ?= 0x00006ffff0000000
+ORLIX_KERNEL_HOSTCFLAGS = -I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -I$(ORLIX_KERNEL_PORT_ABS)/arch/$(ORLIX_PORT_ARCH)/include/uapi -include linux_arm_elf_compat.h -D_UUID_T
 
 define orlix_kernel_acquire_profile_lock
 if [ "$${ORLIX_KERNEL_PROFILE_LOCK_HELD:-0}" != 1 ]; then \
@@ -211,6 +212,8 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/rcu/update.c \
 	kernel/kallsyms.c \
 	kernel/ksysfs.c \
+	kernel/audit.c \
+	kernel/auditfilter.c \
 	kernel/reboot.c \
 	kernel/range.c \
 	kernel/smpboot.c \
@@ -227,8 +230,33 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	ipc/mqueue.c \
 	ipc/namespace.c \
 	ipc/mq_sysctl.c \
+	security/security.c \
+	security/lsm_syscalls.c \
+	security/lsm_audit.c \
+	security/inode.c \
 	security/commoncap.c \
 	security/min_addr.c \
+	security/integrity/iint.c \
+	security/integrity/integrity_audit.c \
+	security/selinux/avc.c \
+	security/selinux/hooks.c \
+	security/selinux/selinuxfs.c \
+	security/selinux/netlink.c \
+	security/selinux/nlmsgtab.c \
+	security/selinux/netif.c \
+	security/selinux/netnode.c \
+	security/selinux/netport.c \
+	security/selinux/status.c \
+	security/selinux/ss/ebitmap.c \
+	security/selinux/ss/hashtab.c \
+	security/selinux/ss/symtab.c \
+	security/selinux/ss/sidtab.c \
+	security/selinux/ss/avtab.c \
+	security/selinux/ss/policydb.c \
+	security/selinux/ss/services.c \
+	security/selinux/ss/conditional.c \
+	security/selinux/ss/mls.c \
+	security/selinux/ss/context.c \
 	crypto/api.c \
 	crypto/cipher.c \
 	crypto/compress.c \
@@ -507,6 +535,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/tty/tty_baudrate.c \
 	drivers/tty/tty_jobctrl.c \
 	drivers/tty/n_null.c \
+	drivers/tty/tty_audit.c \
 	drivers/tty/pty.c \
 	drivers/tty/vt/vt_ioctl.c \
 	drivers/tty/vt/vc_screen.c \
@@ -663,6 +692,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	fs/ext4/xattr_hurd.c \
 	fs/ext4/xattr_trusted.c \
 	fs/ext4/xattr_user.c \
+	fs/ext4/xattr_security.c \
 	fs/ext4/fast_commit.c \
 	fs/ext4/acl.c \
 	fs/ext4/orphan.c \
@@ -1299,6 +1329,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 		if find "$$overlay_dir" -type f -newer "$$port_stamp" -print -quit | grep -q .; then port_inputs_changed=1; fi; \
 		if [ -d "$$patch_dir" ] && find "$$patch_dir" -type f -newer "$$port_stamp" -print -quit | grep -q .; then port_inputs_changed=1; fi; \
 		if [ "$$profile_config" -nt "$$port_stamp" ]; then port_inputs_changed=1; fi; \
+		if [ "OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk" -nt "$$port_stamp" ]; then port_inputs_changed=1; fi; \
 	fi; \
 	if [ -s "$$port_stamp" ] && \
 		[ "$$port_inputs_changed" -eq 0 ] && \
@@ -1339,6 +1370,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 	rm -rf "$$uapi_target"; \
 	mkdir -p "$$(dirname "$$uapi_target")"; \
 	cp -R "$$uapi_source" "$$uapi_target"; \
+	if [ ! -s "$$uapi_target/types.h" ]; then cp "$$upstream_dir/include/uapi/asm-generic/types.h" "$$uapi_target/types.h"; fi; \
 	echo "using upstream Linux $$uapi_arch UAPI headers for arch/$(ORLIX_PORT_ARCH)"; \
 	mkdir -p "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs"; \
 	cp "$$profile_config" "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs/defconfig"; \
@@ -1400,6 +1432,8 @@ __prepare-kbuild: __prepare-port
 		[ -s "$$build_dir/arch/$(ORLIX_PORT_ARCH)/boot/dts/release.dtb" ] && \
 		[ -s "$$build_dir/arch/$(ORLIX_PORT_ARCH)/boot/dts/development.dtb" ] && \
 		[ -s "$$build_dir/drivers/of/empty_root.dtb" ] && \
+		[ -s "$$build_dir/security/selinux/flask.h" ] && \
+		[ -s "$$build_dir/security/selinux/av_permissions.h" ] && \
 		[ -x "$$build_dir/usr/gen_init_cpio" ] && \
 		[ -s "$$build_dir/usr/initramfs_inc_data" ]; then \
 		echo "reusing prepared Orlix Kbuild output: $$build_dir (profile $(PROFILE))"; \
@@ -1442,8 +1476,8 @@ __prepare-kbuild: __prepare-port
 		[ ! -e "$$build_dir" ] || { echo "failed to remove disposable Orlix Kbuild output: $$build_dir" >&2; exit 1; }; \
 		mkdir -p "$$build_dir"; \
 	fi; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" defconfig; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" prepare scripts dtbs arch/$(ORLIX_PORT_ARCH)/kernel/vmlinux.lds drivers/of/empty_root.dtb.o lib/crc32.o; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="$(ORLIX_KERNEL_HOSTCFLAGS)" defconfig; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$$build_dir" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="$(ORLIX_KERNEL_HOSTCFLAGS)" prepare scripts dtbs arch/$(ORLIX_PORT_ARCH)/kernel/vmlinux.lds drivers/of/empty_root.dtb.o lib/crc32.o security/selinux/avc.o; \
 	for dtb in release development; do \
 		[ -f "$$build_dir/arch/$(ORLIX_PORT_ARCH)/boot/dts/$$dtb.dtb" ] || { echo "missing profile DTB: $$build_dir/arch/$(ORLIX_PORT_ARCH)/boot/dts/$$dtb.dtb" >&2; exit 1; }; \
 	done; \
@@ -1586,9 +1620,9 @@ __kunit: __prepare-kbuild
 	sed --version >/dev/null 2>&1 || { echo "GNU sed is required by Linux KUnit builds" >&2; exit 1; }; \
 	rm -rf "$(ORLIX_KUNIT_BUILD_DIR)"; \
 	mkdir -p "$(ORLIX_KUNIT_BUILD_DIR)"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" defconfig; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="$(ORLIX_KERNEL_HOSTCFLAGS)" defconfig; \
 	"$(ORLIX_KERNEL_PORT_ABS)/scripts/kconfig/merge_config.sh" -m -O "$(ORLIX_KUNIT_BUILD_DIR)" "$(ORLIX_KUNIT_BUILD_DIR)/.config" "$(ORLIX_KERNEL_PORT_ABS)/arch/$(ORLIX_PORT_ARCH)/.kunitconfig"; \
-	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="-I$(LINUX_HOST_COMPAT_INCLUDE_ROOT) -include linux_arm_elf_compat.h -D_UUID_T" olddefconfig arch/$(ORLIX_PORT_ARCH)/boot/boot_test.o; \
+	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="$(ORLIX_KERNEL_HOSTCFLAGS)" olddefconfig arch/$(ORLIX_PORT_ARCH)/boot/boot_test.o; \
 	echo "built Orlix KUnit objects: $(ORLIX_KUNIT_BUILD_DIR)"
 
 __kernel-archive:
@@ -1712,6 +1746,7 @@ __kernel-archive:
 				drivers/tty/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/drivers/tty" ;; \
 				fs/iomap/trace.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/fs/iomap" ;; \
 				kernel/sched/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/kernel/sched" ;; \
+				security/selinux/*.c|security/selinux/ss/*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/security/selinux -I$(ORLIX_KERNEL_PORT_ABS)/security/selinux/include -I$(ORLIX_KERNEL_BUILD_DIR)/security/selinux" ;; \
 				lib/crc32.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/lib -I$(ORLIX_KERNEL_BUILD_DIR)/lib" ;; \
 				lib/fdt*.c) extra_cflags="-I$(ORLIX_KERNEL_PORT_ABS)/scripts/dtc/libfdt" ;; \
 			esac; \
