@@ -22,3 +22,22 @@ __attribute__((visibility("hidden"))) unsigned long long orlix_host_time_monoton
     OrlixHostLeaveHostTls(active_tls);
     return result;
 }
+
+__attribute__((visibility("hidden"))) unsigned long long orlix_host_time_realtime_ns(void)
+{
+    struct timespec now = {
+        .tv_sec = 0,
+        .tv_nsec = 0,
+    };
+    unsigned long active_tls = OrlixHostEnterHostTls();
+    unsigned long long result;
+
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0) {
+        OrlixHostLeaveHostTls(active_tls);
+        return 0;
+    }
+
+    result = ((uint64_t)now.tv_sec * 1000000000ULL) + (uint64_t)now.tv_nsec;
+    OrlixHostLeaveHostTls(active_tls);
+    return result;
+}

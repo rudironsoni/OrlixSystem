@@ -46,6 +46,14 @@ static u64 orlix_clockevent_period_ns;
 static bool orlix_clockevent_armed;
 static bool orlix_clockevent_periodic;
 
+void read_persistent_clock64(struct timespec64 *ts)
+{
+	u64 realtime_ns = orlix_host_time_realtime_ns();
+
+	ts->tv_sec = realtime_ns / NSEC_PER_SEC;
+	ts->tv_nsec = realtime_ns % NSEC_PER_SEC;
+}
+
 static int orlix_timer_set_next_event(unsigned long delta,
 				      struct clock_event_device *evt)
 {

@@ -3,5 +3,6 @@
 #define _ORLIX_INTERNAL_ASM_HOST_TIME_H
 
 unsigned long long orlix_host_time_monotonic_ns(void);
+unsigned long long orlix_host_time_realtime_ns(void);
 
 #endif /* _ORLIX_INTERNAL_ASM_HOST_TIME_H */

@@ -18,7 +18,7 @@ flags, explicit widths, signed years, uppercasing, %s, and colonized timezone
 offsets. Implement those semantics in the libc formatter instead of letting
 unknown conversions abort the process.
 ---
- options/ansi/generic/time.cpp           |  77 +++++++--
+ options/ansi/generic/time.cpp           |  90 ++++++++--
  options/internal/include/mlibc/time.hpp | 297 ++++++++++++++++++++++++--------
  2 files changed, 289 insertions(+), 85 deletions(-)
 
@@ -91,7 +91,113 @@ index 86146a6d..a3e9bf40 100644
  }
  
  /* There is no other implemented value than TIME_UTC; all other values
-@@ -772,7 +819,7 @@ bool is_in_dst(time_t unix_gmt) {
+@@ -706,8 +735,11 @@ void yearday_from_date(unsigned int year, unsigned int month, unsigned int day,
+-void yearday_from_date(unsigned int year, unsigned int month, unsigned int day, unsigned int *yday) {
++void yearday_from_date(int year, unsigned int month, unsigned int day, unsigned int *yday) {
+-	unsigned int n1 = 275 * month / 9;
+-	unsigned int n2 = (month + 9) / 12;
+-	unsigned int n3 = (1 + (year - 4 * year / 4 + 2) / 3);
+-	*yday = n1 - (n2 * n3) + day - 30;
++	static constexpr unsigned int days_before_month[2][12] = {
++		{0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334},
++		{0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335},
++	};
++	bool leap_year = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
++	__ensure(month >= 1 && month <= 12);
++	*yday = days_before_month[leap_year][month - 1] + day;
+ }
+ 
+ static bool is_leap_year(int year) {
+@@ -714,69 +746,70 @@ static bool is_leap_year(int year) {
+ 	return (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+ }
+ 
++constexpr static int days_from_civil_for_rule(int y, unsigned m, unsigned d) noexcept {
++	y -= m <= 2;
++	const int era = (y >= 0 ? y : y - 399) / 400;
++	const unsigned yoe = static_cast<unsigned>(y - era * 400);
++	const unsigned doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
++	const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
++	return era * 146097 + static_cast<int>(doe) - 719468;
++}
++
+ // Given a rule and a year, compute the time of the transition in seconds since the epoch.
+-// TODO: Take into account the time of day when the transition occurs
+-time_t time_from_rule(const Rule &rule, int year) {
++time_t transition_day_from_rule(const Rule &rule, int year) {
+ 	if (rule.type == JULIAN_DAY) {
+ 		// Jn: Julian day, ignoring Feb 29
+ 		uint16_t day = rule.day - 1;
+ 		if (is_leap_year(year) && day >= 60)
+ 			day = rule.day;
+-
+-		struct tm t = {};
+-		t.tm_year = year - 1900;
+-		t.tm_yday = day;
+-		return mktime(&t);
++		return day;
+ 	} else if (rule.type == DAY_OF_YEAR) {
+ 		// n: zero-based day of year, including Feb 29 in leap years
+-		struct tm t = {};
+-		t.tm_year = year - 1900;
+-		t.tm_yday = rule.day;
+-		return mktime(&t);
++		return rule.day;
+ 	} else if (rule.type == MONTH_NTH_DAY_OF_WEEK) {
+ 		// Mm.n.d: Month, week, weekday (month 1-12, week 1-5, weekday 0=Sun)
+ 
+ 		// Find the first day of the month
+-		struct tm t = {};
+-		t.tm_year = year - 1900;
+-		t.tm_mon = rule.month - 1;
+-		t.tm_mday = 1;
+-		mktime(&t);
+-
+-		int first_wday = t.tm_wday;
++		time_t month_start = days_from_civil_for_rule(year, rule.month, 1);
++		time_t year_start = days_from_civil_for_rule(year, 1, 1);
++		unsigned int first_wday;
++		weekday_from_days(month_start, &first_wday);
+ 		int day = 1 + ((7 + rule.day - first_wday) % 7) + (rule.week - 1) * 7;
+ 		// If week==5, but that day is past the end of the month, go back by 7 days
+-		t.tm_mday = day;
+-		mktime(&t);
+-		if (rule.week == 5 && t.tm_mon != rule.month - 1)
+-			day -= 7;
++		if (rule.week == 5) {
++			int normalized_year;
++			unsigned int normalized_month;
++			unsigned int normalized_day;
++			civil_from_days(month_start + day - 1, &normalized_year, &normalized_month, &normalized_day);
++			if (normalized_month != rule.month)
++				day -= 7;
++		}
+-
+-		t.tm_year = year - 1900;
+-		t.tm_mon = rule.month - 1;
+-		t.tm_mday = day;
+-		t.tm_hour = 0;
+-		t.tm_min = 0;
+-		t.tm_sec = 0;
+-		return mktime(&t);
++		return month_start - year_start + day - 1;
+ 	} else {
+ 		__ensure(!"Invalid rule type");
+ 		__builtin_unreachable();
+ 	}
+ }
+ 
++time_t time_from_rule(const Rule &rule, int year, time_t offset_before_transition) {
++	time_t year_start = days_from_civil_for_rule(year, 1, 1);
++	time_t local_seconds = (year_start + transition_day_from_rule(rule, year)) * seconds_per_day + rule.time;
++	return local_seconds - offset_before_transition;
++}
++
+ // Assumes TZ environment variable rules are used, not TZFILE.
+ bool is_in_dst(time_t unix_gmt) {
+ 	if (rules[0].type == TZFILE)
+ 	    __ensure(!"is_in_dst() called with invalid rules");
+ 
  	int year;
  	unsigned int _month;
  	unsigned int _day;
@@ -99,7 +205,13 @@ index 86146a6d..a3e9bf40 100644
 +	civil_from_days(floor_div(unix_gmt, seconds_per_day), &year, &_month, &_day);
  
  	// Get the start and end transition days of the year
- 	int start_time = time_from_rule(rules[0], year);
+-	int start_time = time_from_rule(rules[0], year);
+-	int end_time = time_from_rule(rules[1], year);
++	time_t start_time = time_from_rule(rules[0], year, tt_infos[tznameNormal].tt_gmtoff);
++	time_t end_time = time_from_rule(rules[1], year, tt_infos[tznameDST].tt_gmtoff);
+ 
+ 	// Check if the unix_gmt falls within the DST period
+ 	if (start_time <= end_time) {
 @@ -912,14 +959,14 @@ struct tm *gmtime_r(const time_t *unix_gmt, struct tm *res) {
  
  	time_t unix_local = *unix_gmt;
@@ -138,7 +250,21 @@ index 86146a6d..a3e9bf40 100644
  	res->tm_mday = day;
  	res->tm_mon = month - 1;
  	res->tm_year = year - 1900;
-@@ -1007,9 +1054,13 @@ constexpr static int days_from_civil(int y, unsigned m, unsigned d) noexcept {
+@@ -992,11 +1034,10 @@ char *ctime_r(const time_t *clock, char *buf) {
+ 	return asctime_r(localtime(clock), buf);
+ }
+ 
+-time_t timelocal(struct tm *) {
+-	__ensure(!"Not implemented");
+-	__builtin_unreachable();
++time_t timelocal(struct tm *tm) {
++	return mktime(tm);
+ }
+ 
+ constexpr static int days_from_civil(int y, unsigned m, unsigned d) noexcept {
+ 	y -= m <= 2;
+ 	const int era = (y >= 0 ? y : y - 399) / 400;
+@@ -1007,9 +1048,13 @@ constexpr static int days_from_civil(int y, unsigned m, unsigned d) noexcept {
  }
  
  time_t timegm(struct tm *tm) {
