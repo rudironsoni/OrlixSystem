@@ -1107,10 +1107,12 @@ run: __ios-simulator-framework xcodeproj
 	selector=(); \
 	install_selector=(); \
 	simctl_device="booted"; \
+	simctl_boot_device="$(ORLIX_IOS_SIMULATOR_NAME)"; \
 	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
 		selector=(--simulator-id "$(ORLIX_IOS_SIMULATOR_ID)"); \
 		install_selector=(--simulator-id "$(ORLIX_IOS_SIMULATOR_ID)"); \
 		simctl_device="$(ORLIX_IOS_SIMULATOR_ID)"; \
+		simctl_boot_device="$(ORLIX_IOS_SIMULATOR_ID)"; \
 	else \
 		selector=(--simulator-name "$(ORLIX_IOS_SIMULATOR_NAME)" --use-latest-os); \
 		install_selector=(--simulator-name "$(ORLIX_IOS_SIMULATOR_NAME)"); \
@@ -1132,6 +1134,8 @@ run: __ios-simulator-framework xcodeproj
 		--output json)"; \
 	app_path="$$(printf '%s\n' "$$app_json" | awk -F'"' '/appPath/ { print $$4; exit }')"; \
 	[ -n "$$app_path" ] || { echo "missing OrlixTerminal app path" >&2; printf '%s\n' "$$app_json" >&2; exit 1; }; \
+	xcrun simctl boot "$$simctl_boot_device" >/dev/null 2>&1 || true; \
+	xcrun simctl bootstatus "$$simctl_boot_device" -b >/dev/null; \
 	ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator install \
 		"$${install_selector[@]}" \
 		--app-path "$$app_path" \
