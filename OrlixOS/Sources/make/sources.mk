@@ -298,6 +298,115 @@ $(ORLIXOS_ACL_SOURCE_STAMP): $(ORLIXOS_ACL_ARCHIVE_STAMP)
 	touch "$(ORLIXOS_ACL_SOURCE_STAMP)"; \
 	echo "extracted acl source: $(ORLIXOS_ACL_SRC_DIR)"
 
+$(ORLIXOS_PCRE2_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch pcre2 source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify pcre2 source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_PCRE2_ARCHIVE)" ]; then curl -fL "$(PCRE2_URL)" -o "$(ORLIXOS_PCRE2_ARCHIVE)"; fi; \
+	echo "upstream pcre2 archive ready: $(ORLIXOS_PCRE2_ARCHIVE)"
+
+$(ORLIXOS_PCRE2_ARCHIVE_STAMP): $(ORLIXOS_PCRE2_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify pcre2 source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(PCRE2_SHA256)" "$(ORLIXOS_PCRE2_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_PCRE2_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_PCRE2_ARCHIVE_STAMP)"; \
+	echo "upstream pcre2 ready: $(ORLIXOS_PCRE2_ARCHIVE)"
+
+$(ORLIXOS_PCRE2_SOURCE_STAMP): $(ORLIXOS_PCRE2_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_PCRE2_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xjf "$(ORLIXOS_PCRE2_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_PCRE2_SOURCE_STAMP)"; \
+	echo "extracted pcre2 source: $(ORLIXOS_PCRE2_SRC_DIR)"
+
+$(ORLIXOS_FTS_STANDALONE_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch musl-fts source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify musl-fts source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_FTS_STANDALONE_ARCHIVE)" ]; then curl -fL "$(FTS_STANDALONE_URL)" -o "$(ORLIXOS_FTS_STANDALONE_ARCHIVE)"; fi; \
+	echo "upstream musl-fts archive ready: $(ORLIXOS_FTS_STANDALONE_ARCHIVE)"
+
+$(ORLIXOS_FTS_STANDALONE_ARCHIVE_STAMP): $(ORLIXOS_FTS_STANDALONE_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify musl-fts source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(FTS_STANDALONE_SHA256)" "$(ORLIXOS_FTS_STANDALONE_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_FTS_STANDALONE_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_FTS_STANDALONE_ARCHIVE_STAMP)"; \
+	echo "upstream musl-fts ready: $(ORLIXOS_FTS_STANDALONE_ARCHIVE)"
+
+$(ORLIXOS_FTS_STANDALONE_SOURCE_STAMP): $(ORLIXOS_FTS_STANDALONE_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_FTS_STANDALONE_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xzf "$(ORLIXOS_FTS_STANDALONE_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_FTS_STANDALONE_SOURCE_STAMP)"; \
+	echo "extracted musl-fts source: $(ORLIXOS_FTS_STANDALONE_SRC_DIR)"
+
+$(ORLIXOS_LIBSEPOL_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch libsepol source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify libsepol source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_LIBSEPOL_ARCHIVE)" ]; then curl -fL "$(LIBSEPOL_URL)" -o "$(ORLIXOS_LIBSEPOL_ARCHIVE)"; fi; \
+	echo "upstream libsepol archive ready: $(ORLIXOS_LIBSEPOL_ARCHIVE)"
+
+$(ORLIXOS_LIBSEPOL_ARCHIVE_STAMP): $(ORLIXOS_LIBSEPOL_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify libsepol source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(LIBSEPOL_SHA256)" "$(ORLIXOS_LIBSEPOL_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_LIBSEPOL_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_LIBSEPOL_ARCHIVE_STAMP)"; \
+	echo "upstream libsepol ready: $(ORLIXOS_LIBSEPOL_ARCHIVE)"
+
+$(ORLIXOS_LIBSEPOL_SOURCE_STAMP): $(ORLIXOS_LIBSEPOL_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_LIBSEPOL_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xzf "$(ORLIXOS_LIBSEPOL_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_LIBSEPOL_SOURCE_STAMP)"; \
+	echo "extracted libsepol source: $(ORLIXOS_LIBSEPOL_SRC_DIR)"
+
+$(ORLIXOS_LIBSELINUX_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch libselinux source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify libselinux source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_LIBSELINUX_ARCHIVE)" ]; then curl -fL "$(LIBSELINUX_URL)" -o "$(ORLIXOS_LIBSELINUX_ARCHIVE)"; fi; \
+	echo "upstream libselinux archive ready: $(ORLIXOS_LIBSELINUX_ARCHIVE)"
+
+$(ORLIXOS_LIBSELINUX_ARCHIVE_STAMP): $(ORLIXOS_LIBSELINUX_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify libselinux source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(LIBSELINUX_SHA256)" "$(ORLIXOS_LIBSELINUX_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_LIBSELINUX_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_LIBSELINUX_ARCHIVE_STAMP)"; \
+	echo "upstream libselinux ready: $(ORLIXOS_LIBSELINUX_ARCHIVE)"
+
+$(ORLIXOS_LIBSELINUX_SOURCE_STAMP): $(ORLIXOS_LIBSELINUX_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_LIBSELINUX_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xzf "$(ORLIXOS_LIBSELINUX_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	patch -d "$(ORLIXOS_LIBSELINUX_SRC_DIR)" -p1 < "$(PROJECT_DIR)/Sources/patches/libselinux-3.10-pthread-once-structured-type.patch"; \
+	touch "$(ORLIXOS_LIBSELINUX_SOURCE_STAMP)"; \
+	echo "extracted libselinux source: $(ORLIXOS_LIBSELINUX_SRC_DIR)"
+
 $(ORLIXOS_PERL_ARCHIVE):
 	@set -euo pipefail; \
 	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
