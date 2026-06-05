@@ -1151,24 +1151,20 @@ run: __ios-simulator-framework xcodeproj
 	launch_pid="$$!"; \
 	cleanup() { kill "$$log_pid" "$$launch_pid" >/dev/null 2>&1 || true; }; \
 	trap cleanup EXIT INT TERM; \
-	app_is_running() { kill -0 "$$launch_pid" >/dev/null 2>&1; }; \
+	app_has_started() { grep -E -q 'OrlixTerminal\[|Starting Orlix bootloader|ORLIX-COREUTILS-TEST-INIT' "$$runtime_log" || kill -0 "$$launch_pid" >/dev/null 2>&1; }; \
 	printf '{"runtimeLogPath":"%s","osLogPath":"%s","bundleId":"%s"}\n' "$$runtime_log" "$$os_log" "$(ORLIX_TERMINAL_BUNDLE_ID)"; \
 	if [ -n "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" ]; then \
 		for _ in $$(seq 1 "$(ORLIX_KERNEL_RUN_STARTUP_TIMEOUT_SECONDS)"); do \
 			grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && break; \
-			app_is_running && break; \
+			app_has_started && break; \
 			sleep 1; \
 		done; \
-		if ! grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && ! app_is_running; then \
+		if ! grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && ! app_has_started; then \
 			echo "OrlixTerminal did not start before marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; \
 			exit 1; \
 		fi; \
 		for _ in $$(seq 1 "$(ORLIX_KERNEL_RUN_TIMEOUT_SECONDS)"); do \
 			grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && break; \
-			if ! app_is_running; then \
-				echo "OrlixTerminal exited before marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; \
-				exit 1; \
-			fi; \
 			sleep 1; \
 		done; \
 		grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" || { echo "timed out waiting for marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; exit 1; }; \

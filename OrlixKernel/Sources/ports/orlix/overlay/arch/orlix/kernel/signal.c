@@ -150,7 +150,7 @@ static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 
 static void setup_restart_syscall(struct pt_regs *regs)
 {
-	regs->regs[0] = __NR_restart_syscall;
+	regs->regs[8] = __NR_restart_syscall;
 }
 
 void orlix_do_signal_or_restart(struct pt_regs *regs)

@@ -24,6 +24,11 @@
 #define ELF_HWCAP	(0)
 #define ELF_PLATFORM	(NULL)
 
+#define SET_PERSONALITY(ex)						\
+({									\
+	current->personality &= ~READ_IMPLIES_EXEC;			\
+})
+
 typedef unsigned long elf_greg_t;
 #define ELF_NGREG	(sizeof(struct user_pt_regs) / sizeof(elf_greg_t))
 typedef elf_greg_t elf_gregset_t[ELF_NGREG];
