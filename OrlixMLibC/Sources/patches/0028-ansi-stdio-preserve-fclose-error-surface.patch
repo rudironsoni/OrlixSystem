@@ -1,0 +1,42 @@
+--- a/options/ansi/generic/file-io.cpp
++++ b/options/ansi/generic/file-io.cpp
+@@ -75,10 +75,6 @@
+ }
+ 
+ abstract_file::~abstract_file() {
+-	if(__dirty_begin != __dirty_end)
+-		mlibc::infoLogger() << "mlibc warning: File is not flushed before destruction"
+-				<< frg::endlog;
+-
+ 	if(__buffer_ptr)
+ 		getAllocator().free(__buffer_ptr - ungetBufferSize);
+ 
+@@ -467,9 +463,6 @@
+ }
+ 
+ int fd_file::close() {
+-	if(__dirty_begin != __dirty_end)
+-		mlibc::infoLogger() << "mlibc warning: File is not flushed before closing"
+-				<< frg::endlog;
+ 	if(int e = mlibc::sysdep<Close>(_fd); e)
+ 		return e;
+ 	return 0;
+@@ -685,10 +678,15 @@
+ int fclose(FILE *file_base) {
+ 	auto file = static_cast<mlibc::abstract_file *>(file_base);
+ 	int e = 0;
+-	if(file->flush())
++	if(int fe = file->flush()) {
++		e = EOF;
++		errno = fe;
++	}
++	if(int ce = file->close()) {
++		if(!e)
++			errno = ce;
+ 		e = EOF;
+-	if(file->close())
+-		e = EOF;
++	}
+ 	file->dispose();
+ 	return e;
+ }

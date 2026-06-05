@@ -75,23 +75,53 @@ static void load_selinux_policy(void)
 	free(policy);
 }
 
-static void ensure_runtime_filesystems(void)
+static int ensure_dir(const char *path, mode_t mode)
 {
-	(void)mkdir("/proc", 0555);
-	(void)mkdir("/sys", 0555);
-	(void)mkdir("/tmp", 01777);
-	(void)mkdir("/dev", 0755);
-	(void)mount("proc", "/proc", "proc", 0, NULL);
-	(void)mount("sysfs", "/sys", "sysfs", 0, NULL);
-	(void)mkdir("/sys/fs", 0755);
-	(void)mkdir("/sys/fs/selinux", 0755);
-	(void)mount("selinuxfs", "/sys/fs/selinux", "selinuxfs",
-		     MS_NOSUID | MS_NOEXEC, NULL);
+	if (mkdir(path, mode) == 0 || errno == EEXIST)
+		return 0;
+
+	fprintf(stderr, "orlix-coreutils-init: mkdir %s failed: %s (%d)\n",
+		path, strerror(errno), errno);
+	return -1;
+}
+
+static int mount_if_needed(const char *source, const char *target,
+			   const char *fstype, unsigned long flags,
+			   const void *data)
+{
+	if (mount(source, target, fstype, flags, data) == 0 || errno == EBUSY)
+		return 0;
+
+	fprintf(stderr, "orlix-coreutils-init: mount %s on %s type %s failed: %s (%d)\n",
+		source, target, fstype, strerror(errno), errno);
+	return -1;
+}
+
+static int ensure_runtime_filesystems(void)
+{
+	if (ensure_dir("/proc", 0555) != 0 ||
+	    ensure_dir("/sys", 0555) != 0 ||
+	    ensure_dir("/tmp", 01777) != 0 ||
+	    ensure_dir("/dev", 0755) != 0 ||
+	    mount_if_needed("proc", "/proc", "proc", 0, NULL) != 0 ||
+	    mount_if_needed("sysfs", "/sys", "sysfs", 0, NULL) != 0 ||
+	    ensure_dir("/sys/fs", 0755) != 0 ||
+	    ensure_dir("/sys/fs/selinux", 0755) != 0 ||
+	    mount_if_needed("selinuxfs", "/sys/fs/selinux", "selinuxfs",
+			    MS_NOSUID | MS_NOEXEC, NULL) != 0 ||
+	    mount_if_needed("tmpfs", "/tmp", "tmpfs", 0,
+			    "mode=1777,size=512M,nr_inodes=250000") != 0 ||
+	    mount_if_needed("devtmpfs", "/dev", "devtmpfs", 0, NULL) != 0 ||
+	    ensure_dir("/dev/shm", 01777) != 0 ||
+	    mount_if_needed("tmpfs", "/dev/shm", "tmpfs", 0,
+			    "mode=1777,size=512M,nr_inodes=250000") != 0 ||
+	    ensure_dir("/dev/pts", 0755) != 0 ||
+	    mount_if_needed("devpts", "/dev/pts", "devpts", 0,
+			    "gid=5,mode=620") != 0)
+		return -1;
+
 	load_selinux_policy();
-	(void)mount("tmpfs", "/tmp", "tmpfs", 0, "mode=1777");
-	(void)mount("devtmpfs", "/dev", "devtmpfs", 0, NULL);
-	(void)mkdir("/dev/pts", 0755);
-	(void)mount("devpts", "/dev/pts", "devpts", 0, "gid=5,mode=620");
+	return 0;
 }
 
 static int enter_identity(uid_t uid, gid_t gid, size_t ngroups,
@@ -169,6 +199,7 @@ static int run_upstream_check(void)
 		"PWD=/coreutils-build",
 		"SHELL=/bin/bash",
 		"TMPDIR=/tmp",
+		"TZ=UTC0",
 		"USER=root",
 		NULL,
 	};
@@ -211,7 +242,10 @@ int main(int argc, char **argv)
 
 	puts("ORLIX-COREUTILS-TEST-INIT");
 	fflush(stdout);
-	ensure_runtime_filesystems();
+	if (ensure_runtime_filesystems() != 0) {
+		puts("ORLIX-COREUTILS-TEST-END failures=1 skips=0 total=0");
+		return EXIT_FAILURE;
+	}
 	result = run_upstream_check();
 	if (getpid() == 1)
 		park_init();

@@ -298,6 +298,33 @@ $(ORLIXOS_ACL_SOURCE_STAMP): $(ORLIXOS_ACL_ARCHIVE_STAMP)
 	touch "$(ORLIXOS_ACL_SOURCE_STAMP)"; \
 	echo "extracted acl source: $(ORLIXOS_ACL_SRC_DIR)"
 
+$(ORLIXOS_LIBCAP_ARCHIVE):
+	@set -euo pipefail; \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \
+		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
+	done; \
+	command -v curl >/dev/null 2>&1 || { echo "curl is required to fetch libcap source" >&2; exit 1; }; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify libcap source" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)"; \
+	if [ ! -s "$(ORLIXOS_LIBCAP_ARCHIVE)" ]; then curl -fL "$(LIBCAP_URL)" -o "$(ORLIXOS_LIBCAP_ARCHIVE)"; fi; \
+	echo "upstream libcap archive ready: $(ORLIXOS_LIBCAP_ARCHIVE)"
+
+$(ORLIXOS_LIBCAP_ARCHIVE_STAMP): $(ORLIXOS_LIBCAP_ARCHIVE)
+	@set -euo pipefail; \
+	command -v shasum >/dev/null 2>&1 || { echo "shasum is required to verify libcap source" >&2; exit 1; }; \
+	printf '%s  %s\n' "$(LIBCAP_SHA256)" "$(ORLIXOS_LIBCAP_ARCHIVE)" | shasum -a 256 -c - >/dev/null; \
+	mkdir -p "$(dir $(ORLIXOS_LIBCAP_ARCHIVE_STAMP))"; \
+	touch "$(ORLIXOS_LIBCAP_ARCHIVE_STAMP)"; \
+	echo "upstream libcap ready: $(ORLIXOS_LIBCAP_ARCHIVE)"
+
+$(ORLIXOS_LIBCAP_SOURCE_STAMP): $(ORLIXOS_LIBCAP_ARCHIVE_STAMP)
+	@set -euo pipefail; \
+	rm -rf "$(ORLIXOS_LIBCAP_SRC_DIR)"; \
+	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
+	tar -xJf "$(ORLIXOS_LIBCAP_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
+	touch "$(ORLIXOS_LIBCAP_SOURCE_STAMP)"; \
+	echo "extracted libcap source: $(ORLIXOS_LIBCAP_SRC_DIR)"
+
 $(ORLIXOS_PCRE2_ARCHIVE):
 	@set -euo pipefail; \
 	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)"; do \

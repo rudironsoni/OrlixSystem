@@ -111,6 +111,48 @@ $(ORLIXOS_GETFACL_BINARY) $(ORLIXOS_SETFACL_BINARY) $(ORLIXOS_LIBACL_A): $(ORLIX
 	[ -x "$(ORLIXOS_SETFACL_BINARY)" ] || { echo "missing acl setfacl package input: $(ORLIXOS_SETFACL_BINARY)" >&2; exit 1; }; \
 	[ -s "$(ORLIXOS_LIBACL_A)" ] || { echo "missing libacl archive: $(ORLIXOS_LIBACL_A)" >&2; exit 1; }
 
+$(ORLIXOS_LIBCAP_PROOF): $(ORLIXOS_LIBCAP_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+	@set -euo pipefail; \
+	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
+	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
+	rtlib="$(ORLIXOS_MLIBC_RTLIB)"; \
+	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
+	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
+	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
+	rm -rf "$(ORLIXOS_LIBCAP_BUILD_DIR)" "$(ORLIXOS_LIBCAP_A)" "$(ORLIXOS_SETCAP_BINARY)" "$(ORLIXOS_GETCAP_BINARY)" "$(ORLIXOS_LIBCAP_PROOF)"; \
+	cp -R "$(ORLIXOS_LIBCAP_SRC_DIR)" "$(ORLIXOS_LIBCAP_BUILD_DIR)"; \
+	mkdir -p "$(ORLIXOS_LIBCAP_BUILD_DIR)/.orlix-host-tools" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include/sys" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include/linux" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib"; \
+	{ \
+		printf '%s\n' '#!/bin/sh'; \
+		printf '%s\n' 'pattern=$$1'; \
+		printf '%s\n' 'shift'; \
+		printf '%s\n' 'case "$$pattern" in'; \
+		printf '%s\n' '  *CAP_*) pattern="^#define[[:space:]]+CAP_([^[:space:]]+)[[:space:]]+[0-9]+[[:space:]]*$$" ;;'; \
+		printf '%s\n' 'esac'; \
+		printf '%s\n' 'exec grep -E "$$pattern" "$$@"'; \
+	} > "$(ORLIXOS_LIBCAP_BUILD_DIR)/.orlix-host-tools/egrep"; \
+	chmod +x "$(ORLIXOS_LIBCAP_BUILD_DIR)/.orlix-host-tools/egrep"; \
+	$(MAKE) -C "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap" -j1 CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fPIC" BUILD_CC=cc BUILD_SED=/opt/homebrew/bin/gsed BUILD_EGREP="$(ORLIXOS_LIBCAP_BUILD_DIR)/.orlix-host-tools/egrep" AR="$(ORLIXOS_AR)" RANLIB="$(ORLIXOS_RANLIB)" CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS) -Wno-error" USE_GPERF=no libcap.a; \
+	grep -F -q 'cap_net_bind_service' "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/cap_names.h" || { echo "libcap capability-name table missing cap_net_bind_service" >&2; exit 1; }; \
+	install -m 0644 "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/include/sys/capability.h" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include/sys/capability.h"; \
+	install -m 0644 "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/include/uapi/linux/capability.h" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include/linux/capability.h"; \
+	install -m 0644 "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/libcap.a" "$(ORLIXOS_LIBCAP_A)"; \
+	"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -I"$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/include" -D_GNU_SOURCE $(ORLIXOS_PACKAGE_CFLAGS) -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_LIBCAP_BUILD_DIR)/progs/setcap.c" "$(ORLIXOS_LIBCAP_BUILD_DIR)/progs/capshdoc.c" -Wl,--start-group "$(ORLIXOS_LIBCAP_A)" "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_SETCAP_BINARY)"; \
+	"$(ORLIXOS_CC)" --target=aarch64-linux-gnu --sysroot="$$sysroot" -isystem "$$headers" -I"$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/include" -D_GNU_SOURCE $(ORLIXOS_PACKAGE_CFLAGS) -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" "$(ORLIXOS_LIBCAP_BUILD_DIR)/progs/getcap.c" -Wl,--start-group "$(ORLIXOS_LIBCAP_A)" "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o" -o "$(ORLIXOS_GETCAP_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_SETCAP_BINARY)" "$(ORLIXOS_GETCAP_BINARY)"; \
+	file "$(ORLIXOS_SETCAP_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_SETCAP_BINARY)" >&2; exit 1; }; \
+	file "$(ORLIXOS_GETCAP_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_GETCAP_BINARY)" >&2; exit 1; }; \
+	[ -s "$(ORLIXOS_LIBCAP_A)" ] || { echo "missing libcap archive: $(ORLIXOS_LIBCAP_A)" >&2; exit 1; }; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=libcap\nversion=%s\nsha256=%s\nlibraries=libcap.a\nprograms=setcap,getcap\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(LIBCAP_VERSION)" "$(LIBCAP_SHA256)" > "$(ORLIXOS_LIBCAP_PROOF)"; \
+	rm -rf "$(ORLIXOS_LIBCAP_BUILD_DIR)"; \
+	echo "built Orlix Linux libcap package inputs: $(ORLIXOS_LIBCAP_A) $(ORLIXOS_SETCAP_BINARY) $(ORLIXOS_GETCAP_BINARY)"
+
+$(ORLIXOS_LIBCAP_A) $(ORLIXOS_SETCAP_BINARY) $(ORLIXOS_GETCAP_BINARY): $(ORLIXOS_LIBCAP_PROOF)
+	@set -euo pipefail; \
+	[ -s "$(ORLIXOS_LIBCAP_A)" ] || { echo "missing libcap archive: $(ORLIXOS_LIBCAP_A)" >&2; exit 1; }; \
+	[ -x "$(ORLIXOS_SETCAP_BINARY)" ] || { echo "missing libcap setcap package input: $(ORLIXOS_SETCAP_BINARY)" >&2; exit 1; }; \
+	[ -x "$(ORLIXOS_GETCAP_BINARY)" ] || { echo "missing libcap getcap package input: $(ORLIXOS_GETCAP_BINARY)" >&2; exit 1; }
+
 $(ORLIXOS_E2FSPROGS_PROOF): $(ORLIXOS_E2FSPROGS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \
 	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
@@ -119,7 +161,7 @@ $(ORLIXOS_E2FSPROGS_PROOF): $(ORLIXOS_E2FSPROGS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
 	[ -d "$$headers" ] || { echo "missing Orlix Linux UAPI headers: $$headers" >&2; exit 1; }; \
 	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
-	rm -rf "$(ORLIXOS_E2FSPROGS_BUILD_DIR)" "$(ORLIXOS_MKE2FS_BINARY)" "$(ORLIXOS_MKFS_EXT2_BINARY)" "$(ORLIXOS_E2FSPROGS_PROOF)"; \
+	rm -rf "$(ORLIXOS_E2FSPROGS_BUILD_DIR)" "$(ORLIXOS_MKE2FS_BINARY)" "$(ORLIXOS_MKFS_EXT2_BINARY)" "$(ORLIXOS_MKFS_EXT4_BINARY)" "$(ORLIXOS_E2FSPROGS_PROOF)"; \
 	mkdir -p "$(ORLIXOS_E2FSPROGS_BUILD_DIR)/.orlix-toolchain" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin"; \
 	{ \
 		printf '%s\n' '#!/bin/bash'; \
@@ -150,20 +192,25 @@ $(ORLIXOS_E2FSPROGS_PROOF): $(ORLIXOS_E2FSPROGS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	$(MAKE) -C misc -j1 mke2fs; \
 	cp "$(ORLIXOS_E2FSPROGS_BUILD_DIR)/misc/mke2fs" "$(ORLIXOS_MKE2FS_BINARY)"; \
 	cp "$(ORLIXOS_E2FSPROGS_BUILD_DIR)/misc/mke2fs" "$(ORLIXOS_MKFS_EXT2_BINARY)"; \
+	cp "$(ORLIXOS_E2FSPROGS_BUILD_DIR)/misc/mke2fs" "$(ORLIXOS_MKFS_EXT4_BINARY)"; \
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_MKE2FS_BINARY)"; \
 	"$(ORLIXOS_STRIP)" "$(ORLIXOS_MKFS_EXT2_BINARY)"; \
+	"$(ORLIXOS_STRIP)" "$(ORLIXOS_MKFS_EXT4_BINARY)"; \
 	file "$(ORLIXOS_MKE2FS_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_MKE2FS_BINARY)" >&2; exit 1; }; \
 	file "$(ORLIXOS_MKFS_EXT2_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_MKFS_EXT2_BINARY)" >&2; exit 1; }; \
+	file "$(ORLIXOS_MKFS_EXT4_BINARY)" | grep -F -q 'ELF 64-bit LSB executable, ARM aarch64' || { file "$(ORLIXOS_MKFS_EXT4_BINARY)" >&2; exit 1; }; \
 	file "$(ORLIXOS_MKE2FS_BINARY)" | grep -F -q 'statically linked' || { file "$(ORLIXOS_MKE2FS_BINARY)" >&2; exit 1; }; \
 	file "$(ORLIXOS_MKFS_EXT2_BINARY)" | grep -F -q 'statically linked' || { file "$(ORLIXOS_MKFS_EXT2_BINARY)" >&2; exit 1; }; \
-	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=e2fsprogs\nversion=%s\nsha256=%s\nprograms=mke2fs,mkfs.ext2\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(E2FSPROGS_VERSION)" "$(E2FSPROGS_SHA256)" > "$(ORLIXOS_E2FSPROGS_PROOF)"; \
+	file "$(ORLIXOS_MKFS_EXT4_BINARY)" | grep -F -q 'statically linked' || { file "$(ORLIXOS_MKFS_EXT4_BINARY)" >&2; exit 1; }; \
+	printf 'profile=%s\ndistribution=%s\nchannel=%s\npackage=e2fsprogs\nversion=%s\nsha256=%s\nprograms=mke2fs,mkfs.ext2,mkfs.ext4\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(E2FSPROGS_VERSION)" "$(E2FSPROGS_SHA256)" > "$(ORLIXOS_E2FSPROGS_PROOF)"; \
 	rm -rf "$(ORLIXOS_E2FSPROGS_BUILD_DIR)"; \
-	echo "built Orlix Linux e2fsprogs package inputs: $(ORLIXOS_MKE2FS_BINARY) $(ORLIXOS_MKFS_EXT2_BINARY)"
+	echo "built Orlix Linux e2fsprogs package inputs: $(ORLIXOS_MKE2FS_BINARY) $(ORLIXOS_MKFS_EXT2_BINARY) $(ORLIXOS_MKFS_EXT4_BINARY)"
 
-$(ORLIXOS_MKE2FS_BINARY) $(ORLIXOS_MKFS_EXT2_BINARY): $(ORLIXOS_E2FSPROGS_PROOF)
+$(ORLIXOS_MKE2FS_BINARY) $(ORLIXOS_MKFS_EXT2_BINARY) $(ORLIXOS_MKFS_EXT4_BINARY): $(ORLIXOS_E2FSPROGS_PROOF)
 	@set -euo pipefail; \
 	[ -x "$(ORLIXOS_MKE2FS_BINARY)" ] || { echo "missing e2fsprogs mke2fs package input: $(ORLIXOS_MKE2FS_BINARY)" >&2; exit 1; }; \
-	[ -x "$(ORLIXOS_MKFS_EXT2_BINARY)" ] || { echo "missing e2fsprogs mkfs.ext2 package input: $(ORLIXOS_MKFS_EXT2_BINARY)" >&2; exit 1; }
+	[ -x "$(ORLIXOS_MKFS_EXT2_BINARY)" ] || { echo "missing e2fsprogs mkfs.ext2 package input: $(ORLIXOS_MKFS_EXT2_BINARY)" >&2; exit 1; }; \
+	[ -x "$(ORLIXOS_MKFS_EXT4_BINARY)" ] || { echo "missing e2fsprogs mkfs.ext4 package input: $(ORLIXOS_MKFS_EXT4_BINARY)" >&2; exit 1; }
 
 $(ORLIXOS_PCRE2_PROOF): $(ORLIXOS_PCRE2_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \

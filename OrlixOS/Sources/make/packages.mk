@@ -31,7 +31,7 @@ $(ORLIXOS_BASH_BINARY): $(ORLIXOS_BASH_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	rm -rf "$(ORLIXOS_BASH_BUILD_DIR)"; \
 	echo "built Orlix Linux Bash package input: $(ORLIXOS_BASH_BINARY)"
 
-$(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_ACL_PROOF) $(ORLIXOS_LIBSELINUX_PROOF) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+$(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_ACL_PROOF) $(ORLIXOS_LIBCAP_PROOF) $(ORLIXOS_LIBSELINUX_PROOF) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
 	@set -euo pipefail; \
 	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
 	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
@@ -51,7 +51,7 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_ACL_PROO
 	export CPPFLAGS="-I$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -L$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/lib -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group"; \
-	export LIBS="$(ORLIXOS_LIBSELINUX_A) $(ORLIXOS_LIBACL_A) $(ORLIXOS_LIBATTR_A) $(ORLIXOS_LIBSEPOL_A) $(ORLIXOS_LIBPCRE2_8_A) $(ORLIXOS_LIBFTS_A) $$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
+	export LIBS="$(ORLIXOS_LIBSELINUX_A) $(ORLIXOS_LIBCAP_A) $(ORLIXOS_LIBACL_A) $(ORLIXOS_LIBATTR_A) $(ORLIXOS_LIBSEPOL_A) $(ORLIXOS_LIBPCRE2_8_A) $(ORLIXOS_LIBFTS_A) $$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
 	export AR="$(ORLIXOS_AR)"; \
 	export RANLIB="$(ORLIXOS_RANLIB)"; \
 	export PATH="$(ORLIXOS_COREUTILS_BOOTSTRAP_PATH)"; \
@@ -59,7 +59,7 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_ACL_PROO
 	export gl_cv_func_getopt_gnu=yes; \
 	export gl_cv_func_getopt_long_gnu=yes; \
 	export gl_cv_func_strtod_works=yes; \
-	"$(ORLIXOS_COREUTILS_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --with-selinux --disable-libcap --disable-gcc-warnings; \
+	"$(ORLIXOS_COREUTILS_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --with-selinux --enable-libcap --disable-gcc-warnings; \
 	$(MAKE) -j1 all PROGRAMS= LIBRARIES= MANS= INFO_DEPS=; \
 	for program in $(ORLIXOS_COREUTILS_PROGRAMS); do \
 		source_program="$$program"; \

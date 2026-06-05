@@ -47,6 +47,7 @@ export NON_ROOT_USERNAME=nobody
 export RUN_EXPENSIVE_TESTS=yes
 export RUN_VERY_EXPENSIVE_TESTS=yes
 export TMPDIR=/tmp
+export TZ=UTC0
 export USER=nobody
 export VERBOSE=
 
@@ -106,6 +107,7 @@ while read -r mode test_name; do
     SKIP)
       skips=$((skips + 1))
       echo "ok $total - $test_name # SKIP"
+      [ -s "$log_file" ] && sed 's/^/# /' "$log_file"
       ;;
     *)
       failures=$((failures + 1))
