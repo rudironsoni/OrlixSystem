@@ -2,6 +2,7 @@
 
 #include <linux/errno.h>
 #include <linux/kernel.h>
+#include <linux/resume_user_mode.h>
 #include <linux/sched/signal.h>
 #include <linux/signal.h>
 #include <linux/rseq.h>
@@ -17,6 +18,11 @@
 struct rt_sigframe {
 	struct siginfo info;
 	struct ucontext uc;
+};
+
+struct frame_record {
+	u64 fp;
+	u64 lr;
 };
 
 static bool orlix_valid_user_regs(const struct pt_regs *regs)
@@ -61,16 +67,26 @@ static int restore_sigcontext(struct pt_regs *regs,
 }
 
 static struct rt_sigframe __user *get_sigframe(struct ksignal *ksig,
-					       struct pt_regs *regs)
+					       struct pt_regs *regs,
+					       struct frame_record __user **next_frame)
 {
-	unsigned long sp = sigsp(regs->sp, ksig);
+	unsigned long sp;
+	unsigned long sp_top;
+
+	sp = sp_top = sigsp(regs->sp, ksig);
+	sp = round_down(sp - sizeof(struct frame_record), 16);
+	*next_frame = (struct frame_record __user *)sp;
 
 	sp = round_down(sp - sizeof(struct rt_sigframe), 16);
+	if (!access_ok((void __user *)sp, sp_top - sp))
+		return NULL;
+
 	return (struct rt_sigframe __user *)sp;
 }
 
 static int setup_return(struct pt_regs *regs, struct k_sigaction *ka,
-			struct rt_sigframe __user *frame, int usig)
+			struct rt_sigframe __user *frame,
+			struct frame_record __user *next_frame, int usig)
 {
 	if (!(ka->sa.sa_flags & SA_RESTORER) || !ka->sa.sa_restorer)
 		return -EINVAL;
@@ -79,6 +95,7 @@ static int setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 	regs->regs[1] = 0;
 	regs->regs[2] = 0;
 	regs->sp = (unsigned long)frame;
+	regs->regs[29] = (unsigned long)&next_frame->fp;
 	regs->pc = (unsigned long)ka->sa.sa_handler;
 	regs->regs[30] = (unsigned long)ka->sa.sa_restorer;
 	regs->pstate = PSR_MODE_EL0t;
@@ -89,20 +106,24 @@ static int setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 static int setup_rt_frame(int usig, struct ksignal *ksig, sigset_t *set,
 			  struct pt_regs *regs)
 {
-	struct rt_sigframe __user *frame = get_sigframe(ksig, regs);
+	struct rt_sigframe __user *frame;
+	struct frame_record __user *next_frame;
 	int err = 0;
 
-	if (!access_ok(frame, sizeof(*frame)))
+	frame = get_sigframe(ksig, regs, &next_frame);
+	if (!frame)
 		return -EFAULT;
 
-	if (put_user(0, &frame->uc.uc_flags) ||
+	if (put_user(regs->regs[29], &next_frame->fp) ||
+	    put_user(regs->regs[30], &next_frame->lr) ||
+	    put_user(0, &frame->uc.uc_flags) ||
 	    put_user(NULL, &frame->uc.uc_link) ||
 	    __save_altstack(&frame->uc.uc_stack, regs->sp) ||
 	    copy_to_user(&frame->uc.uc_sigmask, set, sizeof(*set)) ||
 	    setup_sigcontext(&frame->uc.uc_mcontext, regs))
 		return -EFAULT;
 
-	err = setup_return(regs, &ksig->ka, frame, usig);
+	err = setup_return(regs, &ksig->ka, frame, next_frame, usig);
 	if (err)
 		return err;
 
@@ -181,6 +202,7 @@ void orlix_do_signal_or_restart(struct pt_regs *regs)
 static bool orlix_user_work_pending(void)
 {
 	return need_resched() || test_thread_flag(TIF_SIGPENDING) ||
+		test_thread_flag(TIF_NOTIFY_RESUME) ||
 		test_thread_flag(TIF_NOTIFY_SIGNAL) ||
 		test_thread_flag(TIF_RESTORE_SIGMASK);
 }
@@ -192,9 +214,12 @@ void orlix_exit_to_user_mode_work(struct pt_regs *regs)
 			schedule();
 
 		if (in_syscall(regs) || test_thread_flag(TIF_SIGPENDING) ||
-		    test_thread_flag(TIF_NOTIFY_SIGNAL) ||
-		    test_thread_flag(TIF_RESTORE_SIGMASK))
+			test_thread_flag(TIF_NOTIFY_SIGNAL) ||
+			test_thread_flag(TIF_RESTORE_SIGMASK))
 			orlix_do_signal_or_restart(regs);
+
+		if (test_thread_flag(TIF_NOTIFY_RESUME))
+			resume_user_mode_work(regs);
 	} while (orlix_user_work_pending());
 }
 

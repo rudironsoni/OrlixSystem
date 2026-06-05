@@ -62,11 +62,39 @@ asm(
 void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 {
 	unsigned long user_tls = current->thread.user_tls;
+	unsigned long *user_simd = current->thread.user_simd;
+	unsigned long user_fpsr = current->thread.user_fpsr;
+	unsigned long user_fpcr = current->thread.user_fpcr;
+	unsigned long user_simd_valid = current->thread.user_simd_valid;
 
 	orlix_hosted_save_kernel_stack((unsigned long)task_pt_regs(current));
 	orlix_hosted_note_user_entry_tls(user_tls);
 
 	asm volatile(
+	"	mov	x13, %2\n"
+	"	cbz	x13, 1f\n"
+	"	mov	x14, %3\n"
+	"	mov	x15, %4\n"
+	"	mov	x16, %5\n"
+	"	msr	fpcr, x14\n"
+	"	msr	fpsr, x15\n"
+	"	ldp	q0, q1, [x16]\n"
+	"	ldp	q2, q3, [x16, #32]\n"
+	"	ldp	q4, q5, [x16, #64]\n"
+	"	ldp	q6, q7, [x16, #96]\n"
+	"	ldp	q8, q9, [x16, #128]\n"
+	"	ldp	q10, q11, [x16, #160]\n"
+	"	ldp	q12, q13, [x16, #192]\n"
+	"	ldp	q14, q15, [x16, #224]\n"
+	"	ldp	q16, q17, [x16, #256]\n"
+	"	ldp	q18, q19, [x16, #288]\n"
+	"	ldp	q20, q21, [x16, #320]\n"
+	"	ldp	q22, q23, [x16, #352]\n"
+	"	ldp	q24, q25, [x16, #384]\n"
+	"	ldp	q26, q27, [x16, #416]\n"
+	"	ldp	q28, q29, [x16, #448]\n"
+	"	ldp	q30, q31, [x16, #480]\n"
+	"1:\n"
 	"	mov	x9, %0\n"
 	"	mov	x12, %1\n"
 	"	ldr	x10, [x9, #%c[pc_offset]]\n"
@@ -89,6 +117,10 @@ void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 	:
 	: "r"(regs),
 	  "r"(user_tls),
+	  "r"(user_simd_valid),
+	  "r"(user_fpcr),
+	  "r"(user_fpsr),
+	  "r"(user_simd),
 	  [pc_offset] "i"(offsetof(struct pt_regs, pc)),
 	  [sp_offset] "i"(offsetof(struct pt_regs, sp)),
 	  [x8_offset] "i"(offsetof(struct pt_regs, regs[8])),

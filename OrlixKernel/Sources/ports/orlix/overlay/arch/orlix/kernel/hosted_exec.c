@@ -2,6 +2,7 @@
 
 #include <linux/bug.h>
 #include <linux/compiler.h>
+#include <linux/irqflags.h>
 #include <linux/kernel.h>
 #include <linux/linkage.h>
 #include <linux/mm.h>
@@ -191,6 +192,17 @@ static bool orlix_hosted_user_pc_in_aperture(unsigned long pc)
 	return pc >= ORLIX_HOSTED_USER_BASE && pc < ORLIX_HOSTED_STACK_TOP;
 }
 
+static void __noreturn orlix_hosted_die_from_user_trap(int signr)
+{
+	WRITE_ONCE(orlix_hosted_user_active, 0);
+	if (current->flags & PF_EXITING)
+		do_task_dead();
+	if (!current->mm)
+		make_task_dead(signr);
+
+	do_group_exit(signr);
+}
+
 static void orlix_hosted_handle_invalid_resume_pc(struct pt_regs *regs)
 {
 	if (orlix_hosted_user_pc_in_aperture(regs->pc))
@@ -198,17 +210,20 @@ static void orlix_hosted_handle_invalid_resume_pc(struct pt_regs *regs)
 
 	if (orlix_handle_host_user_fault(regs, regs->pc,
 					 ORLIX_HOST_USER_FAULT_EXEC))
-		do_group_exit(SIGSEGV);
+		orlix_hosted_die_from_user_trap(SIGSEGV);
 
 	orlix_exit_to_user_mode_work(regs);
 	if (!orlix_hosted_user_pc_in_aperture(regs->pc))
-		do_group_exit(SIGSEGV);
+		orlix_hosted_die_from_user_trap(SIGSEGV);
 }
 
 static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
 							bool full_stack_window)
 {
 	struct orlix_host_user_trap_frame resume_frame;
+
+	if (!current->mm || (current->flags & PF_EXITING))
+		orlix_hosted_die_from_user_trap(SIGKILL);
 
 	orlix_hosted_handle_invalid_resume_pc(regs);
 	if (full_stack_window)
@@ -231,6 +246,7 @@ static void __noreturn orlix_hosted_user_trap_entry(
 
 	orlix_hosted_restore_trap_frame(regs, frame);
 	orlix_hosted_apply_frame_user_state(frame);
+	local_irq_enable();
 
 	if (signal_number == ORLIX_HOST_USER_TRAP_TIMER) {
 		struct pt_regs *resume_regs;
@@ -256,10 +272,11 @@ static void __noreturn orlix_hosted_user_trap_entry(
 	if (!exit_code)
 		exit_code = SIGKILL;
 
-	pr_info("Orlix: hosted user trap signal %d at pc %#lx fault=%#lx flags=%#lx\n",
-		signal_number, regs->pc, frame->fault_address,
+	pr_info("Orlix: hosted user trap signal %d task=%s pid=%d at pc %#lx lr=%#llx sp=%#lx fault=%#lx flags=%#lx\n",
+		signal_number, current->comm, task_pid_nr(current), regs->pc,
+		regs->regs[30], regs->sp, frame->fault_address,
 		frame->fault_flags);
-	do_group_exit(exit_code);
+	orlix_hosted_die_from_user_trap(exit_code);
 }
 
 asm(

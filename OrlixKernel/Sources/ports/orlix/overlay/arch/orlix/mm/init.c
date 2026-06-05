@@ -409,7 +409,7 @@ int orlix_sync_current_user_fault_window(unsigned long address,
 
 	for (loop_page = window_start; loop_page < window_end; loop_page += PAGE_SIZE) {
 		ret = orlix_sync_current_user_mapping_page(loop_page);
-		if (ret)
+		if (ret && loop_page == page)
 			return ret;
 	}
 

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "app-implement-feature": {
+      "source": "tddworks/baguette",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/baguette-implement-feature/SKILL.md",
+      "computedHash": "5204052ba7d5417f30272fe860ae16d81cc54de0822c9a9f8b376fb845483189"
+    },
+    "baguette": {
+      "source": "tddworks/baguette",
+      "sourceType": "github",
+      "skillPath": "skills/baguette/SKILL.md",
+      "computedHash": "1855f6a971f27f39ba77c9c7525f493b092bdda9f9e877257ef568888d79e073"
+    }
+  }
+}
