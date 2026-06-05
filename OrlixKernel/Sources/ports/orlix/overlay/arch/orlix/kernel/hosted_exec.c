@@ -186,11 +186,31 @@ static void orlix_hosted_save_trap_frame(
 	}
 }
 
+static bool orlix_hosted_user_pc_in_aperture(unsigned long pc)
+{
+	return pc >= ORLIX_HOSTED_USER_BASE && pc < ORLIX_HOSTED_STACK_TOP;
+}
+
+static void orlix_hosted_handle_invalid_resume_pc(struct pt_regs *regs)
+{
+	if (orlix_hosted_user_pc_in_aperture(regs->pc))
+		return;
+
+	if (orlix_handle_host_user_fault(regs, regs->pc,
+					 ORLIX_HOST_USER_FAULT_EXEC))
+		do_group_exit(SIGSEGV);
+
+	orlix_exit_to_user_mode_work(regs);
+	if (!orlix_hosted_user_pc_in_aperture(regs->pc))
+		do_group_exit(SIGSEGV);
+}
+
 static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
 							bool full_stack_window)
 {
 	struct orlix_host_user_trap_frame resume_frame;
 
+	orlix_hosted_handle_invalid_resume_pc(regs);
 	if (full_stack_window)
 		orlix_sync_current_user_mappings(regs);
 	else
