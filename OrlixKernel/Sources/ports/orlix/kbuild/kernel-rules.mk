@@ -486,6 +486,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	drivers/base/devtmpfs.c \
 	drivers/base/firmware_loader/main.c \
 	drivers/base/firmware_loader/builtin/main.c \
+	drivers/block/loop.c \
 	drivers/block/virtio_blk.c \
 	drivers/char/mem.c \
 	drivers/char/misc.c \
