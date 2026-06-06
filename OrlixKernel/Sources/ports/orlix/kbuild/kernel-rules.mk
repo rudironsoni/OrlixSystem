@@ -1165,6 +1165,10 @@ run: __ios-simulator-framework xcodeproj
 		fi; \
 		for _ in $$(seq 1 "$(ORLIX_KERNEL_RUN_TIMEOUT_SECONDS)"); do \
 			grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && break; \
+			if ! kill -0 "$$launch_pid" >/dev/null 2>&1; then \
+				echo "OrlixTerminal exited before marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; \
+				exit 1; \
+			fi; \
 			sleep 1; \
 		done; \
 		grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" || { echo "timed out waiting for marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; exit 1; }; \
