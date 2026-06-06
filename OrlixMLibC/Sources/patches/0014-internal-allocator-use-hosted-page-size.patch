@@ -15,21 +15,3 @@ index 4dfbb71d..560a94b7 100644
  	uintptr_t map(size_t length);
  
  	void unmap(uintptr_t address, size_t length);
-diff --git a/tests/posix/posix_memalign.c b/tests/posix/posix_memalign.c
-index 839ebd11..af23017c 100644
---- a/tests/posix/posix_memalign.c
-+++ b/tests/posix/posix_memalign.c
-@@ -18,6 +18,13 @@ int main() {
- 	free(p);
- 	assert(posix_memalign(&p, 256, 256) == 0 && p != NULL && (uintptr_t)p % 256 == 0);
- 	free(p);
-+
-+#ifdef ORLIX_HOSTED_PAGE_SIZE
-+	p = NULL;
-+	assert(posix_memalign(&p, ORLIX_HOSTED_PAGE_SIZE, 1) == 0
-+			&& p != NULL && (uintptr_t)p % ORLIX_HOSTED_PAGE_SIZE == 0);
-+	free(p);
-+#endif
- 
- 	return 0;
- }

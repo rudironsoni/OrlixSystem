@@ -30,7 +30,6 @@ unsigned long orlix_hosted_active_user_tls;
 unsigned long orlix_hosted_user_active;
 unsigned long orlix_hosted_entry_user_pc;
 unsigned long orlix_hosted_entry_user_callee[12];
-bool orlix_hosted_syscall_full_user_entry;
 static unsigned char orlix_hosted_syscall_gate_page[PAGE_SIZE] __page_aligned_data;
 static bool orlix_hosted_syscall_gate_ready;
 static bool orlix_hosted_user_timer_ready;
@@ -158,7 +157,8 @@ static void orlix_hosted_restore_trap_frame(
 		regs->regs[i] = frame->regs[i];
 	regs->pc = frame->pc;
 	regs->sp = frame->sp;
-	regs->pstate = frame->pstate ? frame->pstate : PSR_MODE_EL0t;
+	regs->pstate = frame->pstate & (PSR_N_BIT | PSR_Z_BIT |
+					PSR_C_BIT | PSR_V_BIT);
 	regs->syscallno = NO_SYSCALL;
 }
 
@@ -235,6 +235,11 @@ static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
 	WRITE_ONCE(orlix_hosted_active_user_tls, resume_frame.user_tls);
 	orlix_hosted_start_user_timer_once();
 	orlix_host_user_trap_resume(&resume_frame);
+}
+
+void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
+{
+	orlix_hosted_resume_current_user(regs, true);
 }
 
 static void __noreturn orlix_hosted_user_trap_entry(
@@ -328,48 +333,6 @@ asm(
 "	stp	q30, q31, [sp, #496]\n"
 "	mov	x7, x9\n"
 "	bl	_orlix_hosted_syscall_dispatch\n"
-"	adrp	x10, _orlix_hosted_syscall_full_user_entry@PAGE\n"
-"	ldrb	w10, [x10, _orlix_hosted_syscall_full_user_entry@PAGEOFF]\n"
-"	cbnz	w10, 2f\n"
-"	ldp	x10, x11, [sp]\n"
-"	msr	fpcr, x10\n"
-"	msr	fpsr, x11\n"
-"	ldp	q0, q1, [sp, #16]\n"
-"	ldp	q2, q3, [sp, #48]\n"
-"	ldp	q4, q5, [sp, #80]\n"
-"	ldp	q6, q7, [sp, #112]\n"
-"	ldp	q8, q9, [sp, #144]\n"
-"	ldp	q10, q11, [sp, #176]\n"
-"	ldp	q12, q13, [sp, #208]\n"
-"	ldp	q14, q15, [sp, #240]\n"
-"	ldp	q16, q17, [sp, #272]\n"
-"	ldp	q18, q19, [sp, #304]\n"
-"	ldp	q20, q21, [sp, #336]\n"
-"	ldp	q22, q23, [sp, #368]\n"
-"	ldp	q24, q25, [sp, #400]\n"
-"	ldp	q26, q27, [sp, #432]\n"
-"	ldp	q28, q29, [sp, #464]\n"
-"	ldp	q30, q31, [sp, #496]\n"
-"	add	sp, sp, #528\n"
-"	ldp	x9, x12, [sp], #16\n"
-"	stp	x0, x9, [sp, #-16]!\n"
-"	mov	x0, x12\n"
-"	bl	_orlix_hosted_prepare_user_entry\n"
-"	mov	x12, x0\n"
-"	ldp	x0, x9, [sp], #16\n"
-"	adrp	x10, _orlix_hosted_kernel_sp@PAGE\n"
-"	mov	x11, sp\n"
-"	str	x11, [x10, _orlix_hosted_kernel_sp@PAGEOFF]\n"
-"	msr	tpidr_el0, x12\n"
-"	isb\n"
-"	stp	x0, x9, [sp, #-16]!\n"
-"	mov	x0, x12\n"
-"	bl	_orlix_hosted_note_user_entry_tls\n"
-"	ldp	x0, x9, [sp], #16\n"
-"	ldp	x29, x30, [sp], #16\n"
-"	mov	sp, x9\n"
-"	ret\n"
-"2:\n"
 "	ldp	x10, x11, [sp]\n"
 "	msr	fpcr, x10\n"
 "	msr	fpsr, x11\n"
@@ -475,7 +438,6 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 	struct pt_regs *regs = task_pt_regs(current);
 	unsigned long entry_pc;
 	long ret;
-	bool full_user_entry;
 
 	orlix_hosted_preserve_user_tls();
 	orlix_hosted_start_user_timer_once();
@@ -495,14 +457,19 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 
 	ret = orlix_syscall_dispatch(regs);
 	orlix_sync_current_user_minimal_mappings(regs);
-	full_user_entry = regs->pc != entry_pc || regs->sp != user_sp;
-	WRITE_ONCE(orlix_hosted_syscall_full_user_entry, full_user_entry);
+	/*
+	 * A Linux syscall return restores the saved user register frame, with
+	 * x0 carrying the return value and with signal/ptrace work applied by
+	 * the kernel. The hosted C call into the syscall dispatcher cannot
+	 * preserve the normal AArch64 caller-saved register set, so return via
+	 * the HostAdapter trap-frame resume path instead of the inline fast
+	 * return path.
+	 */
 	return ret;
 }
 
 void __noreturn orlix_hosted_syscall_enter_user(void)
 {
-	WRITE_ONCE(orlix_hosted_syscall_full_user_entry, false);
 	orlix_hosted_enter_user(task_pt_regs(current));
 }
 #endif
