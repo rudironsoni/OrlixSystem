@@ -105,6 +105,20 @@ class GeneratedTreeGuardTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("ORLIX-HARNESS-BLOCK", result.stderr)
 
+    def test_pre_tool_guard_blocks_writes_to_documented_generated_roots(self):
+        result = run_hook(
+            PRE_TOOL_GUARD,
+            bash_payload(
+                "rtk python3 - <<'PY'\n"
+                "from pathlib import Path\n"
+                "Path('Build/OrlixMLibC/kernel-headers/release/include/linux/foo.h').write_text('x')\n"
+                "PY"
+            ),
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("ORLIX-HARNESS-BLOCK", result.stderr)
+
     def test_permission_guard_allows_read_only_generated_tree_bash_request(self):
         result = run_hook(
             PERMISSION_GUARD,

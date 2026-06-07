@@ -1,5 +1,7 @@
 # Project-local Codex command rules for OrlixSystem.
 # These rules affect commands requested outside the sandbox.
+# `rtk` is an output-shrinking wrapper. Rules must cover both `cmd ...`
+# and `rtk cmd ...` forms because the underlying side effect is identical.
 
 prefix_rule(
     pattern = ["git", "push"],
@@ -12,6 +14,20 @@ prefix_rule(
     ],
     not_match = [
         "git status",
+    ],
+)
+
+prefix_rule(
+    pattern = ["rtk", "git", "push"],
+    decision = "prompt",
+    justification = "Pushing checkpoints is allowed after review, but every push must be intentional.",
+    match = [
+        "rtk git push",
+        "rtk git push origin main",
+        "rtk git push --force-with-lease",
+    ],
+    not_match = [
+        "rtk git status",
     ],
 )
 
@@ -29,6 +45,31 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["rtk", "rm", "-rf"],
+    decision = "forbidden",
+    justification = "Do not use broad destructive deletion. Use targeted apply_patch deletes or ask for explicit approval.",
+    match = [
+        "rtk rm -rf Build",
+        "rtk rm -rf .",
+    ],
+    not_match = [
+        "rtk rm file.txt",
+    ],
+)
+
+prefix_rule(
+    pattern = ["timeout", "18000", "make"],
+    decision = "prompt",
+    justification = "Full Orlix/Coreutils runs are expensive and may launch app-hosted proof paths.",
+    match = [
+        "timeout 18000 make -f OrlixOS/Makefile test PROFILE=release",
+    ],
+    not_match = [
+        "timeout 1200 make test",
+    ],
+)
+
+prefix_rule(
     pattern = ["rtk", "timeout", "18000", "make"],
     decision = "prompt",
     justification = "Full Orlix/Coreutils runs are expensive and may launch app-hosted proof paths.",
@@ -37,6 +78,19 @@ prefix_rule(
     ],
     not_match = [
         "rtk timeout 1200 make test",
+    ],
+)
+
+prefix_rule(
+    pattern = ["xcrun", "simctl"],
+    decision = "prompt",
+    justification = "Simulator control can affect running app proof state and should be explicit.",
+    match = [
+        "xcrun simctl list",
+        "xcrun simctl shutdown all",
+    ],
+    not_match = [
+        "xcodebuild -version",
     ],
 )
 
@@ -50,6 +104,18 @@ prefix_rule(
     ],
     not_match = [
         "rtk xcodebuild -version",
+    ],
+)
+
+prefix_rule(
+    pattern = ["xcodebuild"],
+    decision = "prompt",
+    justification = "Xcode proof commands are allowed but should be intentional because they are expensive and may require simulator state.",
+    match = [
+        "xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixTerminalProofDriverTests test",
+    ],
+    not_match = [
+        "git status",
     ],
 )
 

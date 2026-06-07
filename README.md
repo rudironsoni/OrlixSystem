@@ -1,8 +1,8 @@
 # Orlix
 
-Orlix is an iOS-hosted upstream Linux port. The product goal is to run Linux userspace inside an iOS app by packaging upstream Linux as `OrlixKernel.xcframework` and pairing it with `OrlixMLibC`, an mlibc-based libc for Orlix Linux userspace.
+Orlix is an iOS-hosted upstream Linux port. The product goal is to run Linux userspace inside an iOS app by packaging upstream Linux as `OrlixKernel.xcframework`, pairing it with `OrlixMLibC`, and delivering the curated OS as the `OrlixOS` Kit/framework.
 
-Think of the app as the host container. It does not become Linux and it does not manage Linux through a custom runtime API. It starts a bootloader, the bootloader prepares Linux-shaped boot inputs, and Linux owns Linux after boot.
+Think of the app as the host container. It consumes `OrlixOS`; it does not become Linux and it does not manage Linux through a custom runtime API. `OrlixOS` resolves its delivered payload, starts a bootloader-shaped Linux session, the bootloader prepares Linux-shaped boot inputs, and Linux owns Linux after boot.
 
 OrlixKernel is Linux. It does not provide a shell, libc, package manager, public syscall API, or fake runtime facade. Shells and packages are normal Orlix Linux userspace binaries linked against OrlixMLibC and executed through Linux mechanisms.
 
@@ -13,7 +13,7 @@ Orlix has five important source areas:
 - `Build/OrlixKernel/upstream/linux-6.12.git` is the generated bare upstream Linux clone. Treat it as read-only input.
 - `OrlixKernel/Sources/ports/orlix` is where durable Orlix Linux port inputs live.
 - `OrlixMLibC/Sources` is the durable component area for OrlixMLibC sysdeps, configs, and patches. The upstream mlibc bare clone is generated under `Build/OrlixMLibC/upstream/mlibc-<version>.git`, and the patched working source is generated under `Build/OrlixMLibC/src/mlibc-<version>`.
-- `OrlixOS` is the package and rootfs assembly lane for Orlix Linux userspace inputs. It builds package artifacts against OrlixMLibC and stages generated rootfs content under `Build/OrlixOS`.
+- `OrlixOS` is the delivered OS Kit. It owns curated distribution policy, package/rootfs assembly, product payload packaging, target-derived payload metadata, and the app-facing Linux session API.
 - `OrlixHostAdapter/Sources` is where private iOS and Darwin mechanics live.
 
 Project source and test roots are organized consistently:
@@ -25,7 +25,8 @@ OrlixHostAdapter/Sources
 OrlixHostAdapter/Tests
 OrlixMLibC/Sources
 OrlixMLibC/Tests
-OrlixOS
+OrlixOS/Sources
+OrlixOS/Tests
 OrlixTerminal/Sources
 OrlixTerminal/Tests
 ```
@@ -66,7 +67,7 @@ make clean
 
 `make setup-env` fetches upstream Linux as a bare clone and generates the disposable Xcode project from `project.yml`. `make build` first runs `make clean`, which removes `Build/`; the kernel build then reclones upstream Linux through the normal bootstrap path. The same build flow materializes upstream mlibc as a bare clone plus patched working source under `Build/OrlixMLibC`, builds the OrlixMLibC sysroot from upstream mlibc plus durable OrlixMLibC inputs, and stages OrlixOS package/rootfs inputs under `Build/OrlixOS`. It does not prove terminal runtime behavior or build or require `vmlinux` as a normal artifact.
 
-The Linux compile lane emits per-profile, per-platform OrlixKernel static archives under `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`. Xcode links the matching archive into `OrlixKernel.framework`, and framework slices are packaged into `OrlixKernel.xcframework`.
+The Linux compile lane emits per-profile, per-platform OrlixKernel static archives under `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`. Xcode links the matching archive into `OrlixKernel.framework`, and framework slices are packaged into `OrlixKernel.xcframework`. The product rootfs payload is carried by the `OrlixOS` framework, with its payload resource name declared in `project.yml`/target metadata.
 
 `PROFILE=release` is the default profile. Pass another profile only when you intentionally need it.
 
@@ -92,7 +93,7 @@ Do not run kselftest or KUnit on Darwin and do not use a VM as product proof. Do
 
 Both `iphoneos` and `iphonesimulator` are iOS proof destinations. Milestones must validate the same scope on both.
 
-XCTest suites are organized under project-local test trees. `OrlixKernel/Tests/XCTest/OrlixKernelHostProofTests` launches the bootloader-shaped product API, `OrlixKernel/Tests/XCTest/OrlixLinuxProofOutputParserTests` parses Linux-native KUnit and kselftest output fixtures under `OrlixKernel/Tests/Fixtures`, and `OrlixHostAdapter/Tests/XCTest/OrlixHostAdapterTests` covers narrow host mechanics. Future OrlixMLibC and OrlixTerminal tests belong under `OrlixMLibC/Tests` and `OrlixTerminal/Tests`. They do not own Linux subsystem assertions.
+XCTest suites are organized under project-local test trees. `OrlixKernel/Tests/XCTest/OrlixKernelHostProofTests` launches the lower-level bootloader path, `OrlixKernel/Tests/XCTest/OrlixLinuxProofOutputParserTests` parses Linux-native KUnit and kselftest output fixtures under `OrlixKernel/Tests/Fixtures`, `OrlixOS/Tests/XCTest` covers OrlixOS payload/session wiring, and `OrlixHostAdapter/Tests/XCTest/OrlixHostAdapterTests` covers narrow host mechanics. They do not own Linux subsystem assertions.
 
 Milestone 5 boot-to-virtio-probe proof keeps the dependency chain honest. Static DTS, defconfig, and kselftest source inputs are preparatory only. The milestone is proved only when iOS-hosted Orlix Linux consumes the profile device tree and reaches the point where upstream virtio-mmio probing can be attempted.
 
@@ -140,9 +141,11 @@ OrlixKernel/Sources/ports/orlix/
 
 ## Product Surface
 
-The public product surface is bootloader-shaped. It should expose a minimal boot entrypoint such as `OrlixBoot` with an app-level boot config. It must not expose syscall, file, mount, exec, task, cgroup, or runtime management APIs.
+The app-facing product surface is `OrlixOS` and is bootloader/session-shaped. It may expose a Linux session API backed by the bootloader path. It must not expose syscall, file, mount, exec, task, cgroup, package-manager, or runtime management APIs.
 
-## Current Proof Boundary
+## Current Proof Boundary Snapshot
+
+This section is status context, not durable architecture truth. Refresh it from the active plan and latest evidence before using it to scope or claim work.
 
 The current blocking proof boundary is iOS-hosted kernel-interface execution. The branch is source-layout and build-hook aligned, not runtime aligned. Real-artifact XCFramework packaging is a prerequisite, not product runtime proof.
 

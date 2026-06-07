@@ -15,9 +15,11 @@ Identify:
 - the proof lane it belongs to;
 - the required command or runtime evidence;
 - the observed command output and logs;
+- OrlixOS payload/session evidence when claiming product boot, PTY, shell, or package runtime behavior;
 - failure and skip counts;
 - simulator or app crash reports checked;
 - missing evidence.
+- whether the recorded evidence is current and directly relevant to the exact claim, not just any prior command output.
 
 ## Promotion Order
 
@@ -29,6 +31,8 @@ Product runtime claims must follow ADR 0017:
 4. OrlixMLibC-built syscall/UAPI proof
 5. POSIX shell environment proof
 6. Third-party package ladder: jq, curl, zsh
+
+Product boot, PTY, shell, or package claims must go through the `OrlixOS` Kit/session surface. Do not claim them from a resurrected `OrlixKit`, a hardcoded HostAdapter bundle lookup, an `OrlixTerminal` UI-only path, or packaging alone.
 
 ## Output
 

@@ -15,8 +15,11 @@ Use this skill before writing Codex harness files.
 - Keep durable agent lessons in `docs/harness/MEMORY.md`.
 - Avoid duplicate or competing architecture claims.
 - Update stale references after moving docs or renaming skills/agents.
+- Keep the `OrlixOS`-is-the-Kit decision consistent across ADRs, architecture docs, glossary, skills, agents, and AGENTS.md.
+- Remove stale `OrlixKit` routing unless it is explicitly documented as retired/forbidden.
 - Prefer Codex-native surfaces: `AGENTS.md`, `.codex/agents`, `.agents/skills`, `.codex/rules`, and `.codex/hooks`.
+- Treat `rtk` as an output wrapper in rules and hooks. Guarded bare commands and `rtk`-wrapped equivalents must have the same policy.
 
 ## Verification
 
-After harness edits, run a stale-reference scan and inspect skill/agent trigger descriptions for clear, narrow scope.
+After harness edits, run a stale-reference scan, inspect skill/agent trigger descriptions for clear narrow scope, and verify paired bare/`rtk` command policy where rules are touched.

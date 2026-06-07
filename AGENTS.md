@@ -4,11 +4,13 @@ These rules apply to every task in this repository unless the user explicitly ov
 
 ## Project Invariant
 
-Orlix compiles upstream Linux into an iOS-hosted `OrlixKernel.xcframework` and pairs it with `OrlixMLibC`, an mlibc-based libc for Orlix Linux userspace.
+Orlix compiles upstream Linux into an iOS-hosted `OrlixKernel.xcframework`, pairs it with `OrlixMLibC`, and delivers the curated OS as the `OrlixOS` Kit/framework.
 
 If a change makes Orlix less suitable for real Linux userspace, the change is wrong.
 
 OrlixKernel is Linux. It does not own shell behavior, libc behavior, package management, public syscall APIs, or a custom runtime facade. Shells and packages are normal Orlix Linux userspace binaries linked against OrlixMLibC and executed through Linux mechanisms.
+
+Apps consume `OrlixOS` for the delivered OS session and payload surface. Do not recreate a separate `OrlixKit` module or move OS delivery into `OrlixTerminal` or `OrlixHostAdapter`.
 
 ## First Reads
 
@@ -34,7 +36,7 @@ Durable Orlix Linux port inputs live under:
 
 `OrlixMLibC/Sources` owns OrlixMLibC sysdeps, configs, and patches. OrlixMLibC consumes Linux UAPI through `headers_install` for upstream `ARCH=arm64` and calls Linux-shaped syscalls.
 
-`OrlixOS` owns package and rootfs assembly only. It must not own kernel semantics, libc semantics, syscall ABI, package-manager policy, or iOS host mechanics.
+`OrlixOS` is the Kit: it owns curated distribution policy, package/rootfs assembly, product payload packaging, target-derived payload metadata, and the app-facing Linux session API. It must not own kernel semantics, libc semantics, syscall ABI, private iOS host mechanics, or terminal UI rendering.
 
 ## Generated Trees
 
@@ -64,6 +66,8 @@ Use Codex-native surfaces deliberately:
 - `.agents/skills/orlix-upstream-conformance/SKILL.md` for upstream Linux, mlibc, Coreutils, or other upstream test suites.
 - `.agents/skills/orlix-runtime-claim-verification/SKILL.md` before claiming fixed, green, complete, runtime-ready, package-ready, or upstream-test success.
 - `.agents/skills/orlix-write-to-harness/SKILL.md` before editing this harness, plans, skills, agents, hooks, rules, ADR indexes, or agent memory.
+
+`rtk` only shrinks command output. Harness rules and hooks must treat `rtk <command>` as equivalent to `<command>` for approval and block decisions.
 
 ## Proof Rules
 

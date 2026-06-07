@@ -9,10 +9,8 @@ from pathlib import Path
 GENERATED_PATTERNS = (
     "Build/OrlixKernel/upstream/linux-",
     "Build/OrlixKernel/src/linux-",
-    "Build/OrlixMLibC/upstream/mlibc-",
-    "Build/OrlixMLibC/src/mlibc-",
-    "Build/OrlixOS/upstream/coreutils-",
-    "Build/OrlixOS/src/",
+    "Build/OrlixMLibC",
+    "Build/OrlixOS",
 )
 GENERATED_PATH_RE = re.compile(
     r"(?:\./)?(?:" + "|".join(re.escape(pattern) for pattern in GENERATED_PATTERNS) + r")"
@@ -64,6 +62,20 @@ BASH_SCRIPT_WRITE_RE = re.compile(
 CLAIM_RE = re.compile(
     r"\b(complete|completed|done|fixed|green|passes|passing|runtime-ready|package-ready|upstream-test successful|success)\b",
     re.IGNORECASE,
+)
+CLAIM_EVIDENCE_TERMS = (
+    (
+        re.compile(r"\b(package-ready|jq|curl|zsh|third-party package|package proof)\b", re.IGNORECASE),
+        ("package", "jq", "curl", "zsh", "coreutils", "orlixos", "failures=", "skips="),
+    ),
+    (
+        re.compile(r"\b(runtime-ready|runtime|boot|pty|shell|bash|posix shell)\b", re.IGNORECASE),
+        ("runtime", "boot", "pty", "shell", "bash", "orlixos", "crash", "failures=", "skips="),
+    ),
+    (
+        re.compile(r"\b(upstream-test successful|upstream|kselftest|kunit|mlibc|coreutils)\b", re.IGNORECASE),
+        ("upstream", "kselftest", "kunit", "mlibc", "coreutils", "failures=", "skips=", "not ok"),
+    ),
 )
 
 BAD_OUTPUT_RE = re.compile(
@@ -204,6 +216,26 @@ def has_implementation_evidence(path):
         return False
     text = impl.read_text(errors="replace")
     return "Evidence:" in text and ("rtk " in text or "make " in text or ".log" in text or "xcodebuild" in text)
+
+
+def claim_evidence_terms(claim_text):
+    terms = []
+    for pattern, pattern_terms in CLAIM_EVIDENCE_TERMS:
+        if pattern.search(claim_text):
+            terms.extend(pattern_terms)
+    return tuple(dict.fromkeys(terms))
+
+
+def has_claim_relevant_evidence(path, terms):
+    if not terms:
+        return has_implementation_evidence(path)
+    impl = path / "IMPLEMENT.md"
+    if not impl.exists():
+        return False
+    text = impl.read_text(errors="replace").lower()
+    if "evidence:" not in text:
+        return False
+    return any(term.lower() in text for term in terms)
 
 
 def warn(message):

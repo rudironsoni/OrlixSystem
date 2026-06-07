@@ -20,6 +20,12 @@ Implementation log. Append-only. Capture decisions, deviations from the plan, ev
 
 **Evidence:**
 
+- Exact command(s):
+- Result:
+- Failure/skip counts:
+- Crash reports checked:
+- Final marker(s):
+
 **Next:**
 
 ---
