@@ -106,7 +106,7 @@ Userspace proof validates OrlixMLibC, the Orlix Linux userspace ABI, shell behav
 
 ## XCTest Proof Harness
 
-The iOS-side proof harness that packages or launches `OrlixKernel.xcframework`, starts Orlix through the bootloader-shaped API, collects Linux test output from inside Orlix Linux, and verifies host-mechanics behavior without replacing KUnit or kselftest assertions.
+The iOS-side proof harness that packages or launches the app-hosted OrlixKernel integration, starts Orlix through the `OrlixOS` session or lower-level bootloader-shaped test path, collects Linux test output from inside Orlix Linux, and verifies host-mechanics behavior without replacing KUnit or kselftest assertions.
 
 ## Linux Test Output Collection
 
@@ -126,7 +126,15 @@ A test-kernel option set that enables Linux debugfs plus KUnit debugfs and expos
 
 ## OrlixTerminal
 
-The iOS terminal app that hosts `OrlixKernel.xcframework`, launches Orlix through the bootloader-shaped API, presents the terminal surface, and serves as the XCTest host for iOS-hosted proof.
+The iOS terminal app that consumes `OrlixOS`, presents the terminal surface, and serves as an app host for iOS-hosted proof. It does not own OS delivery, Linux execution semantics, shell behavior, package behavior, or test-result interpretation.
+
+## OrlixOS
+
+The delivered OS Kit/framework. It owns curated distribution policy, package/rootfs assembly, product payload packaging, target-derived payload metadata, and the app-facing Linux session API. It consumes the OrlixKernel bootloader path and private HostAdapter resource registration, but it does not own kernel semantics, libc semantics, syscall ABI, private iOS host mechanics, terminal UI rendering, shell behavior, or Linux test-result interpretation.
+
+## OrlixOS Payload
+
+The signed app resource bundle carried by the `OrlixOS` framework. It contains the curated product rootfs/initramfs and root storage images needed to boot the selected OrlixOS profile. Its resource name and extension are target metadata, not hardcoded runtime constants.
 
 ## Terminal UI Surface
 
@@ -274,7 +282,7 @@ The retired XCTest coverage formerly under `LegacyOrlix/Tests/MigrationReference
 
 ## iOS-Hosted Kernel-Interface Test Execution
 
-The dependency-proof path where an iOS host app or XCTest target launches `OrlixKernel.xcframework`, boots Orlix Linux with test resources, and captures Linux-native test output without claiming product runtime proof.
+The dependency-proof path where an iOS host app or XCTest target launches the app-hosted OrlixKernel integration, boots Orlix Linux with test resources through the Orlix boot path, and captures Linux-native test output without claiming product runtime proof.
 
 ## OrlixMLibC Kselftest Syscall/UAPI Lane
 
@@ -374,7 +382,7 @@ The minimal app-level input to the bootloader entrypoint. The first public shape
 
 ## Resource Identifier
 
-An opaque app-level name for a host-backed boot resource. The bootloader resolves resource identifiers through `OrlixHostAdapter`; raw iOS paths and host handles are not Linux-visible truth.
+An opaque app-level name for a host-backed boot resource. `OrlixOS` resolves its delivered payload through target metadata and registers private host resource paths with `OrlixHostAdapter`; test bundles may still be addressed by opaque identifiers in the XCTest host. Raw iOS paths and host handles are not Linux-visible truth.
 
 ## Root Device
 
@@ -394,11 +402,11 @@ Linux package databases and permitted installed package state live under normal 
 
 ## Release Package Channel
 
-The release profile bundles curated OrlixOS distribution content as signed app resources and updates executable content through app releases first. Downloaded binary package repositories are deferred until a curated, signed, profile-approved channel with App Store-safe disclosure and policy checks is explicitly designed and reviewed. It is not an unrestricted arbitrary Linux repository model.
+The release profile bundles curated OrlixOS distribution content as signed `OrlixOS` Kit resources and updates executable content through app releases first. Downloaded binary package repositories are deferred until a curated, signed, profile-approved channel with App Store-safe disclosure and policy checks is explicitly designed and reviewed. It is not an unrestricted arbitrary Linux repository model.
 
 ## Package Policy Ownership
 
-Repository trust, package signatures, metadata, and post-install policy are userspace package-policy responsibilities guided by the selected profile. Kernel and architecture code enforce hard execution constraints; `OrlixHostAdapter` does not become a package manager.
+Repository trust, package signatures, metadata, and post-install policy are userspace distribution responsibilities guided by `OrlixOS` and the selected profile. Kernel and architecture code enforce hard execution constraints; `OrlixHostAdapter` does not become a package manager.
 
 ## Executable Memory Policy
 
@@ -486,7 +494,7 @@ Old build target names such as `prepare-linux-worktree`, `build-temporary-*`, `s
 
 ## XCFramework Packaging Rule
 
-`OrlixKernel.xcframework` or equivalent app-hosted packaging is required before iOS-hosted kernel-interface proof and later runtime proof can advance and must package or link the hosted OrlixKernel integration for the selected profile. Boot-stub packaging must not masquerade as product proof.
+`OrlixKernel.xcframework` or equivalent app-hosted kernel packaging is required before iOS-hosted kernel-interface proof and later runtime proof can advance and must package or link the hosted OrlixKernel integration for the selected profile. Product runtime packaging also requires the `OrlixOS` payload/session surface. Boot-stub packaging must not masquerade as product proof.
 
 ## Boot-Stub Packaging
 
@@ -614,7 +622,7 @@ The compiled device tree blob for a closed built-in Orlix profile, shipped insid
 
 ## Test Initramfs Resource
 
-A Linux-shaped test payload bundled with the XCTest host app, not with the product `OrlixKernel.xcframework`. It contains the minimal userspace needed to run kselftest and emit TAP without becoming part of the product framework contract.
+A Linux-shaped test payload bundled with the XCTest host app, not with the product `OrlixOS` payload or `OrlixKernel.xcframework`. It contains the minimal userspace needed to run kselftest and emit TAP without becoming part of the product framework contract.
 
 ## kselftest Install Shape
 
@@ -642,4 +650,4 @@ An explicit `run_kselftest.sh --override-timeout` value supplied by the XCTest p
 
 ## Product Initramfs
 
-The later product/root-assembly boot payload for normal Orlix startup. It is separate from the test initramfs and is not designed by the early iOS-hosted test-execution milestone.
+The OrlixOS-owned product/root-assembly boot payload for normal Orlix startup. It is delivered through the `OrlixOS` payload bundle, separate from the test initramfs.

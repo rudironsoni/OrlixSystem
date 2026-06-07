@@ -90,16 +90,34 @@ static int mount_if_needed(const char *source, const char *target,
 	return -1;
 }
 
-static void mount_runtime_filesystems(void)
+static void mount_device_filesystem(void)
 {
 	if (ensure_dir("/dev", 0755) == 0 &&
 	    mount_if_needed("devtmpfs", "/dev", "devtmpfs", 0, NULL) != 0)
 		write_literal(STDERR_FILENO, "orlix-init: mount /dev failed\n");
+}
+
+static void mount_runtime_filesystems(void)
+{
+	if (ensure_dir("/proc", 0555) == 0 &&
+	    mount_if_needed("proc", "/proc", "proc", 0, NULL) != 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /proc failed\n");
+
+	if (ensure_dir("/sys", 0555) == 0 &&
+	    mount_if_needed("sysfs", "/sys", "sysfs", 0, NULL) != 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /sys failed\n");
+
+	mount_device_filesystem();
 
 	if (ensure_dir("/dev/pts", 0755) == 0 &&
 	    mount_if_needed("devpts", "/dev/pts", "devpts", 0,
 			    "gid=5,mode=620,ptmxmode=666") != 0)
 		write_literal(STDERR_FILENO, "orlix-init: mount /dev/pts failed\n");
+
+	if (ensure_dir("/dev/shm", 01777) == 0 &&
+	    mount_if_needed("tmpfs", "/dev/shm", "tmpfs", MS_NOSUID | MS_NODEV,
+			    "mode=1777") != 0)
+		write_literal(STDERR_FILENO, "orlix-init: mount /dev/shm failed\n");
 
 	if (ensure_dir("/run", 0755) == 0 &&
 	    mount_if_needed("tmpfs", "/run", "tmpfs", MS_NOSUID | MS_NODEV,
@@ -338,8 +356,10 @@ static int run_pty_shell(int console_fd)
 
 int main(void)
 {
-	int tty = open_controlling_tty();
+	int tty;
 
+	mount_device_filesystem();
+	tty = open_controlling_tty();
 	if (tty < 0) {
 		write_literal(STDERR_FILENO,
 			      "orlix-init: unable to open a Linux console\n");

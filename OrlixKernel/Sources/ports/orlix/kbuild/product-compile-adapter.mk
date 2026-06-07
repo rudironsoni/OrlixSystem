@@ -6,7 +6,6 @@ ORLIX_PRODUCT_BOUNDARY_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-bou
 ORLIX_PRODUCT_KALLSYMS_OBJECT := $(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-kallsyms.o
 ORLIX_PRODUCT_BOUNDARY_OBJECTS := $(ORLIX_PRODUCT_PAYLOAD_OBJECT) $(ORLIX_PRODUCT_BOUNDARY_OBJECT) $(ORLIX_PRODUCT_KALLSYMS_OBJECT)
 ORLIX_KERNEL_PORT_ABS := $(abspath $(ORLIX_KERNEL_PORT_DIR))
-ORLIX_PRODUCT_INITRAMFS_INPUT := $(ORLIX_KERNEL_PAYLOAD_DIR)/rootfs/initramfs.cpio.gz
 
 ORLIX_PRODUCT_ALLOWED_MACHO_SECTIONS := \
 	__TEXT,__text \
@@ -460,10 +459,7 @@ orlix_product_adapter_generate_payloads() { \
 	payload_src="$(ORLIX_PRODUCT_ADAPTER_ROOT)/orlix-product-payloads.S"; \
 	payload_obj="$(ORLIX_PRODUCT_PAYLOAD_OBJECT)"; \
 	empty_root_dtb="$(ORLIX_KERNEL_BUILD_DIR)/drivers/of/empty_root.dtb"; \
-	initramfs_data="$(ORLIX_PRODUCT_INITRAMFS_INPUT)"; \
 	[ -s "$$empty_root_dtb" ] || { echo "missing generated Linux empty-root DTB: $$empty_root_dtb" >&2; exit 1; }; \
-	[ -s "$$initramfs_data" ] || { echo "missing Orlix product initramfs input: $$initramfs_data" >&2; exit 1; }; \
-	initramfs_size="$$(wc -c < "$$initramfs_data" | tr -d '[:space:]')"; \
 	{ \
 		printf '%s\n' '/* generated Build-only Mach-O wrappers for Linux-generated payload inputs */'; \
 		printf '%s\n' '.section __TEXT,__dtb_init'; \
@@ -474,15 +470,15 @@ orlix_product_adapter_generate_payloads() { \
 		printf '%s\n' '.globl ___dtb_empty_root_end'; \
 		printf '%s\n' '___dtb_empty_root_end:'; \
 		printf '%s\n' '.p2align 3'; \
+		printf '%s\n' '/* Runtime initrd bytes are selected by OrlixOS/OrlixHostAdapter at boot. */'; \
 		printf '%s\n' '.section __DATA,__init_ramfs'; \
 		printf '%s\n' '.p2align 2'; \
 		printf '%s\n' '.globl ___initramfs_start'; \
 		printf '%s\n' '___initramfs_start:'; \
-		printf '.incbin "%s"\n' "$$initramfs_data"; \
 		printf '%s\n' '.p2align 3'; \
 		printf '%s\n' '.globl ___initramfs_size'; \
 		printf '%s\n' '___initramfs_size:'; \
-		printf '.quad %s\n' "$$initramfs_size"; \
+		printf '%s\n' '.quad 0'; \
 	} > "$$payload_src"; \
 	/usr/bin/env -u SDKROOT "$$cc" -target "$$target" -isysroot / -x assembler -c "$$payload_src" -o "$$payload_obj"; \
 	orlix_product_adapter_verify_object_contract "$$payload_obj"; \

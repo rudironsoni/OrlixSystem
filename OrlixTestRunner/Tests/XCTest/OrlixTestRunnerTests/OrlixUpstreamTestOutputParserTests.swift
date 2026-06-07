@@ -4,6 +4,10 @@ import XCTest
 final class OrlixUpstreamTestOutputParserTests: XCTestCase {
     private let parser = OrlixUpstreamTestOutputParser()
 
+    func testCoreutilsRunnerTimeoutMatchesUpstreamHarnessBudget() {
+        XCTAssertEqual(OrlixUpstreamTestRunSpec.coreutils.timeout, 14_400)
+    }
+
     func testAcceptsKselftestCompletionWithPassingTAP() throws {
         let output = """
         ORLIX-KSELFTEST-INIT
@@ -107,6 +111,33 @@ final class OrlixUpstreamTestOutputParserTests: XCTestCase {
                 .crashReport("Incident Identifier:")
             )
         }
+    }
+
+    func testTerminalConditionWakesOnCompletionFatalMarkerOrUpstreamFailure() {
+        XCTAssertTrue(
+            parser.containsTerminalCondition(
+                "ORLIX-KSELFTEST-END",
+                for: .kernel
+            )
+        )
+        XCTAssertTrue(
+            parser.containsTerminalCondition(
+                "panic: fatal exception",
+                for: .kernel
+            )
+        )
+        XCTAssertTrue(
+            parser.containsTerminalCondition(
+                "not ok 7 upstream behavior",
+                for: .mlibc
+            )
+        )
+        XCTAssertFalse(
+            parser.containsTerminalCondition(
+                "TAP version 13\n1..1\nok 1 still running",
+                for: .mlibc
+            )
+        )
     }
 
     func testRejectsMalformedCoreutilsCompletion() {

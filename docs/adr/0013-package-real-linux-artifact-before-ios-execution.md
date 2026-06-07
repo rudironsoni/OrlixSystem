@@ -14,7 +14,7 @@ Orlix cannot validate the product direction without building and testing through
 
 Each XCFramework slice contains a real iOS Mach-O framework or static-library wrapper plus the private OrlixKernel runtime integration and boot resources needed by the iOS host path. A `vmlinux`-style artifact may exist only as an optional developer/debug artifact with a named consumer. It is not a milestone, not product proof, not runtime proof, and not libc proof.
 
-Each framework build packages one selected profile's Linux artifact. Closed built-in profile DTBs may all be bundled with the framework as machine-description resources.
+Each `OrlixKernel` framework build packages one selected profile's kernel integration. Closed built-in profile DTBs may all be bundled with the kernel framework as machine-description resources. Product rootfs and distribution payload resources are delivered by the `OrlixOS` Kit/framework.
 
 ## Consequences
 
@@ -24,10 +24,10 @@ Packaging proof is separate from execution proof: it proves the product artifact
 
 Packaging multiple profile-specific hosted integrations into one framework would blur proof and increase product surface. Build separate framework artifacts when a different profile kernel integration is needed.
 
-The public API lives in the iOS wrapper header under `OrlixKernel/Sources/include`. Private product resources carry the hosted kernel integration inputs and bundled built-in profile DTBs.
+The lower-level boot entrypoint lives in the iOS wrapper header under `OrlixKernel/Sources/include`. Apps consume the `OrlixOS` Kit for the delivered OS session API and payload surface. Private kernel resources carry hosted kernel integration inputs and bundled built-in profile DTBs; curated OS payload resources are `OrlixOS` resources resolved from target metadata.
 
 The test initramfs belongs to the XCTest host app bundle and owning project `Tests` tree. It may be addressed through an opaque resource identifier during tests, but it is not part of the product framework contract.
 
-The product initramfs is a later root-assembly artifact and remains separate from the test initramfs. Do not introduce profile-specific initramfs variants unless a concrete future requirement forces them.
+The product initramfs/rootfs payload is an OrlixOS root-assembly artifact and remains separate from the test initramfs. Do not introduce profile-specific initramfs variants unless a concrete future requirement forces them.
 
 Narrow bootloader or host-adapter test binaries may exist only as internal test artifacts and must not be named or documented as `OrlixKernel.xcframework` product proof.

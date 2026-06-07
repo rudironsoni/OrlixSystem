@@ -2,7 +2,7 @@ import XCTest
 @testable import OrlixTestRunner
 
 final class OrlixCoreutilsUpstreamTests: XCTestCase {
-    func testCoreutilsRootfsCompletesThroughOrlixKitTerminalSession() throws {
+    func testCoreutilsRootfsCompletesThroughOrlixOSTerminalSession() throws {
         try OrlixUpstreamXCTest.run(.coreutils)
     }
 }

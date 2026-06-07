@@ -7,6 +7,8 @@ REPO_ROOT := $(abspath $(PROJECT_DIR)/..)
 KERNEL_MAKE := $(MAKE) -C $(REPO_ROOT) -f OrlixKernel/Makefile
 
 PROFILE ?= release
+ORLIX_OS_TARGET_SETTINGS ?= $(REPO_ROOT)/OrlixOS/Sources/distribution/target-settings.xcconfig
+include $(ORLIX_OS_TARGET_SETTINGS)
 
 MLIBC_REMOTE ?= https://github.com/managarm/mlibc.git
 MLIBC_COMMIT ?= 43ab07732cdfefe2e915bf98190f5d7f4bd8d765
@@ -25,7 +27,10 @@ MLIBC_KERNEL_HEADERS := $(REPO_ROOT)/Build/OrlixMLibC/kernel-headers/$(PROFILE)/
 MLIBC_BUILD_KERNEL_HEADERS := $(MLIBC_BUILD_DIR)/kernel-headers/include
 MLIBC_TEST_BUILD_DIR := $(REPO_ROOT)/Build/OrlixMLibC/tests/$(PROFILE)
 MLIBC_TEST_INSTALL_DIR := $(REPO_ROOT)/Build/OrlixMLibC/tests-install/$(PROFILE)
-MLIBC_TEST_INITRAMFS_DIR := $(REPO_ROOT)/Build/OrlixMLibC/test-initramfs/$(PROFILE)/OrlixMLibCTestInitramfs.bundle
+MLIBC_TEST_INITRAMFS_BUNDLE_NAME ?= $(ORLIX_OS_MLIBC_INITRAMFS_BUNDLE_NAME)
+MLIBC_TEST_INITRAMFS_BUNDLE_EXTENSION ?= $(ORLIX_OS_TEST_INITRAMFS_BUNDLE_EXTENSION)
+MLIBC_TEST_INITRAMFS_BUNDLE_IDENTIFIER ?= $(ORLIX_OS_MLIBC_INITRAMFS_BUNDLE_IDENTIFIER)
+MLIBC_TEST_INITRAMFS_DIR := $(REPO_ROOT)/Build/OrlixMLibC/test-initramfs/$(PROFILE)/$(MLIBC_TEST_INITRAMFS_BUNDLE_NAME).$(MLIBC_TEST_INITRAMFS_BUNDLE_EXTENSION)
 MLIBC_TEST_LOCALE_DATA_DIR := $(REPO_ROOT)/Build/OrlixMLibC/locale-data/$(PROFILE)
 MLIBC_TEST_LOCALE_ROOT := $(MLIBC_TEST_LOCALE_DATA_DIR)/root
 MLIBC_TEST_LOCALES_ALL_URL ?= https://deb.debian.org/debian/pool/main/g/glibc/locales-all_2.41-12+deb13u3_arm64.deb
@@ -502,8 +507,8 @@ __test-initramfs: __test-build __prepare-test-locale-data
 		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
 		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
 		printf '%s\n' '<plist version="1.0"><dict>'; \
-		printf '%s\n' '<key>CFBundleIdentifier</key><string>org.orlix.OrlixMLibCTestInitramfs</string>'; \
-		printf '%s\n' '<key>CFBundleName</key><string>OrlixMLibCTestInitramfs</string>'; \
+		printf '%s\n' '<key>CFBundleIdentifier</key><string>$(MLIBC_TEST_INITRAMFS_BUNDLE_IDENTIFIER)</string>'; \
+		printf '%s\n' '<key>CFBundleName</key><string>$(MLIBC_TEST_INITRAMFS_BUNDLE_NAME)</string>'; \
 		printf '%s\n' '<key>CFBundlePackageType</key><string>BNDL</string>'; \
 		printf '%s\n' '<key>CFBundleShortVersionString</key><string>0.1</string>'; \
 		printf '%s\n' '<key>CFBundleVersion</key><string>1</string>'; \

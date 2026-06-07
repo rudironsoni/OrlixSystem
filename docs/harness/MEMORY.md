@@ -8,8 +8,9 @@ This file is curated repo-local memory for coding agents. Keep entries short, st
 - OrlixKernel is Linux. Do not implement shell, libc, package, syscall facade, or runtime-management behavior in the kernel component.
 - OrlixHostAdapter owns private iOS mechanics only. It must not own Linux policy or public Linux ABI.
 - OrlixMLibC is the only libc layer. Do not patch generated upstream mlibc trees; durable libc changes belong under `OrlixMLibC/Sources`.
-- OrlixOS owns package and rootfs assembly only. It must not own kernel or libc semantics.
+- OrlixOS is the Kit: it owns curated distribution policy, package/rootfs assembly, product payload packaging, target-derived payload metadata, and the app-facing Linux session API. It must not own kernel semantics, libc semantics, syscall ABI, private iOS host mechanics, or terminal UI rendering.
 - Upstream tests are authoritative for upstream conformance. Do not edit, filter, adapt, or reinterpret upstream tests as success.
+- Upstream package builds are package-conformance work. Do not disable upstream package features or force `configure`/libtool through ad hoc `LD` overrides to make cross builds pass; route toolchain discovery through reviewed OrlixOS package-toolchain inputs and prove the unmodified upstream suite.
 - Completion is evidence-based. Do not claim fixed, green, complete, runtime-ready, or package-ready without exact command output, logs, failure/skip accounting, and crash-report checks where applicable.
 - Keep Makefile interfaces Linux-shaped and small. Prefer variables over new milestone or proof-target names.
 
@@ -20,3 +21,5 @@ This file is curated repo-local memory for coding agents. Keep entries short, st
 - Declaring success before checking app crashes or simulator crash reports.
 - Creating custom diagnostics, tracing, dashboards, or status files where Codex hooks, logs, and plan evidence are enough.
 - Splitting review into too many agents instead of using the single `orlix-reviewer` role.
+- Recreating `OrlixKit` or hardcoding product bundle identifiers/resource names in runtime code instead of reading OrlixOS target metadata and registering private HostAdapter resource paths.
+- Disabling upstream package capabilities or inventing one-off linker/tool wrappers instead of fixing the OrlixOS package toolchain and proving the package with upstream tests.

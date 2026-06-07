@@ -1,6 +1,6 @@
 import GhosttyTerminal
 import GhosttyTheme
-import OrlixKit
+import OrlixOS
 import UIKit
 
 final class TerminalViewController: UIViewController {
@@ -115,22 +115,7 @@ final class TerminalViewController: UIViewController {
     }
 
     private static func payloadBootProfile() -> OrlixBootProfile? {
-        guard
-            let kernelBundle = Bundle(identifier: "org.orlix.OrlixKernel"),
-            let payloadURL = kernelBundle.url(
-                forResource: "OrlixKernelPayload",
-                withExtension: "bundle"
-            ),
-            let payloadBundle = Bundle(url: payloadURL),
-            let profile = payloadBundle.object(
-                forInfoDictionaryKey: "OrlixSelectedProfile"
-            ) as? String,
-            profile == "release" || profile == "development"
-        else {
-            return nil
-        }
-
-        return profile == "development" ? .development : .release
+        OrlixOSDistribution.bundledBootProfile
     }
 
     private static func profileDisplayName(_ profile: OrlixBootProfile) -> String {

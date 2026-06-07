@@ -7,6 +7,9 @@ options:
 configs:
   Debug: debug
   Release: release
+configFiles:
+  Debug: OrlixOS/Sources/distribution/target-settings.xcconfig
+  Release: OrlixOS/Sources/distribution/target-settings.xcconfig
 settings:
   base:
     CLANG_ENABLE_MODULES: YES
@@ -42,20 +45,6 @@ targets:
         headerVisibility: public
     dependencies:
       - sdk: CoreFoundation.framework
-    postBuildScripts:
-      - name: Embed OrlixKernel Payload
-        basedOnDependencyAnalysis: false
-        script: |
-          set -eu
-          payload="$SRCROOT/Build/OrlixKernel/payload/OrlixKernelPayload.bundle"
-          if [ ! -d "$payload" ]; then
-              echo "missing OrlixKernel payload bundle: $payload" >&2
-              echo "run: make build PROFILE=${ORLIX_PROFILE:-release}" >&2
-              exit 1
-          fi
-          destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/OrlixKernelPayload.bundle"
-          rm -rf "$destination"
-          cp -R "$payload" "$destination"
     settings:
       base:
         DEFINES_MODULE: YES
@@ -76,31 +65,87 @@ targets:
         GCC_PREPROCESSOR_DEFINITIONS:
           - $(inherited)
           - ORLIX_APP_HOSTED_BOOT=1
-  OrlixKit:
+  OrlixOS:
     type: framework
     platform: iOS
     sources:
-      - path: OrlixKit/Sources
+      - path: OrlixOS/Sources/Session
     dependencies:
       - target: OrlixKernel
+    postBuildScripts:
+      - name: Embed OrlixOS Payload
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          profile="${ORLIX_PROFILE:-release}"
+          payload_name="${ORLIX_OS_PAYLOAD_BUNDLE_NAME:?}"
+          payload_extension="${ORLIX_OS_PAYLOAD_BUNDLE_EXTENSION:?}"
+          source_payload_name="${ORLIX_OS_PAYLOAD_SOURCE_BUNDLE_NAME:?}"
+          payload="$ORLIX_OS_PAYLOAD_SOURCE_ROOT/$source_payload_name.$payload_extension"
+          if [ ! -d "$payload" ]; then
+              echo "missing OrlixOS payload bundle: $payload" >&2
+              echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
+              exit 1
+          fi
+          stamp="$payload/.orlix-payload-ready"
+          if [ ! -s "$stamp" ]; then
+              echo "missing OrlixOS payload stamp: $stamp" >&2
+              echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
+              exit 1
+          fi
+          rootfs_input="$(sed -n 's/^rootfs_input=//p' "$stamp")"
+          base_root_tree_input="$(sed -n 's/^base_root_tree_input=//p' "$stamp")"
+          state_root_tree_input="$(sed -n 's/^state_root_tree_input=//p' "$stamp")"
+          case "$rootfs_input" in
+              "$ORLIX_OS_ROOT_INITRAMFS_INPUT") ;;
+              *)
+                  echo "OrlixOS payload is not packaged from the product rootfs: $rootfs_input" >&2
+                  echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
+                  exit 1
+                  ;;
+          esac
+          case "$base_root_tree_input" in
+              "$ORLIX_OS_BASE_ROOT_TREE_INPUT") ;;
+              *)
+                  echo "OrlixOS payload is missing the product base root tree: $base_root_tree_input" >&2
+                  echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
+                  exit 1
+                  ;;
+          esac
+          case "$state_root_tree_input" in
+              "$ORLIX_OS_STATE_ROOT_TREE_INPUT") ;;
+              *)
+                  echo "OrlixOS payload is missing the product state root tree: $state_root_tree_input" >&2
+                  echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
+                  exit 1
+                  ;;
+          esac
+          destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/$payload_name.$payload_extension"
+          rm -rf "$destination"
+          cp -R "$payload" "$destination"
     settings:
       base:
         DEFINES_MODULE: YES
-        GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKit
-        PRODUCT_NAME: OrlixKit
-  OrlixKitTests:
+        INFOPLIST_FILE: OrlixOS/Sources/Session/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixOS
+        PRODUCT_NAME: OrlixOS
+        ORLIX_PROFILE: release
+        ORLIX_OS_PAYLOAD_SOURCE_ROOT: $(SRCROOT)/Build/OrlixKernel/payload
+        ORLIX_OS_ROOT_INITRAMFS_INPUT: $(SRCROOT)/Build/OrlixOS/rootfs/$(ORLIX_PROFILE)/rootfs/initramfs.cpio.gz
+        ORLIX_OS_BASE_ROOT_TREE_INPUT: $(SRCROOT)/Build/OrlixOS/rootfs/$(ORLIX_PROFILE)/base-tree
+        ORLIX_OS_STATE_ROOT_TREE_INPUT: $(SRCROOT)/Build/OrlixOS/rootfs/$(ORLIX_PROFILE)/state-tree
+  OrlixOSTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - path: OrlixKit/Tests/XCTest/OrlixKitTests
+      - path: OrlixOS/Tests/XCTest/OrlixOSTests
     dependencies:
       - target: OrlixTestRunner
-      - target: OrlixKit
+      - target: OrlixOS
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixKitTests
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixOSTests
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTestRunner.app/OrlixTestRunner
         BUNDLE_LOADER: $(TEST_HOST)
   OrlixTerminal:
@@ -109,7 +154,7 @@ targets:
     sources:
       - path: OrlixTerminal/Sources
     dependencies:
-      - target: OrlixKit
+      - target: OrlixOS
         embed: true
       - target: OrlixKernel
         embed: true
@@ -128,7 +173,7 @@ targets:
     sources:
       - path: OrlixTestRunner/Sources
     dependencies:
-      - target: OrlixKit
+      - target: OrlixOS
         embed: true
       - target: OrlixKernel
         embed: true
@@ -147,9 +192,10 @@ targets:
                   cp -R "$source" "$destination"
               fi
           }
-          copy_if_present "Build/OrlixKernel/test-initramfs/$profile/OrlixTestInitramfs.bundle" "OrlixTestInitramfs.bundle"
-          copy_if_present "Build/OrlixMLibC/test-initramfs/$profile/OrlixMLibCTestInitramfs.bundle" "OrlixMLibCTestInitramfs.bundle"
-          copy_if_present "Build/OrlixOS/test-initramfs/$profile/CoreutilsTestInitramfs.bundle" "CoreutilsTestInitramfs.bundle"
+          extension="${ORLIX_OS_TEST_INITRAMFS_BUNDLE_EXTENSION:?}"
+          copy_if_present "$ORLIX_OS_KSELFTEST_INITRAMFS_SOURCE_ROOT/$profile/$ORLIX_OS_KSELFTEST_INITRAMFS_BUNDLE_NAME.$extension" "$ORLIX_OS_KSELFTEST_INITRAMFS_BUNDLE_NAME.$extension"
+          copy_if_present "$ORLIX_OS_MLIBC_INITRAMFS_SOURCE_ROOT/$profile/$ORLIX_OS_MLIBC_INITRAMFS_BUNDLE_NAME.$extension" "$ORLIX_OS_MLIBC_INITRAMFS_BUNDLE_NAME.$extension"
+          copy_if_present "$ORLIX_OS_COREUTILS_INITRAMFS_SOURCE_ROOT/$profile/$ORLIX_OS_COREUTILS_INITRAMFS_BUNDLE_NAME.$extension" "$ORLIX_OS_COREUTILS_INITRAMFS_BUNDLE_NAME.$extension"
     settings:
       base:
         DEFINES_MODULE: YES
@@ -279,6 +325,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixCoreutilsUpstreamTests
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTestRunner.app/OrlixTestRunner
         BUNDLE_LOADER: $(TEST_HOST)
+  OrlixPTYRuntimeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OrlixTestRunner/Tests/XCTest/OrlixPTYRuntimeTests
+    dependencies:
+      - target: OrlixTestRunner
+      - target: OrlixOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixPTYRuntimeTests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTestRunner.app/OrlixTestRunner
+        BUNDLE_LOADER: $(TEST_HOST)
 schemes:
   OrlixKernel:
     build:
@@ -291,16 +351,16 @@ schemes:
     run:
       config: Debug
       executable: OrlixTerminal
-  OrlixKitTests:
+  OrlixOSTests:
     build:
       targets:
         OrlixTestRunner: all
-        OrlixKitTests: test
+        OrlixOSTests: test
     test:
       config: Debug
       gatherCoverageData: false
       targets:
-        - name: OrlixKitTests
+        - name: OrlixOSTests
   OrlixKernelHostProofTests:
     build:
       targets:
@@ -351,6 +411,16 @@ schemes:
       gatherCoverageData: false
       targets:
         - name: OrlixTestRunnerTests
+  OrlixPTYRuntimeTests:
+    build:
+      targets:
+        OrlixTestRunner: all
+        OrlixPTYRuntimeTests: test
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: OrlixPTYRuntimeTests
   OrlixKernelUpstreamTests:
     build:
       targets:

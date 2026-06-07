@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <os/lock.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,103 +13,250 @@
 #include <unistd.h>
 
 #define ORLIX_HOST_BLOCK_SECTOR_SIZE 512ULL
-#define ORLIX_HOST_BLOCK_DEVICE_COUNT 2
-#define ORLIX_HOST_BASE_BLOCK_DEVICE 0
-#define ORLIX_HOST_STATE_BLOCK_DEVICE 1
-#define ORLIX_HOST_STATE_BLOCK_BYTES (16ULL * 1024ULL * 1024ULL)
+#define ORLIX_HOST_MAX_BLOCK_DEVICES 8
+#define ORLIX_HOST_MAX_ROOT_IMAGES 8
 
-static char OrlixHostSelectedBlockPaths[ORLIX_HOST_BLOCK_DEVICE_COUNT][PATH_MAX];
-static unsigned long long OrlixHostSelectedBlockBytes[ORLIX_HOST_BLOCK_DEVICE_COUNT];
-static int OrlixHostSelectedBlockWritable[ORLIX_HOST_BLOCK_DEVICE_COUNT];
+static char OrlixHostSelectedBlockPaths[ORLIX_HOST_MAX_BLOCK_DEVICES][PATH_MAX];
+static unsigned long long OrlixHostSelectedBlockBytes[ORLIX_HOST_MAX_BLOCK_DEVICES];
+static int OrlixHostSelectedBlockWritable[ORLIX_HOST_MAX_BLOCK_DEVICES];
+static os_unfair_lock OrlixHostPayloadRootLock = OS_UNFAIR_LOCK_INIT;
+static char OrlixHostPayloadRootPath[PATH_MAX];
+static os_unfair_lock OrlixHostRootImagesLock = OS_UNFAIR_LOCK_INIT;
 
-static const char *OrlixHostInitrdResourceForIdentifier(const char *identifier)
+struct OrlixHostRootImage {
+    char identifier[PATH_MAX];
+    char initrd_bundle_name[PATH_MAX];
+    char initrd_bundle_extension[PATH_MAX];
+    char initrd_resource[PATH_MAX];
+    char base_block_resource[PATH_MAX];
+    char state_block_resource[PATH_MAX];
+    unsigned int base_block_device;
+    unsigned int state_block_device;
+    unsigned long long state_block_minimum_bytes;
+};
+
+static struct OrlixHostRootImage
+    OrlixHostRootImages[ORLIX_HOST_MAX_ROOT_IMAGES];
+static unsigned int OrlixHostRootImageCount;
+
+static int OrlixHostPathContainsParentReference(const char *path)
 {
-    if (!identifier) {
-        return 0;
+    const char *cursor;
+
+    if (!path) {
+        return 1;
     }
-    if (strcmp(identifier, "orlix.bundle.rootfs") == 0) {
-        return "rootfs/initramfs.cpio.gz";
+    if (path[0] == '/' || strcmp(path, "..") == 0 ||
+        strncmp(path, "../", 3) == 0) {
+        return 1;
     }
-    if (strcmp(identifier, "orlix.test.kselftest.rootfs") == 0 ||
-        strcmp(identifier, "orlix.test.mlibc.rootfs") == 0 ||
-        strcmp(identifier, "orlix.test.coreutils.rootfs") == 0) {
-        return "rootfs/initramfs.cpio.gz";
+    cursor = path;
+    while ((cursor = strstr(cursor, "/..")) != 0) {
+        if (cursor[3] == '\0' || cursor[3] == '/') {
+            return 1;
+        }
+        cursor += 3;
     }
+
     return 0;
 }
 
-static const char *OrlixHostTestBundleForIdentifier(const char *identifier)
+static int OrlixHostCopyRequiredString(char *target,
+                                       size_t target_size,
+                                       const char *source)
 {
-    if (!identifier) {
-        return 0;
+    size_t length;
+
+    if (!target || target_size == 0 || !source || source[0] == '\0') {
+        return -1;
     }
-    if (strcmp(identifier, "orlix.test.kselftest.rootfs") == 0) {
-        return "OrlixTestInitramfs";
+    length = strlen(source);
+    if (length >= target_size) {
+        return -1;
     }
-    if (strcmp(identifier, "orlix.test.mlibc.rootfs") == 0) {
-        return "OrlixMLibCTestInitramfs";
-    }
-    if (strcmp(identifier, "orlix.test.coreutils.rootfs") == 0) {
-        return "CoreutilsTestInitramfs";
-    }
+    memcpy(target, source, length + 1);
     return 0;
 }
 
-static int OrlixHostIdentifierUsesBootBlocks(const char *identifier)
+static int OrlixHostCopyOptionalString(char *target,
+                                       size_t target_size,
+                                       const char *source)
 {
-    return identifier && strcmp(identifier, "orlix.bundle.rootfs") == 0;
-}
+    size_t length;
 
-static const char *OrlixHostBaseBlockResourceForIdentifier(const char *identifier)
-{
-    if (!identifier) {
+    if (!target || target_size == 0) {
+        return -1;
+    }
+    if (!source || source[0] == '\0') {
+        target[0] = '\0';
         return 0;
     }
-    if (strcmp(identifier, "orlix.bundle.rootfs") == 0) {
-        return "rootfs/base.ext4";
+    length = strlen(source);
+    if (length >= target_size) {
+        return -1;
     }
+    memcpy(target, source, length + 1);
     return 0;
 }
 
-static const char *OrlixHostStateBlockResourceForIdentifier(const char *identifier)
+static int OrlixHostCopyRequiredResource(char *target,
+                                         size_t target_size,
+                                         const char *source)
 {
-    if (!identifier) {
-        return 0;
+    if (OrlixHostPathContainsParentReference(source)) {
+        return -1;
     }
-    if (strcmp(identifier, "orlix.bundle.rootfs") == 0) {
-        return "rootfs/state.ext4";
+    return OrlixHostCopyRequiredString(target, target_size, source);
+}
+
+static int OrlixHostCopyRootImageForIdentifier(
+    const char *identifier,
+    struct OrlixHostRootImage *root_image)
+{
+    unsigned int index;
+
+    if (!identifier || !root_image) {
+        return -1;
     }
+
+    os_unfair_lock_lock(&OrlixHostRootImagesLock);
+    for (index = 0; index < OrlixHostRootImageCount; index++) {
+        if (strcmp(OrlixHostRootImages[index].identifier, identifier) == 0) {
+            *root_image = OrlixHostRootImages[index];
+            os_unfair_lock_unlock(&OrlixHostRootImagesLock);
+            return 0;
+        }
+    }
+    os_unfair_lock_unlock(&OrlixHostRootImagesLock);
+    return -1;
+}
+
+__attribute__((visibility("default"))) int orlix_host_resources_set_payload_root_path(
+    const char *path)
+{
+    struct stat state;
+    size_t length;
+
+    if (!path || path[0] == '\0') {
+        return -1;
+    }
+    length = strlen(path);
+    if (length >= sizeof(OrlixHostPayloadRootPath)) {
+        return -1;
+    }
+    if (stat(path, &state) != 0 || !S_ISDIR(state.st_mode)) {
+        return -1;
+    }
+
+    os_unfair_lock_lock(&OrlixHostPayloadRootLock);
+    memcpy(OrlixHostPayloadRootPath, path, length + 1);
+    os_unfair_lock_unlock(&OrlixHostPayloadRootLock);
+    return 0;
+}
+
+__attribute__((visibility("default"))) int orlix_host_resources_clear_root_images(void)
+{
+    os_unfair_lock_lock(&OrlixHostRootImagesLock);
+    memset(OrlixHostRootImages, 0, sizeof(OrlixHostRootImages));
+    OrlixHostRootImageCount = 0;
+    os_unfair_lock_unlock(&OrlixHostRootImagesLock);
+    return 0;
+}
+
+__attribute__((visibility("default"))) int orlix_host_resources_register_root_image(
+    const char *identifier,
+    const char *initrd_bundle_name,
+    const char *initrd_bundle_extension,
+    const char *initrd_resource,
+    const char *base_block_resource,
+    const char *state_block_resource,
+    unsigned int base_block_device,
+    unsigned int state_block_device,
+    unsigned long long state_block_minimum_bytes)
+{
+    struct OrlixHostRootImage root_image = { 0 };
+    unsigned int index;
+    unsigned int target_index;
+
+    if (OrlixHostCopyRequiredString(root_image.identifier,
+                                    sizeof(root_image.identifier),
+                                    identifier) != 0 ||
+        OrlixHostCopyOptionalString(root_image.initrd_bundle_name,
+                                    sizeof(root_image.initrd_bundle_name),
+                                    initrd_bundle_name) != 0 ||
+        OrlixHostCopyOptionalString(root_image.initrd_bundle_extension,
+                                    sizeof(root_image.initrd_bundle_extension),
+                                    initrd_bundle_extension) != 0 ||
+        OrlixHostCopyRequiredResource(root_image.initrd_resource,
+                                      sizeof(root_image.initrd_resource),
+                                      initrd_resource) != 0 ||
+        OrlixHostCopyRequiredResource(root_image.base_block_resource,
+                                      sizeof(root_image.base_block_resource),
+                                      base_block_resource) != 0 ||
+        OrlixHostCopyRequiredResource(root_image.state_block_resource,
+                                      sizeof(root_image.state_block_resource),
+                                      state_block_resource) != 0) {
+        return -1;
+    }
+    if (base_block_device >= ORLIX_HOST_MAX_BLOCK_DEVICES ||
+        state_block_device >= ORLIX_HOST_MAX_BLOCK_DEVICES ||
+        base_block_device == state_block_device ||
+        state_block_minimum_bytes == 0) {
+        return -1;
+    }
+    if ((root_image.initrd_bundle_name[0] == '\0') !=
+        (root_image.initrd_bundle_extension[0] == '\0')) {
+        return -1;
+    }
+    if (strchr(root_image.initrd_bundle_name, '/') ||
+        OrlixHostPathContainsParentReference(root_image.initrd_bundle_name) ||
+        strchr(root_image.initrd_bundle_extension, '/') ||
+        OrlixHostPathContainsParentReference(
+            root_image.initrd_bundle_extension)) {
+        return -1;
+    }
+    root_image.base_block_device = base_block_device;
+    root_image.state_block_device = state_block_device;
+    root_image.state_block_minimum_bytes = state_block_minimum_bytes;
+
+    os_unfair_lock_lock(&OrlixHostRootImagesLock);
+    target_index = OrlixHostRootImageCount;
+    for (index = 0; index < OrlixHostRootImageCount; index++) {
+        if (strcmp(OrlixHostRootImages[index].identifier,
+                   root_image.identifier) == 0) {
+            target_index = index;
+            break;
+        }
+    }
+    if (target_index == OrlixHostRootImageCount) {
+        if (OrlixHostRootImageCount >= ORLIX_HOST_MAX_ROOT_IMAGES) {
+            os_unfair_lock_unlock(&OrlixHostRootImagesLock);
+            return -1;
+        }
+        OrlixHostRootImageCount++;
+    }
+    OrlixHostRootImages[target_index] = root_image;
+    os_unfair_lock_unlock(&OrlixHostRootImagesLock);
     return 0;
 }
 
 static int OrlixHostCopyPayloadRootPath(char *path, size_t path_size)
 {
-    CFBundleRef kernel_bundle;
-    CFURLRef payload_url;
-    Boolean ok;
+    size_t length;
 
     if (!path || path_size == 0) {
         return -1;
     }
 
-    kernel_bundle = CFBundleGetBundleWithIdentifier(CFSTR("org.orlix.OrlixKernel"));
-    if (!kernel_bundle) {
+    os_unfair_lock_lock(&OrlixHostPayloadRootLock);
+    length = strlen(OrlixHostPayloadRootPath);
+    if (length == 0 || length >= path_size) {
+        os_unfair_lock_unlock(&OrlixHostPayloadRootLock);
         return -1;
     }
-
-    payload_url = CFBundleCopyResourceURL(
-        kernel_bundle,
-        CFSTR("OrlixKernelPayload"),
-        CFSTR("bundle"),
-        0);
-    if (!payload_url) {
-        return -1;
-    }
-
-    ok = CFURLGetFileSystemRepresentation(payload_url, true, (UInt8 *)path, path_size);
-    CFRelease(payload_url);
-
-    return ok ? 0 : -1;
+    memcpy(path, OrlixHostPayloadRootPath, length + 1);
+    os_unfair_lock_unlock(&OrlixHostPayloadRootLock);
+    return 0;
 }
 
 static int OrlixHostCopyPayloadResourcePath(const char *resource,
@@ -192,6 +340,7 @@ static int OrlixHostCopyMainBundleResourceRootPath(const char *name,
 }
 
 static int OrlixHostCopyTestBundleResourcePath(const char *bundle_name,
+                                               const char *bundle_extension,
                                                const char *resource,
                                                char *path,
                                                size_t path_size)
@@ -199,11 +348,12 @@ static int OrlixHostCopyTestBundleResourcePath(const char *bundle_name,
     char bundle_root[PATH_MAX];
     int written;
 
-    if (!bundle_name || !resource || !path || path_size == 0) {
+    if (!bundle_name || !bundle_extension || !resource || !path ||
+        path_size == 0) {
         return -1;
     }
     if (OrlixHostCopyMainBundleResourceRootPath(bundle_name,
-                                               "bundle",
+                                               bundle_extension,
                                                bundle_root,
                                                sizeof(bundle_root)) != 0) {
         return -1;
@@ -256,7 +406,7 @@ static int OrlixHostCopySelectedBlockPath(unsigned int device, const char *path)
 {
     size_t length;
 
-    if (device >= ORLIX_HOST_BLOCK_DEVICE_COUNT || !path) {
+    if (device >= ORLIX_HOST_MAX_BLOCK_DEVICES || !path) {
         return -1;
     }
 
@@ -271,7 +421,7 @@ static int OrlixHostCopySelectedBlockPath(unsigned int device, const char *path)
 
 static int OrlixHostBlockDeviceIsSelected(unsigned int device)
 {
-    return device < ORLIX_HOST_BLOCK_DEVICE_COUNT &&
+    return device < ORLIX_HOST_MAX_BLOCK_DEVICES &&
            OrlixHostSelectedBlockPaths[device][0] != '\0' &&
            OrlixHostSelectedBlockBytes[device] != 0;
 }
@@ -294,15 +444,21 @@ static int OrlixHostEnsureDirectory(const char *path)
     return stat(path, &state) == 0 && S_ISDIR(state.st_mode) ? 0 : -1;
 }
 
-static int OrlixHostCopyStateBlockPath(char *path, size_t path_size)
+static int OrlixHostCopyStateBlockPath(const char *identifier,
+                                       char *path,
+                                       size_t path_size)
 {
     const char *home = getenv("HOME");
     char library[PATH_MAX];
     char application_support[PATH_MAX];
     char orlix[PATH_MAX];
+    char state_name[192];
+    size_t index;
+    size_t out_index = 0;
     int written;
 
-    if (!home || home[0] == '\0' || !path || path_size == 0) {
+    if (!home || home[0] == '\0' || !identifier ||
+        identifier[0] == '\0' || !path || path_size == 0) {
         return -1;
     }
 
@@ -333,7 +489,25 @@ static int OrlixHostCopyStateBlockPath(char *path, size_t path_size)
         return -1;
     }
 
-    written = snprintf(path, path_size, "%s/root-state.img", orlix);
+    for (index = 0; identifier[index] != '\0' &&
+                    out_index + 1 < sizeof(state_name);
+         index++) {
+        char c = identifier[index];
+        if ((c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_') {
+            state_name[out_index++] = c;
+        } else {
+            state_name[out_index++] = '-';
+        }
+    }
+    state_name[out_index] = '\0';
+    if (identifier[index] != '\0' || state_name[0] == '\0') {
+        return -1;
+    }
+
+    written = snprintf(path, path_size, "%s/%s-state.img", orlix, state_name);
     return written >= 0 && (size_t)written < path_size ? 0 : -1;
 }
 
@@ -405,13 +579,14 @@ static int OrlixHostStateBlockHasExt4Magic(const char *path)
 
 static int OrlixHostEnsureStateBlockFile(const char *path,
                                          const char *template_path,
+                                         unsigned long long minimum_bytes,
                                          unsigned long long *size)
 {
     unsigned long long target_size;
     struct stat state;
     int fd;
 
-    if (!path || !template_path || !size) {
+    if (!path || !template_path || minimum_bytes == 0 || !size) {
         return -1;
     }
 
@@ -432,8 +607,8 @@ static int OrlixHostEnsureStateBlockFile(const char *path,
     }
 
     target_size = (unsigned long long)state.st_size;
-    if (target_size < ORLIX_HOST_STATE_BLOCK_BYTES) {
-        target_size = ORLIX_HOST_STATE_BLOCK_BYTES;
+    if (target_size < minimum_bytes) {
+        target_size = minimum_bytes;
     }
     if (target_size % ORLIX_HOST_BLOCK_SECTOR_SIZE) {
         target_size = ((target_size + ORLIX_HOST_BLOCK_SECTOR_SIZE - 1) /
@@ -525,21 +700,20 @@ __attribute__((visibility("hidden"))) int OrlixHostLoadInitrdResource(
     const char *identifier,
     struct OrlixHostResource *loaded)
 {
-    const char *resource = OrlixHostInitrdResourceForIdentifier(identifier);
-    const char *test_bundle = OrlixHostTestBundleForIdentifier(identifier);
+    struct OrlixHostRootImage root_image;
     char path[PATH_MAX];
 
-    if (!resource) {
+    if (!loaded ||
+        OrlixHostCopyRootImageForIdentifier(identifier, &root_image) != 0) {
         return -1;
     }
-    if (test_bundle) {
-        if (!loaded) {
-            return -1;
-        }
-        loaded->data = 0;
-        loaded->size = 0;
-        if (OrlixHostCopyTestBundleResourcePath(test_bundle,
-                                                resource,
+
+    loaded->data = 0;
+    loaded->size = 0;
+    if (root_image.initrd_bundle_name[0] != '\0') {
+        if (OrlixHostCopyTestBundleResourcePath(root_image.initrd_bundle_name,
+                                                root_image.initrd_bundle_extension,
+                                                root_image.initrd_resource,
                                                 path,
                                                 sizeof(path)) != 0) {
             return -1;
@@ -547,14 +721,18 @@ __attribute__((visibility("hidden"))) int OrlixHostLoadInitrdResource(
         return OrlixHostReadResourceFile(path, loaded);
     }
 
-    return OrlixHostLoadKernelPayloadResource(resource, loaded);
+    if (OrlixHostCopyPayloadResourcePath(root_image.initrd_resource,
+                                         path,
+                                         sizeof(path)) != 0) {
+        return -1;
+    }
+    return OrlixHostReadResourceFile(path, loaded);
 }
 
 __attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
     const char *identifier)
 {
-    const char *resource = OrlixHostBaseBlockResourceForIdentifier(identifier);
-    const char *state_resource = OrlixHostStateBlockResourceForIdentifier(identifier);
+    struct OrlixHostRootImage root_image;
     unsigned long long base_size = 0;
     unsigned long long state_size = 0;
     char base_path[PATH_MAX];
@@ -563,16 +741,15 @@ __attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
 
     OrlixHostClearSelectedBlockImages();
 
-    if (!OrlixHostIdentifierUsesBootBlocks(identifier)) {
-        return OrlixHostInitrdResourceForIdentifier(identifier) ? 0 : -1;
-    }
-    if (!resource || !state_resource) {
+    if (OrlixHostCopyRootImageForIdentifier(identifier, &root_image) != 0) {
         return -1;
     }
-    if (OrlixHostCopyPayloadResourcePath(resource, base_path, sizeof(base_path)) != 0) {
+    if (OrlixHostCopyPayloadResourcePath(root_image.base_block_resource,
+                                         base_path,
+                                         sizeof(base_path)) != 0) {
         return -1;
     }
-    if (OrlixHostCopyPayloadResourcePath(state_resource,
+    if (OrlixHostCopyPayloadResourcePath(root_image.state_block_resource,
                                          state_template_path,
                                          sizeof(state_template_path)) != 0) {
         return -1;
@@ -580,23 +757,26 @@ __attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
     if (OrlixHostResourceFileSize(base_path, &base_size) != 0) {
         return -1;
     }
-    if (OrlixHostCopyStateBlockPath(state_path, sizeof(state_path)) != 0) {
+    if (OrlixHostCopyStateBlockPath(identifier, state_path, sizeof(state_path)) != 0) {
         return -1;
     }
     if (OrlixHostEnsureStateBlockFile(state_path,
                                       state_template_path,
+                                      root_image.state_block_minimum_bytes,
                                       &state_size) != 0) {
         return -1;
     }
-    if (OrlixHostCopySelectedBlockPath(ORLIX_HOST_BASE_BLOCK_DEVICE, base_path) != 0 ||
-        OrlixHostCopySelectedBlockPath(ORLIX_HOST_STATE_BLOCK_DEVICE, state_path) != 0) {
+    if (OrlixHostCopySelectedBlockPath(root_image.base_block_device,
+                                       base_path) != 0 ||
+        OrlixHostCopySelectedBlockPath(root_image.state_block_device,
+                                       state_path) != 0) {
         OrlixHostClearSelectedBlockImages();
         return -1;
     }
 
-    OrlixHostSelectedBlockBytes[ORLIX_HOST_BASE_BLOCK_DEVICE] = base_size;
-    OrlixHostSelectedBlockBytes[ORLIX_HOST_STATE_BLOCK_DEVICE] = state_size;
-    OrlixHostSelectedBlockWritable[ORLIX_HOST_STATE_BLOCK_DEVICE] = 1;
+    OrlixHostSelectedBlockBytes[root_image.base_block_device] = base_size;
+    OrlixHostSelectedBlockBytes[root_image.state_block_device] = state_size;
+    OrlixHostSelectedBlockWritable[root_image.state_block_device] = 1;
     return 0;
 }
 

@@ -187,8 +187,8 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
 		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
 		printf '%s\n' '<plist version="1.0"><dict>'; \
-		printf '%s\n' '<key>CFBundleIdentifier</key><string>org.orlix.CoreutilsTestInitramfs</string>'; \
-		printf '%s\n' '<key>CFBundleName</key><string>CoreutilsTestInitramfs</string>'; \
+		printf '%s\n' '<key>CFBundleIdentifier</key><string>$(ORLIXOS_COREUTILS_TEST_INITRAMFS_BUNDLE_IDENTIFIER)</string>'; \
+		printf '%s\n' '<key>CFBundleName</key><string>$(ORLIXOS_COREUTILS_TEST_INITRAMFS_BUNDLE_NAME)</string>'; \
 		printf '%s\n' '<key>CFBundlePackageType</key><string>BNDL</string>'; \
 		printf '%s\n' '<key>CFBundleShortVersionString</key><string>0.1</string>'; \
 		printf '%s\n' '<key>CFBundleVersion</key><string>1</string>'; \

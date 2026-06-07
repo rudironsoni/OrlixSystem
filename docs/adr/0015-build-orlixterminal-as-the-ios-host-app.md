@@ -14,11 +14,11 @@ The MobileGhosttyApp example from `Lakr233/libghostty-spm` shows the intended ap
 
 Create the iOS host app as `OrlixTerminal`, with app sources under `OrlixTerminal/Sources` and tests under `OrlixTerminal/Tests` when needed. It should follow the MobileGhosttyApp terminal-first shape rather than a blank proof-only host.
 
-Depend on `libghostty-spm` for the terminal UI surface, theme handling, and app structure inspiration. Do not use `ShellCraftKit` as the execution backend. Orlix owns terminal bytes through Linux console/terminal plumbing.
+Depend on `libghostty-spm` for the terminal UI surface, theme handling, and app structure inspiration. Depend on `OrlixOS` for the delivered OS session and payload surface. Do not use `ShellCraftKit` as the execution backend. Orlix owns terminal bytes through Linux console/terminal plumbing.
 
 ## Consequences
 
-`OrlixTerminal` is the iOS app that packages and launches `OrlixKernel.xcframework` for proof and product development.
+`OrlixTerminal` is the iOS app that consumes `OrlixOS`, embeds the required frameworks, and launches the delivered OrlixOS session for proof and product development.
 
 The initial app may follow the example's UIKit structure, terminal view, theme handling, and lifecycle shape, but the backend session must be Orlix-backed as soon as the Linux console path exists.
 
@@ -28,4 +28,4 @@ Linux test output collection is separate from the interactive terminal byte stre
 
 XCTest should target `OrlixTerminal` for iOS-hosted Orlix launch, Linux test-output collection, and terminal/host integration proof. Test code belongs under the owning project `Tests` tree.
 
-The terminal app UI must not become a public Linux management API. Linux behavior still belongs inside Orlix Linux, with the app acting as host, terminal surface, resource provider, and proof harness.
+The terminal app UI must not become a public Linux management API or OS delivery layer. Linux behavior still belongs inside Orlix Linux, the delivered OS/session surface belongs to `OrlixOS`, and the app acts as host, terminal surface, and proof harness.

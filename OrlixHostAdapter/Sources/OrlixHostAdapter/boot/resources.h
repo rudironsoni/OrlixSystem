@@ -6,6 +6,23 @@ struct OrlixHostResource {
     unsigned long size;
 };
 
+/* App-private HostAdapter SPI; OrlixOS resolves its own target bundle. */
+__attribute__((visibility("default"))) int orlix_host_resources_set_payload_root_path(
+    const char *path);
+
+__attribute__((visibility("default"))) int orlix_host_resources_clear_root_images(void);
+
+__attribute__((visibility("default"))) int orlix_host_resources_register_root_image(
+    const char *identifier,
+    const char *initrd_bundle_name,
+    const char *initrd_bundle_extension,
+    const char *initrd_resource,
+    const char *base_block_resource,
+    const char *state_block_resource,
+    unsigned int base_block_device,
+    unsigned int state_block_device,
+    unsigned long long state_block_minimum_bytes);
+
 __attribute__((visibility("hidden"))) int OrlixHostLoadKernelPayloadResource(
     const char *resource,
     struct OrlixHostResource *loaded);

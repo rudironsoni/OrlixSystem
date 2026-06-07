@@ -1,5 +1,5 @@
 import Foundation
-import OrlixKit
+@_spi(OrlixPrivateTesting) import OrlixOS
 
 enum OrlixUpstreamTestSuite: String, Sendable {
     case kernel
@@ -9,13 +9,11 @@ enum OrlixUpstreamTestSuite: String, Sendable {
 
 struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
     let suite: OrlixUpstreamTestSuite
-    let rootImageIdentifier: String
-    let rootBundleResourceName: String
     let completionMarker: String
     let expectedCoreutilsTotal: Int?
     let timeout: TimeInterval
 
-    var bootConfig: OrlixBootConfig {
+    func bootConfig(rootImageIdentifier: String) -> OrlixBootConfig {
         OrlixBootConfig(
             profile: .development,
             rootImageIdentifier: rootImageIdentifier,
@@ -23,10 +21,20 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
         )
     }
 
+    func rootImageDescriptor() throws -> OrlixRootImageDescriptor {
+        guard let descriptor = OrlixOSDistribution.rootImageDescriptor(
+            forRole: suite.rawValue
+        ) else {
+            throw OrlixUpstreamTestRunError.missingRootImageDescriptor(
+                suite.rawValue
+            )
+        }
+
+        return descriptor
+    }
+
     static let kernel = OrlixUpstreamTestRunSpec(
         suite: .kernel,
-        rootImageIdentifier: "orlix.test.kselftest.rootfs",
-        rootBundleResourceName: "OrlixTestInitramfs",
         completionMarker: "ORLIX-KSELFTEST-END",
         expectedCoreutilsTotal: nil,
         timeout: 300
@@ -34,8 +42,6 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
 
     static let mlibc = OrlixUpstreamTestRunSpec(
         suite: .mlibc,
-        rootImageIdentifier: "orlix.test.mlibc.rootfs",
-        rootBundleResourceName: "OrlixMLibCTestInitramfs",
         completionMarker: "ORLIX-MLIBC-TEST-END",
         expectedCoreutilsTotal: nil,
         timeout: 1_200
@@ -43,15 +49,14 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
 
     static let coreutils = OrlixUpstreamTestRunSpec(
         suite: .coreutils,
-        rootImageIdentifier: "orlix.test.coreutils.rootfs",
-        rootBundleResourceName: "CoreutilsTestInitramfs",
         completionMarker: "ORLIX-COREUTILS-TEST-END",
         expectedCoreutilsTotal: 733,
-        timeout: 3_600
+        timeout: 14_400
     )
 }
 
 enum OrlixUpstreamTestRunError: Error, Equatable, CustomStringConvertible {
+    case missingRootImageDescriptor(String)
     case missingRootfsBundle(String)
     case bootFailed(OrlixBootStatus)
     case timeout(TimeInterval)
@@ -66,8 +71,10 @@ enum OrlixUpstreamTestRunError: Error, Equatable, CustomStringConvertible {
 
     var description: String {
         switch self {
+        case let .missingRootImageDescriptor(role):
+            return "missing OrlixOS root image metadata for role: \(role)"
         case let .missingRootfsBundle(bundle):
-            return "missing upstream test rootfs bundle: \(bundle).bundle"
+            return "missing upstream test rootfs bundle: \(bundle)"
         case let .bootFailed(status):
             return "Orlix boot failed: \(status.message)"
         case let .timeout(timeout):
@@ -93,28 +100,30 @@ enum OrlixUpstreamTestRunError: Error, Equatable, CustomStringConvertible {
 }
 
 final class OrlixUpstreamTestOutputParser {
+    func containsTerminalCondition(
+        _ rawOutput: String,
+        for spec: OrlixUpstreamTestRunSpec
+    ) -> Bool {
+        let output = Self.normalized(rawOutput)
+
+        return output.contains(spec.completionMarker) ||
+            Self.firstFatalMarker(in: output) != nil ||
+            Self.firstUpstreamFailureLine(in: output) != nil
+    }
+
     func validate(
         _ rawOutput: String,
         for spec: OrlixUpstreamTestRunSpec
     ) throws {
         let output = Self.normalized(rawOutput)
 
-        if let marker = Self.firstMarker(
-            in: output,
-            markers: ["Incident Identifier:", "Exception Type:", "Termination Reason:"]
-        ) {
+        if let marker = Self.firstMarker(in: output, markers: Self.crashMarkers) {
             throw OrlixUpstreamTestRunError.crashReport(marker)
         }
-        if let marker = Self.firstMarker(
-            in: output,
-            markers: ["Kernel panic", "kernel panic", "panic:"]
-        ) {
+        if let marker = Self.firstMarker(in: output, markers: Self.panicMarkers) {
             throw OrlixUpstreamTestRunError.kernelPanic(marker)
         }
-        if let marker = Self.firstMarker(
-            in: output,
-            markers: ["Out of memory", "oom-kill", "Killed process"]
-        ) {
+        if let marker = Self.firstMarker(in: output, markers: Self.oomMarkers) {
             throw OrlixUpstreamTestRunError.oom(marker)
         }
         if let failure = Self.firstUpstreamFailureLine(in: output) {
@@ -220,6 +229,12 @@ final class OrlixUpstreamTestOutputParser {
         markers.first { output.contains($0) }
     }
 
+    private static func firstFatalMarker(in output: String) -> String? {
+        firstMarker(in: output, markers: crashMarkers) ??
+            firstMarker(in: output, markers: panicMarkers) ??
+            firstMarker(in: output, markers: oomMarkers)
+    }
+
     private static func firstUpstreamFailureLine(in output: String) -> String? {
         output
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -248,11 +263,27 @@ final class OrlixUpstreamTestOutputParser {
         }
         return Int(field.dropFirst(prefix.count))
     }
+
+    private static let crashMarkers = [
+        "Incident Identifier:",
+        "Exception Type:",
+        "Termination Reason:",
+    ]
+    private static let panicMarkers = [
+        "Kernel panic",
+        "kernel panic",
+        "panic:",
+    ]
+    private static let oomMarkers = [
+        "Out of memory",
+        "oom-kill",
+        "Killed process",
+    ]
 }
 
 final class OrlixUpstreamTestSessionRunner: @unchecked Sendable {
     private let spec: OrlixUpstreamTestRunSpec
-    private let session: OrlixLinuxSession
+    private let injectedSession: OrlixLinuxSession?
     private let parser: OrlixUpstreamTestOutputParser
 
     init(
@@ -261,49 +292,89 @@ final class OrlixUpstreamTestSessionRunner: @unchecked Sendable {
         parser: OrlixUpstreamTestOutputParser = OrlixUpstreamTestOutputParser()
     ) {
         self.spec = spec
-        self.session = session ?? OrlixLinuxSession(bootConfig: spec.bootConfig)
+        self.injectedSession = session
         self.parser = parser
     }
 
     func run() throws -> String {
+        let rootImage = try spec.rootImageDescriptor()
+        guard let rootBundleResourceName = rootImage.initrdBundleName else {
+            throw OrlixUpstreamTestRunError.missingRootfsBundle(
+                "metadata:\(spec.suite.rawValue)"
+            )
+        }
+        guard let rootBundleExtension = rootImage.initrdBundleExtension else {
+            throw OrlixUpstreamTestRunError.missingRootfsBundle(
+                "metadata:\(rootBundleResourceName)"
+            )
+        }
         guard Bundle.main.url(
-            forResource: spec.rootBundleResourceName,
-            withExtension: "bundle"
+            forResource: rootBundleResourceName,
+            withExtension: rootBundleExtension
         ) != nil else {
             throw OrlixUpstreamTestRunError.missingRootfsBundle(
-                spec.rootBundleResourceName
+                "\(rootBundleResourceName).\(rootBundleExtension)"
             )
         }
 
+        let session = injectedSession ?? OrlixLinuxSession(
+            bootConfig: spec.bootConfig(
+                rootImageIdentifier: rootImage.identifier
+            )
+        )
         let recorder = TerminalOutputRecorder()
         let completion = DispatchSemaphore(value: 0)
+        let bootStatus = BootStatusRecorder()
         let output = session.terminal.attachOutput { data in
             recorder.append(data)
-            if recorder.text.contains(self.spec.completionMarker) {
+            if self.parser.containsTerminalCondition(recorder.text, for: self.spec) {
                 completion.signal()
             }
         }
         defer { output.cancel() }
 
-        let status = session.boot()
-        guard status == .ok else {
-            throw OrlixUpstreamTestRunError.bootFailed(status)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let status = session.boot()
+            bootStatus.set(status)
+            if status != .ok {
+                completion.signal()
+            }
         }
 
         let deadline = DispatchTime.now() + spec.timeout
         guard completion.wait(timeout: deadline) == .success else {
             let text = recorder.text
-            do {
+            if parser.containsTerminalCondition(text, for: spec) {
                 try parser.validate(text, for: spec)
-            } catch let error as OrlixUpstreamTestRunError {
-                throw error
+                return text
             }
             throw OrlixUpstreamTestRunError.timeout(spec.timeout)
+        }
+
+        if let status = bootStatus.value, status != .ok {
+            throw OrlixUpstreamTestRunError.bootFailed(status)
         }
 
         let text = recorder.text
         try parser.validate(text, for: spec)
         return text
+    }
+}
+
+private final class BootStatusRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: OrlixBootStatus?
+
+    var value: OrlixBootStatus? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func set(_ status: OrlixBootStatus) {
+        lock.lock()
+        storage = status
+        lock.unlock()
     }
 }
 

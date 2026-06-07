@@ -1,7 +1,38 @@
 import XCTest
-@testable import OrlixKit
+@_spi(OrlixPrivateTesting) @testable import OrlixOS
 
 final class OrlixTerminalSessionTests: XCTestCase {
+    func testPayloadBundleIsResolvedFromOrlixOSTargetMetadata() throws {
+        let payloadURL = try XCTUnwrap(OrlixOSPayload.bundleURL)
+        let profile = try XCTUnwrap(OrlixOSPayload.selectedBootProfile)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: payloadURL.path))
+        XCTAssertTrue(profile == .release || profile == .development)
+    }
+
+    func testRootImageDescriptorsComeFromOrlixOSTargetMetadata() throws {
+        let productRootIdentifier = try XCTUnwrap(
+            OrlixOSPayload.productRootImageIdentifier
+        )
+        let descriptors = OrlixOSPayload.rootImageDescriptors
+
+        XCTAssertFalse(productRootIdentifier.isEmpty)
+        XCTAssertTrue(
+            descriptors.contains { $0.identifier == productRootIdentifier }
+        )
+        let upstreamTestDescriptors = descriptors.filter {
+            $0.initrdBundleName != nil
+        }
+        XCTAssertFalse(upstreamTestDescriptors.isEmpty)
+        for descriptor in upstreamTestDescriptors {
+            XCTAssertFalse(descriptor.role.isEmpty)
+            XCTAssertFalse(descriptor.identifier.isEmpty)
+            XCTAssertNotNil(descriptor.initrdBundleName)
+            XCTAssertNotNil(descriptor.initrdBundleExtension)
+            XCTAssertNotNil(descriptor.initrdResource)
+        }
+    }
+
     func testSingleTerminalSessionCarriesInputAndOutput() {
         let transport = RecordingTerminalTransport()
         let session = OrlixTerminalSession(transport: transport)

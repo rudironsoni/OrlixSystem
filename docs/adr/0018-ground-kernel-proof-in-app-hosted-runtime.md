@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Earlier milestone wording treated a Kbuild `vmlinux` image as the first canonical OrlixKernel proof artifact. That overstates what matters for Orlix. The product does not boot a standalone Linux image in a VM-shaped environment. It runs an app-hosted OrlixKernel integration inside the iOS app boundary with `OrlixHostAdapter/Sources` and the `OrlixTerminal/Sources` iOS host app.
+Earlier milestone wording treated a Kbuild `vmlinux` image as the first canonical OrlixKernel proof artifact. That overstates what matters for Orlix. The product does not boot a standalone Linux image in a VM-shaped environment. It runs an app-hosted OrlixKernel integration inside the iOS app boundary with `OrlixOS`, `OrlixHostAdapter/Sources`, and the iOS host app.
 
 Linux-shaped proof means preserving Linux UAPI, syscall behavior, ABI discipline, kernel semantics, and Linux-native test output. It does not require Orlix to make `vmlinux` the default build, proof, or runtime artifact.
 
@@ -14,7 +14,7 @@ Linux-shaped proof means preserving Linux UAPI, syscall behavior, ABI discipline
 
 Orlix does not require `vmlinux` as a canonical build, proof, or runtime artifact.
 
-The canonical OrlixKernel proof artifact is the iOS app-hosted OrlixKernel integration that actually runs inside the Orlix app environment: OrlixKernel static library, framework, or object set plus `OrlixHostAdapter/Sources`, the iOS app host, and simulator/device execution.
+The canonical OrlixKernel proof artifact is the iOS app-hosted OrlixKernel integration that actually runs inside the Orlix app environment: OrlixKernel static library, framework, or object set plus `OrlixHostAdapter/Sources`, the `OrlixOS` session/payload surface where relevant, the iOS app or test host, and simulator/device execution.
 
 Kernel proof must be based on that hosted runtime path. The proof question is always whether the Orlix app-hosted runtime executed the Linux-shaped behavior on iOS.
 

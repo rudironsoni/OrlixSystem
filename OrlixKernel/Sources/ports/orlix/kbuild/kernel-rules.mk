@@ -978,7 +978,6 @@ ORLIX_KUNIT_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/kunit/$(PROFILE)
 ORLIX_MLIBC_KERNEL_HEADERS_DIR := $(CURDIR)/Build/OrlixMLibC/kernel-headers/$(PROFILE)
 ORLIX_MLIBC_SYSROOT ?= Build/OrlixMLibC/sysroot/$(PROFILE)
 ORLIX_MLIBC_KSELFTEST_INSTALL_DIR := $(CURDIR)/Build/OrlixMLibC/kselftest/$(PROFILE)
-ORLIX_MLIBC_TEST_INITRAMFS_DIR := $(CURDIR)/Build/OrlixMLibC/test-initramfs/$(PROFILE)/OrlixTestInitramfs.bundle
 
 ORLIX_KSELFTEST_ARCH ?= arm64
 ORLIX_HOSTED_USER_BASE_ADDRESS ?= 0x0000600000000000
@@ -993,21 +992,49 @@ ORLIX_TERMINAL_BUNDLE_ID ?= org.orlix.OrlixTerminal
 ORLIX_KERNEL_RUN_UNTIL_MARKER ?=
 ORLIX_KERNEL_RUN_TIMEOUT_SECONDS ?= 120
 ORLIX_KERNEL_RUN_STARTUP_TIMEOUT_SECONDS ?= 30
-ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/payload/OrlixKernelPayload.bundle
+ORLIX_OS_TARGET_SETTINGS ?= OrlixOS/Sources/distribution/target-settings.xcconfig
+ifneq ($(wildcard $(ORLIX_OS_TARGET_SETTINGS)),)
+include $(ORLIX_OS_TARGET_SETTINGS)
+endif
+ORLIX_MLIBC_TEST_INITRAMFS_BUNDLE_NAME ?= $(ORLIX_OS_KSELFTEST_INITRAMFS_BUNDLE_NAME)
+ORLIX_MLIBC_TEST_INITRAMFS_BUNDLE_EXTENSION ?= $(ORLIX_OS_TEST_INITRAMFS_BUNDLE_EXTENSION)
+ORLIX_MLIBC_TEST_INITRAMFS_BUNDLE_IDENTIFIER ?= $(ORLIX_OS_KSELFTEST_INITRAMFS_BUNDLE_IDENTIFIER)
+ORLIX_MLIBC_TEST_INITRAMFS_DIR := $(CURDIR)/Build/OrlixMLibC/test-initramfs/$(PROFILE)/$(ORLIX_MLIBC_TEST_INITRAMFS_BUNDLE_NAME).$(ORLIX_MLIBC_TEST_INITRAMFS_BUNDLE_EXTENSION)
+ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME ?= $(ORLIX_OS_PAYLOAD_SOURCE_BUNDLE_NAME)
+ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION ?= $(ORLIX_OS_PAYLOAD_BUNDLE_EXTENSION)
+ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER ?= $(ORLIX_OS_PAYLOAD_SOURCE_BUNDLE_IDENTIFIER)
+ORLIX_KERNEL_PAYLOAD_SELECTED_PROFILE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_SELECTED_PROFILE_INFO_KEY)
+ORLIX_KERNEL_PAYLOAD_ROOT_INITRAMFS_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_ROOT_INITRAMFS_INFO_KEY)
+ORLIX_KERNEL_PAYLOAD_BASE_ROOT_IMAGE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_BASE_ROOT_IMAGE_INFO_KEY)
+ORLIX_KERNEL_PAYLOAD_STATE_ROOT_IMAGE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_STATE_ROOT_IMAGE_INFO_KEY)
+ORLIX_KERNEL_PAYLOAD_BASE_ROOT_DEVICE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_BASE_ROOT_DEVICE_INFO_KEY)
+ORLIX_KERNEL_PAYLOAD_STATE_ROOT_DEVICE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_STATE_ROOT_DEVICE_INFO_KEY)
+ORLIX_KERNEL_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)
+ORLIX_KERNEL_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)
+ORLIX_KERNEL_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY)
+ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE ?= $(ORLIX_OS_ROOT_INITRAMFS_RESOURCE)
+ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE ?= $(ORLIX_OS_BASE_ROOT_IMAGE_RESOURCE)
+ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE ?= $(ORLIX_OS_STATE_ROOT_IMAGE_RESOURCE)
+ORLIX_KERNEL_PAYLOAD_DIR := $(CURDIR)/Build/OrlixKernel/payload/$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME).$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)
 ORLIX_KERNEL_ROOTFS_BUILD_DIR := $(CURDIR)/Build/OrlixKernel/rootfs/$(PROFILE)
-ORLIX_KERNEL_BASE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/base.ext4
-ORLIX_KERNEL_STATE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/state.ext4
+ORLIX_KERNEL_BASE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/$(notdir $(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE))
+ORLIX_KERNEL_STATE_ROOT_IMAGE := $(ORLIX_KERNEL_ROOTFS_BUILD_DIR)/$(notdir $(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE))
 ORLIX_KERNEL_BASE_ROOT_TREE_INPUT ?=
 ORLIX_KERNEL_STATE_ROOT_TREE_INPUT ?=
 ORLIX_KERNEL_ROOT_INITRAMFS_INPUT ?=
-ORLIX_KERNEL_ROOT_MODES := initramfs-only direct overlay
+ORLIX_KERNEL_ROOT_MODES ?= $(ORLIX_OS_ROOT_MODES)
 ifeq ($(PROFILE),development)
-ORLIX_KERNEL_SELECTED_ROOT_MODE := overlay
+ORLIX_KERNEL_SELECTED_ROOT_MODE ?= $(ORLIX_OS_DEVELOPMENT_ROOT_MODE)
 else
-ORLIX_KERNEL_SELECTED_ROOT_MODE := direct
+ORLIX_KERNEL_SELECTED_ROOT_MODE ?= $(ORLIX_OS_RELEASE_ROOT_MODE)
 endif
-ORLIX_KERNEL_BASE_ROOT_DEVICE := /dev/vda
-ORLIX_KERNEL_STATE_ROOT_DEVICE := /dev/vdb
+ORLIX_KERNEL_BASE_ROOT_DEVICE ?= $(ORLIX_OS_BASE_ROOT_DEVICE)
+ORLIX_KERNEL_STATE_ROOT_DEVICE ?= $(ORLIX_OS_STATE_ROOT_DEVICE)
+ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE ?= $(ORLIX_OS_BASE_ROOT_HOST_BLOCK_DEVICE)
+ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE ?= $(ORLIX_OS_STATE_ROOT_HOST_BLOCK_DEVICE)
+ORLIX_KERNEL_BASE_ROOT_IMAGE_SIZE ?= $(ORLIX_OS_BASE_ROOT_IMAGE_SIZE)
+ORLIX_KERNEL_STATE_ROOT_IMAGE_SIZE ?= $(ORLIX_OS_STATE_ROOT_IMAGE_SIZE)
+ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES ?= $(ORLIX_OS_STATE_ROOT_MINIMUM_BYTES)
 ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework
 XCODEGEN ?= xcodegen
 XCODEBUILD_MCP ?= xcodebuildmcp
@@ -1582,7 +1609,6 @@ __kunit: __prepare-kbuild
 __kernel-archive:
 	@set -euo pipefail; \
 	$(call orlix_kernel_acquire_profile_lock); \
-	$(MAKE) -f OrlixKernel/Makefile __kernel-payload PROFILE="$(PROFILE)" type="$(type)" libc="$(libc)" ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(ORLIX_KERNEL_TEST_INITRAMFS_INPUT)" ORLIX_KERNEL_ROOT_INITRAMFS_INPUT="$(ORLIX_KERNEL_ROOT_INITRAMFS_INPUT)" ORLIX_KERNEL_BASE_ROOT_TREE_INPUT="$(ORLIX_KERNEL_BASE_ROOT_TREE_INPUT)" ORLIX_KERNEL_STATE_ROOT_TREE_INPUT="$(ORLIX_KERNEL_STATE_ROOT_TREE_INPUT)"; \
 	cc="$(ORLIX_KERNEL_CC)"; \
 	hostcc="$(ORLIX_KERNEL_HOSTCC)"; \
 	ar_cmd="$(ORLIX_KERNEL_AR)"; \
@@ -1637,8 +1663,7 @@ __kernel-archive:
 			for dep in \
 				OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk \
 				OrlixKernel/Sources/ports/orlix/kbuild/product-compile-adapter.mk \
-				"$(ORLIX_KERNEL_BUILD_DIR)/.config" \
-				"$(ORLIX_PRODUCT_INITRAMFS_INPUT)"; do \
+				"$(ORLIX_KERNEL_BUILD_DIR)/.config"; do \
 				if [ ! -e "$$dep" ] || [ ! "$$archive" -nt "$$dep" ]; then archive_ready=0; break; fi; \
 			done; \
 			if [ "$$archive_ready" -eq 1 ]; then \
@@ -1918,9 +1943,9 @@ __kselftest-initramfs:
 		printf '%s\n' '<plist version="1.0">'; \
 		printf '%s\n' '<dict>'; \
 		printf '%s\n' '    <key>CFBundleIdentifier</key>'; \
-		printf '%s\n' '    <string>org.orlix.OrlixTestInitramfs</string>'; \
+		printf '%s\n' '    <string>$(ORLIX_MLIBC_TEST_INITRAMFS_BUNDLE_IDENTIFIER)</string>'; \
 		printf '%s\n' '    <key>CFBundleName</key>'; \
-		printf '%s\n' '    <string>OrlixTestInitramfs</string>'; \
+		printf '%s\n' '    <string>$(ORLIX_MLIBC_TEST_INITRAMFS_BUNDLE_NAME)</string>'; \
 		printf '%s\n' '    <key>CFBundlePackageType</key>'; \
 		printf '%s\n' '    <string>BNDL</string>'; \
 		printf '%s\n' '    <key>CFBundleShortVersionString</key>'; \
@@ -1945,10 +1970,56 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 	@set -euo pipefail; \
 	$(call orlix_kernel_acquire_profile_lock); \
 	output="$(ORLIX_KERNEL_PAYLOAD_DIR)"; \
-	case "$$output" in \
-		"$(CURDIR)"/Build/OrlixKernel/payload/OrlixKernelPayload.bundle) ;; \
-		*) echo "refusing to write OrlixKernel payload outside Build/OrlixKernel/payload: $$output" >&2; exit 1 ;; \
-	esac; \
+	required_settings=( \
+		"ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME=$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME)" \
+		"ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION=$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)" \
+		"ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER=$(ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER)" \
+		"ORLIX_KERNEL_PAYLOAD_SELECTED_PROFILE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_SELECTED_PROFILE_INFO_KEY)" \
+		"ORLIX_KERNEL_PAYLOAD_ROOT_INITRAMFS_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_ROOT_INITRAMFS_INFO_KEY)" \
+		"ORLIX_KERNEL_PAYLOAD_BASE_ROOT_IMAGE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_BASE_ROOT_IMAGE_INFO_KEY)" \
+		"ORLIX_KERNEL_PAYLOAD_STATE_ROOT_IMAGE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_IMAGE_INFO_KEY)" \
+		"ORLIX_KERNEL_PAYLOAD_BASE_ROOT_DEVICE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_BASE_ROOT_DEVICE_INFO_KEY)" \
+		"ORLIX_KERNEL_PAYLOAD_STATE_ROOT_DEVICE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_DEVICE_INFO_KEY)" \
+		"ORLIX_KERNEL_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)" \
+		"ORLIX_KERNEL_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)" \
+		"ORLIX_KERNEL_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY)" \
+		"ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE=$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)" \
+		"ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE=$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)" \
+		"ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE=$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)" \
+		"ORLIX_KERNEL_BASE_ROOT_DEVICE=$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" \
+		"ORLIX_KERNEL_STATE_ROOT_DEVICE=$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" \
+		"ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE=$(ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE)" \
+		"ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE=$(ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE)" \
+		"ORLIX_KERNEL_BASE_ROOT_IMAGE_SIZE=$(ORLIX_KERNEL_BASE_ROOT_IMAGE_SIZE)" \
+		"ORLIX_KERNEL_STATE_ROOT_IMAGE_SIZE=$(ORLIX_KERNEL_STATE_ROOT_IMAGE_SIZE)" \
+		"ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES=$(ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES)" \
+	); \
+	for setting in "$${required_settings[@]}"; do \
+		value="$${setting#*=}"; \
+		[ -n "$$value" ] || { echo "missing OrlixOS payload target setting: $${setting%%=*}" >&2; exit 1; }; \
+	done; \
+	validate_payload_name() { \
+		name="$$1"; \
+		case "$$name" in ""|/*|*/*|.*|*..*) echo "invalid OrlixOS payload bundle name: $$name" >&2; exit 1 ;; esac; \
+	}; \
+	validate_payload_resource() { \
+		resource="$$1"; \
+		case "$$resource" in ""|/*|..|../*|*/..|*/../*) echo "invalid OrlixOS payload resource path: $$resource" >&2; exit 1 ;; esac; \
+	}; \
+	validate_unsigned_int() { \
+		value="$$1"; \
+		case "$$value" in ""|*[!0-9]*) echo "invalid unsigned OrlixOS payload setting: $$value" >&2; exit 1 ;; esac; \
+	}; \
+	validate_payload_name "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME)"; \
+	validate_payload_name "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)"; \
+	validate_payload_resource "$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)"; \
+	validate_payload_resource "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)"; \
+	validate_payload_resource "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)"; \
+	validate_unsigned_int "$(ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE)"; \
+	validate_unsigned_int "$(ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE)"; \
+	validate_unsigned_int "$(ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES)"; \
+	expected_output="$(CURDIR)/Build/OrlixKernel/payload/$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME).$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)"; \
+	[ "$$output" = "$$expected_output" ] || { echo "OrlixKernel payload path must come from OrlixOS target metadata: $$output" >&2; exit 1; }; \
 	for path in Build Build/OrlixKernel Build/OrlixKernel/payload "$$output"; do \
 		if [ -L "$$path" ]; then echo "refusing to package OrlixKernel payload through symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
@@ -2008,16 +2079,27 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		[ "$$(sed -n 's/^base_root_tree_sha256=//p' "$$payload_stamp")" = "$$base_root_tree_sha256" ] && \
 		[ "$$(sed -n 's/^state_root_tree_input=//p' "$$payload_stamp")" = "$$state_root_tree_input" ] && \
 		[ "$$(sed -n 's/^state_root_tree_sha256=//p' "$$payload_stamp")" = "$$state_root_tree_sha256" ] && \
+		[ "$$(sed -n 's/^payload_bundle_name=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME)" ] && \
+		[ "$$(sed -n 's/^payload_bundle_extension=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)" ] && \
+		[ "$$(sed -n 's/^payload_bundle_identifier=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER)" ] && \
+		[ "$$(sed -n 's/^root_initramfs_resource=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)" ] && \
+		[ "$$(sed -n 's/^base_root_image_resource=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)" ] && \
+		[ "$$(sed -n 's/^state_root_image_resource=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)" ] && \
 		[ "$$(sed -n 's/^root_modes=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_ROOT_MODES)" ] && \
 		[ "$$(sed -n 's/^selected_root_mode=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_SELECTED_ROOT_MODE)" ] && \
 		[ "$$(sed -n 's/^base_root_device=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" ] && \
 		[ "$$(sed -n 's/^state_root_device=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" ] && \
+		[ "$$(sed -n 's/^base_root_host_block_device=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE)" ] && \
+		[ "$$(sed -n 's/^state_root_host_block_device=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE)" ] && \
+		[ "$$(sed -n 's/^base_root_image_size=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_SIZE)" ] && \
+		[ "$$(sed -n 's/^state_root_image_size=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_SIZE)" ] && \
+		[ "$$(sed -n 's/^state_root_minimum_bytes=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES)" ] && \
 		[ -s "$$output/Info.plist" ] && \
 		[ -s "$$output/arch/$(ORLIX_PORT_ARCH)/boot/dts/release.dtb" ] && \
 		[ -s "$$output/arch/$(ORLIX_PORT_ARCH)/boot/dts/development.dtb" ] && \
-		[ -s "$$output/rootfs/initramfs.cpio.gz" ] && \
-		[ -s "$$output/rootfs/base.ext4" ] && \
-		[ -s "$$output/rootfs/state.ext4" ]; then \
+		[ -s "$$output/$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)" ] && \
+		[ -s "$$output/$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)" ] && \
+		[ -s "$$output/$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)" ]; then \
 		echo "reusing OrlixKernel payload: $$output (profile $(PROFILE))"; \
 		exit 0; \
 	fi; \
@@ -2028,10 +2110,16 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		[ -s "$$input" ] || { echo "missing non-empty profile DTB: $$input" >&2; exit 1; }; \
 		cp "$$input" "$$output/arch/$(ORLIX_PORT_ARCH)/boot/dts/$$dtb.dtb"; \
 	done; \
-	mkdir -p "$$output/rootfs"; \
-	cp "$$rootfs_input" "$$output/rootfs/initramfs.cpio.gz"; \
+	copy_payload_resource() { \
+		input="$$1"; \
+		resource="$$2"; \
+		target="$$output/$$resource"; \
+		mkdir -p "$$(dirname "$$target")"; \
+		cp "$$input" "$$target"; \
+	}; \
+	copy_payload_resource "$$rootfs_input" "$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)"; \
 	mke2fs_cmd="$(ORLIX_MKE2FS)"; \
-	command -v "$$mke2fs_cmd" >/dev/null 2>&1 || { echo "mke2fs is required to generate OrlixKernel rootfs/base.ext4; install e2fsprogs or set ORLIX_MKE2FS=/path/to/mke2fs" >&2; exit 1; }; \
+	command -v "$$mke2fs_cmd" >/dev/null 2>&1 || { echo "mke2fs is required to generate OrlixKernel root block images; install e2fsprogs or set ORLIX_MKE2FS=/path/to/mke2fs" >&2; exit 1; }; \
 	rootfs_build="$(ORLIX_KERNEL_ROOTFS_BUILD_DIR)"; \
 	base_tree="$$rootfs_build/base-tree"; \
 	base_image="$(ORLIX_KERNEL_BASE_ROOT_IMAGE)"; \
@@ -2045,26 +2133,26 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 	chmod 0755 "$$base_tree" "$$base_tree/dev" "$$base_tree/proc" "$$base_tree/run" "$$base_tree/sys"; \
 	[ -d "$$base_tree/root" ] && chmod 0700 "$$base_tree/root"; \
 	[ -d "$$base_tree/tmp" ] && chmod 1777 "$$base_tree/tmp"; \
-	truncate -s 64m "$$base_image"; \
+	truncate -s "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_SIZE)" "$$base_image"; \
 	"$$mke2fs_cmd" -q -t ext4 -F -m 0 -U clear -L ORLIXROOT -E root_owner=0:0 -d "$$base_tree" "$$base_image"; \
-	cp "$$base_image" "$$output/rootfs/base.ext4"; \
+	copy_payload_resource "$$base_image" "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)"; \
 	mkdir -p "$$state_tree/upper" "$$state_tree/work"; \
 	if [ -n "$$state_root_tree_input" ]; then \
 		(cd "$$state_root_tree_input" && tar -cf - .) | (cd "$$state_tree" && tar -xf -); \
 	fi; \
 	chmod 0755 "$$state_tree" "$$state_tree/upper" "$$state_tree/work"; \
-	truncate -s 32m "$$state_image"; \
+	truncate -s "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_SIZE)" "$$state_image"; \
 	"$$mke2fs_cmd" -q -t ext4 -F -m 0 -U clear -L ORLIXSTATE -E root_owner=0:0 -d "$$state_tree" "$$state_image"; \
-	cp "$$state_image" "$$output/rootfs/state.ext4"; \
+	copy_payload_resource "$$state_image" "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)"; \
 	{ \
 		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
 		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
 		printf '%s\n' '<plist version="1.0">'; \
 		printf '%s\n' '<dict>'; \
 		printf '%s\n' '    <key>CFBundleIdentifier</key>'; \
-		printf '%s\n' '    <string>org.orlix.OrlixKernelPayload</string>'; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER)</string>'; \
 		printf '%s\n' '    <key>CFBundleName</key>'; \
-		printf '%s\n' '    <string>OrlixKernelPayload</string>'; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME)</string>'; \
 		printf '%s\n' '    <key>CFBundlePackageType</key>'; \
 		printf '%s\n' '    <string>BNDL</string>'; \
 		printf '%s\n' '    <key>CFBundleShortVersionString</key>'; \
@@ -2075,23 +2163,33 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		printf '%s\n' '    <string>$(ORLIX_PORT_ARCH)</string>'; \
 		printf '%s\n' '    <key>OrlixLinuxVersion</key>'; \
 		printf '%s\n' '    <string>$(LINUX_VERSION)</string>'; \
-		printf '%s\n' '    <key>OrlixSelectedProfile</key>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_SELECTED_PROFILE_INFO_KEY)"; \
 		printf '%s\n' '    <string>$(PROFILE)</string>'; \
 		printf '%s\n' '    <key>OrlixRootModes</key>'; \
 		printf '%s\n' '    <string>$(ORLIX_KERNEL_ROOT_MODES)</string>'; \
 		printf '%s\n' '    <key>OrlixSelectedRootMode</key>'; \
 		printf '%s\n' '    <string>$(ORLIX_KERNEL_SELECTED_ROOT_MODE)</string>'; \
-		printf '%s\n' '    <key>OrlixBaseRootDevice</key>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_BASE_ROOT_DEVICE_INFO_KEY)"; \
 		printf '%s\n' '    <string>$(ORLIX_KERNEL_BASE_ROOT_DEVICE)</string>'; \
-		printf '%s\n' '    <key>OrlixStateRootDevice</key>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_DEVICE_INFO_KEY)"; \
 		printf '%s\n' '    <string>$(ORLIX_KERNEL_STATE_ROOT_DEVICE)</string>'; \
-		printf '%s\n' '    <key>OrlixStateRootImage</key>'; \
-		printf '%s\n' '    <string>rootfs/state.ext4</string>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)"; \
+		printf '%s\n' '    <integer>$(ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE)</integer>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)"; \
+		printf '%s\n' '    <integer>$(ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE)</integer>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY)"; \
+		printf '%s\n' '    <integer>$(ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES)</integer>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_ROOT_INITRAMFS_INFO_KEY)"; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)</string>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_BASE_ROOT_IMAGE_INFO_KEY)"; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)</string>'; \
+		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_IMAGE_INFO_KEY)"; \
+		printf '%s\n' '    <string>$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)</string>'; \
 		printf '%s\n' '</dict>'; \
 		printf '%s\n' '</plist>'; \
 	} > "$$output/Info.plist"; \
 	plutil -lint "$$output/Info.plist" >/dev/null; \
-	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\nstate_root_tree_input=%s\nstate_root_tree_sha256=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\nstate_root_image=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" "$$state_root_tree_input" "$$state_root_tree_sha256" "$(ORLIX_KERNEL_ROOT_MODES)" "$(ORLIX_KERNEL_SELECTED_ROOT_MODE)" "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" "rootfs/state.ext4" > "$$payload_stamp"; \
+	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\nstate_root_tree_input=%s\nstate_root_tree_sha256=%s\npayload_bundle_name=%s\npayload_bundle_extension=%s\npayload_bundle_identifier=%s\nroot_initramfs_resource=%s\nbase_root_image_resource=%s\nstate_root_image_resource=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\nbase_root_host_block_device=%s\nstate_root_host_block_device=%s\nbase_root_image_size=%s\nstate_root_image_size=%s\nstate_root_minimum_bytes=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" "$$state_root_tree_input" "$$state_root_tree_sha256" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME)" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER)" "$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)" "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)" "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)" "$(ORLIX_KERNEL_ROOT_MODES)" "$(ORLIX_KERNEL_SELECTED_ROOT_MODE)" "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" "$(ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE)" "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_SIZE)" "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_SIZE)" "$(ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES)" > "$$payload_stamp"; \
 	echo "packaged OrlixKernel payload: $$output (profile $(PROFILE))"
 
 __ios-simulator-framework: xcodeproj
@@ -2164,18 +2262,13 @@ __ios-simulator-xcframework: __ios-simulator-framework
 		printf '%s\n' '</dict>'; \
 		printf '%s\n' '</plist>'; \
 	} > "$$xcframework/Info.plist"; \
-	payload="$$xcframework/ios-arm64-simulator/OrlixKernel.framework/OrlixKernelPayload.bundle"; \
 	for required in \
 		"$$xcframework/Info.plist" \
 		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/Info.plist" \
-		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/OrlixKernel" \
-		"$$payload/Info.plist" \
-		"$$payload/arch/$(ORLIX_PORT_ARCH)/boot/dts/release.dtb" \
-		"$$payload/arch/$(ORLIX_PORT_ARCH)/boot/dts/development.dtb"; do \
+		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/OrlixKernel"; do \
 		[ -s "$$required" ] || { echo "missing non-empty XCFramework input: $$required" >&2; exit 1; }; \
 	done; \
 	plutil -lint \
 		"$$xcframework/Info.plist" \
-		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/Info.plist" \
-		"$$payload/Info.plist" >/dev/null; \
+		"$$xcframework/ios-arm64-simulator/OrlixKernel.framework/Info.plist" >/dev/null; \
 	echo "packaged and verified simulator OrlixKernel XCFramework: $$xcframework (profile $(PROFILE))"

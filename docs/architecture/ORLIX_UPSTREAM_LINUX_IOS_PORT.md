@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Orlix compiles upstream Linux into an iOS-hosted kernel product named `OrlixKernel.xcframework` and pairs it with `OrlixMLibC`, an mlibc-based C library for Orlix Linux userspace.
+Orlix compiles upstream Linux into an iOS-hosted kernel product named `OrlixKernel.xcframework`, pairs it with `OrlixMLibC`, and delivers the curated OS as the `OrlixOS` Kit/framework.
 
 Orlix does not imitate Linux by rewriting Linux core subsystems locally. It adapts Linux through Linux-native extension points such as boot, `arch/orlix`, drivers, Kconfig, device description, host backends, and build packaging.
 
 When upstream Linux already has a surface, implementation convention, build/test flow, or ownership model for a problem, Orlix follows that Linux shape. Orlix-specific alternatives require a concrete iOS constraint and a documented exception.
 
-The product goal is Linux userspace compatibility inside an iOS app boundary. OrlixKernel is Linux. OrlixMLibC fills the libc role for Orlix Linux userspace with glibc/musl source compatibility, not a new Orlix application ABI.
+The product goal is Linux userspace compatibility inside an iOS app boundary. OrlixKernel is Linux. OrlixMLibC fills the libc role for Orlix Linux userspace with glibc/musl source compatibility, not a new Orlix application ABI. Apps consume `OrlixOS` as the delivered OS Kit; they must not depend on a separate `OrlixKit` module or on `OrlixTerminal` for OS delivery.
 
 ## Product Identity
 
@@ -16,7 +16,8 @@ Correct names:
 
 - Project: Orlix
 - Repository: OrlixSystem
-- Product: `OrlixKernel.xcframework`
+- Kernel product: `OrlixKernel.xcframework`
+- Delivered OS Kit: `OrlixOS`
 - Userspace libc: `OrlixMLibC`
 - Host app: `OrlixTerminal`
 - Architecture port: `arch/orlix`
@@ -24,13 +25,13 @@ Correct names:
 - Host mediation: `OrlixHostAdapter`
 - Bootloader: `OrlixKernel/Sources/boot`
 
-Do not invent names such as `orlixios`, `LinuxOrlix`, `OrlixRuntime`, `OrlixHostKit`, runtime facade, kernel API facade, or entry layer.
+Do not invent names such as `orlixios`, `LinuxOrlix`, `OrlixRuntime`, `OrlixKit`, `OrlixHostKit`, runtime facade, kernel API facade, or entry layer.
 
 Inside already scoped directories, do not redundantly prefix filenames with `orlix_`.
 
 ## Core Architecture
 
-The iOS app is the host container. It starts the Orlix bootloader. The bootloader prepares Linux-shaped boot inputs and transfers control into the Orlix Linux architecture port. After boot, upstream Linux owns Linux behavior.
+The iOS app is the host container. It consumes the `OrlixOS` Kit, which resolves the delivered OS payload from its own target metadata, registers private host resource paths with `OrlixHostAdapter`, and starts the Orlix bootloader. The bootloader prepares Linux-shaped boot inputs and transfers control into the Orlix Linux architecture port. After boot, upstream Linux owns Linux behavior.
 
 The kernel does not provide a shell, package layer, libc surface, syscall facade, or runtime management API. Shells and packages are normal Orlix Linux userspace binaries linked against OrlixMLibC and executed through Linux mechanisms such as `execve()`.
 
@@ -40,6 +41,7 @@ High-level flow:
 
 ```text
 iOS app
+  -> OrlixOS Kit
   -> bootloader
   -> Linux-shaped boot inputs
   -> arch/orlix
@@ -84,6 +86,8 @@ Kernel-visible HostAdapter contracts must remain freestanding and Linux-shaped. 
 
 `OrlixMLibC` owns the libc implementation for Orlix Linux userspace. It may have an Orlix sysdeps identity where mlibc requires one, but that sysdeps layer must call Linux-shaped syscalls and expose Linux-compatible behavior.
 
+`OrlixOS` is the delivered OS Kit. It owns curated distribution policy, package/rootfs assembly, product payload packaging, target-derived payload metadata, and the app-facing Linux session API. It may wrap the bootloader-shaped entrypoint as a Linux session, but it must not own kernel semantics, libc semantics, syscall ABI, private iOS host mechanics, terminal UI rendering, shell behavior, or Linux test-result interpretation.
+
 ## Source And Build Model
 
 Project-owned source and test roots are:
@@ -95,6 +99,8 @@ OrlixHostAdapter/Sources
 OrlixHostAdapter/Tests
 OrlixMLibC/Sources
 OrlixMLibC/Tests
+OrlixOS/Sources
+OrlixOS/Tests
 OrlixTerminal/Sources
 OrlixTerminal/Tests
 ```
@@ -155,7 +161,7 @@ PROFILE=release
 
 Profile defconfigs are durable product-profile configs under `OrlixKernel/Sources/ports/orlix/configs`. The selected profile is materialized into the generated port tree in the location Kbuild expects.
 
-The repository Makefile is the command surface for repeatable local orchestration. It delegates to one Makefile per top-level project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`. The top-level public targets stay small and Linux-shaped: `all`, `build`, `setup-env`, `prepare`, `scripts`, `dtbs`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, `test`, `clean`, `mrproper`, `xcodeproj`, and `run`.
+The repository Makefile is the command surface for repeatable local orchestration. It delegates to one Makefile per top-level project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, `OrlixOS/Makefile`, and `OrlixTerminal/Makefile`. The top-level public targets stay small and Linux-shaped: `all`, `build`, `setup-env`, `prepare`, `scripts`, `dtbs`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, `test`, `clean`, `mrproper`, `xcodeproj`, and `run`.
 
 `make build` means orchestration of the current component build hooks. It first runs `make clean`, removing `Build/`, then the OrlixKernel build reclones upstream Linux through the bootstrap path. OrlixMLibC builds materialize upstream mlibc as a bare clone plus patched working source under `Build/OrlixMLibC` and apply durable OrlixMLibC inputs from `OrlixMLibC/Sources`. It must not be described as proof that every component is runtime-complete. Until OrlixTerminal is backed by a Linux console path, its build hook may be source-ownership or placeholder checks only.
 
@@ -169,7 +175,7 @@ The canonical OrlixKernel proof artifact is the iOS app-hosted OrlixKernel integ
 
 A `vmlinux`-style artifact may exist only as an optional developer/debug artifact with a named consumer. It is not a milestone, not product proof, not runtime proof, not libc proof, and not required for installed UAPI headers.
 
-`OrlixKernel.xcframework` packaging or app linking must happen early enough to support iOS-hosted kernel-interface proof and later product runtime proof, and must carry the app-hosted OrlixKernel integration that the iOS app will actually execute. Boot-stub packaging is not product proof.
+`OrlixKernel.xcframework` packaging or app linking must happen early enough to support iOS-hosted kernel-interface proof and later product runtime proof, and must carry the app-hosted OrlixKernel integration that the iOS app will actually execute. The curated OS payload is delivered by the `OrlixOS` Kit/framework, not by a separate `OrlixKit` module and not by hardcoded HostAdapter bundle discovery. Boot-stub packaging is not product proof.
 
 The Linux compile lane emits per-profile, per-platform OrlixKernel static archives:
 
@@ -187,7 +193,7 @@ Test-only kernel config overlays may enable KUnit, kselftest support, KUnit debu
 
 ## Boot Model
 
-The public product API is bootloader-shaped. It must not expose Linux syscalls, file operations, mounts, exec, cgroups, tasks, or runtime management as public product APIs.
+The app-facing product API lives in `OrlixOS` and is bootloader/session-shaped. It must not expose Linux syscalls, file operations, mounts, exec, cgroups, tasks, package-manager controls, or runtime management as public product APIs.
 
 The public direction is:
 
@@ -206,7 +212,7 @@ struct OrlixBootConfig {
 int OrlixBoot(const struct OrlixBootConfig *config);
 ```
 
-The bootloader receives app-level identifiers, resolves them through `OrlixHostAdapter`, selects profile boot data, fills dynamic boot-time values, and hands Linux-shaped boot inputs to `arch/orlix`.
+The `OrlixOS` Kit resolves its own payload bundle through target metadata and registers the private payload root with `OrlixHostAdapter` before boot. The bootloader receives app-level identifiers, uses private HostAdapter resource plumbing for the registered payload and test bundles, selects profile boot data, fills dynamic boot-time values, and hands Linux-shaped boot inputs to `arch/orlix`.
 
 Profile boot data is device-tree-shaped. Static profile device trees live under:
 
@@ -216,7 +222,7 @@ OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/boot/dts/
 
 Do not invent a custom Orlix `.boot` template format. Use device tree data, `/chosen`, kernel command line defaults, and normal Linux boot mechanisms.
 
-Initramfs is supported through normal Linux behavior. The release profile defaults to an external initramfs bundled with the app, signed as app content, immutable at runtime, and loaded by the bootloader. Direct `root=/dev/vda` boot remains a Linux-shaped path when appropriate.
+Initramfs is supported through normal Linux behavior. The release profile defaults to an external initramfs bundled through the `OrlixOS` Kit payload, signed as app content, immutable at runtime, and loaded by the bootloader. Direct `root=/dev/vda` boot remains a Linux-shaped path when appropriate.
 
 ## Virtio-First Device Model
 
@@ -292,7 +298,7 @@ Package managers such as apt/dpkg verify packages and install files into the fil
 - memory-management behavior
 - upstream security mechanisms when configured
 
-The release profile bundles curated OrlixOS distribution content as signed app resources and updates that executable content through app releases first. Downloaded binary package repositories are deferred until a curated, signed, profile-approved channel with App Store-safe disclosure and policy checks is explicitly designed and reviewed. It is not an unrestricted arbitrary repository model.
+The release profile bundles curated OrlixOS distribution content as signed resources of the `OrlixOS` Kit and updates that executable content through app releases first. Downloaded binary package repositories are deferred until a curated, signed, profile-approved channel with App Store-safe disclosure and policy checks is explicitly designed and reviewed. It is not an unrestricted arbitrary repository model.
 
 Bash is the first shell proof package. `/bin/sh` is rootfs policy, not kernel behavior. The third-party package proof ladder is jq, then curl, then zsh, but those packages are acceptance gates for an OrlixOS distribution model rather than the architecture itself.
 
@@ -376,7 +382,7 @@ Durable kselftests live under `OrlixKernel/Sources/ports/orlix/overlay/tools/tes
 
 OrlixMLibC-built kselftests install under `Build/OrlixMLibC/kselftest/<profile>/` and carry `proof_lane=orlixmlibc-kselftest-syscall-uapi` metadata.
 
-XCTest targets live under project-local `Tests/XCTest/` trees such as `OrlixKernel/Tests/XCTest` and `OrlixHostAdapter/Tests/XCTest`. Future OrlixMLibC and OrlixTerminal XCTest targets belong under `OrlixMLibC/Tests/XCTest` and `OrlixTerminal/Tests/XCTest`. XCTest is limited to app-hosted launch, packaging, proof-output collection, parser behavior, and narrow host-adapter mechanics. XCTest must not replace KUnit, kselftest, OrlixMLibC tests, or package proof as the owner of Linux-visible assertions.
+XCTest targets live under project-local `Tests/XCTest/` trees such as `OrlixKernel/Tests/XCTest`, `OrlixHostAdapter/Tests/XCTest`, `OrlixOS/Tests/XCTest`, and `OrlixTerminal/Tests/XCTest`. XCTest is limited to app-hosted launch, packaging, proof-output collection, parser behavior, OrlixOS payload/session wiring, and narrow host-adapter mechanics. XCTest must not replace KUnit, kselftest, OrlixMLibC tests, or package proof as the owner of Linux-visible assertions.
 
 ## Milestones
 
