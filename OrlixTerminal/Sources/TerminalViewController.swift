@@ -1,5 +1,6 @@
 import GhosttyTerminal
 import GhosttyTheme
+import OrlixKit
 import UIKit
 
 final class TerminalViewController: UIViewController {
@@ -8,27 +9,26 @@ final class TerminalViewController: UIViewController {
 
     private var didStartBoot = false
     private let bootQueue = DispatchQueue(label: "org.orlix.terminal.boot", qos: .userInitiated)
-    private let hostConsolePipe = Pipe()
-    private lazy var terminalView = TerminalView(frame: .zero)
-    private lazy var proofDriver = TerminalProofDriver.fromProcessArguments { data in
-        data.withUnsafeBytes { buffer in
-            guard let baseAddress = buffer.baseAddress else {
-                return
-            }
-            OrlixTerminalSendConsoleInput(baseAddress, UInt(buffer.count))
-        }
-    }
-    private lazy var terminalSession = InMemoryTerminalSession(
-        write: { data in
-            data.withUnsafeBytes { buffer in
-                guard let baseAddress = buffer.baseAddress else {
-                    return
-                }
-                OrlixTerminalSendConsoleInput(baseAddress, UInt(buffer.count))
-            }
-        },
-        resize: { _ in }
+    private lazy var linuxSession = OrlixLinuxSession(
+        bootConfig: OrlixBootConfig(profile: Self.defaultBootProfile())
     )
+    private var terminalOutput: OrlixTerminalOutput?
+    private lazy var terminalView = TerminalView(frame: .zero)
+    private lazy var proofDriver: TerminalProofDriver? = {
+        let terminal = linuxSession.terminal
+        return TerminalProofDriver.fromProcessArguments { data in
+            terminal.send(data)
+        }
+    }()
+    private lazy var terminalSession: InMemoryTerminalSession = {
+        let terminal = linuxSession.terminal
+        return InMemoryTerminalSession(
+            write: { data in
+                terminal.send(data)
+            },
+            resize: { _ in }
+        )
+    }()
     private lazy var controller = TerminalController(
         theme: Self.savedTerminalTheme()
     ) { builder in
@@ -41,7 +41,7 @@ final class TerminalViewController: UIViewController {
         view.backgroundColor = .systemBackground
         view.isOpaque = true
         configureTerminalView()
-        installHostConsolePipe()
+        attachTerminalOutput()
         configureThemeMenu()
         applyBackgroundForCurrentAppearance()
     }
@@ -95,27 +95,26 @@ final class TerminalViewController: UIViewController {
         didStartBoot = true
 
         terminalSession.receive("OrlixTerminal\r\n")
-        let profile = Self.defaultBootProfileName()
+        let profile = linuxSession.bootConfig.profile
+        let session = linuxSession
         terminalSession.receive("Starting Orlix bootloader with the \(Self.profileDisplayName(profile)) profile.\r\n")
         bootQueue.async { [weak self] in
-            let status = profile.withCString { OrlixTerminalBootProfileNamed($0) }
+            let status = session.boot()
             DispatchQueue.main.async { [weak self] in
-                self?.terminalSession.receive(
-                    String(cString: OrlixTerminalBootStatusMessage(status)) + "\r\n"
-                )
+                self?.terminalSession.receive(status.message + "\r\n")
             }
         }
     }
 
-    private static func defaultBootProfileName() -> String {
-        payloadBootProfileName() ?? "release"
+    private static func defaultBootProfile() -> OrlixBootProfile {
+        payloadBootProfile() ?? .release
     }
 
     private static func isRunningUnitTests() -> Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
 
-    private static func payloadBootProfileName() -> String? {
+    private static func payloadBootProfile() -> OrlixBootProfile? {
         guard
             let kernelBundle = Bundle(identifier: "org.orlix.OrlixKernel"),
             let payloadURL = kernelBundle.url(
@@ -131,27 +130,20 @@ final class TerminalViewController: UIViewController {
             return nil
         }
 
-        return profile
+        return profile == "development" ? .development : .release
     }
 
-    private static func profileDisplayName(_ profile: String) -> String {
+    private static func profileDisplayName(_ profile: OrlixBootProfile) -> String {
         switch profile {
-        case "release":
+        case .release:
             return "release"
-        case "development":
+        case .development:
             return "development"
-        default:
-            return profile
         }
     }
 
-    private func installHostConsolePipe() {
-        hostConsolePipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else {
-                return
-            }
-
+    private func attachTerminalOutput() {
+        terminalOutput = linuxSession.terminal.attachOutput { [weak self] data in
             let text = String(decoding: data, as: UTF8.self)
                 .replacingOccurrences(of: "\r\n", with: "\n")
                 .replacingOccurrences(of: "\n", with: "\r\n")
@@ -161,9 +153,6 @@ final class TerminalViewController: UIViewController {
                 self?.terminalSession.receive(text)
             }
         }
-        OrlixTerminalInstallConsoleOutputFileDescriptor(
-            hostConsolePipe.fileHandleForWriting.fileDescriptor
-        )
     }
 
     private static func savedTerminalTheme() -> TerminalTheme {

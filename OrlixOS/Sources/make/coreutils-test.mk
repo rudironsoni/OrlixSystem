@@ -183,4 +183,18 @@ $(ORLIXOS_COREUTILS_TEST_INITRAMFS): $(ORLIXOS_COREUTILS_TEST_INIT_BINARY) $(ORL
 	"$$gen_init_cpio" "$$cpio_list" > "$$output/rootfs/initramfs.cpio"; \
 	gzip -n -f "$$output/rootfs/initramfs.cpio"; \
 	[ -s "$$output/rootfs/initramfs.cpio.gz" ] || { echo "missing packaged Coreutils test initramfs: $$output/rootfs/initramfs.cpio.gz" >&2; exit 1; }; \
+	{ \
+		printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>'; \
+		printf '%s\n' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
+		printf '%s\n' '<plist version="1.0"><dict>'; \
+		printf '%s\n' '<key>CFBundleIdentifier</key><string>org.orlix.CoreutilsTestInitramfs</string>'; \
+		printf '%s\n' '<key>CFBundleName</key><string>CoreutilsTestInitramfs</string>'; \
+		printf '%s\n' '<key>CFBundlePackageType</key><string>BNDL</string>'; \
+		printf '%s\n' '<key>CFBundleShortVersionString</key><string>0.1</string>'; \
+		printf '%s\n' '<key>CFBundleVersion</key><string>1</string>'; \
+		printf '%s\n' '<key>OrlixProfile</key><string>$(PROFILE)</string>'; \
+		printf '%s\n' '<key>OrlixProofLane</key><string>coreutils-upstream-tests</string>'; \
+		printf '%s\n' '</dict></plist>'; \
+	} > "$$output/Info.plist"; \
+	plutil -lint "$$output/Info.plist" >/dev/null; \
 	echo "packaged upstream Coreutils test initramfs: $$output"

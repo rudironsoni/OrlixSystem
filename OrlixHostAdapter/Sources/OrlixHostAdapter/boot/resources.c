@@ -29,7 +29,34 @@ static const char *OrlixHostInitrdResourceForIdentifier(const char *identifier)
     if (strcmp(identifier, "orlix.bundle.rootfs") == 0) {
         return "rootfs/initramfs.cpio.gz";
     }
+    if (strcmp(identifier, "orlix.test.kselftest.rootfs") == 0 ||
+        strcmp(identifier, "orlix.test.mlibc.rootfs") == 0 ||
+        strcmp(identifier, "orlix.test.coreutils.rootfs") == 0) {
+        return "rootfs/initramfs.cpio.gz";
+    }
     return 0;
+}
+
+static const char *OrlixHostTestBundleForIdentifier(const char *identifier)
+{
+    if (!identifier) {
+        return 0;
+    }
+    if (strcmp(identifier, "orlix.test.kselftest.rootfs") == 0) {
+        return "OrlixTestInitramfs";
+    }
+    if (strcmp(identifier, "orlix.test.mlibc.rootfs") == 0) {
+        return "OrlixMLibCTestInitramfs";
+    }
+    if (strcmp(identifier, "orlix.test.coreutils.rootfs") == 0) {
+        return "CoreutilsTestInitramfs";
+    }
+    return 0;
+}
+
+static int OrlixHostIdentifierUsesBootBlocks(const char *identifier)
+{
+    return identifier && strcmp(identifier, "orlix.bundle.rootfs") == 0;
 }
 
 static const char *OrlixHostBaseBlockResourceForIdentifier(const char *identifier)
@@ -99,6 +126,90 @@ static int OrlixHostCopyPayloadResourcePath(const char *resource,
     }
 
     written = snprintf(path, path_size, "%s/%s", payload_root, resource);
+    if (written < 0 || (size_t)written >= path_size) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static int OrlixHostCopyMainBundleResourceRootPath(const char *name,
+                                                   const char *extension,
+                                                   char *path,
+                                                   size_t path_size)
+{
+    CFBundleRef main_bundle;
+    CFStringRef resource_name;
+    CFStringRef resource_extension;
+    CFURLRef resource_url;
+    Boolean ok;
+
+    if (!name || !extension || !path || path_size == 0) {
+        return -1;
+    }
+
+    main_bundle = CFBundleGetMainBundle();
+    if (!main_bundle) {
+        return -1;
+    }
+
+    resource_name = CFStringCreateWithCString(
+        kCFAllocatorDefault,
+        name,
+        kCFStringEncodingUTF8);
+    resource_extension = CFStringCreateWithCString(
+        kCFAllocatorDefault,
+        extension,
+        kCFStringEncodingUTF8);
+    if (!resource_name || !resource_extension) {
+        if (resource_name) {
+            CFRelease(resource_name);
+        }
+        if (resource_extension) {
+            CFRelease(resource_extension);
+        }
+        return -1;
+    }
+
+    resource_url = CFBundleCopyResourceURL(
+        main_bundle,
+        resource_name,
+        resource_extension,
+        0);
+    CFRelease(resource_name);
+    CFRelease(resource_extension);
+    if (!resource_url) {
+        return -1;
+    }
+
+    ok = CFURLGetFileSystemRepresentation(
+        resource_url,
+        true,
+        (UInt8 *)path,
+        path_size);
+    CFRelease(resource_url);
+    return ok ? 0 : -1;
+}
+
+static int OrlixHostCopyTestBundleResourcePath(const char *bundle_name,
+                                               const char *resource,
+                                               char *path,
+                                               size_t path_size)
+{
+    char bundle_root[PATH_MAX];
+    int written;
+
+    if (!bundle_name || !resource || !path || path_size == 0) {
+        return -1;
+    }
+    if (OrlixHostCopyMainBundleResourceRootPath(bundle_name,
+                                               "bundle",
+                                               bundle_root,
+                                               sizeof(bundle_root)) != 0) {
+        return -1;
+    }
+
+    written = snprintf(path, path_size, "%s/%s", bundle_root, resource);
     if (written < 0 || (size_t)written >= path_size) {
         return -1;
     }
@@ -415,9 +526,25 @@ __attribute__((visibility("hidden"))) int OrlixHostLoadInitrdResource(
     struct OrlixHostResource *loaded)
 {
     const char *resource = OrlixHostInitrdResourceForIdentifier(identifier);
+    const char *test_bundle = OrlixHostTestBundleForIdentifier(identifier);
+    char path[PATH_MAX];
 
     if (!resource) {
         return -1;
+    }
+    if (test_bundle) {
+        if (!loaded) {
+            return -1;
+        }
+        loaded->data = 0;
+        loaded->size = 0;
+        if (OrlixHostCopyTestBundleResourcePath(test_bundle,
+                                                resource,
+                                                path,
+                                                sizeof(path)) != 0) {
+            return -1;
+        }
+        return OrlixHostReadResourceFile(path, loaded);
     }
 
     return OrlixHostLoadKernelPayloadResource(resource, loaded);
@@ -436,6 +563,9 @@ __attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
 
     OrlixHostClearSelectedBlockImages();
 
+    if (!OrlixHostIdentifierUsesBootBlocks(identifier)) {
+        return OrlixHostInitrdResourceForIdentifier(identifier) ? 0 : -1;
+    }
     if (!resource || !state_resource) {
         return -1;
     }
