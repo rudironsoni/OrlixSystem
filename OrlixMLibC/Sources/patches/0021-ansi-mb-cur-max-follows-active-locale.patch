@@ -54,23 +54,3 @@ index 7a82bf35..4fcb1f4c 100644
  
  #endif /* _STDLIB_H */
 -
-diff --git i/tests/ansi/locale.c w/tests/ansi/locale.c
-index 224bc3a7..77a42c2f 100644
---- i/tests/ansi/locale.c
-+++ w/tests/ansi/locale.c
-@@ -4,6 +4,7 @@
- #include <locale.h>
- #include <stdbool.h>
- #include <stdio.h>
-+#include <stdlib.h>
- #include <string.h>
- #include <wchar.h>
- 
-@@ -18,6 +19,7 @@ int main() {
- 			&& buf[2] == '\0' && buf[3] == '\0');
- 
- 	setlocale(LC_ALL, "C");
-+	assert(MB_CUR_MAX == 1);
- 
- 	snprintf(buf, sizeof(buf), "%2.2f", 12.34);
- 	assert(!strcmp("12.34", buf));

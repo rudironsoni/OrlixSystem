@@ -10,14 +10,17 @@ index 32db27542..2f298821d 100644
  
  namespace {
  	// All conversion functions mbrlen(), mbrtowc(), wcrtomb(),
-@@ -17,6 +18,36 @@ namespace {
+@@ -17,6 +18,39 @@ namespace {
  	__mlibc_mbstate mbsrtowcs_state = __MLIBC_MBSTATE_INITIALIZER;
  	__mlibc_mbstate mbsnrtowcs_state = __MLIBC_MBSTATE_INITIALIZER;
  	__mlibc_mbstate wcsrtombs_state = __MLIBC_MBSTATE_INITIALIZER;
 +
 +	bool active_codeset_is_utf8() {
 +		auto codeset = mlibc::getActiveLocale()->ctype.get(CODESET).asString();
-+		return codeset.size() == 5
++		auto size = codeset.size();
++		if(size && codeset[size - 1] == '\0')
++			size--;
++		return size == 5
 +			&& (codeset[0] == 'U' || codeset[0] == 'u')
 +			&& (codeset[1] == 'T' || codeset[1] == 't')
 +			&& (codeset[2] == 'F' || codeset[2] == 'f')
@@ -47,7 +50,7 @@ index 32db27542..2f298821d 100644
  } // namespace
  
  wint_t btowc(int c) {
-@@ -69,6 +100,9 @@ size_t mbrlen(const char *__restrict mbs, size_t mb_limit, mbstate_t *__restrict
+@@ -69,6 +103,9 @@ size_t mbrlen(const char *__restrict mbs, size_t mb_limit, mbstate_t *__restrict
  		return 0;
  	}
  
@@ -57,7 +60,7 @@ index 32db27542..2f298821d 100644
  	mlibc::code_seq<const char> nseq{mbs, mbs + mb_limit};
  	mlibc::code_seq<wchar_t> wseq{&wc, &wc + 1};
  	auto e = cc->decode_wtranscode(nseq, wseq, *stp);
-@@ -99,6 +133,9 @@ size_t mbrtowc(wchar_t *__restrict wcp, const char *__restrict mbs, size_t mb_li
+@@ -99,6 +136,9 @@ size_t mbrtowc(wchar_t *__restrict wcp, const char *__restrict mbs, size_t mb_li
  	if(!wcp)
  		wcp = &temp;
  
@@ -67,7 +70,7 @@ index 32db27542..2f298821d 100644
  	mlibc::code_seq<const char> nseq{mbs, mbs + mb_limit};
  	mlibc::code_seq<wchar_t> wseq{wcp, wcp + 1};
  	auto e = cc->decode_wtranscode(nseq, wseq, *stp);
-@@ -126,6 +163,17 @@ size_t wcrtomb(char *__restrict mbs, wchar_t wc, mbstate_t *__restrict stp) {
+@@ -126,6 +166,17 @@ size_t wcrtomb(char *__restrict mbs, wchar_t wc, mbstate_t *__restrict stp) {
  	// TODO: Implement the following case:
  	__ensure(mbs);
  

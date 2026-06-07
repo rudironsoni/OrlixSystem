@@ -118,6 +118,76 @@ Verified the audit and harness changes without modifying runtime patch files.
 - Stale-reference scan found only explicitly forbidden/retired `OrlixKit` mentions in harness guidance.
 - Reviewer delegation did not return findings within the gate window; keep this active plan open until a later reviewer pass or patch cleanup work completes.
 
+### 2026-06-07 Upstream Test Purity Cleanup And Locale Root Cause
+
+**What happened:**
+
+Removed upstream-test mutations from the durable mlibc conformance patch stack:
+
+- deleted `OrlixMLibC/Sources/patches/0009-posix-test-wait3-rusage.patch`;
+- removed the `tests/posix/access.c` hunk from `0011-posix-add-euidaccess-eaccess.patch`;
+- removed the `tests/meson.build` and `tests/posix/renameat2.c` hunks from `0012-posix-renameat2-zero-flags-via-renameat.patch`;
+- removed the `tests/posix/string.c` hunk from `0013-ansi-string-keep-posix-strerror-r-as-public-name.patch`;
+- removed the `tests/ansi/locale.c` hunk from `0021-ansi-mb-cur-max-follows-active-locale.patch`;
+- removed `posix/renameat2` and `posix/wait3` from the OrlixMLibC test list because those entries existed only through removed Orlix-added test files, not pinned upstream mlibc tests.
+
+**Root cause found:**
+
+The first full run after test-purity cleanup failed at unmodified upstream `ansi/sscanf`: the test set `de_DE.utf8`, then `%[α-ω]` produced stale/incorrect narrow output and aborted.
+
+The owning bug was in Orlix's durable mlibc locale patch, not in generated tests or a kernel workaround:
+
+- `0016-locale-c-wide-conversion-uses-ascii.patch` added `active_codeset_is_utf8()` and made non-UTF-8 locales use ASCII conversion.
+- The mlibc locale archive parser's `parse_string()` returns a string view including the trailing NUL.
+- The parser assignment path asserts parsed string entries end with `\0`.
+- The LC_CTYPE parser maps `codeset_name` through `parse_string`.
+- Therefore a valid locale archive `UTF-8` codeset is represented as `UTF-8\0`; checking `codeset.size() == 5` misclassified UTF-8 locales as non-UTF-8.
+
+**Change made:**
+
+Adjusted `0016-locale-c-wide-conversion-uses-ascii.patch` so `active_codeset_is_utf8()` ignores one trailing NUL when comparing the logical codeset value.
+
+**Evidence:**
+
+- `rtk rg -n "tests/|diff --git .*tests|\\+\\+\\+ [bw]/tests|\\+\\+\\+ b/tests" OrlixMLibC/Sources/patches OrlixOS/Sources/patches`
+  - no matches after cleanup.
+- `rtk timeout 1200 make -f OrlixMLibC/Makefile __apply-mlibc-patches PROFILE=release`
+  - passed; known pre-existing whitespace warnings remain in `0020-frigg-format-long-double-with-long-double-arithmetic.patch`.
+- `rtk git -C Build/OrlixMLibC/src/mlibc-43ab07732cdf diff --name-only -- tests`
+  - no output; generated upstream mlibc tests are pristine after patch application.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-build PROFILE=release MLIBC_TEST_CASES=ansi/sscanf`
+  - passed.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-initramfs PROFILE=release MLIBC_TEST_CASES=ansi/sscanf`
+  - passed.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixMLibCUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -resultBundlePath .deriveddata/OrlixSystem-sim/MLibCSScanfFocused-20260607-2000.xcresult test`
+  - passed.
+- `rtk xcrun xcresulttool get test-results summary --path .deriveddata/OrlixSystem-sim/MLibCSScanfFocused-20260607-2000.xcresult --compact`
+  - `result: Passed`, `totalTestCount: 1`, `passedTests: 1`, `failedTests: 0`, `skippedTests: 0`.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-build PROFILE=release`
+  - passed; full 161 upstream-test list restored.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-initramfs PROFILE=release`
+  - passed.
+- `rtk wc -l Build/OrlixMLibC/tests-install/release/mlibc-test-list.txt`
+  - `161`.
+- `rtk rg -n "posix/(wait3|renameat2)|ansi/sscanf|ansi/locale|ansi/snprintf|ansi/utf8|posix/access|posix/string" Build/OrlixMLibC/tests-install/release/mlibc-test-list.txt`
+  - `ansi/sscanf`, `ansi/snprintf`, `ansi/utf8`, `ansi/locale`, `posix/access`, and `posix/string` are present.
+  - `posix/wait3` and `posix/renameat2` are absent because they are not pinned upstream tests.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixMLibCUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -resultBundlePath .deriveddata/OrlixSystem-sim/MLibCFull-20260607-2005.xcresult test`
+  - failed as expected on the next unmodified upstream failure, not on the fixed locale path.
+- `rtk rg -n "ORLIX-MLIBC-TEST-INIT|TAP version|1\\.\\.162|ok [0-9]+|not ok|assert|failed|killed by signal|upstream failure marker|ORLIX-MLIBC-TEST-DONE" ~/Library/Application\\ Support/rtk/tee/1780855387_xcodebuild_-project_OrlixSystem_xcodepro.log`
+  - `1..162`
+  - `ok 4 - ansi/sscanf`
+  - `ok 6 - ansi/snprintf`
+  - `ok 7 - ansi/utf8`
+  - `ok 37 - ansi/locale`
+  - first remaining failure: `not ok 42 - ansi/ungetwc`, killed by signal 6.
+- `rtk xcrun xcresulttool get test-results summary --path .deriveddata/OrlixSystem-sim/MLibCFull-20260607-2005.xcresult --compact`
+  - `result: Failed`, failure text: `upstream failure marker found: not ok 42 - ansi/ungetwc`.
+
+**Next:**
+
+Investigate `ansi/ungetwc` with the same rule: prove the owning layer before changing any durable patch, and do not alter generated upstream tests.
+
 ---
 
 ## Deviations Summary

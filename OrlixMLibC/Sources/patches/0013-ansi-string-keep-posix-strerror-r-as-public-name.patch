@@ -15,25 +15,3 @@ index 3980418c..97543cd4 100644
  
  /* Handling the basename mess:
   * If <libgen.h> is included *at all*, we use the XPG-defined basename
-diff --git i/tests/posix/string.c w/tests/posix/string.c
-index 9c6e036b..d76bbcc0 100644
---- i/tests/posix/string.c
-+++ w/tests/posix/string.c
-@@ -1,5 +1,7 @@
-+#define _GNU_SOURCE
- #include <string.h>
- #include <assert.h>
-+#include <errno.h>
- 
- int main() {
- 	char buf[4];
-@@ -26,4 +28,9 @@ int main() {
- 	
- 	assert(stpcpy(buf, "123") == buf + 3);
- 	assert(!strcmp(buf, "123"));
-+
-+	char errbuf[128];
-+	int err = strerror_r(1, errbuf, sizeof(errbuf));
-+	assert(err == 0 || err == ERANGE || err == EINVAL);
-+	assert(gnu_strerror_r(1, errbuf, sizeof(errbuf)) == errbuf);
- }
