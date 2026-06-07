@@ -188,6 +188,65 @@ Adjusted `0016-locale-c-wide-conversion-uses-ascii.patch` so `active_codeset_is_
 
 Investigate `ansi/ungetwc` with the same rule: prove the owning layer before changing any durable patch, and do not alter generated upstream tests.
 
+### 2026-06-07 Wide Pushback Root Cause And Fix
+
+**What happened:**
+
+Root-caused the next full-run failure at unmodified upstream `ansi/ungetwc`.
+
+The failing assertion was in `tests/ansi/ungetwc.c` at the Greek alpha wide-character pushback check. The test does not call `setlocale()`, so the stream is in the default C locale. After the corrected `0016` locale patch, C-locale `wcrtomb()` correctly rejects non-ASCII wide characters. mlibc's existing `ungetwc_unlocked()` encoded the pushed wide character through `wcrtomb()` and then pushed bytes into the byte `ungetc` buffer; therefore that `ungetwc()` call returned `WEOF`.
+
+That was an mlibc stdio wide-pushback bug, not a kernel/filesystem issue and not an upstream-test issue. Linux/glibc keeps wide pushback as wide characters in a wide backup area instead of requiring the pushed character to be representable in the stream's current external byte encoding.
+
+**Change made:**
+
+Added `OrlixMLibC/Sources/patches/0032-ansi-stdio-use-wide-unget-buffer.patch`.
+
+The patch:
+
+- moves mlibc's existing internal `ungetBufferSize` constant next to the internal `abstract_file` declaration so byte and wide pushback share the same implementation limit;
+- adds an internal wide pushback buffer to `abstract_file`;
+- makes `ungetwc_unlocked()` push `wchar_t` values directly instead of encoding them with `wcrtomb()`;
+- makes `fgetwc_unlocked()` consume wide pushback before checking EOF or reading/decoding bytes;
+- clears wide pushback through `purge()` and `_reset()` so seek/rewind/freopen-style reset paths discard it.
+
+**Evidence:**
+
+- `rtk timeout 1200 make -f OrlixMLibC/Makefile __apply-mlibc-patches PROFILE=release`
+  - passed; known pre-existing whitespace warnings remain in `0020-frigg-format-long-double-with-long-double-arithmetic.patch`.
+- `rtk git -C Build/OrlixMLibC/src/mlibc-43ab07732cdf diff --name-only -- tests`
+  - no output; generated upstream mlibc tests remained pristine.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-build PROFILE=release MLIBC_TEST_CASES=ansi/ungetwc`
+  - passed.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-initramfs PROFILE=release MLIBC_TEST_CASES=ansi/ungetwc`
+  - passed.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixMLibCUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -resultBundlePath .deriveddata/OrlixSystem-sim/MLibCUngetwcFocused-20260607-2115.xcresult test`
+  - passed.
+- `rtk xcrun xcresulttool get test-results summary --path .deriveddata/OrlixSystem-sim/MLibCUngetwcFocused-20260607-2115.xcresult --compact`
+  - `result: Passed`, `totalTestCount: 1`, `passedTests: 1`, `failedTests: 0`, `skippedTests: 0`.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-build PROFILE=release`
+  - passed; full upstream list restored.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-initramfs PROFILE=release`
+  - passed.
+- `rtk wc -l Build/OrlixMLibC/tests-install/release/mlibc-test-list.txt`
+  - `161`.
+- `rtk rg -n "ansi/(ungetwc|sscanf|locale|snprintf|utf8)|posix/(access|string|wait3|renameat2)" Build/OrlixMLibC/tests-install/release/mlibc-test-list.txt`
+  - `ansi/ungetwc`, `ansi/sscanf`, `ansi/locale`, `ansi/snprintf`, `ansi/utf8`, `posix/access`, and `posix/string` are present.
+  - `posix/wait3` and `posix/renameat2` are absent because they are not pinned upstream tests.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixMLibCUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -resultBundlePath .deriveddata/OrlixSystem-sim/MLibCFull-20260607-2125.xcresult test`
+  - failed on the next unmodified upstream failure, not on `ansi/ungetwc`.
+- `rtk rg -n "ORLIX-MLIBC-TEST-INIT|TAP version|1\\.\\.162|ok [0-9]+|not ok|assert|failed|killed by signal|upstream failure marker|ORLIX-MLIBC-TEST-DONE|panic|OOM|Out of memory" ~/Library/Application\\ Support/rtk/tee/1780856574_xcodebuild_-project_OrlixSystem_xcodepro.log`
+  - `1..162`
+  - `ok 42 - ansi/ungetwc`
+  - first remaining failure marker: `not ok 89 - posix/getservbyname`
+  - paired failure marker: `not ok 90 - posix/getservbyport`
+- `rtk xcrun xcresulttool get test-results summary --path .deriveddata/OrlixSystem-sim/MLibCFull-20260607-2125.xcresult --compact`
+  - `result: Failed`, failure text: `upstream failure marker found: not ok 89 - posix/getservbyname`.
+
+**Next:**
+
+Investigate `posix/getservbyname` and `posix/getservbyport` from first principles. The likely ownership area is still OrlixMLibC or OrlixOS rootfs data (`/etc/services`), but do not patch mlibc or package data until proving whether the Linux rootfs service database and libc parser behavior match upstream Linux/glibc expectations.
+
 ---
 
 ## Deviations Summary
