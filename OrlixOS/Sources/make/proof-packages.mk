@@ -106,7 +106,7 @@ $(ORLIXOS_DIFF_BINARY): $(ORLIXOS_DIFFUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROO
 	rm -rf "$(ORLIXOS_DIFFUTILS_BUILD_DIR)"; \
 	echo "built Orlix Linux diffutils package inputs: $(ORLIXOS_DIFFUTILS_PROGRAMS)"
 
-$(ORLIXOS_GAWK_BINARY): $(ORLIXOS_GAWK_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)
+$(ORLIXOS_GAWK_BINARY): $(ORLIXOS_GAWK_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB) $(PROJECT_DIR)/Sources/make/config.mk $(PROJECT_DIR)/Sources/make/proof-packages.mk $(ORLIXOS_PACKAGE_TOOLCHAIN_SCRIPT)
 	@set -euo pipefail; \
 	sysroot="$(ORLIXOS_MLIBC_SYSROOT)"; \
 	headers="$(ORLIXOS_MLIBC_HEADERS)"; \
@@ -116,35 +116,40 @@ $(ORLIXOS_GAWK_BINARY): $(ORLIXOS_GAWK_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	[ -s "$$rtlib" ] || { echo "missing Orlix compiler runtime archive: $$rtlib" >&2; exit 1; }; \
 	command -v "$(ORLIXOS_CC)" >/dev/null 2>&1 || { echo "clang is required to build gawk; set ORLIXOS_CC=/path/to/clang" >&2; exit 1; }; \
 	command -v "$(ORLIXOS_AR)" >/dev/null 2>&1 || { echo "llvm-ar is required to build gawk; set ORLIXOS_AR=/path/to/llvm-ar" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_LD)" >/dev/null 2>&1 || { echo "ld.lld is required to build gawk; set ORLIXOS_LD=/path/to/ld.lld" >&2; exit 1; }; \
 	command -v "$(ORLIXOS_RANLIB)" >/dev/null 2>&1 || { echo "llvm-ranlib is required to build gawk; set ORLIXOS_RANLIB=/path/to/llvm-ranlib" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_NM)" >/dev/null 2>&1 || { echo "llvm-nm is required to build gawk; set ORLIXOS_NM=/path/to/llvm-nm" >&2; exit 1; }; \
 	command -v "$(ORLIXOS_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package gawk; set ORLIXOS_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_OBJDUMP)" >/dev/null 2>&1 || { echo "llvm-objdump is required to build gawk; set ORLIXOS_OBJDUMP=/path/to/llvm-objdump" >&2; exit 1; }; \
+	command -v "$(ORLIXOS_READELF)" >/dev/null 2>&1 || { echo "llvm-readelf is required to build gawk; set ORLIXOS_READELF=/path/to/llvm-readelf" >&2; exit 1; }; \
 	rm -rf "$(ORLIXOS_GAWK_BUILD_DIR)" "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)" "$(ORLIXOS_GAWK_BINARY)"; \
 	mkdir -p "$(ORLIXOS_GAWK_BUILD_DIR)" "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)" "$(dir $(ORLIXOS_GAWK_BINARY))"; \
-	{ \
-		printf '%s\n' '#!/bin/bash'; \
-		printf '%s\n' 'set -euo pipefail'; \
-		printf '%s\n' 'cc="$(ORLIXOS_CC)"'; \
-		printf '%s\n' 'sysroot="$(ORLIXOS_MLIBC_SYSROOT)"'; \
-		printf '%s\n' 'headers="$(ORLIXOS_MLIBC_HEADERS)"'; \
-		printf '%s\n' 'rtlib="$(ORLIXOS_MLIBC_RTLIB)"'; \
-		printf '%s\n' 'link=1'; \
-		printf '%s\n' 'for arg in "$$@"; do'; \
-		printf '%s\n' '  case "$$arg" in -c|-E|-S) link=0 ;; esac'; \
-		printf '%s\n' 'done'; \
-		printf '%s\n' 'common=(--target=aarch64-linux-gnu "--sysroot=$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie)'; \
-		printf '%s\n' 'if [ "$$link" -eq 1 ]; then'; \
-		printf '%s\n' '  exec "$$cc" "$${common[@]}" "$$@" -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o"'; \
-		printf '%s\n' 'fi'; \
-		printf '%s\n' 'exec "$$cc" "$${common[@]}" "$$@"'; \
-	} > "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-gcc"; \
-	chmod +x "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-gcc"; \
+	export ORLIXOS_CC="$(ORLIXOS_CC)"; \
+	export ORLIXOS_LD="$(ORLIXOS_LD)"; \
+	export ORLIXOS_AR="$(ORLIXOS_AR)"; \
+	export ORLIXOS_RANLIB="$(ORLIXOS_RANLIB)"; \
+	export ORLIXOS_NM="$(ORLIXOS_NM)"; \
+	export ORLIXOS_STRIP="$(ORLIXOS_STRIP)"; \
+	export ORLIXOS_OBJDUMP="$(ORLIXOS_OBJDUMP)"; \
+	export ORLIXOS_READELF="$(ORLIXOS_READELF)"; \
+	export ORLIXOS_MLIBC_SYSROOT="$$sysroot"; \
+	export ORLIXOS_MLIBC_HEADERS="$$headers"; \
+	export ORLIXOS_MLIBC_RTLIB="$$rtlib"; \
+	export ORLIXOS_HOSTED_USER_BASE_ADDRESS="$(ORLIXOS_HOSTED_USER_BASE_ADDRESS)"; \
+	export ORLIXOS_PACKAGE_TOOLCHAIN_DIR="$(ORLIXOS_GAWK_TOOLCHAIN_DIR)"; \
+	export ORLIXOS_PACKAGE_CODE_MODEL_FLAG="-fno-pie"; \
+	"$(ORLIXOS_PACKAGE_TOOLCHAIN_SCRIPT)" "$(ORLIXOS_GAWK_TOOLCHAIN_DIR)"; \
 	cd "$(ORLIXOS_GAWK_BUILD_DIR)"; \
+	export PATH="$(ORLIXOS_GAWK_TOOLCHAIN_DIR):$$PATH"; \
 	export CC="$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-gcc"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS) -D__KLIBC__"; \
 	export LDFLAGS=""; \
 	export LIBS=""; \
-	export AR="$(ORLIXOS_AR)"; \
-	export RANLIB="$(ORLIXOS_RANLIB)"; \
+	export AR="$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-ar"; \
+	export RANLIB="$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-ranlib"; \
+	export NM="$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-nm"; \
+	export STRIP="$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-strip"; \
+	export OBJDUMP="$(ORLIXOS_GAWK_TOOLCHAIN_DIR)/aarch64-linux-gnu-objdump"; \
 	"$(ORLIXOS_GAWK_SRC_DIR)/configure" --host=aarch64-linux-gnu --build=aarch64-apple-darwin --prefix=/usr --disable-nls --disable-mpfr --without-readline; \
 	$(MAKE) -j1 all; \
 	cp "$(ORLIXOS_GAWK_BUILD_DIR)/gawk" "$(ORLIXOS_GAWK_BINARY)"; \
