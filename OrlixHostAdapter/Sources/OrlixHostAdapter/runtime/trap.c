@@ -79,6 +79,23 @@ static bool OrlixHostUserTrapInSyscallGate(unsigned long pc)
            pc < OrlixHostUserTrap.syscall_gate_limit;
 }
 
+static unsigned long OrlixHostUserTrapTlsResumeTrampoline(void)
+{
+    unsigned long gate_size;
+    unsigned long trampoline_size = sizeof(uint32_t) * 3UL;
+
+    if (OrlixHostUserTrap.syscall_gate >= OrlixHostUserTrap.syscall_gate_limit) {
+        return 0;
+    }
+
+    gate_size = OrlixHostUserTrap.syscall_gate_limit - OrlixHostUserTrap.syscall_gate;
+    if (gate_size < ORLIX_HOST_USER_TRAP_TLS_RESUME_OFFSET + trampoline_size) {
+        return 0;
+    }
+
+    return OrlixHostUserTrap.syscall_gate + ORLIX_HOST_USER_TRAP_TLS_RESUME_OFFSET;
+}
+
 static unsigned long OrlixHostUserTrapActiveTls(void)
 {
     unsigned long tls;
@@ -358,6 +375,18 @@ static void OrlixHostUserTrapLoadMachFrame(
     state->__pc = (uint64_t)frame->pc;
     state->__cpsr = (uint32_t)frame->pstate;
     state->__pad = 0;
+
+    if ((frame->frame_flags & ORLIX_HOST_USER_FRAME_SYSCALL_RETURN) &&
+        (frame->frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS) &&
+        OrlixHostUserTrapValidUserTls(frame->user_tls)) {
+        unsigned long trampoline = OrlixHostUserTrapTlsResumeTrampoline();
+
+        if (trampoline) {
+            state->__x[16] = (uint64_t)frame->user_tls;
+            state->__x[17] = (uint64_t)frame->pc;
+            state->__pc = (uint64_t)trampoline;
+        }
+    }
 }
 
 static void OrlixHostUserTrapSaveFrame(mcontext_t machine_context)

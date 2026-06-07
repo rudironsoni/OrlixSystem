@@ -110,6 +110,18 @@ static bool orlix_hosted_valid_user_tls(unsigned long user_tls)
 		!(user_tls & (sizeof(unsigned long) - 1));
 }
 
+static void orlix_hosted_preserve_captured_user_tls(unsigned long user_tls)
+{
+	if (!current->mm)
+		return;
+
+	if (!orlix_hosted_valid_user_tls(user_tls))
+		return;
+
+	current->thread.user_tls = user_tls;
+	WRITE_ONCE(orlix_hosted_active_user_tls, user_tls);
+}
+
 static void orlix_hosted_apply_frame_user_state(
 	const struct orlix_host_user_trap_frame *frame)
 {
@@ -134,11 +146,7 @@ void orlix_hosted_preserve_user_tls(void)
 		return;
 
 	asm volatile("mrs %0, tpidr_el0" : "=r"(user_tls));
-	if (!orlix_hosted_valid_user_tls(user_tls))
-		return;
-
-	current->thread.user_tls = user_tls;
-	WRITE_ONCE(orlix_hosted_active_user_tls, user_tls);
+	orlix_hosted_preserve_captured_user_tls(user_tls);
 }
 
 void orlix_hosted_switch_user_tls(struct task_struct *next)
@@ -164,7 +172,8 @@ static void orlix_hosted_restore_trap_frame(
 
 static void orlix_hosted_save_trap_frame(
 	struct orlix_host_user_trap_frame *frame,
-	const struct pt_regs *regs)
+	const struct pt_regs *regs,
+	unsigned long frame_flags)
 {
 	unsigned int i;
 
@@ -176,7 +185,7 @@ static void orlix_hosted_save_trap_frame(
 	frame->fault_address = 0;
 	frame->fault_flags = 0;
 	frame->user_tls = current->thread.user_tls;
-	frame->frame_flags = ORLIX_HOST_USER_FRAME_HAS_TLS;
+	frame->frame_flags = ORLIX_HOST_USER_FRAME_HAS_TLS | frame_flags;
 
 	if (current->thread.user_simd_valid) {
 		memcpy(frame->simd, current->thread.user_simd,
@@ -218,7 +227,8 @@ static void orlix_hosted_handle_invalid_resume_pc(struct pt_regs *regs)
 }
 
 static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
-							bool full_stack_window)
+							bool full_stack_window,
+							unsigned long frame_flags)
 {
 	struct orlix_host_user_trap_frame resume_frame;
 
@@ -231,7 +241,7 @@ static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
 	else
 		orlix_sync_current_user_minimal_mappings(regs);
 	orlix_hosted_save_current_kernel_stack();
-	orlix_hosted_save_trap_frame(&resume_frame, regs);
+	orlix_hosted_save_trap_frame(&resume_frame, regs, frame_flags);
 	WRITE_ONCE(orlix_hosted_active_user_tls, resume_frame.user_tls);
 	orlix_hosted_start_user_timer_once();
 	orlix_host_user_trap_resume(&resume_frame);
@@ -239,7 +249,7 @@ static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
 
 void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 {
-	orlix_hosted_resume_current_user(regs, true);
+	orlix_hosted_resume_current_user(regs, true, 0);
 }
 
 static void __noreturn orlix_hosted_user_trap_entry(
@@ -264,14 +274,15 @@ static void __noreturn orlix_hosted_user_trap_entry(
 		orlix_hosted_resume_current_user(resume_regs,
 						 resume_regs != regs ||
 						 resume_regs->pc != old_pc ||
-						 resume_regs->sp != old_sp);
+						 resume_regs->sp != old_sp,
+						 0);
 	}
 
 	if (orlix_hosted_user_trap_is_memory_fault(signal_number) &&
 	    !orlix_handle_host_user_fault(regs, frame->fault_address,
 					  frame->fault_flags)) {
 		orlix_exit_to_user_mode_work(regs);
-		orlix_hosted_resume_current_user(task_pt_regs(current), false);
+		orlix_hosted_resume_current_user(task_pt_regs(current), false, 0);
 	}
 
 	if (!exit_code)
@@ -331,8 +342,11 @@ asm(
 "	stp	q26, q27, [sp, #432]\n"
 "	stp	q28, q29, [sp, #464]\n"
 "	stp	q30, q31, [sp, #496]\n"
+"	sub	sp, sp, #16\n"
+"	str	x12, [sp]\n"
 "	mov	x7, x9\n"
 "	bl	_orlix_hosted_syscall_dispatch\n"
+"	add	sp, sp, #16\n"
 "	ldp	x10, x11, [sp]\n"
 "	msr	fpcr, x10\n"
 "	msr	fpsr, x11\n"
@@ -419,6 +433,12 @@ static void orlix_hosted_prepare_syscall_gate(void)
 	insn[0] = 0x58000050; /* ldr x16, .+8 */
 	insn[1] = 0xd61f0200; /* br x16 */
 	*literal = (u64)(unsigned long)orlix_hosted_syscall_gate;
+	insn[ORLIX_HOST_USER_TRAP_TLS_RESUME_OFFSET / sizeof(*insn)] =
+		0xd51bd050; /* msr tpidr_el0, x16 */
+	insn[ORLIX_HOST_USER_TRAP_TLS_RESUME_OFFSET / sizeof(*insn) + 1] =
+		0xd5033fdf; /* isb */
+	insn[ORLIX_HOST_USER_TRAP_TLS_RESUME_OFFSET / sizeof(*insn) + 2] =
+		0xd61f0220; /* br x17 */
 	orlix_hosted_syscall_gate_ready = true;
 }
 
@@ -433,13 +453,14 @@ int orlix_hosted_sync_syscall_gate(void)
 long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 				   unsigned long arg1, unsigned long arg2,
 				   unsigned long arg3, unsigned long arg4,
-				   unsigned long arg5, unsigned long user_sp)
+				   unsigned long arg5, unsigned long user_sp,
+				   unsigned long user_tls)
 {
 	struct pt_regs *regs = task_pt_regs(current);
 	unsigned long entry_pc;
 	long ret;
 
-	orlix_hosted_preserve_user_tls();
+	orlix_hosted_preserve_captured_user_tls(user_tls);
 	orlix_hosted_start_user_timer_once();
 	orlix_hosted_save_callee_registers(regs);
 	entry_pc = READ_ONCE(orlix_hosted_entry_user_pc);
@@ -470,6 +491,7 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 
 void __noreturn orlix_hosted_syscall_enter_user(void)
 {
-	orlix_hosted_enter_user(task_pt_regs(current));
+	orlix_hosted_resume_current_user(
+		task_pt_regs(current), true, ORLIX_HOST_USER_FRAME_SYSCALL_RETURN);
 }
 #endif

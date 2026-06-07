@@ -26,7 +26,8 @@ int orlix_handle_host_user_fault(struct pt_regs *regs, unsigned long address,
 long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 				   unsigned long arg1, unsigned long arg2,
 				   unsigned long arg3, unsigned long arg4,
-				   unsigned long arg5, unsigned long user_sp);
+				   unsigned long arg5, unsigned long user_sp,
+				   unsigned long user_tls);
 void __noreturn orlix_hosted_syscall_enter_user(void);
 #endif
 

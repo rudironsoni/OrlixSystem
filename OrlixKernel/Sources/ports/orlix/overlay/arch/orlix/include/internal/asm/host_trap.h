@@ -9,6 +9,9 @@
 #define ORLIX_HOST_USER_FAULT_BUS	(1UL << 2)
 #define ORLIX_HOST_USER_FRAME_HAS_TLS	(1UL << 0)
 #define ORLIX_HOST_USER_FRAME_HAS_SIMD	(1UL << 1)
+#define ORLIX_HOST_USER_FRAME_SYSCALL_RETURN	(1UL << 2)
+
+#define ORLIX_HOST_USER_TRAP_TLS_RESUME_OFFSET	16UL
 
 struct orlix_host_user_trap_frame {
 	unsigned long regs[31];
