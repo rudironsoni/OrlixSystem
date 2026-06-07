@@ -21,6 +21,8 @@ Use this skill before changing code for non-trivial Orlix behavior, especially k
 Do not:
 
 - edit generated upstream trees or disposable build output; reading generated trees for diagnosis is allowed;
+- add or change durable upstream patches before proving the lower owning layer is compliant and the patch is not hiding an OrlixKernel, OrlixOS, or toolchain mismatch;
+- modify upstream tests through durable patch stacks used by conformance schemes; move extra regressions to Orlix-owned tests;
 - move Linux policy into `OrlixHostAdapter`;
 - move libc behavior into `OrlixKernel`;
 - move syscall semantics into `OrlixOS`;

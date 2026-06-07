@@ -27,3 +27,9 @@ Use the planner/implementer/reviewer split for long-horizon or high-risk work:
 - Reviewer challenges assumptions, checks Orlix directives, verifies upstream conformance, and audits evidence before claims.
 
 Do not create extra reviewer personas unless a task genuinely needs parallel independent investigation.
+
+## Patch Burden
+
+Durable patches to upstream Linux, mlibc, packages, generated build inputs, or package feature/configure behavior require root-cause proof before implementation. The implementation log must show that the lower owning layers were checked first, including Linux/kernel syscall behavior, OrlixOS rootfs/package inputs, and package toolchain configuration. A patch is only acceptable when the evidence shows an upstream/target integration or libc/package semantic issue owned by that layer, not a hidden workaround for a lower-layer mismatch.
+
+Durable patch stacks used by upstream conformance schemes must not modify upstream tests. If Orlix needs an extra regression, put it in an Orlix-owned test path and keep the upstream suite pristine so failure, skip, and total counts remain meaningful.
