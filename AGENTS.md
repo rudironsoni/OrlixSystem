@@ -40,10 +40,11 @@ Durable Orlix Linux port inputs live under:
 
 Generated upstream and disposable build trees are read-only inputs for agents:
 
-- `OrlixKernel/Sources/upstream/linux-6.12`
-- `Build/OrlixKernel/linux-*-port`
+- `Build/OrlixKernel/upstream/linux-*.git`
+- `Build/OrlixKernel/src/linux-*-port`
 - `Build/OrlixMLibC`
-- `Build/OrlixMLibC/upstream/mlibc`
+- `Build/OrlixMLibC/upstream/mlibc-*.git`
+- `Build/OrlixMLibC/src/mlibc-*`
 - `Build/OrlixOS`
 
 Do not edit generated upstream trees, adapted upstream tests, generated package sources, or disposable build output to make tests pass.

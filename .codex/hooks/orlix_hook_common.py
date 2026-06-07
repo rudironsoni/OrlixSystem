@@ -7,9 +7,11 @@ import sys
 from pathlib import Path
 
 GENERATED_PATTERNS = (
-    "OrlixKernel/Sources/upstream/linux-6.12",
-    "Build/OrlixKernel/linux-",
-    "Build/OrlixMLibC/upstream/mlibc",
+    "Build/OrlixKernel/upstream/linux-",
+    "Build/OrlixKernel/src/linux-",
+    "Build/OrlixMLibC/upstream/mlibc-",
+    "Build/OrlixMLibC/src/mlibc-",
+    "Build/OrlixOS/upstream/coreutils-",
     "Build/OrlixOS/src/",
 )
 
@@ -56,6 +58,14 @@ def repo_root():
 
 
 def mentions_generated_tree(text):
+    if "*** Begin Patch" in text:
+        for line in text.splitlines():
+            for marker in ("*** Add File: ", "*** Update File: ", "*** Delete File: "):
+                if line.startswith(marker):
+                    target = line[len(marker):]
+                    if any(pattern in target for pattern in GENERATED_PATTERNS):
+                        return True
+        return False
     return any(pattern in text for pattern in GENERATED_PATTERNS)
 
 

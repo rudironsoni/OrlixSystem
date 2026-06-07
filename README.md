@@ -10,9 +10,9 @@ OrlixKernel is Linux. It does not provide a shell, libc, package manager, public
 
 Orlix has five important source areas:
 
-- `OrlixKernel/Sources/upstream/linux-6.12` is generated upstream Linux source. Treat it as read-only input.
+- `Build/OrlixKernel/upstream/linux-6.12.git` is the generated bare upstream Linux clone. Treat it as read-only input.
 - `OrlixKernel/Sources/ports/orlix` is where durable Orlix Linux port inputs live.
-- `OrlixMLibC/Sources` is the durable component area for OrlixMLibC sysdeps, configs, and patches. The upstream mlibc checkout is generated under `Build/OrlixMLibC/upstream/mlibc`.
+- `OrlixMLibC/Sources` is the durable component area for OrlixMLibC sysdeps, configs, and patches. The upstream mlibc bare clone is generated under `Build/OrlixMLibC/upstream/mlibc-<version>.git`, and the patched working source is generated under `Build/OrlixMLibC/src/mlibc-<version>`.
 - `OrlixOS` is the package and rootfs assembly lane for Orlix Linux userspace inputs. It builds package artifacts against OrlixMLibC and stages generated rootfs content under `Build/OrlixOS`.
 - `OrlixHostAdapter/Sources` is where private iOS and Darwin mechanics live.
 
@@ -64,7 +64,7 @@ make test type=kunit,kselftest
 make clean
 ```
 
-`make setup-env` fetches upstream Linux and generates the disposable Xcode project from `project.yml`. `make build` first runs `make clean`, which removes generated outputs including `OrlixKernel/Sources/upstream/linux-6.12`; the kernel build then reclones upstream Linux through the normal bootstrap path. The same build flow materializes upstream mlibc under `Build/OrlixMLibC/upstream/mlibc`, builds the OrlixMLibC sysroot from upstream mlibc plus durable OrlixMLibC inputs, and stages OrlixOS package/rootfs inputs under `Build/OrlixOS`. It does not prove terminal runtime behavior or build or require `vmlinux` as a normal artifact.
+`make setup-env` fetches upstream Linux as a bare clone and generates the disposable Xcode project from `project.yml`. `make build` first runs `make clean`, which removes `Build/`; the kernel build then reclones upstream Linux through the normal bootstrap path. The same build flow materializes upstream mlibc as a bare clone plus patched working source under `Build/OrlixMLibC`, builds the OrlixMLibC sysroot from upstream mlibc plus durable OrlixMLibC inputs, and stages OrlixOS package/rootfs inputs under `Build/OrlixOS`. It does not prove terminal runtime behavior or build or require `vmlinux` as a normal artifact.
 
 The Linux compile lane emits per-profile, per-platform OrlixKernel static archives under `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`. Xcode links the matching archive into `OrlixKernel.framework`, and framework slices are packaged into `OrlixKernel.xcframework`.
 
@@ -100,25 +100,26 @@ Milestone 5 does not prove `/dev/vda`, `/dev/vdb`, virtio-block request I/O, hos
 
 ## Generated Trees
 
-The pristine upstream source is generated at:
+The pristine upstream Linux bare clone is generated at:
 
 ```text
-OrlixKernel/Sources/upstream/linux-6.12
+Build/OrlixKernel/upstream/linux-6.12.git
 ```
 
 The disposable upstream-plus-Orlix port tree is generated at:
 
 ```text
-Build/OrlixKernel/linux-6.12-port
+Build/OrlixKernel/src/linux-6.12-port
 ```
 
-The upstream mlibc checkout used by OrlixMLibC builds is generated at:
+The upstream mlibc bare clone and patched source tree used by OrlixMLibC builds are generated at:
 
 ```text
-Build/OrlixMLibC/upstream/mlibc
+Build/OrlixMLibC/upstream/mlibc-<version>.git
+Build/OrlixMLibC/src/mlibc-<version>
 ```
 
-If a kernel change should survive regeneration, put it in `OrlixKernel/Sources/ports/orlix`, not in a generated tree. If an mlibc change should survive regeneration, put it in durable OrlixMLibC inputs such as `OrlixMLibC/Sources/patches`, not in the generated upstream mlibc checkout.
+If a kernel change should survive regeneration, put it in `OrlixKernel/Sources/ports/orlix`, not in a generated tree. If an mlibc change should survive regeneration, put it in durable OrlixMLibC inputs such as `OrlixMLibC/Sources/patches`, not in the generated upstream mlibc source tree.
 
 ## Port Inputs
 

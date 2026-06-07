@@ -170,7 +170,7 @@ A durable top-level OrlixSystem component, separate from the Linux kernel port, 
 
 ## OrlixMLibC Upstream Model
 
-The libc source model where upstream mlibc is generated read-only input under `Build/OrlixMLibC/upstream/mlibc` and durable Orlix sysdeps, configs, and patches live under the OrlixMLibC component.
+The libc source model where upstream mlibc is generated read-only input as a bare clone under `Build/OrlixMLibC/upstream/mlibc-<version>.git`, patched working source is generated under `Build/OrlixMLibC/src/mlibc-<version>`, and durable Orlix sysdeps, configs, and patches live under the OrlixMLibC component.
 
 ## OrlixMLibC Sysdeps Rule
 
@@ -294,7 +294,7 @@ When upstream Linux has a user-visible surface, implementation convention, build
 
 ## Orlix Kernel Port Tree
 
-The disposable upstream-Linux source tree after applying the Orlix port overlay and patch set. Its path is `Build/OrlixKernel/linux-<version>-port`. Durable changes must move back to the committed port overlay, patch set, configs, or bootloader-facing product surface.
+The disposable upstream-Linux source tree after applying the Orlix port overlay and patch set. Its path is `Build/OrlixKernel/src/linux-<version>-port`. Durable changes must move back to the committed port overlay, patch set, configs, or bootloader-facing product surface.
 
 ## Real Linux Build Proof
 

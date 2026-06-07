@@ -44,10 +44,10 @@ run:
 	@$(TERMINAL_MAKE) run PROFILE="$(PROFILE)" ORLIX_KERNEL_BASE_ROOT_TREE_INPUT="$(ORLIXOS_BASE_ROOT_TREE)"
 
 clean:
-	@$(KERNEL_MAKE) clean
+	@set -euo pipefail; \
+	if [ -L Build ]; then echo "refusing to clean symlinked Build directory" >&2; exit 1; fi; \
+	rm -rf Build
 	@$(HOSTADAPTER_MAKE) clean
-	@$(MLIBC_MAKE) clean
-	@$(ORLIXOS_MAKE) clean
 	@$(TERMINAL_MAKE) clean
 
 mrproper:

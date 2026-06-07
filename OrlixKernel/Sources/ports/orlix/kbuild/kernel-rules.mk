@@ -19,15 +19,13 @@ ORLIX_PROFILES := release development
 type ?= kunit
 libc ?= orlixmlibc
 
-LINUX_UPSTREAM_DIR ?= OrlixKernel/Sources/upstream/linux-$(LINUX_VERSION)
-LINUX_CLONE_CACHE_DIR ?= .cache/linux-clone
-LINUX_CLONE_CACHE_REPO := $(CURDIR)/$(LINUX_CLONE_CACHE_DIR)/linux-$(LINUX_VERSION).git
+LINUX_UPSTREAM_DIR ?= Build/OrlixKernel/upstream/linux-$(LINUX_VERSION).git
 
 ORLIX_LINUX_OVERLAY ?= OrlixKernel/Sources/ports/orlix/overlay
 ORLIX_LINUX_PATCH_DIR ?= OrlixKernel/Sources/ports/orlix/patches
 override ORLIX_PROFILE_CONFIG := OrlixKernel/Sources/ports/orlix/configs/$(PROFILE)_defconfig
 
-ORLIX_KERNEL_PORT_DIR ?= Build/OrlixKernel/linux-$(LINUX_VERSION)-port
+ORLIX_KERNEL_PORT_DIR ?= Build/OrlixKernel/src/linux-$(LINUX_VERSION)-port
 ORLIX_KERNEL_PORT_ARCHIVE_PATHS := \
 	.clang-format \
 	.cocciconfig \
@@ -1180,49 +1178,16 @@ run: __ios-simulator-framework xcodeproj
 
 clean:
 	@set -euo pipefail; \
-	upstream_dir="$(LINUX_UPSTREAM_DIR)"; \
-	expected_upstream_dir="OrlixKernel/Sources/upstream/linux-$(LINUX_VERSION)"; \
-	port_dir="$(ORLIX_KERNEL_PORT_DIR)"; \
-	expected_port_dir="Build/OrlixKernel/linux-$(LINUX_VERSION)-port"; \
-	if [ "$$upstream_dir" != "$$expected_upstream_dir" ]; then \
-		echo "Linux upstream directory must be $$expected_upstream_dir: $$upstream_dir" >&2; \
-		exit 1; \
-	fi; \
-	if [ "$$port_dir" != "$$expected_port_dir" ]; then \
-		echo "Orlix kernel port tree must be $$expected_port_dir: $$port_dir" >&2; \
-		exit 1; \
-	fi; \
 	$(call orlix_kernel_acquire_profile_lock); \
-	for path in \
-			OrlixKernel/Sources/upstream \
-			"$$port_dir" \
-			"$$port_dir".tmp.* \
-			"$$upstream_dir" \
-			Build/OrlixKernel/build \
-		Build/OrlixKernel/kunit \
-		Build/OrlixKernel/kselftest \
-		Build/OrlixKernel/release \
-		Build/OrlixKernel/development \
-		Build/OrlixKernel/payload \
-		Build/OrlixKernel/test-initramfs \
-		Build/OrlixKernel/tool-shims \
-		Build/OrlixKernel/xcframework \
-		Build/OrlixMLibC/kernel-headers \
-		Build/OrlixMLibC/build \
-		Build/OrlixMLibC/kselftest \
-		Build/OrlixMLibC/sysroot \
-		Build/OrlixMLibC/test-initramfs \
-		Build/OrlixMLibC/upstream \
-		.deriveddata/OrlixSystem-sim; do \
+	for path in Build/OrlixKernel .deriveddata/OrlixSystem-sim; do \
 		if [ -L "$$path" ]; then echo "refusing to clean symlinked path: $$path" >&2; exit 1; fi; \
-		if [ "$$path" != OrlixKernel/Sources/upstream ]; then rm -rf "$$path"; fi; \
+		rm -rf "$$path"; \
 	done; \
-	echo "cleaned generated build outputs"
+	echo "cleaned generated OrlixKernel outputs"
 
 mrproper: clean
 	@set -euo pipefail; \
-	if [ -L .cache ]; then echo "refusing to remove Linux clone cache through symlinked parent: .cache" >&2; exit 1; fi; \
-	for path in Build .deriveddata OrlixSystem.xcodeproj OrlixKernel/Sources/upstream .cache/linux-clone; do \
+	for path in .deriveddata OrlixSystem.xcodeproj; do \
 		if [ -L "$$path" ]; then echo "refusing to remove symlinked path: $$path" >&2; exit 1; fi; \
 		rm -rf "$$path"; \
 	done; \
@@ -1233,62 +1198,45 @@ __bootstrap-linux-upstream:
 	linux_remote="$(LINUX_REMOTE)"; \
 	linux_tag="$(LINUX_TAG)"; \
 	upstream_dir="$(LINUX_UPSTREAM_DIR)"; \
-	clone_cache="$(LINUX_CLONE_CACHE_REPO)"; \
-	expected_upstream_dir="OrlixKernel/Sources/upstream/linux-$(LINUX_VERSION)"; \
-	expected_clone_cache="$(CURDIR)/.cache/linux-clone/linux-$(LINUX_VERSION).git"; \
+	expected_upstream_dir="Build/OrlixKernel/upstream/linux-$(LINUX_VERSION).git"; \
 	if [ "$$upstream_dir" != "$$expected_upstream_dir" ]; then \
 		echo "Linux upstream directory must be $$expected_upstream_dir: $$upstream_dir" >&2; \
 		exit 1; \
 	fi; \
-	if [ "$$clone_cache" != "$$expected_clone_cache" ]; then \
-		echo "Linux clone cache repo must be $$expected_clone_cache: $$clone_cache" >&2; \
-		exit 1; \
-	fi; \
-	for path in Build OrlixKernel/Sources OrlixKernel/Sources/upstream .cache .cache/linux-clone "$$upstream_dir" "$$clone_cache"; do \
+	for path in Build Build/OrlixKernel Build/OrlixKernel/upstream "$$upstream_dir"; do \
 		if [ -L "$$path" ]; then echo "refusing to use symlinked path: $$path" >&2; exit 1; fi; \
 	done; \
-	if [ -d "$$upstream_dir/.git" ]; then \
-		checked_tag="$$(git -C "$$upstream_dir" describe --tags --exact-match HEAD 2>/dev/null || true)"; \
-		missing_files="$$(git -C "$$upstream_dir" ls-files -d)"; \
-		if [ "$$checked_tag" = "$$linux_tag" ] && [ -z "$$missing_files" ]; then \
-			echo "upstream Linux ready: $$upstream_dir ($$checked_tag)"; \
-			exit 0; \
-		fi; \
-		if [ "$$checked_tag" = "$$linux_tag" ]; then \
-			git -C "$$upstream_dir" reset --hard "$$linux_tag" >/dev/null; \
-			git -C "$$upstream_dir" clean -fdx >/dev/null; \
-			missing_files="$$(git -C "$$upstream_dir" ls-files -d)"; \
-			[ -z "$$missing_files" ] || { echo "failed to restore upstream Linux checkout: $$upstream_dir" >&2; exit 1; }; \
-			echo "upstream Linux restored: $$upstream_dir ($$checked_tag)"; \
-			exit 0; \
-		fi; \
-	fi; \
-	mkdir -p "$$(dirname "$$upstream_dir")" "$$(dirname "$$clone_cache")"; \
-	if [ ! -d "$$clone_cache/objects" ]; then \
-		rm -rf "$$clone_cache"; \
-		git init --bare "$$clone_cache" >/dev/null; \
-		git -C "$$clone_cache" remote add origin "$$linux_remote"; \
+	mkdir -p "$$(dirname "$$upstream_dir")"; \
+	if [ ! -d "$$upstream_dir/objects" ]; then \
+		rm -rf "$$upstream_dir"; \
+		git init --bare "$$upstream_dir" >/dev/null; \
+		git -C "$$upstream_dir" remote add origin "$$linux_remote"; \
 	else \
-		git -C "$$clone_cache" remote set-url origin "$$linux_remote"; \
+		git -C "$$upstream_dir" remote set-url origin "$$linux_remote"; \
 	fi; \
-	git -C "$$clone_cache" fetch --force --depth 1 origin "refs/tags/$$linux_tag:refs/tags/$$linux_tag"; \
-	rm -rf "$$upstream_dir"; \
-	git clone --shared --no-checkout --origin origin "$$clone_cache" "$$upstream_dir"; \
-	git -C "$$upstream_dir" -c advice.detachedHead=false checkout --quiet --force --detach "$$linux_tag"; \
-	checked_tag="$$(git -C "$$upstream_dir" describe --tags --exact-match HEAD)"; \
-	checked_commit="$$(git -C "$$upstream_dir" rev-parse HEAD)"; \
-	tag_commit="$$(git -C "$$clone_cache" rev-list -n1 "$$linux_tag")"; \
+	git -C "$$upstream_dir" fetch --force --depth 1 origin "refs/tags/$$linux_tag:refs/tags/$$linux_tag"; \
+	tag_commit="$$(git -C "$$upstream_dir" rev-list -n1 "$$linux_tag")"; \
+	git -C "$$upstream_dir" update-ref "refs/orlix/linux-$(LINUX_VERSION)" "$$tag_commit"; \
+	git -C "$$upstream_dir" symbolic-ref HEAD "refs/orlix/linux-$(LINUX_VERSION)"; \
+	checked_commit="$$(git -C "$$upstream_dir" rev-list -n1 "refs/orlix/linux-$(LINUX_VERSION)")"; \
+	checked_tag="$$linux_tag"; \
 	if [ "$$checked_tag" != "$$linux_tag" ] || [ "$$checked_commit" != "$$tag_commit" ]; then \
 		echo "expected $$linux_tag at $$tag_commit but checked out $$checked_tag at $$checked_commit" >&2; \
 		exit 1; \
 	fi; \
-	echo "upstream Linux ready: $$upstream_dir ($$checked_tag, clone cache $$clone_cache)"
+	echo "upstream Linux bare clone ready: $$upstream_dir ($$checked_tag)"
 
 __validate-linux-abi:
 	@set -euo pipefail; \
 	[ "$(LINUX_UAPI_ARCH)" = arm64 ] || { echo "LINUX_UAPI_ARCH must remain upstream Linux arm64, got: $(LINUX_UAPI_ARCH)" >&2; exit 1; }; \
 	pattern='ARCH[[:space:]]*=[[:space:]]*"?or''lix'; \
-	if rg -n "$$pattern" AGENTS.md docs OrlixMLibC OrlixOS OrlixKernel/Sources/ports/orlix --glob '!kbuild/kernel-rules.mk'; then \
+	if rg -n "$$pattern" OrlixMLibC OrlixOS OrlixKernel/Sources/ports/orlix \
+		--glob '!kbuild/kernel-rules.mk' \
+		--glob 'Makefile' \
+		--glob '*.mk' \
+		--glob '*.sh' \
+		--glob '*.cross' \
+		--glob '*.pc'; then \
 		echo "do not use an Orlix-specific Kbuild architecture as the Linux ABI; Orlix uses upstream Linux arm64 UAPI and aarch64-linux-gnu userspace" >&2; \
 		exit 1; \
 	fi
@@ -1308,7 +1256,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 	$(call orlix_kernel_acquire_profile_lock); \
 	upstream_dir="$(LINUX_UPSTREAM_DIR)"; \
 	port_dir="$(ORLIX_KERNEL_PORT_DIR)"; \
-	expected_port_dir="Build/OrlixKernel/linux-$(LINUX_VERSION)-port"; \
+	expected_port_dir="Build/OrlixKernel/src/linux-$(LINUX_VERSION)-port"; \
 	overlay_dir="$(ORLIX_LINUX_OVERLAY)"; \
 	patch_dir="$(ORLIX_LINUX_PATCH_DIR)"; \
 	profile_config="$(ORLIX_PROFILE_CONFIG)"; \
@@ -1364,19 +1312,19 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 	rm -f "$$port_filelist"; \
 	for archive_path in $(ORLIX_KERNEL_PORT_ARCHIVE_PATHS); do \
 		printf 'checking out Orlix Linux port input: %s\n' "$$archive_path"; \
-		git -C "$$upstream_dir" ls-tree -r --name-only HEAD -- "$$archive_path" > "$$port_filelist"; \
+		git -C "$$upstream_dir" ls-tree -r --name-only "$(LINUX_TAG)" -- "$$archive_path" > "$$port_filelist"; \
 		[ -s "$$port_filelist" ] || { echo "missing Orlix Linux port input: $$archive_path" >&2; exit 1; }; \
-		git -C "$$upstream_dir" checkout-index --force --stdin --prefix="$(CURDIR)/$$port_tmp_dir/" < "$$port_filelist"; \
+		git -C "$$upstream_dir" archive "$(LINUX_TAG)" "$$archive_path" | tar -xf - -C "$$port_tmp_dir"; \
 	done; \
 	cp -R "$$overlay_dir/." "$$port_tmp_dir"; \
 	uapi_arch="$(LINUX_UAPI_ARCH)"; \
-	uapi_source="$$upstream_dir/arch/$$uapi_arch/include/uapi/asm"; \
+	uapi_source="$$port_tmp_dir/arch/$$uapi_arch/include/uapi/asm"; \
 	uapi_target="$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/include/uapi/asm"; \
 	[ -d "$$uapi_source" ] || { echo "missing upstream Linux UAPI source for $$uapi_arch: $$uapi_source" >&2; exit 1; }; \
 	rm -rf "$$uapi_target"; \
 	mkdir -p "$$(dirname "$$uapi_target")"; \
 	cp -R "$$uapi_source" "$$uapi_target"; \
-	if [ ! -s "$$uapi_target/types.h" ]; then cp "$$upstream_dir/include/uapi/asm-generic/types.h" "$$uapi_target/types.h"; fi; \
+	if [ ! -s "$$uapi_target/types.h" ]; then cp "$$port_tmp_dir/include/uapi/asm-generic/types.h" "$$uapi_target/types.h"; fi; \
 	echo "using upstream Linux $$uapi_arch UAPI headers for arch/$(ORLIX_PORT_ARCH)"; \
 	mkdir -p "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs"; \
 	cp "$$profile_config" "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs/defconfig"; \
@@ -1810,11 +1758,11 @@ __verify-xcodegen-boundary:
 	@set -euo pipefail; \
 	project="$(ORLIX_XCODE_PROJECT)"; \
 	[ -d "$$project" ] || { echo "missing generated Xcode project: $$project" >&2; exit 1; }; \
-	if grep -R 'OrlixKernel/Sources/upstream/linux-6.12' "$$project"; then \
+	if grep -R 'Build/OrlixKernel/upstream/linux-6.12.git' "$$project"; then \
 		echo "generated Xcode project references upstream Linux source" >&2; \
 		exit 1; \
 	fi; \
-	if grep -R 'Build/OrlixKernel/linux-6.12-port' "$$project"; then \
+	if grep -R 'Build/OrlixKernel/src/linux-6.12-port' "$$project"; then \
 		echo "generated Xcode project references disposable Linux port source" >&2; \
 		exit 1; \
 	fi; \

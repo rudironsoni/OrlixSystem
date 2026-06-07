@@ -99,10 +99,10 @@ OrlixTerminal/Sources
 OrlixTerminal/Tests
 ```
 
-Upstream Linux source is generated input:
+Upstream Linux is generated input. The pristine upstream repository is a bare clone:
 
 ```text
-OrlixKernel/Sources/upstream/linux-6.12
+Build/OrlixKernel/upstream/linux-6.12.git
 ```
 
 The generated upstream tree is read-only. Durable Orlix changes do not go there.
@@ -116,18 +116,19 @@ OrlixKernel/Sources/ports/orlix/
   configs/
 ```
 
-The disposable upstream-plus-Orlix port tree is:
+The disposable upstream-plus-Orlix port source tree is:
 
 ```text
-Build/OrlixKernel/linux-<version>-port
+Build/OrlixKernel/src/linux-<version>-port
 ```
 
 If a change must survive regeneration, move it back to `OrlixKernel/Sources/ports/orlix`.
 
-`OrlixMLibC` is a top-level component in this repository. It tracks upstream mlibc through generated/read-only upstream input under:
+`OrlixMLibC` is a top-level component in this repository. It tracks upstream mlibc through a generated/read-only bare upstream clone and a generated patched working source tree:
 
 ```text
-Build/OrlixMLibC/upstream/mlibc
+Build/OrlixMLibC/upstream/mlibc-<version>.git
+Build/OrlixMLibC/src/mlibc-<version>
 ```
 
 Durable Orlix sysdeps, configs, and patches live under `OrlixMLibC/Sources/`. Its tests live under `OrlixMLibC/Tests/`.
@@ -156,7 +157,7 @@ Profile defconfigs are durable product-profile configs under `OrlixKernel/Source
 
 The repository Makefile is the command surface for repeatable local orchestration. It delegates to one Makefile per top-level project: `OrlixKernel/Makefile`, `OrlixHostAdapter/Makefile`, `OrlixMLibC/Makefile`, and `OrlixTerminal/Makefile`. The top-level public targets stay small and Linux-shaped: `all`, `build`, `setup-env`, `prepare`, `scripts`, `dtbs`, `headers_install`, `kunit`, `kselftest`, `kselftest-install`, `test`, `clean`, `mrproper`, `xcodeproj`, and `run`.
 
-`make build` means orchestration of the current component build hooks. It first runs `make clean`, removing generated outputs including `OrlixKernel/Sources/upstream/linux-6.12`, then the OrlixKernel build reclones upstream Linux through the bootstrap path. OrlixMLibC builds materialize upstream mlibc under `Build/OrlixMLibC/upstream/mlibc` and apply durable OrlixMLibC inputs from `OrlixMLibC/Sources`. It must not be described as proof that every component is runtime-complete. Until OrlixTerminal is backed by a Linux console path, its build hook may be source-ownership or placeholder checks only.
+`make build` means orchestration of the current component build hooks. It first runs `make clean`, removing `Build/`, then the OrlixKernel build reclones upstream Linux through the bootstrap path. OrlixMLibC builds materialize upstream mlibc as a bare clone plus patched working source under `Build/OrlixMLibC` and apply durable OrlixMLibC inputs from `OrlixMLibC/Sources`. It must not be described as proof that every component is runtime-complete. Until OrlixTerminal is backed by a Linux console path, its build hook may be source-ownership or placeholder checks only.
 
 When Linux has a conventional target name, use that name. Orlix-specific dimensions should be variables such as `PROFILE=release`, `type=kunit,kselftest`, and `libc=orlixmlibc` when the libc lane must be explicit, not new target names. Do not add milestone, proof-lane, or artifact-path names such as `build-temporary-*`, `stage-temporary-*`, `proof-kernel-*`, or `proof-ios-*` as normal user-facing targets.
 

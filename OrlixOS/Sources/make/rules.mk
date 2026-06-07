@@ -8,7 +8,8 @@ include $(PROJECT_DIR)/Sources/make/rootfs.mk
 
 clean:
 	@set -euo pipefail; \
-	rm -rf "$(ORLIXOS_BUILD_ROOT)/build" "$(ORLIXOS_BUILD_ROOT)/packages" "$(ORLIXOS_BUILD_ROOT)/rootfs" "$(ORLIXOS_SRC_DIR)"
+	if [ -L "$(ORLIXOS_BUILD_ROOT)" ]; then echo "refusing to clean symlinked OrlixOS build root: $(ORLIXOS_BUILD_ROOT)" >&2; exit 1; fi; \
+	rm -rf "$(ORLIXOS_BUILD_ROOT)"
 
 mrproper: clean
 	@set -euo pipefail; \

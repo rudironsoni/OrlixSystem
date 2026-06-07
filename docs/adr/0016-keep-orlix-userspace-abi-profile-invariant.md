@@ -10,7 +10,7 @@ Orlix needs an mlibc-based userspace C library while preserving the project inva
 
 ## Decision
 
-Create `OrlixMLibC` as a top-level component with durable sources under `OrlixMLibC/Sources` and tests under `OrlixMLibC/Tests`. It tracks upstream mlibc through generated/read-only upstream input under `Build/OrlixMLibC/upstream/mlibc` plus durable Orlix sysdeps, configs, and patches. OrlixMLibC may have an Orlix sysdeps identity only where mlibc needs an OS-port hook, but it must use Linux-shaped syscalls and expose glibc/musl source-compatible Linux behavior rather than an Orlix-specific application ABI.
+Create `OrlixMLibC` as a top-level component with durable sources under `OrlixMLibC/Sources` and tests under `OrlixMLibC/Tests`. It tracks upstream mlibc through generated/read-only upstream input under `Build/OrlixMLibC/upstream/mlibc-<version>.git`, materialized patched source under `Build/OrlixMLibC/src/mlibc-<version>`, plus durable Orlix sysdeps, configs, and patches. OrlixMLibC may have an Orlix sysdeps identity only where mlibc needs an OS-port hook, but it must use Linux-shaped syscalls and expose glibc/musl source-compatible Linux behavior rather than an Orlix-specific application ABI.
 
 OrlixMLibC consumes kernel UAPI only through the standard Linux `headers_install` output for upstream `ARCH=arm64`, generated under `Build/OrlixMLibC/kernel-headers/<profile>/` and consumed from that artifact's `include/` tree. OrlixMLibC must not commit copied Linux syscall numbers, ioctl payloads, structs, constants, flags, or other Linux-owned UAPI definitions.
 

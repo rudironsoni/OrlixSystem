@@ -11,7 +11,7 @@ Upstream conformance work proves that Orlix matches upstream-owned behavior. The
 
 - Use pristine upstream sources and tests.
 - Do not edit, filter, adapt, or reinterpret upstream tests as success.
-- Do not patch generated upstream trees such as `Build/OrlixMLibC/upstream/mlibc`, `Build/OrlixOS/src/*`, or `Build/OrlixKernel/linux-*-port`.
+- Do not patch generated upstream trees such as `Build/OrlixMLibC/upstream/mlibc-*.git`, `Build/OrlixMLibC/src/mlibc-*`, `Build/OrlixOS/upstream/coreutils-*.git`, `Build/OrlixOS/src/*`, or `Build/OrlixKernel/src/linux-*-port`.
 - Compare failures against upstream Linux, upstream mlibc, or the relevant package behavior before changing Orlix.
 - Route fixes by ownership: kernel semantics to `OrlixKernel`, libc behavior to `OrlixMLibC/Sources`, package assembly to `OrlixOS`, and iOS mechanics to `OrlixHostAdapter`.
 

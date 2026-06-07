@@ -29,7 +29,7 @@ __coreutils-source: $(ORLIXOS_COREUTILS_SOURCE_STAMP)
 
 $(ORLIXOS_COREUTILS_SOURCE_STAMP): FORCE
 	@set -euo pipefail; \
-	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_SRC_DIR)"; do \
+	for path in "$(REPO_ROOT)/Build" "$(ORLIXOS_BUILD_ROOT)" "$(ORLIXOS_UPSTREAM_DIR)" "$(ORLIXOS_SRC_DIR)" "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)" "$(ORLIXOS_COREUTILS_SRC_DIR)"; do \
 		if [ -e "$$path" ] && [ -L "$$path" ]; then echo "refusing to use symlinked OrlixOS package path: $$path" >&2; exit 1; fi; \
 	done; \
 	export PATH="$(ORLIXOS_COREUTILS_BOOTSTRAP_PATH)"; \
@@ -40,12 +40,20 @@ $(ORLIXOS_COREUTILS_SOURCE_STAMP): FORCE
 	command -v bison >/dev/null 2>&1 || { echo "GNU bison is required to bootstrap Coreutils from git" >&2; exit 1; }; \
 	command -v makeinfo >/dev/null 2>&1 || { echo "makeinfo is required to bootstrap Coreutils from git" >&2; exit 1; }; \
 	command -v texi2pdf >/dev/null 2>&1 || { echo "texi2pdf is required to bootstrap Coreutils from git" >&2; exit 1; }; \
+	mkdir -p "$(ORLIXOS_UPSTREAM_DIR)" "$(ORLIXOS_SRC_DIR)"; \
+	if [ ! -d "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)/objects" ]; then \
+		rm -rf "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)"; \
+		git init --bare "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)" >/dev/null; \
+		git -C "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)" remote add origin "$(COREUTILS_GIT_URL)"; \
+	else \
+		git -C "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)" remote set-url origin "$(COREUTILS_GIT_URL)"; \
+	fi; \
+	git -C "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)" fetch --force --depth 1 --no-tags origin "$(COREUTILS_GIT_COMMIT):refs/orlix/coreutils-$(COREUTILS_VERSION)"; \
+	git -C "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)" fetch --force --depth 1 origin "refs/tags/$(COREUTILS_GIT_REF):refs/tags/$(COREUTILS_GIT_REF)"; \
+	git -C "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)" symbolic-ref HEAD refs/orlix/coreutils-$(COREUTILS_VERSION); \
 	rm -rf "$(ORLIXOS_COREUTILS_SRC_DIR)"; \
-	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
-	git clone --filter=blob:none --no-tags --no-checkout "$(COREUTILS_GIT_URL)" "$(ORLIXOS_COREUTILS_SRC_DIR)"; \
-	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" fetch --depth 1 --no-tags origin "$(COREUTILS_GIT_COMMIT)"; \
+	git clone --shared --no-checkout "$(ORLIXOS_COREUTILS_UPSTREAM_DIR)" "$(ORLIXOS_COREUTILS_SRC_DIR)"; \
 	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" checkout --detach "$(COREUTILS_GIT_COMMIT)"; \
-	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" fetch --depth 1 origin "refs/tags/$(COREUTILS_GIT_REF):refs/tags/$(COREUTILS_GIT_REF)"; \
 	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" config submodule.gnulib.url "$(COREUTILS_GNULIB_GIT_URL)"; \
 	git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" submodule update --init --depth 1 --recommend-shallow --recursive --jobs 4; \
 	actual="$$(git -C "$(ORLIXOS_COREUTILS_SRC_DIR)" rev-parse HEAD)"; \
@@ -53,6 +61,7 @@ $(ORLIXOS_COREUTILS_SOURCE_STAMP): FORCE
 	cd "$(ORLIXOS_COREUTILS_SRC_DIR)"; \
 	./bootstrap --skip-po --no-git --gnulib-srcdir=gnulib; \
 	touch "$(ORLIXOS_COREUTILS_SOURCE_STAMP)"; \
+	echo "upstream Coreutils bare clone ready: $(ORLIXOS_COREUTILS_UPSTREAM_DIR) ($(COREUTILS_GIT_REF) $(COREUTILS_GIT_COMMIT))"; \
 	echo "freshly cloned upstream Coreutils source: $(ORLIXOS_COREUTILS_SRC_DIR) ($(COREUTILS_GIT_REF) $(COREUTILS_GIT_COMMIT))"
 
 $(ORLIXOS_GREP_ARCHIVE):

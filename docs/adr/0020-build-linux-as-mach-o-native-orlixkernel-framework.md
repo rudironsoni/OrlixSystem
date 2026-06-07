@@ -31,7 +31,7 @@ During bring-up, `OrlixBoot()` may return `ORLIX_BOOT_STATUS_UNAVAILABLE` if a s
 
 ## Consequences
 
-- Linux source remains upstream Linux under `OrlixKernel/Sources/upstream` plus Orlix overlay, patch, and config inputs under `OrlixKernel/Sources/ports/orlix`.
+- Linux source remains generated upstream Linux under `Build/OrlixKernel/upstream` and `Build/OrlixKernel/src` plus Orlix overlay, patch, and config inputs under `OrlixKernel/Sources/ports/orlix`.
 - The product link format is Mach-O, not ELF.
 - Kbuild remains source, config, and generation truth where useful, but the product artifact is not `vmlinux`.
 - Linux UAPI headers still come from standard `headers_install`.
@@ -74,6 +74,6 @@ Unsupported section classes may be stubbed only when the selected first slice ca
 
 ## Initial Build Slice
 
-The first Mach-O-native lane prepares the generated Orlix Linux port tree from `OrlixKernel/Sources/upstream` and `OrlixKernel/Sources/ports/orlix`, runs Kbuild preparation and DTB generation, compiles selected Linux-owned source from the generated tree with iOS Mach-O target triples, archives those objects as `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`, links the matching archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
+The first Mach-O-native lane prepares the generated Orlix Linux port tree from `Build/OrlixKernel/upstream`, `Build/OrlixKernel/src`, and `OrlixKernel/Sources/ports/orlix`, runs Kbuild preparation and DTB generation, compiles selected Linux-owned source from the generated tree with iOS Mach-O target triples, archives those objects as `Build/OrlixKernel/<profile>/<platform>/OrlixKernel.a`, links the matching archive into `OrlixKernel.framework`, and verifies exported arch boot symbols.
 
 The current dependency lane includes real upstream `init/main.c` and the Orlix hosted-exec/syscall substrate. Remaining failures in this lane are normal upstream Linux dependency-closure work, not permission to add fake `start_kernel()` providers or boot-only package shortcuts.

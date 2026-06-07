@@ -10,10 +10,12 @@ PROFILE ?= release
 
 MLIBC_REMOTE ?= https://github.com/managarm/mlibc.git
 MLIBC_COMMIT ?= 43ab07732cdfefe2e915bf98190f5d7f4bd8d765
+MLIBC_VERSION ?= 43ab07732cdf
 LLVM_PROJECT_REMOTE ?= https://github.com/llvm/llvm-project.git
 LLVM_PROJECT_REF ?= llvmorg-22.1.6
 LLVM_PROJECT_COMMIT ?= fc4aad7b5db3fff421df9a9637605b9ca5667881
-MLIBC_UPSTREAM_DIR := $(REPO_ROOT)/Build/OrlixMLibC/upstream/mlibc
+MLIBC_UPSTREAM_DIR := $(REPO_ROOT)/Build/OrlixMLibC/upstream/mlibc-$(MLIBC_VERSION).git
+MLIBC_SRC_DIR := $(REPO_ROOT)/Build/OrlixMLibC/src/mlibc-$(MLIBC_VERSION)
 LLVM_PROJECT_UPSTREAM_DIR := $(REPO_ROOT)/Build/OrlixMLibC/upstream/llvm-project
 MLIBC_BUILD_DIR := $(REPO_ROOT)/Build/OrlixMLibC/build/$(PROFILE)
 MLIBC_SYSROOT := $(REPO_ROOT)/Build/OrlixMLibC/sysroot/$(PROFILE)
@@ -302,7 +304,7 @@ __build: __write-cross-file
 	mkdir -p "$(dir $(MLIBC_BUILD_KERNEL_HEADERS))"; \
 	cp -R "$(MLIBC_KERNEL_HEADERS)" "$(MLIBC_BUILD_KERNEL_HEADERS)"; \
 	[ -d "$(MLIBC_BUILD_KERNEL_HEADERS)" ] || { echo "missing OrlixMLibC build-local Linux UAPI headers: $(MLIBC_BUILD_KERNEL_HEADERS)" >&2; exit 1; }; \
-	"$(MESON)" setup "$(MLIBC_BUILD_DIR)" "$(MLIBC_UPSTREAM_DIR)" \
+	"$(MESON)" setup "$(MLIBC_BUILD_DIR)" "$(MLIBC_SRC_DIR)" \
 		--cross-file "$(MLIBC_CROSS_FILE)" \
 		--prefix /usr \
 		-Ddefault_library=static \
@@ -379,7 +381,7 @@ __test-build: build __build-compiler-rt
 	[ -s "$$sysroot/usr/lib/libc.a" ] || { echo "missing OrlixMLibC libc archive: $$sysroot/usr/lib/libc.a" >&2; exit 1; }; \
 	command -v "$(MLIBC_STRIP)" >/dev/null 2>&1 || { echo "llvm-strip is required to package OrlixMLibC tests; set MLIBC_STRIP=/path/to/llvm-strip" >&2; exit 1; }; \
 	for test_name in $(MLIBC_TEST_CASES); do \
-		source="$(MLIBC_UPSTREAM_DIR)/tests/$$test_name.c"; \
+		source="$(MLIBC_SRC_DIR)/tests/$$test_name.c"; \
 		binary_name="$${test_name////-}"; \
 		[ -s "$$source" ] || { echo "missing upstream mlibc test source: $$source" >&2; exit 1; }; \
 		"$(MLIBC_CC)" $$cflags $$ldflags $$crt_flags "$$source" $$ldlibs -o "$$install_dir/mlibc-tests/$$binary_name"; \
@@ -517,17 +519,7 @@ clean:
 
 __clean:
 	@set -euo pipefail; \
-	for path in \
-		"$(REPO_ROOT)/Build/OrlixMLibC/build" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/compiler-rt" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/cross" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/kselftest" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/locale-data" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/sysroot" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/tests" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/tests-install" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/test-initramfs" \
-		"$(REPO_ROOT)/Build/OrlixMLibC/upstream"; do \
+	for path in "$(REPO_ROOT)/Build/OrlixMLibC"; do \
 		if [ -L "$$path" ]; then echo "refusing to clean symlinked path: $$path" >&2; exit 1; fi; \
 		rm -rf "$$path"; \
 	done; \
@@ -537,31 +529,42 @@ mrproper: clean
 
 __bootstrap-mlibc:
 	@set -euo pipefail; \
-	for path in "$(REPO_ROOT)/Build" "$(REPO_ROOT)/Build/OrlixMLibC" "$(REPO_ROOT)/Build/OrlixMLibC/upstream" "$(MLIBC_UPSTREAM_DIR)"; do \
+	for path in "$(REPO_ROOT)/Build" "$(REPO_ROOT)/Build/OrlixMLibC" "$(REPO_ROOT)/Build/OrlixMLibC/upstream" "$(REPO_ROOT)/Build/OrlixMLibC/src" "$(MLIBC_UPSTREAM_DIR)" "$(MLIBC_SRC_DIR)"; do \
 		if [ -L "$$path" ]; then echo "refusing to use symlinked mlibc path: $$path" >&2; exit 1; fi; \
 	done; \
-	rm -rf "$(MLIBC_UPSTREAM_DIR)"; \
 	mkdir -p "$(dir $(MLIBC_UPSTREAM_DIR))"; \
-	git clone --no-checkout "$(MLIBC_REMOTE)" "$(MLIBC_UPSTREAM_DIR)"; \
-	git -C "$(MLIBC_UPSTREAM_DIR)" checkout --quiet --detach "$(MLIBC_COMMIT)"; \
-	checked_commit="$$(git -C "$(MLIBC_UPSTREAM_DIR)" rev-parse HEAD)"; \
+	if [ ! -d "$(MLIBC_UPSTREAM_DIR)/objects" ]; then \
+		rm -rf "$(MLIBC_UPSTREAM_DIR)"; \
+		git init --bare "$(MLIBC_UPSTREAM_DIR)" >/dev/null; \
+		git -C "$(MLIBC_UPSTREAM_DIR)" remote add origin "$(MLIBC_REMOTE)"; \
+	else \
+		git -C "$(MLIBC_UPSTREAM_DIR)" remote set-url origin "$(MLIBC_REMOTE)"; \
+	fi; \
+	git -C "$(MLIBC_UPSTREAM_DIR)" fetch --force --depth 1 origin "$(MLIBC_COMMIT):refs/orlix/mlibc-$(MLIBC_VERSION)"; \
+	git -C "$(MLIBC_UPSTREAM_DIR)" symbolic-ref HEAD refs/orlix/mlibc-$(MLIBC_VERSION); \
+	rm -rf "$(MLIBC_SRC_DIR)"; \
+	mkdir -p "$(dir $(MLIBC_SRC_DIR))"; \
+	git clone --shared --no-checkout "$(MLIBC_UPSTREAM_DIR)" "$(MLIBC_SRC_DIR)"; \
+	git -C "$(MLIBC_SRC_DIR)" checkout --quiet --detach "$(MLIBC_COMMIT)"; \
+	checked_commit="$$(git -C "$(MLIBC_SRC_DIR)" rev-parse HEAD)"; \
 	if [ "$$checked_commit" != "$(MLIBC_COMMIT)" ]; then \
 		echo "expected mlibc commit $(MLIBC_COMMIT), checked out $$checked_commit" >&2; \
 		exit 1; \
 	fi; \
-	echo "upstream mlibc ready: $(MLIBC_UPSTREAM_DIR) ($$checked_commit)"
+	echo "upstream mlibc bare clone ready: $(MLIBC_UPSTREAM_DIR) ($$checked_commit)"; \
+	echo "upstream mlibc source ready: $(MLIBC_SRC_DIR) ($$checked_commit)"
 
 __apply-mlibc-patches: __bootstrap-mlibc
 	@set -euo pipefail; \
-	[ -d "$(MLIBC_UPSTREAM_DIR)/.git" ] || { echo "missing upstream mlibc clone: $(MLIBC_UPSTREAM_DIR)" >&2; exit 1; }; \
+	[ -d "$(MLIBC_SRC_DIR)/.git" ] || { echo "missing upstream mlibc source checkout: $(MLIBC_SRC_DIR)" >&2; exit 1; }; \
 	if [ -d "$(MLIBC_PATCH_DIR)" ]; then \
 		for patch in "$(MLIBC_PATCH_DIR)"/*.patch; do \
 			[ -e "$$patch" ] || continue; \
-			git -C "$(MLIBC_UPSTREAM_DIR)" apply --check "$$patch"; \
-			git -C "$(MLIBC_UPSTREAM_DIR)" apply "$$patch"; \
+			git -C "$(MLIBC_SRC_DIR)" apply --check "$$patch"; \
+			git -C "$(MLIBC_SRC_DIR)" apply "$$patch"; \
 		done; \
 	fi; \
-	git -C "$(MLIBC_UPSTREAM_DIR)" diff --check; \
+	git -C "$(MLIBC_SRC_DIR)" diff --check; \
 	echo "applied OrlixMLibC upstream mlibc patches"
 
 __bootstrap-compiler-rt:
