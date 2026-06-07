@@ -37,11 +37,17 @@ In scope:
 - OrlixOS package toolchain/configuration that explains why those patches exist
 - Orlix-owned docs/harness guidance for future patch burden
 
-Out of scope for this audit pass:
+Originally out of scope for this audit pass, before user redirection:
 
 - Editing generated trees under `Build/`
 - Deleting or changing a runtime patch before root cause is proven
 - Reinterpreting upstream test failures as success
+
+Current user-directed scope:
+
+- Remove durable OrlixOS and OrlixMLibC patch files.
+- Rebuild from the clean slate.
+- For each resulting issue, investigate from first principles and fix the owning OrlixKernel/OrlixOS/OrlixMLibC layer without editing generated upstream trees or upstream package sources.
 
 ## Directives
 

@@ -247,13 +247,71 @@ The patch:
 
 Investigate `posix/getservbyname` and `posix/getservbyport` from first principles. The likely ownership area is still OrlixMLibC or OrlixOS rootfs data (`/etc/services`), but do not patch mlibc or package data until proving whether the Linux rootfs service database and libc parser behavior match upstream Linux/glibc expectations.
 
+### 2026-06-07 Zero-Patch Clean Slate And Linux SVC Runtime Fix
+
+**What happened:**
+
+Removed all durable patch files under:
+
+- `OrlixMLibC/Sources/patches`
+- `OrlixOS/Sources/patches`
+
+Removed OrlixOS package-source patch application hooks and stale mlibc patch-only build inputs. The build now starts from pristine upstream mlibc and pristine upstream package sources for this checkpoint.
+
+**Root causes found:**
+
+1. Pristine upstream mlibc's AArch64 Linux syscall path uses normal `svc #0`.
+2. The iOS-hosted execution path cannot let guest userspace execute `svc #0` directly because that traps as a Darwin host syscall, not an Orlix Linux syscall.
+3. The old mlibc hosted-syscall patch hid that missing kernel/hosted execution surface by rewriting libc's syscall path.
+4. After removing `-femulated-tls`, pristine mlibc no longer needed the old patched `__emutls_get_address` support for the focused build path.
+5. The kernel test-payload path was stale when `ORLIX_KERNEL_TEST_INITRAMFS_INPUT` changed: `run` did not force `__kernel-payload`, and the OrlixOS embed script treated intentionally empty target-provided base/state inputs as unset.
+
+**Changes made:**
+
+- Added a private hosted-trap classification for Linux userspace syscall traps.
+- Made executable guest-user host mappings private copies and translated `svc #0` instructions to a private host breakpoint encoding in the host mirror only. The Linux guest page and upstream binary contents remain unchanged.
+- Disabled the host mapping cache fast path for executable user mappings, because executable mappings are now private translated copies and must be recopied when the kernel asks to sync them.
+- Routed that private host trap back into `OrlixKernel` as a Linux syscall using AArch64 Linux register conventions.
+- Fixed the existing hosted syscall-gate path to preserve syscall argument 0 in `orig_x0` before dispatch.
+- Derived upstream-test payload boot selection from built project/profile metadata:
+  - root mode is selected from `ORLIX_KERNEL_ROOT_MODES` by finding the initramfs-capable mode;
+  - boot profile is selected by inspecting built profile DTBs for the actual `rdinit=/init` command line.
+- Preserved target-provided empty OrlixOS expected base/state root inputs instead of falling back to product payload inputs.
+
+**Evidence:**
+
+- `rtk rg --files OrlixOS/Sources/patches OrlixMLibC/Sources/patches`
+  - no files found.
+- `rtk timeout 1200 make -f OrlixMLibC/Makefile __apply-mlibc-patches PROFILE=release`
+  - passed and reported no OrlixMLibC upstream mlibc patches present.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-build PROFILE=release MLIBC_TEST_CASES=ansi/abs`
+  - passed.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-initramfs PROFILE=release MLIBC_TEST_CASES=ansi/abs`
+  - passed.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-run PROFILE=release MLIBC_TEST_CASES=ansi/abs MLIBC_TEST_RUN_WAIT_TICKS=200`
+  - passed and verified `ORLIX-MLIBC-TEST-INIT` and `ORLIX-MLIBC-TEST-END` in the simulator runtime log.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-run PROFILE=release MLIBC_TEST_CASES='ansi/abs ansi/fopen posix/access posix/getcwd posix/vfork posix/waitid' MLIBC_TEST_RUN_WAIT_TICKS=600`
+  - passed and verified the same completion markers in `Build/OrlixKernel/run/release/OrlixTerminal-runtime.log`.
+- `rtk rg -n "ORLIX-MLIBC|FAIL|panic|Oops|hosted user trap|signal|timeout|Malformed|ERROR" Build/OrlixKernel/run/release/OrlixTerminal-runtime.log`
+  - showed `ORLIX-MLIBC-TEST-INIT` and `ORLIX-MLIBC-TEST-END`;
+  - no failure, panic, Oops, malformed-output, or hosted-user-trap marker was present;
+  - the later signal 15 line was the harness terminating the app after successful marker collection.
+
+**Current status:**
+
+This checkpoint proves the clean-slate mlibc/package patch removal plus the Linux `svc #0` hosted runtime path for a focused upstream mlibc smoke set. It does not prove full upstream mlibc/Coreutils/Linux conformance yet.
+
+**Next:**
+
+Continue from zero patches and expand upstream conformance coverage. Any new failure must be attributed to its owning layer before implementation; do not reintroduce mlibc or package source patches as a shortcut.
+
 ---
 
 ## Deviations Summary
 
 | Deviation | Reason | Plan updated? |
 |---|---|---|
-| None yet. | N/A | N/A |
+| User redirected from audit-first cleanup to zero-patch clean slate. | The required goal changed to removing all OrlixOS and OrlixMLibC patches, then fixing root causes in the owning Orlix layer. | Yes |
 
 ## Open Questions
 

@@ -247,6 +247,18 @@ static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
 	orlix_host_user_trap_resume(&resume_frame);
 }
 
+static void __noreturn orlix_hosted_handle_user_syscall(struct pt_regs *regs)
+{
+	regs->orig_x0 = regs->regs[0];
+	regs->syscallno = regs->regs[8];
+	regs->pc += sizeof(u32);
+
+	orlix_syscall_dispatch(regs);
+	orlix_sync_current_user_minimal_mappings(regs);
+	orlix_hosted_resume_current_user(
+		regs, true, ORLIX_HOST_USER_FRAME_SYSCALL_RETURN);
+}
+
 void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
 {
 	orlix_hosted_resume_current_user(regs, true, 0);
@@ -277,6 +289,9 @@ static void __noreturn orlix_hosted_user_trap_entry(
 						 resume_regs->sp != old_sp,
 						 0);
 	}
+
+	if (signal_number == ORLIX_HOST_USER_TRAP_SYSCALL)
+		orlix_hosted_handle_user_syscall(regs);
 
 	if (orlix_hosted_user_trap_is_memory_fault(signal_number) &&
 	    !orlix_handle_host_user_fault(regs, frame->fault_address,
@@ -464,6 +479,7 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 	orlix_hosted_start_user_timer_once();
 	orlix_hosted_save_callee_registers(regs);
 	entry_pc = READ_ONCE(orlix_hosted_entry_user_pc);
+	regs->orig_x0 = arg0;
 	regs->regs[0] = arg0;
 	regs->regs[1] = arg1;
 	regs->regs[2] = arg2;

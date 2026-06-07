@@ -96,30 +96,49 @@ targets:
           rootfs_input="$(sed -n 's/^rootfs_input=//p' "$stamp")"
           base_root_tree_input="$(sed -n 's/^base_root_tree_input=//p' "$stamp")"
           state_root_tree_input="$(sed -n 's/^state_root_tree_input=//p' "$stamp")"
+          if [ "${ORLIX_OS_EXPECTED_ROOTFS_INPUT+x}" = x ]; then
+              expected_rootfs_input="$ORLIX_OS_EXPECTED_ROOTFS_INPUT"
+          else
+              expected_rootfs_input="$ORLIX_OS_ROOT_INITRAMFS_INPUT"
+          fi
+          if [ "${ORLIX_OS_EXPECTED_BASE_ROOT_TREE_INPUT+x}" = x ]; then
+              expected_base_root_tree_input="$ORLIX_OS_EXPECTED_BASE_ROOT_TREE_INPUT"
+          else
+              expected_base_root_tree_input="$ORLIX_OS_BASE_ROOT_TREE_INPUT"
+          fi
+          if [ "${ORLIX_OS_EXPECTED_STATE_ROOT_TREE_INPUT+x}" = x ]; then
+              expected_state_root_tree_input="$ORLIX_OS_EXPECTED_STATE_ROOT_TREE_INPUT"
+          else
+              expected_state_root_tree_input="$ORLIX_OS_STATE_ROOT_TREE_INPUT"
+          fi
           case "$rootfs_input" in
-              "$ORLIX_OS_ROOT_INITRAMFS_INPUT") ;;
+              "$expected_rootfs_input") ;;
               *)
-                  echo "OrlixOS payload is not packaged from the product rootfs: $rootfs_input" >&2
-                  echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
+                  echo "OrlixOS payload is not packaged from the expected rootfs: $rootfs_input" >&2
+                  echo "expected: $expected_rootfs_input" >&2
                   exit 1
                   ;;
           esac
-          case "$base_root_tree_input" in
-              "$ORLIX_OS_BASE_ROOT_TREE_INPUT") ;;
-              *)
-                  echo "OrlixOS payload is missing the product base root tree: $base_root_tree_input" >&2
-                  echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
-                  exit 1
-                  ;;
-          esac
-          case "$state_root_tree_input" in
-              "$ORLIX_OS_STATE_ROOT_TREE_INPUT") ;;
-              *)
-                  echo "OrlixOS payload is missing the product state root tree: $state_root_tree_input" >&2
-                  echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
-                  exit 1
-                  ;;
-          esac
+          if [ -n "$expected_base_root_tree_input" ]; then
+              case "$base_root_tree_input" in
+                  "$expected_base_root_tree_input") ;;
+                  *)
+                      echo "OrlixOS payload is missing the expected base root tree: $base_root_tree_input" >&2
+                      echo "expected: $expected_base_root_tree_input" >&2
+                      exit 1
+                      ;;
+              esac
+          fi
+          if [ -n "$expected_state_root_tree_input" ]; then
+              case "$state_root_tree_input" in
+                  "$expected_state_root_tree_input") ;;
+                  *)
+                      echo "OrlixOS payload is missing the expected state root tree: $state_root_tree_input" >&2
+                      echo "expected: $expected_state_root_tree_input" >&2
+                      exit 1
+                      ;;
+              esac
+          fi
           destination="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/$payload_name.$payload_extension"
           rm -rf "$destination"
           cp -R "$payload" "$destination"

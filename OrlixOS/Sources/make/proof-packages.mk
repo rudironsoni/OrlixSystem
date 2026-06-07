@@ -13,7 +13,7 @@ $(ORLIXOS_GREP_BINARY): $(ORLIXOS_GREP_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	rm -rf "$(ORLIXOS_GREP_BUILD_DIR)" "$(ORLIXOS_GREP_BINARY)"; \
 	mkdir -p "$(ORLIXOS_GREP_BUILD_DIR)" "$(dir $(ORLIXOS_GREP_BINARY))"; \
 	cd "$(ORLIXOS_GREP_BUILD_DIR)"; \
-	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fno-pie"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group"; \
 	export LIBS="$$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
@@ -46,7 +46,7 @@ $(ORLIXOS_SED_BINARY): $(ORLIXOS_SED_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orl
 	rm -rf "$(ORLIXOS_SED_BUILD_DIR)" "$(ORLIXOS_SED_BINARY)"; \
 	mkdir -p "$(ORLIXOS_SED_BUILD_DIR)" "$(dir $(ORLIXOS_SED_BINARY))"; \
 	cd "$(ORLIXOS_SED_BUILD_DIR)"; \
-	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fno-pie"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group"; \
 	export LIBS="$$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
@@ -86,7 +86,7 @@ $(ORLIXOS_DIFF_BINARY): $(ORLIXOS_DIFFUTILS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROO
 	for program in $(ORLIXOS_DIFFUTILS_PROGRAMS); do rm -f "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin/$$program"; done; \
 	mkdir -p "$(ORLIXOS_DIFFUTILS_BUILD_DIR)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/bin"; \
 	cd "$(ORLIXOS_DIFFUTILS_BUILD_DIR)"; \
-	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fno-pie"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group"; \
 	export LIBS="$$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
@@ -188,7 +188,7 @@ $(ORLIXOS_PERL_BINARY): $(ORLIXOS_PERL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 		printf '%s\n' 'for arg in "$$@"; do'; \
 		printf '%s\n' '  case "$$arg" in -c|-E|-S) link=0 ;; esac'; \
 		printf '%s\n' 'done'; \
-		printf '%s\n' 'common=(--target=aarch64-linux-gnu "--sysroot=$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie)'; \
+		printf '%s\n' 'common=(--target=aarch64-linux-gnu "--sysroot=$$sysroot" -isystem "$$headers" -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fno-pie)'; \
 		printf '%s\n' 'if [ "$$link" -eq 1 ]; then'; \
 		printf '%s\n' '  exec "$$cc" "$${common[@]}" "$$@" -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) "$$sysroot/usr/lib/crt1.o" "$$sysroot/usr/lib/crti.o" -Wl,--start-group "$$sysroot/usr/lib/libc.a" "$$sysroot/usr/lib/libm.a" "$$sysroot/usr/lib/libpthread.a" "$$sysroot/usr/lib/libssp_nonshared.a" "$$sysroot/usr/lib/libssp.a" "$$rtlib" -Wl,--end-group "$$sysroot/usr/lib/crtn.o"'; \
 		printf '%s\n' 'fi'; \
@@ -252,7 +252,7 @@ $(ORLIXOS_JQ_BINARY): $(ORLIXOS_JQ_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.orlix
 	mkdir -p "$(dir $(ORLIXOS_JQ_BUILD_DIR))" "$(dir $(ORLIXOS_JQ_BINARY))"; \
 	cp -R "$(ORLIXOS_JQ_SRC_DIR)" "$(ORLIXOS_JQ_BUILD_DIR)"; \
 	cd "$(ORLIXOS_JQ_BUILD_DIR)"; \
-	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fno-pie"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export CPPFLAGS="-Imodules/oniguruma/src"; \
 	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group"; \
@@ -291,7 +291,7 @@ $(ORLIXOS_CURL_BINARY): $(ORLIXOS_CURL_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)/.o
 	rm -rf "$(ORLIXOS_CURL_BUILD_DIR)" "$(ORLIXOS_CURL_BINARY)"; \
 	mkdir -p "$(ORLIXOS_CURL_BUILD_DIR)" "$(dir $(ORLIXOS_CURL_BINARY))"; \
 	cd "$(ORLIXOS_CURL_BUILD_DIR)"; \
-	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fno-pie"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export CPPFLAGS="-I$(ORLIXOS_CURL_SRC_DIR)/include"; \
 	rtlib_dir="$$(dirname "$$rtlib")"; \
@@ -327,7 +327,7 @@ $(ORLIXOS_NCURSES_LIBTINFO): $(ORLIXOS_NCURSES_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYS
 	rm -rf "$(ORLIXOS_NCURSES_BUILD_DIR)" "$(ORLIXOS_NCURSES_SYSROOT)"; \
 	mkdir -p "$(ORLIXOS_NCURSES_BUILD_DIR)" "$(ORLIXOS_NCURSES_SYSROOT)" "$(ORLIXOS_PACKAGE_INSTALL_DIR)"; \
 	cd "$(ORLIXOS_NCURSES_BUILD_DIR)"; \
-	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fno-pie"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -no-pie -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--no-dynamic-linker -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group -L$$sysroot/usr/lib -L$$(dirname "$$rtlib")"; \
 	export LIBS="-lc -lm -lpthread -lssp_nonshared -lssp -lorlix_compiler_rt -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
@@ -359,7 +359,7 @@ $(ORLIXOS_ZSH_BINARY): $(ORLIXOS_ZSH_SOURCE_STAMP) $(ORLIXOS_NCURSES_LIBTINFO) $
 	mkdir -p "$(ORLIXOS_ZSH_BUILD_DIR)" "$(dir $(ORLIXOS_ZSH_BINARY))"; \
 	cd "$(ORLIXOS_ZSH_BUILD_DIR)"; \
 	rtlib_dir="$$(dirname "$$rtlib")"; \
-	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -femulated-tls -ffixed-x18 -fno-pie"; \
+	export CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fno-pie"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export CPPFLAGS="-I$(ORLIXOS_NCURSES_SYSROOT)/usr/include"; \
 	export LDFLAGS="--target=aarch64-linux-gnu --sysroot=$$sysroot -static -no-pie -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--no-dynamic-linker -Wl,--image-base=$(ORLIXOS_HOSTED_USER_BASE_ADDRESS) $$sysroot/usr/lib/crt1.o $$sysroot/usr/lib/crti.o -Wl,--start-group -L$(ORLIXOS_NCURSES_SYSROOT)/usr/lib -L$$sysroot/usr/lib -L$$rtlib_dir"; \

@@ -3,6 +3,7 @@
 #include "OrlixHostAdapter/runtime/trap.h"
 #include "OrlixHostAdapter/runtime/host_tls.h"
 #include "OrlixHostAdapter/runtime/trap_decode.h"
+#include "internal/asm/host_trap.h"
 
 #include <signal.h>
 #include <stdbool.h>
@@ -77,6 +78,39 @@ static bool OrlixHostUserTrapInSyscallGate(unsigned long pc)
     return OrlixHostUserTrap.syscall_gate < OrlixHostUserTrap.syscall_gate_limit &&
            pc >= OrlixHostUserTrap.syscall_gate &&
            pc < OrlixHostUserTrap.syscall_gate_limit;
+}
+
+static bool OrlixHostUserTrapInstructionAt(unsigned long pc,
+                                           uint32_t expected)
+{
+    const uint32_t *instruction;
+
+    if (pc < OrlixHostUserTrap.user_base ||
+        pc > OrlixHostUserTrap.user_limit - sizeof(*instruction)) {
+        return false;
+    }
+
+    instruction = (const uint32_t *)pc;
+    return *instruction == expected;
+}
+
+static bool OrlixHostUserTrapIsLinuxSyscallTrap(mcontext_t machine_context)
+{
+    unsigned long pc = (unsigned long)machine_context->__ss.__pc;
+
+    if (OrlixHostUserTrapInstructionAt(pc,
+                                       ORLIX_HOST_AARCH64_SYSCALL_BRK_INSN)) {
+        return true;
+    }
+
+    if (pc >= OrlixHostUserTrap.user_base + sizeof(uint32_t) &&
+        OrlixHostUserTrapInstructionAt(pc - sizeof(uint32_t),
+                                       ORLIX_HOST_AARCH64_SYSCALL_BRK_INSN)) {
+        machine_context->__ss.__pc = (uint64_t)(pc - sizeof(uint32_t));
+        return true;
+    }
+
+    return false;
 }
 
 static unsigned long OrlixHostUserTrapTlsResumeTrampoline(void)
@@ -468,6 +502,9 @@ static void OrlixHostUserTrapHandler(int signal_number,
     }
     if (timer_signal) {
         trap_number = ORLIX_HOST_USER_TRAP_TIMER;
+    } else if (signal_number == SIGTRAP &&
+               OrlixHostUserTrapIsLinuxSyscallTrap(machine_context)) {
+        trap_number = ORLIX_HOST_USER_TRAP_SYSCALL;
     }
 
     fault_flags = OrlixHostUserFaultFlags(signal_number, machine_context);

@@ -439,7 +439,6 @@ $(ORLIXOS_LIBSELINUX_SOURCE_STAMP): $(ORLIXOS_LIBSELINUX_ARCHIVE_STAMP)
 	rm -rf "$(ORLIXOS_LIBSELINUX_SRC_DIR)"; \
 	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
 	tar -xzf "$(ORLIXOS_LIBSELINUX_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
-	patch -d "$(ORLIXOS_LIBSELINUX_SRC_DIR)" -p1 < "$(PROJECT_DIR)/Sources/patches/libselinux-3.10-pthread-once-structured-type.patch"; \
 	touch "$(ORLIXOS_LIBSELINUX_SOURCE_STAMP)"; \
 	echo "extracted libselinux source: $(ORLIXOS_LIBSELINUX_SRC_DIR)"
 
@@ -538,8 +537,6 @@ $(ORLIXOS_PERL_SOURCE_STAMP): $(ORLIXOS_PERL_ARCHIVE_STAMP) $(ORLIXOS_PERL_CROSS
 	mkdir -p "$(ORLIXOS_SRC_DIR)"; \
 	tar -xzf "$(ORLIXOS_PERL_ARCHIVE)" -C "$(ORLIXOS_SRC_DIR)"; \
 	tar -xzf "$(ORLIXOS_PERL_CROSS_ARCHIVE)" -C "$(ORLIXOS_PERL_SRC_DIR)" --strip-components=1; \
-	patch -d "$(ORLIXOS_PERL_SRC_DIR)" -p1 < "$(PROJECT_DIR)/Sources/patches/perl-cross-1.6.2-darwin-readelf-size.patch"; \
-	patch -d "$(ORLIXOS_PERL_SRC_DIR)" -p1 < "$(PROJECT_DIR)/Sources/patches/perl-cross-1.6.2-byteorder-fallback.patch"; \
 	touch "$(ORLIXOS_PERL_SOURCE_STAMP)"; \
 	echo "extracted perl source: $(ORLIXOS_PERL_SRC_DIR)"
 

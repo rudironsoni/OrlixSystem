@@ -69,7 +69,6 @@ common=(
 	-D_GNU_SOURCE
 	-fhosted
 	-fno-builtin
-	-femulated-tls
 	-ffixed-x18
 	"$ORLIXOS_PACKAGE_CODE_MODEL_FLAG"
 )

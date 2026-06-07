@@ -40,13 +40,11 @@ MLIBC_TEST_LIBC_BIN_SHA256 ?= 02f366115bea79b87fe26c7dec4dc444f9fdcc76440905d88c
 MLIBC_RTLIB_DIR := $(REPO_ROOT)/Build/OrlixMLibC/compiler-rt/$(PROFILE)
 MLIBC_RTLIB := $(MLIBC_RTLIB_DIR)/liborlix_compiler_rt.a
 MLIBC_LOCK_ROOT := $(REPO_ROOT)/Build/OrlixMLibC/locks
-ORLIX_HOSTED_SYSCALL_GATE_ADDRESS ?= 0x00006ffff0000000
 ORLIX_HOSTED_USER_BASE_ADDRESS ?= 0x0000600000000000
-ORLIX_HOSTED_PAGE_SIZE ?= 16384
 # Apple arm64 reserves x18 for the host platform; Orlix-built Linux ELF keeps it unavailable to user code.
 MLIBC_HOSTED_EXEC_FIXED_REGISTER_FLAGS := -ffixed-x18
-MLIBC_HOSTED_EXEC_CODEGEN_FLAGS := -femulated-tls $(MLIBC_HOSTED_EXEC_FIXED_REGISTER_FLAGS)
-MLIBC_HOSTED_EXEC_MESON_ARGS := '-DORLIX_HOSTED_EXEC=1', '-DORLIX_HOSTED_SYSCALL_GATE_ADDRESS=$(ORLIX_HOSTED_SYSCALL_GATE_ADDRESS)', '-DORLIX_HOSTED_PAGE_SIZE=$(ORLIX_HOSTED_PAGE_SIZE)', '-femulated-tls', '-ffixed-x18', '-ffunction-sections', '-fdata-sections'
+MLIBC_HOSTED_EXEC_CODEGEN_FLAGS := $(MLIBC_HOSTED_EXEC_FIXED_REGISTER_FLAGS)
+MLIBC_HOSTED_EXEC_MESON_ARGS := '-ffixed-x18', '-ffunction-sections', '-fdata-sections'
 MLIBC_LLVM_PREFIX ?= $(firstword $(wildcard /opt/homebrew/opt/llvm/bin) $(wildcard /usr/local/opt/llvm/bin))
 MLIBC_CC ?= clang
 MLIBC_CXX ?= clang++
@@ -300,8 +298,6 @@ __build: __write-cross-file
 	[ -s "$$kernel_config" ] || { echo "missing generated OrlixKernel config: $$kernel_config" >&2; exit 1; }; \
 	kernel_page_shift="$$(sed -n 's/^CONFIG_PAGE_SHIFT=//p' "$$kernel_config" | tail -n 1)"; \
 	[ -n "$$kernel_page_shift" ] || { echo "missing CONFIG_PAGE_SHIFT in $$kernel_config" >&2; exit 1; }; \
-	kernel_page_size="$$((1 << kernel_page_shift))"; \
-	[ "$$kernel_page_size" = "$(ORLIX_HOSTED_PAGE_SIZE)" ] || { echo "OrlixMLibC page size $(ORLIX_HOSTED_PAGE_SIZE) does not match OrlixKernel page size $$kernel_page_size from $$kernel_config" >&2; exit 1; }; \
 	rm -rf "$(MLIBC_BUILD_DIR)" "$(MLIBC_SYSROOT)"; \
 	mkdir -p "$(MLIBC_BUILD_DIR)" "$(MLIBC_SYSROOT)"; \
 	mkdir -p "$(dir $(MLIBC_BUILD_KERNEL_HEADERS))"; \
@@ -560,15 +556,21 @@ __bootstrap-mlibc:
 __apply-mlibc-patches: __bootstrap-mlibc
 	@set -euo pipefail; \
 	[ -d "$(MLIBC_SRC_DIR)/.git" ] || { echo "missing upstream mlibc source checkout: $(MLIBC_SRC_DIR)" >&2; exit 1; }; \
+	applied=0; \
 	if [ -d "$(MLIBC_PATCH_DIR)" ]; then \
 		for patch in "$(MLIBC_PATCH_DIR)"/*.patch; do \
 			[ -e "$$patch" ] || continue; \
 			git -C "$(MLIBC_SRC_DIR)" apply --check "$$patch"; \
 			git -C "$(MLIBC_SRC_DIR)" apply "$$patch"; \
+			applied=$$((applied + 1)); \
 		done; \
 	fi; \
 	git -C "$(MLIBC_SRC_DIR)" diff --check; \
-	echo "applied OrlixMLibC upstream mlibc patches"
+	if [ "$$applied" -eq 0 ]; then \
+		echo "no OrlixMLibC upstream mlibc patches present"; \
+	else \
+		echo "applied $$applied OrlixMLibC upstream mlibc patches"; \
+	fi
 
 __bootstrap-compiler-rt:
 	@set -euo pipefail; \

@@ -1,5 +1,6 @@
 #include "OrlixHostAdapter/memory/kernel_mapping.h"
 #include "OrlixHostAdapter/runtime/host_tls.h"
+#include "internal/asm/host_trap.h"
 
 #include <mach/mach.h>
 #include <mach/vm_map.h>
@@ -76,6 +77,56 @@ static int OrlixHostMapPageWithProtection(unsigned long target_address,
             (void)vm_deallocate(mach_task_self(), target, (vm_size_t)length);
             return -1;
         }
+    }
+
+    return 0;
+}
+
+static void OrlixHostTranslateLinuxSyscalls(void *target_page,
+                                            unsigned long length)
+{
+    uint32_t *insns = (uint32_t *)target_page;
+    unsigned long count = length / sizeof(*insns);
+
+    for (unsigned long index = 0; index < count; index++) {
+        if (insns[index] == ORLIX_HOST_AARCH64_SVC0_INSN) {
+            insns[index] = ORLIX_HOST_AARCH64_SYSCALL_BRK_INSN;
+        }
+    }
+}
+
+static int OrlixHostMapExecutableUserPage(unsigned long target_address,
+                                          const void *source_page,
+                                          unsigned long length,
+                                          vm_prot_t requested_protection)
+{
+    vm_address_t target = (vm_address_t)target_address;
+    kern_return_t status;
+
+    if (target_address == 0 || !source_page || length == 0) {
+        return -1;
+    }
+
+    status = vm_allocate(mach_task_self(),
+                         &target,
+                         (vm_size_t)length,
+                         VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE);
+    if (status != KERN_SUCCESS || target != (vm_address_t)target_address) {
+        return -1;
+    }
+
+    memcpy((void *)target, source_page, (size_t)length);
+    OrlixHostTranslateLinuxSyscalls((void *)target, length);
+    __builtin___clear_cache((char *)target, (char *)(target + length));
+
+    status = vm_protect(mach_task_self(),
+                        target,
+                        (vm_size_t)length,
+                        false,
+                        requested_protection);
+    if (status != KERN_SUCCESS) {
+        (void)vm_deallocate(mach_task_self(), target, (vm_size_t)length);
+        return -1;
     }
 
     return 0;
@@ -210,7 +261,8 @@ __attribute__((visibility("hidden"))) int orlix_host_user_map_page(
     unsigned long active_tls = OrlixHostEnterHostTls();
     int result;
 
-    if (OrlixHostUserMappingMatches(target_address,
+    if (!executable &&
+        OrlixHostUserMappingMatches(target_address,
                                     source_page,
                                     length,
                                     protection)) {
@@ -220,10 +272,17 @@ __attribute__((visibility("hidden"))) int orlix_host_user_map_page(
 
     OrlixHostUserUnmapMappedRange(target_address, length);
     OrlixHostUnmapPages(target_address, length);
-    result = OrlixHostMapPageWithProtection(target_address,
-                                            source_page,
-                                            length,
-                                            protection);
+    if (executable) {
+        result = OrlixHostMapExecutableUserPage(target_address,
+                                               source_page,
+                                               length,
+                                               protection);
+    } else {
+        result = OrlixHostMapPageWithProtection(target_address,
+                                                source_page,
+                                                length,
+                                                protection);
+    }
     if (result == 0 &&
         OrlixHostUserRememberMapping(target_address,
                                      source_page,
