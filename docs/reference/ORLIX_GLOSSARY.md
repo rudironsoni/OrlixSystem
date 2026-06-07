@@ -450,7 +450,7 @@ Milestone 1 must align `README.md`, `AGENTS.md`, and the canonical upstream-Linu
 
 ## Canonical Spec Rewrite
 
-`docs/UPSTREAM_LINUX_IOS_PORT_SPEC.md` should be created fresh from the resolved upstream-Linux architecture decisions rather than patched from stale architecture text.
+`docs/architecture/ORLIX_UPSTREAM_LINUX_IOS_PORT.md` is the canonical upstream-Linux iOS port specification created from the resolved architecture decisions rather than stale prototype text.
 
 ## Canonical Spec Scope
 

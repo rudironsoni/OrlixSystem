@@ -1,0 +1,66 @@
+# Project-local Codex command rules for OrlixSystem.
+# These rules affect commands requested outside the sandbox.
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "prompt",
+    justification = "Pushing checkpoints is allowed after review, but every push must be intentional.",
+    match = [
+        "git push",
+        "git push origin main",
+        "git push --force-with-lease",
+    ],
+    not_match = [
+        "git status",
+    ],
+)
+
+prefix_rule(
+    pattern = ["rm", "-rf"],
+    decision = "forbidden",
+    justification = "Do not use broad destructive deletion. Use targeted apply_patch deletes or ask for explicit approval.",
+    match = [
+        "rm -rf Build",
+        "rm -rf .",
+    ],
+    not_match = [
+        "rm file.txt",
+    ],
+)
+
+prefix_rule(
+    pattern = ["rtk", "timeout", "18000", "make"],
+    decision = "prompt",
+    justification = "Full Orlix/Coreutils runs are expensive and may launch app-hosted proof paths.",
+    match = [
+        "rtk timeout 18000 make -f OrlixOS/Makefile test PROFILE=release",
+    ],
+    not_match = [
+        "rtk timeout 1200 make test",
+    ],
+)
+
+prefix_rule(
+    pattern = ["rtk", "xcrun", "simctl"],
+    decision = "prompt",
+    justification = "Simulator control can affect running app proof state and should be explicit.",
+    match = [
+        "rtk xcrun simctl list",
+        "rtk xcrun simctl shutdown all",
+    ],
+    not_match = [
+        "rtk xcodebuild -version",
+    ],
+)
+
+prefix_rule(
+    pattern = ["rtk", "xcodebuild"],
+    decision = "prompt",
+    justification = "Xcode proof commands are allowed but should be intentional because they are expensive and may require simulator state.",
+    match = [
+        "rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixTerminalProofDriverTests test",
+    ],
+    not_match = [
+        "rtk git status",
+    ],
+)
