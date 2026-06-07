@@ -349,7 +349,7 @@ __test-run: __test-initramfs
 	run_log="$(MLIBC_TEST_BUILD_DIR)/orlix-kernel-run-output.log"; \
 	mkdir -p "$(MLIBC_TEST_BUILD_DIR)"; \
 	$(KERNEL_MAKE) run PROFILE="$(PROFILE)" type=mlibc libc=orlixmlibc ORLIX_KERNEL_TEST_INITRAMFS_INPUT="$(MLIBC_TEST_INITRAMFS_DIR)/rootfs/initramfs.cpio.gz" | tee "$$run_log"; \
-	runtime_log="$$(sed -n 's/.*"runtimeLogPath": "\([^"]*\)".*/\1/p' "$$run_log" | tail -n 1)"; \
+	runtime_log="$$(awk -F'"' '/runtimeLogPath/ { print $$4 }' "$$run_log" | tail -n 1)"; \
 	[ -n "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log path in $$run_log" >&2; exit 1; }; \
 	for _ in $$(seq 1 50); do [ -s "$$runtime_log" ] && break; sleep 0.1; done; \
 	[ -s "$$runtime_log" ] || { echo "missing OrlixTerminal runtime log: $$runtime_log" >&2; exit 1; }; \

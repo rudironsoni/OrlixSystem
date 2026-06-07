@@ -37,7 +37,8 @@ static struct clocksource orlix_clocksource = {
 	.rating	= 300,
 	.read	= orlix_clock_read,
 	.mask	= CLOCKSOURCE_MASK(64),
-	.flags	= CLOCK_SOURCE_IS_CONTINUOUS | CLOCK_SOURCE_SUSPEND_NONSTOP,
+	.flags	= CLOCK_SOURCE_IS_CONTINUOUS | CLOCK_SOURCE_SUSPEND_NONSTOP |
+		  CLOCK_SOURCE_VALID_FOR_HRES,
 };
 
 static struct clock_event_device orlix_clockevent;

@@ -397,6 +397,8 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	kernel/time/posix-cpu-timers.c \
 	kernel/time/posix-timers.c \
 	kernel/time/tick-common.c \
+	kernel/time/tick-oneshot.c \
+	kernel/time/tick-sched.c \
 	kernel/time/time.c \
 	kernel/time/timeconv.c \
 	kernel/time/timecounter.c \
