@@ -18,6 +18,7 @@ enum OrlixBootStatus {
 
 struct OrlixBootConfig {
     enum OrlixBootProfile profile;
+    const char *kernel_cmdline;
     const char *root_image_identifier;
     const char *terminal_identifier;
 };

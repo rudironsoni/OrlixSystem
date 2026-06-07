@@ -24,6 +24,8 @@
     <string>$(ORLIX_OS_PAYLOAD_BUNDLE_NAME)</string>
     <key>OrlixOSPayloadProfileInfoKey</key>
     <string>$(ORLIX_OS_PAYLOAD_SELECTED_PROFILE_INFO_KEY)</string>
+    <key>OrlixOSPayloadKernelCommandLineInfoKey</key>
+    <string>$(ORLIX_OS_PAYLOAD_KERNEL_COMMAND_LINE_INFO_KEY)</string>
     <key>OrlixOSPayloadRootInitramfsInfoKey</key>
     <string>$(ORLIX_OS_PAYLOAD_ROOT_INITRAMFS_INFO_KEY)</string>
     <key>OrlixOSPayloadBaseRootImageInfoKey</key>

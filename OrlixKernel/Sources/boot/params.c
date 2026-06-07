@@ -67,7 +67,8 @@ __attribute__((visibility("hidden"))) int OrlixPrepareBootInput(
 
     input->profile = config->profile;
     input->profile_dtb_path = defaults->profile_dtb_path;
-    input->kernel_cmdline = defaults->kernel_cmdline;
+    input->kernel_cmdline = OrlixBootStringIsPresent(config->kernel_cmdline) ?
+        config->kernel_cmdline : defaults->kernel_cmdline;
     input->root_device = defaults->root_device;
     input->console_device = defaults->console_device;
     input->root_image_identifier = config->root_image_identifier;

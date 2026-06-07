@@ -22,6 +22,7 @@ ORLIX_OS_PAYLOAD_BUNDLE_EXTENSION = bundle
 ORLIX_OS_PAYLOAD_SOURCE_BUNDLE_NAME = OrlixKernelPayload
 ORLIX_OS_PAYLOAD_SOURCE_BUNDLE_IDENTIFIER = org.orlix.OrlixKernelPayload
 ORLIX_OS_PAYLOAD_SELECTED_PROFILE_INFO_KEY = OrlixSelectedProfile
+ORLIX_OS_PAYLOAD_KERNEL_COMMAND_LINE_INFO_KEY = OrlixKernelCommandLine
 ORLIX_OS_PAYLOAD_ROOT_INITRAMFS_INFO_KEY = OrlixRootInitramfs
 ORLIX_OS_PAYLOAD_BASE_ROOT_IMAGE_INFO_KEY = OrlixBaseRootImage
 ORLIX_OS_PAYLOAD_STATE_ROOT_IMAGE_INFO_KEY = OrlixStateRootImage
@@ -36,6 +37,10 @@ ORLIX_OS_STATE_ROOT_IMAGE_RESOURCE = rootfs/state.ext4
 ORLIX_OS_ROOT_MODES = initramfs-only direct overlay
 ORLIX_OS_RELEASE_ROOT_MODE = direct
 ORLIX_OS_DEVELOPMENT_ROOT_MODE = overlay
+ORLIX_OS_RELEASE_KERNEL_COMMAND_LINE = console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro orlix.profile=release
+ORLIX_OS_DEVELOPMENT_KERNEL_COMMAND_LINE = console=ttyS0 console=hvc0 rdinit=/init orlix.root=overlay debug ignore_loglevel orlix.profile=development
+ORLIX_OS_RELEASE_TEST_INITRAMFS_KERNEL_COMMAND_LINE = console=ttyS0 console=hvc0 rdinit=/init orlix.root=initramfs-only orlix.profile=release
+ORLIX_OS_DEVELOPMENT_TEST_INITRAMFS_KERNEL_COMMAND_LINE = console=ttyS0 console=hvc0 rdinit=/init orlix.root=initramfs-only debug ignore_loglevel orlix.profile=development
 ORLIX_OS_BASE_ROOT_DEVICE = /dev/vda
 ORLIX_OS_STATE_ROOT_DEVICE = /dev/vdb
 ORLIX_OS_BASE_ROOT_HOST_BLOCK_DEVICE = 0

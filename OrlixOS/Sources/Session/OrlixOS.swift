@@ -35,6 +35,7 @@ private func orlix_host_resources_register_root_image(
 
 private struct COrlixBootConfig {
     var profile: CInt
+    var kernelCommandLine: UnsafePointer<CChar>?
     var rootImageIdentifier: UnsafePointer<CChar>?
     var terminalIdentifier: UnsafePointer<CChar>?
 }
@@ -88,16 +89,20 @@ public enum OrlixBootStatus: Equatable, Sendable {
 
 public struct OrlixBootConfig: Equatable, Sendable {
     public var profile: OrlixBootProfile
+    public var kernelCommandLine: String?
     public var rootImageIdentifier: String
     public var terminalIdentifier: String
 
     public init(
         profile: OrlixBootProfile,
+        kernelCommandLine: String? =
+            OrlixOSDistribution.bundledKernelCommandLine,
         rootImageIdentifier: String =
             OrlixOSDistribution.productRootImageIdentifier ?? "",
         terminalIdentifier: String = "orlix.terminal.main"
     ) {
         self.profile = profile
+        self.kernelCommandLine = kernelCommandLine
         self.rootImageIdentifier = rootImageIdentifier
         self.terminalIdentifier = terminalIdentifier
     }
@@ -106,6 +111,10 @@ public struct OrlixBootConfig: Equatable, Sendable {
 public enum OrlixOSDistribution {
     public static var bundledBootProfile: OrlixBootProfile? {
         OrlixOSPayload.selectedBootProfile
+    }
+
+    public static var bundledKernelCommandLine: String? {
+        OrlixOSPayload.kernelCommandLine
     }
 
     public static var productRootImageIdentifier: String? {
@@ -136,6 +145,8 @@ enum OrlixOSPayload {
     private static let bundleExtensionKey = "OrlixOSPayloadBundleExtension"
     private static let payloadProfileInfoKeyKey =
         "OrlixOSPayloadProfileInfoKey"
+    private static let payloadKernelCommandLineInfoKeyKey =
+        "OrlixOSPayloadKernelCommandLineInfoKey"
     private static let payloadRootInitrdInfoKeyKey =
         "OrlixOSPayloadRootInitramfsInfoKey"
     private static let payloadBaseRootImageInfoKeyKey =
@@ -166,6 +177,7 @@ enum OrlixOSPayload {
 
     private struct PayloadMetadataSchema {
         let selectedProfileKey: String
+        let kernelCommandLineKey: String
         let rootInitrdResourceKey: String
         let baseRootImageResourceKey: String
         let stateRootImageResourceKey: String
@@ -217,6 +229,17 @@ enum OrlixOSPayload {
         default:
             return nil
         }
+    }
+
+    static var kernelCommandLine: String? {
+        guard let payloadBundleURL = bundleURL,
+              let payloadBundle = Bundle(url: payloadBundleURL),
+              let schema = payloadMetadataSchema
+        else {
+            return nil
+        }
+
+        return payloadMetadataValue(schema.kernelCommandLineKey, in: payloadBundle)
     }
 
     static var productRootImageIdentifier: String? {
@@ -339,6 +362,9 @@ enum OrlixOSPayload {
         guard let selectedProfileKey = bundleMetadataValue(
                 for: payloadProfileInfoKeyKey
               ),
+              let kernelCommandLineKey = bundleMetadataValue(
+                for: payloadKernelCommandLineInfoKeyKey
+              ),
               let rootInitrdResourceKey = bundleMetadataValue(
                 for: payloadRootInitrdInfoKeyKey
               ),
@@ -369,6 +395,7 @@ enum OrlixOSPayload {
 
         return PayloadMetadataSchema(
             selectedProfileKey: selectedProfileKey,
+            kernelCommandLineKey: kernelCommandLineKey,
             rootInitrdResourceKey: rootInitrdResourceKey,
             baseRootImageResourceKey: baseRootImageResourceKey,
             stateRootImageResourceKey: stateRootImageResourceKey,
@@ -565,12 +592,23 @@ public final class OrlixLinuxSession: @unchecked Sendable {
 
         return bootConfig.rootImageIdentifier.withCString { rootImageIdentifier in
             bootConfig.terminalIdentifier.withCString { terminalIdentifier in
-                var cConfig = COrlixBootConfig(
-                    profile: bootConfig.profile.cValue,
-                    rootImageIdentifier: rootImageIdentifier,
-                    terminalIdentifier: terminalIdentifier
-                )
-                return OrlixBootStatus(rawStatus: OrlixBoot(&cConfig))
+                let boot = { (kernelCommandLine: UnsafePointer<CChar>?) in
+                    var cConfig = COrlixBootConfig(
+                        profile: self.bootConfig.profile.cValue,
+                        kernelCommandLine: kernelCommandLine,
+                        rootImageIdentifier: rootImageIdentifier,
+                        terminalIdentifier: terminalIdentifier
+                    )
+                    return OrlixBootStatus(rawStatus: OrlixBoot(&cConfig))
+                }
+
+                guard let kernelCommandLine = bootConfig.kernelCommandLine,
+                      !kernelCommandLine.isEmpty
+                else {
+                    return boot(nil)
+                }
+
+                return kernelCommandLine.withCString { boot($0) }
             }
         }
     }

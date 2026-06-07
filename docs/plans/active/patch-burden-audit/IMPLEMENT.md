@@ -265,6 +265,7 @@ Removed OrlixOS package-source patch application hooks and stale mlibc patch-onl
 3. The old mlibc hosted-syscall patch hid that missing kernel/hosted execution surface by rewriting libc's syscall path.
 4. After removing `-femulated-tls`, pristine mlibc no longer needed the old patched `__emutls_get_address` support for the focused build path.
 5. The kernel test-payload path was stale when `ORLIX_KERNEL_TEST_INITRAMFS_INPUT` changed: `run` did not force `__kernel-payload`, and the OrlixOS embed script treated intentionally empty target-provided base/state inputs as unset.
+6. Boot profile selection for test initramfs payloads must follow the same Linux-shaped boot input path as product payloads. Scanning generated DTBs for a profile whose command line happened to contain `rdinit=/init` was a harness shortcut, not target metadata.
 
 **Changes made:**
 
@@ -273,9 +274,12 @@ Removed OrlixOS package-source patch application hooks and stale mlibc patch-onl
 - Disabled the host mapping cache fast path for executable user mappings, because executable mappings are now private translated copies and must be recopied when the kernel asks to sync them.
 - Routed that private host trap back into `OrlixKernel` as a Linux syscall using AArch64 Linux register conventions.
 - Fixed the existing hosted syscall-gate path to preserve syscall argument 0 in `orig_x0` before dispatch.
-- Derived upstream-test payload boot selection from built project/profile metadata:
-  - root mode is selected from `ORLIX_KERNEL_ROOT_MODES` by finding the initramfs-capable mode;
-  - boot profile is selected by inspecting built profile DTBs for the actual `rdinit=/init` command line.
+- Routed product and test-initramfs kernel command lines through OrlixOS target/profile metadata:
+  - `OrlixOS/Sources/distribution/target-settings.xcconfig` owns release/development command lines and their test-initramfs variants;
+  - `OrlixOS/Makefile` passes the selected profile's command line metadata into kernel payload packaging;
+  - payload `Info.plist` records `OrlixKernelCommandLine`;
+  - `OrlixOS` session boot reads the bundled payload metadata and passes it into the bootloader config;
+  - test initramfs payload selection still derives the root mode from `ORLIX_KERNEL_ROOT_MODES`, but no longer scans built DTBs for `rdinit=/init`.
 - Preserved target-provided empty OrlixOS expected base/state root inputs instead of falling back to product payload inputs.
 
 **Evidence:**
@@ -290,6 +294,14 @@ Removed OrlixOS package-source patch application hooks and stale mlibc patch-onl
   - passed.
 - `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-run PROFILE=release MLIBC_TEST_CASES=ansi/abs MLIBC_TEST_RUN_WAIT_TICKS=200`
   - passed and verified `ORLIX-MLIBC-TEST-INIT` and `ORLIX-MLIBC-TEST-END` in the simulator runtime log.
+- `rtk timeout 1200 make -f OrlixOS/Makefile kernel-payload PROFILE=release`
+  - passed and packaged `Build/OrlixKernel/payload/OrlixKernelPayload.bundle`.
+- `rtk plutil -p Build/OrlixKernel/payload/OrlixKernelPayload.bundle/Info.plist | rtk rg "OrlixKernelCommandLine|OrlixSelectedProfile|OrlixSelectedRootMode"`
+  - after product payload packaging: `OrlixKernelCommandLine` was `console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro orlix.profile=release`, profile was `release`, and root mode was `direct`.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixOSTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim test`
+  - passed after adding OrlixOS payload command-line metadata coverage.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-run PROFILE=release MLIBC_TEST_CASES=ansi/abs MLIBC_TEST_RUN_WAIT_TICKS=200`
+  - passed with no OrlixMLibC upstream mlibc patches present, verified `ORLIX-MLIBC-TEST-INIT` and `ORLIX-MLIBC-TEST-END`, and produced a test-initramfs payload with command line `console=ttyS0 console=hvc0 rdinit=/init orlix.root=initramfs-only orlix.profile=release`, profile `release`, and root mode `initramfs-only`.
 - `rtk timeout 2400 make -f OrlixMLibC/Makefile __test-run PROFILE=release MLIBC_TEST_CASES='ansi/abs ansi/fopen posix/access posix/getcwd posix/vfork posix/waitid' MLIBC_TEST_RUN_WAIT_TICKS=600`
   - passed and verified the same completion markers in `Build/OrlixKernel/run/release/OrlixTerminal-runtime.log`.
 - `rtk rg -n "ORLIX-MLIBC|FAIL|panic|Oops|hosted user trap|signal|timeout|Malformed|ERROR" Build/OrlixKernel/run/release/OrlixTerminal-runtime.log`
