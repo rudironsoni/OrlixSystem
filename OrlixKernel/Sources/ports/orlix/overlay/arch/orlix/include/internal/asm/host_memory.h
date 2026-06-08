@@ -12,6 +12,9 @@ int orlix_host_user_map_page(unsigned long target_address,
 			     unsigned long length,
 			     int writable,
 			     int executable);
+int orlix_host_user_map_trusted_executable_page(unsigned long target_address,
+						const void *source_page,
+						unsigned long length);
 int orlix_host_user_refresh_page(unsigned long target_address,
 				 const void *source_page,
 				 unsigned long length,

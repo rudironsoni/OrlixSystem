@@ -293,6 +293,14 @@ static void __noreturn orlix_hosted_user_trap_entry(
 	if (signal_number == ORLIX_HOST_USER_TRAP_SYSCALL)
 		orlix_hosted_handle_user_syscall(regs);
 
+	if (signal_number == ORLIX_HOST_USER_TRAP_TLS_WRITE) {
+		if (frame->frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS)
+			orlix_hosted_preserve_captured_user_tls(frame->user_tls);
+		regs->pc += sizeof(u32);
+		orlix_exit_to_user_mode_work(regs);
+		orlix_hosted_resume_current_user(task_pt_regs(current), false, 0);
+	}
+
 	if (orlix_hosted_user_trap_is_memory_fault(signal_number) &&
 	    !orlix_handle_host_user_fault(regs, frame->fault_address,
 					  frame->fault_flags)) {
@@ -459,9 +467,10 @@ static void orlix_hosted_prepare_syscall_gate(void)
 int orlix_hosted_sync_syscall_gate(void)
 {
 	orlix_hosted_prepare_syscall_gate();
-	return orlix_host_user_map_page(ORLIX_HOSTED_SYSCALL_GATE,
-					orlix_hosted_syscall_gate_page,
-					PAGE_SIZE, 0, 1);
+	return orlix_host_user_map_trusted_executable_page(
+		ORLIX_HOSTED_SYSCALL_GATE,
+		orlix_hosted_syscall_gate_page,
+		PAGE_SIZE);
 }
 
 long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,

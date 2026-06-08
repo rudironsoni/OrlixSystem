@@ -114,6 +114,39 @@ static bool OrlixHostUserTrapIsLinuxSyscallTrap(mcontext_t machine_context)
     return false;
 }
 
+static bool OrlixHostUserTrapReadRegister(mcontext_t machine_context,
+                                          unsigned int reg,
+                                          unsigned long *value);
+
+static bool OrlixHostUserTrapIsLinuxTlsWriteTrap(mcontext_t machine_context,
+                                                 unsigned long *user_tls)
+{
+    unsigned long pc = (unsigned long)machine_context->__ss.__pc;
+    uint32_t instruction;
+    unsigned int source_register;
+
+    if (!user_tls ||
+        pc < OrlixHostUserTrap.user_base ||
+        pc > OrlixHostUserTrap.user_limit - sizeof(instruction)) {
+        return false;
+    }
+
+    instruction = *(const uint32_t *)pc;
+    if ((instruction & ORLIX_HOST_AARCH64_TLS_WRITE_BRK_MASK) !=
+        ORLIX_HOST_AARCH64_TLS_WRITE_BRK_BASE) {
+        return false;
+    }
+
+    source_register = instruction & ORLIX_HOST_USER_TRAP_ARM64_REGISTER_MASK;
+    if (source_register == ORLIX_HOST_USER_TRAP_ARM64_REGISTER_MASK) {
+        *user_tls = 0;
+        return true;
+    }
+    return OrlixHostUserTrapReadRegister(machine_context,
+                                         source_register,
+                                         user_tls);
+}
+
 static unsigned long OrlixHostUserTrapTlsResumeTrampoline(void)
 {
     unsigned long gate_size;
@@ -452,6 +485,11 @@ static bool OrlixHostUserTrapIsMemoryFaultSignal(int signal_number)
     return signal_number == SIGBUS || signal_number == SIGSEGV;
 }
 
+static bool OrlixHostUserTrapIsInstructionTrapSignal(int signal_number)
+{
+    return signal_number == SIGTRAP || signal_number == SIGILL;
+}
+
 static unsigned long OrlixHostUserTrapFaultAddress(unsigned long user_pc,
                                                    unsigned long fault_flags,
                                                    siginfo_t *info,
@@ -482,6 +520,7 @@ static void OrlixHostUserTrapHandler(int signal_number,
     unsigned long fault_address;
     unsigned long fault_flags;
     unsigned long user_tls;
+    unsigned long tls_write_value = 0;
     bool timer_signal = signal_number == ORLIX_HOST_USER_TIMER_SIGNAL;
 
     if (!user_context || !user_context->uc_mcontext) {
@@ -503,9 +542,13 @@ static void OrlixHostUserTrapHandler(int signal_number,
     }
     if (timer_signal) {
         trap_number = ORLIX_HOST_USER_TRAP_TIMER;
-    } else if (signal_number == SIGTRAP &&
+    } else if (OrlixHostUserTrapIsInstructionTrapSignal(signal_number) &&
                OrlixHostUserTrapIsLinuxSyscallTrap(machine_context)) {
         trap_number = ORLIX_HOST_USER_TRAP_SYSCALL;
+    } else if (OrlixHostUserTrapIsInstructionTrapSignal(signal_number) &&
+               OrlixHostUserTrapIsLinuxTlsWriteTrap(machine_context,
+                                                    &tls_write_value)) {
+        trap_number = ORLIX_HOST_USER_TRAP_TLS_WRITE;
     }
 
     fault_flags = OrlixHostUserFaultFlags(signal_number, machine_context);
@@ -529,7 +572,8 @@ static void OrlixHostUserTrapHandler(int signal_number,
     OrlixHostUserTrapSaveFrame(machine_context);
     OrlixHostUserTrapFrame.fault_address = fault_address;
     OrlixHostUserTrapFrame.fault_flags = fault_flags;
-    OrlixHostUserTrapSetFrameTls(user_tls);
+    OrlixHostUserTrapSetFrameTls(trap_number == ORLIX_HOST_USER_TRAP_TLS_WRITE ?
+                                 tls_write_value : user_tls);
 
     machine_context->__ss.__x[0] = (uint64_t)trap_number;
     machine_context->__ss.__x[1] = (uint64_t)&OrlixHostUserTrapFrame;

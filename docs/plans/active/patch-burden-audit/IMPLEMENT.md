@@ -188,6 +188,55 @@ Adjusted `0016-locale-c-wide-conversion-uses-ascii.patch` so `active_codeset_is_
 
 Investigate `ansi/ungetwc` with the same rule: prove the owning layer before changing any durable patch, and do not alter generated upstream tests.
 
+### 2026-06-08 Clean-Slate Patch Removal And Hosted TLS Root Cause
+
+**What happened:**
+
+Removed the durable OrlixOS and OrlixMLibC patch burden from the active source patch stacks and reran upstream mlibc tests from regenerated upstream sources.
+
+The clean-slate full upstream mlibc run failed first on unmodified upstream tests:
+
+- `ansi/fenv`, killed by signal 11;
+- `ansi/longjmp`, killed by signal 11;
+- `posix/pthread_attr`, killed by signal 6;
+- `posix/pthread_barrier`, later in the same cluster.
+
+**Root cause found for the signal-11 failures:**
+
+Upstream mlibc's Linux AArch64 sysdeps write the Linux user TLS register directly with `msr TPIDR_EL0, Xt`. Upstream Linux owns save/restore of the user-visible `TPIDR_EL0` register on arm64. In Orlix's Darwin-hosted execution mode, a raw userspace write to Darwin's real `TPIDR_EL0` is not a valid Linux surface because it conflicts with host TLS. The owning fix is therefore in the hosted Linux execution boundary, not in mlibc.
+
+**Change made:**
+
+Added hosted Linux emulation for user-visible AArch64 TLS writes:
+
+- executable user pages translated by `OrlixHostAdapter` now rewrite `msr TPIDR_EL0, Xt` into an Orlix private instruction trap while preserving the source register in the instruction encoding;
+- the host trap handler recognizes the private TLS-write trap on simulator `SIGTRAP` or `SIGILL`, reads the source register from the Darwin machine context, and passes the Linux-visible TLS value through the existing user trap frame;
+- `OrlixKernel` handles `ORLIX_HOST_USER_TRAP_TLS_WRITE` by preserving the captured Linux user TLS in the hosted task state, advancing the user PC, and resuming the current Linux task;
+- the kernel-owned syscall gate is now mapped through a trusted executable mapping so its internal TLS restore trampoline is not translated as if it were upstream userspace code.
+
+No mlibc source patch or upstream-test mutation was added.
+
+**Evidence:**
+
+- `rtk rg --files OrlixOS/Sources/patches OrlixMLibC/Sources/patches`
+  - no files found; both durable patch stacks are empty.
+- `rtk timeout 2400 make -f OrlixMLibC/Makefile test PROFILE=release`
+  - failed from regenerated upstream mlibc sources at the original clean-slate cluster, starting with `ansi/fenv` and `ansi/longjmp` signal-11 crashes.
+- `rtk timeout 900 make -f OrlixMLibC/Makefile test PROFILE=release MLIBC_TEST_CASES=ansi/fenv MLIBC_TEST_RUN_WAIT_TICKS=300`
+  - passed after the kernel/host TLS fix.
+  - runtime log contained `ORLIX-MLIBC-TEST-INIT`, `ok 2 - ansi/fenv`, and `ORLIX-MLIBC-TEST-END`.
+  - no checked fatal markers: `not ok`, hosted user trap, user fault, panic, Oops, OOM, killed by signal, malformed output, or temporary host diagnostics.
+- `rtk timeout 900 make -f OrlixMLibC/Makefile test PROFILE=release MLIBC_TEST_CASES=ansi/longjmp MLIBC_TEST_RUN_WAIT_TICKS=300`
+  - passed after the kernel/host TLS fix.
+  - runtime log contained `ORLIX-MLIBC-TEST-INIT`, `ok 2 - ansi/longjmp`, and `ORLIX-MLIBC-TEST-END`.
+- `rtk timeout 900 make -f OrlixMLibC/Makefile test PROFILE=release MLIBC_TEST_CASES=posix/pthread_attr MLIBC_TEST_RUN_WAIT_TICKS=300`
+  - still fails as an unmodified upstream abort: `# posix/pthread_attr killed by signal 6`, `not ok 2 - posix/pthread_attr`.
+  - this is not part of the fixed TLS signal-11 root cause and remains the next Linux-surface investigation target.
+
+**Next:**
+
+Investigate `posix/pthread_attr` from first principles against upstream Linux pthread/futex/clone/TLS expectations. Do not patch mlibc or upstream tests.
+
 ### 2026-06-07 Wide Pushback Root Cause And Fix
 
 **What happened:**

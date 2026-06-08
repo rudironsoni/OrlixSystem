@@ -17,6 +17,11 @@ __attribute__((visibility("hidden"))) int orlix_host_user_map_page(
     int writable,
     int executable);
 
+__attribute__((visibility("hidden"))) int orlix_host_user_map_trusted_executable_page(
+    unsigned long target_address,
+    const void *source_page,
+    unsigned long length);
+
 __attribute__((visibility("hidden"))) int orlix_host_user_refresh_page(
     unsigned long target_address,
     const void *source_page,

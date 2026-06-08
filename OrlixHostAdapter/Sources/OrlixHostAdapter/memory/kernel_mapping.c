@@ -361,6 +361,10 @@ static void OrlixHostTranslateLinuxSyscalls(void *target_page,
     for (unsigned long index = 0; index < count; index++) {
         if (insns[index] == ORLIX_HOST_AARCH64_SVC0_INSN) {
             insns[index] = ORLIX_HOST_AARCH64_SYSCALL_BRK_INSN;
+        } else if ((insns[index] & ORLIX_HOST_AARCH64_MSR_TPIDR_EL0_MASK) ==
+                   ORLIX_HOST_AARCH64_MSR_TPIDR_EL0) {
+            insns[index] = ORLIX_HOST_AARCH64_TLS_WRITE_BRK_BASE |
+                           (insns[index] & 0x1fU);
         }
     }
 }
@@ -370,6 +374,7 @@ static int OrlixHostMapShadowUserPages(unsigned long target_address,
                                        unsigned long length,
                                        vm_prot_t requested_protection,
                                        bool executable,
+                                       bool translate_executable,
                                        bool copy_back_replaced_segments)
 {
     struct OrlixHostUserMapping *mapping;
@@ -416,9 +421,11 @@ static int OrlixHostMapShadowUserPages(unsigned long target_address,
     memcpy((void *)(mapping->target_address + offset),
            source_page,
            (size_t)length);
-    if (executable) {
+    if (executable && translate_executable) {
         OrlixHostTranslateLinuxSyscalls((void *)(mapping->target_address + offset),
                                         length);
+    }
+    if (executable) {
         __builtin___clear_cache((char *)(mapping->target_address + offset),
                                 (char *)(mapping->target_address + offset + length));
     }
@@ -727,7 +734,25 @@ __attribute__((visibility("hidden"))) int orlix_host_user_map_page(
                                          length,
                                          protection,
                                          executable != 0,
+                                         true,
                                          true);
+    OrlixHostLeaveHostTls(active_tls);
+    return result;
+}
+
+__attribute__((visibility("hidden"))) int orlix_host_user_map_trusted_executable_page(
+    unsigned long target_address,
+    const void *source_page,
+    unsigned long length)
+{
+    unsigned long active_tls = OrlixHostEnterHostTls();
+    int result = OrlixHostMapShadowUserPages(target_address,
+                                             source_page,
+                                             length,
+                                             VM_PROT_READ | VM_PROT_EXECUTE,
+                                             true,
+                                             false,
+                                             true);
     OrlixHostLeaveHostTls(active_tls);
     return result;
 }
@@ -756,6 +781,7 @@ __attribute__((visibility("hidden"))) int orlix_host_user_refresh_page(
                                          length,
                                          protection,
                                          executable != 0,
+                                         true,
                                          false);
     OrlixHostLeaveHostTls(active_tls);
     return result;
