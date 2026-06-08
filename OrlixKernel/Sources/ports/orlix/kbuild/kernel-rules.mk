@@ -989,10 +989,6 @@ ORLIX_IOS_SIMULATOR_ID ?=
 ORLIX_IOS_SIMULATOR_DERIVED_DATA ?= $(CURDIR)/.deriveddata/OrlixSystem-sim
 ORLIX_IOS_SIMULATOR_FRAMEWORK := $(ORLIX_IOS_SIMULATOR_DERIVED_DATA)/Build/Products/Debug-iphonesimulator/OrlixKernel.framework
 ORLIX_IOS_SIMULATOR_RUN_LOG_DIR ?= $(CURDIR)/Build/OrlixKernel/run/$(PROFILE)
-ORLIX_IOS_SIMULATOR_BUILD_HOME ?= $(CURDIR)/.xbuildhome
-ORLIX_IOS_SIMULATOR_SOURCE_PACKAGES_DIR ?= $(ORLIX_IOS_SIMULATOR_BUILD_HOME)/source-packages
-ORLIX_IOS_SIMULATOR_PACKAGE_CACHE_DIR ?= $(ORLIX_IOS_SIMULATOR_BUILD_HOME)/library-caches/org.swift.swiftpm
-ORLIX_XCODEBUILD_MCP_EXTRA_ARGS ?=
 ORLIX_TERMINAL_BUNDLE_ID ?= org.orlix.OrlixTerminal
 ORLIX_KERNEL_RUN_UNTIL_MARKER ?=
 ORLIX_KERNEL_RUN_TIMEOUT_SECONDS ?= 120
@@ -1049,9 +1045,6 @@ ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES ?= $(ORLIX_OS_STATE_ROOT_MINIMUM_BYTES)
 ORLIX_KERNEL_XCFRAMEWORK ?= $(CURDIR)/Build/OrlixKernel/xcframework/OrlixKernel.xcframework
 XCODEGEN ?= xcodegen
 XCODEBUILD_MCP ?= xcodebuildmcp
-ifeq ($(strip $(ORLIX_XCODEBUILD_MCP_EXTRA_ARGS)),)
-ORLIX_XCODEBUILD_MCP_EXTRA_ARGS := --extra-args -clonedSourcePackagesDirPath "$(ORLIX_IOS_SIMULATOR_SOURCE_PACKAGES_DIR)" --extra-args -packageCachePath "$(ORLIX_IOS_SIMULATOR_PACKAGE_CACHE_DIR)"
-endif
 
 LINUX_MAKE ?=
 LINUX_SED ?=
@@ -1163,7 +1156,6 @@ run: __ios-simulator-framework xcodeproj
 	install_selector=(); \
 	simctl_device="booted"; \
 	simctl_boot_device="$(ORLIX_IOS_SIMULATOR_NAME)"; \
-	mkdir -p "$(ORLIX_IOS_SIMULATOR_BUILD_HOME)" "$(ORLIX_IOS_SIMULATOR_SOURCE_PACKAGES_DIR)" "$(ORLIX_IOS_SIMULATOR_PACKAGE_CACHE_DIR)"; \
 	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
 		selector=(--simulator-id "$(ORLIX_IOS_SIMULATOR_ID)"); \
 		install_selector=(--simulator-id "$(ORLIX_IOS_SIMULATOR_ID)"); \
@@ -1177,13 +1169,11 @@ run: __ios-simulator-framework xcodeproj
 	ORLIX_OS_EXPECTED_ROOTFS_INPUT="$$expected_rootfs_input" \
 	ORLIX_OS_EXPECTED_BASE_ROOT_TREE_INPUT="$$expected_base_root_tree_input" \
 	ORLIX_OS_EXPECTED_STATE_ROOT_TREE_INPUT="$$expected_state_root_tree_input" \
-	HOME="$(ORLIX_IOS_SIMULATOR_BUILD_HOME)" \
 	"$(XCODEBUILD_MCP)" simulator build \
 		--project-path "$(CURDIR)/$(ORLIX_XCODE_PROJECT)" \
 		--scheme "OrlixTerminal" \
 		--configuration "Debug" \
 		--derived-data-path "$(ORLIX_IOS_SIMULATOR_DERIVED_DATA)" \
-		$(ORLIX_XCODEBUILD_MCP_EXTRA_ARGS) \
 		"$${selector[@]}" \
 		--output json; \
 	app_json="$$(ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator get-app-path \
@@ -2264,19 +2254,16 @@ __ios-simulator-framework: xcodeproj
 	$(MAKE) -f OrlixKernel/Makefile __kernel-archive PROFILE="$(PROFILE)" type="$(type)" libc="$(libc)" ORLIX_KERNEL_ARCHIVE_PLATFORMS=iphonesimulator; \
 	command -v "$(XCODEBUILD_MCP)" >/dev/null 2>&1 || { echo "XcodeBuildMCP is required; install xcodebuildmcp or set XCODEBUILD_MCP=/path/to/xcodebuildmcp" >&2; exit 1; }; \
 	selector=(); \
-	mkdir -p "$(ORLIX_IOS_SIMULATOR_BUILD_HOME)" "$(ORLIX_IOS_SIMULATOR_SOURCE_PACKAGES_DIR)" "$(ORLIX_IOS_SIMULATOR_PACKAGE_CACHE_DIR)"; \
 	if [ -n "$(ORLIX_IOS_SIMULATOR_ID)" ]; then \
 		selector=(--simulator-id "$(ORLIX_IOS_SIMULATOR_ID)"); \
 	else \
 		selector=(--simulator-name "$(ORLIX_IOS_SIMULATOR_NAME)" --use-latest-os); \
 	fi; \
-	HOME="$(ORLIX_IOS_SIMULATOR_BUILD_HOME)" \
 	ORLIX_PROFILE="$(PROFILE)" "$(XCODEBUILD_MCP)" simulator build \
 		--project-path "$(CURDIR)/$(ORLIX_XCODE_PROJECT)" \
 		--scheme "OrlixKernel" \
 		--configuration "Debug" \
 		--derived-data-path "$(ORLIX_IOS_SIMULATOR_DERIVED_DATA)" \
-		$(ORLIX_XCODEBUILD_MCP_EXTRA_ARGS) \
 		"$${selector[@]}" \
 		--output json; \
 	[ -d "$(ORLIX_IOS_SIMULATOR_FRAMEWORK)" ] || { echo "missing simulator framework: $(ORLIX_IOS_SIMULATOR_FRAMEWORK)" >&2; exit 1; }; \

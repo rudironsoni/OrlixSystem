@@ -150,41 +150,6 @@ Keep final claim open until explicit reviewer closure is returned, but this chec
 - `docs/plans/active/harness-quality-pass/PLAN.md` final milestone remains `[ ]` pending reviewer closure.
 - Codex-harness checks are passing and consistent with the current instruction set; this lane is still verification-clean but not yet claim-complete.
 
-### 2026-06-08 (Codex harness refresh run)
-
-**What happened:**
-
-Reran the harness verification suite after the current working-tree state (`OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk` change) to avoid stale evidence.
-
-**Decision:**
-
-Keep final milestone open until explicit reviewer-audit confirmation is returned; this lane remains verification-clean and ready for merge continuation.
-
-**Evidence:**
-
-- `rtk env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .codex/hooks/tests`
-  - `Ran 11 tests in ...` -> `OK`
-- `rtk env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .codex/rules/tests`
-  - `Ran 5 tests in ...` -> `OK`
-- `rtk env PYTHONPYCACHEPREFIX=/private/tmp/orlix-harness-pycache python3 -m py_compile .codex/hooks/orlix_hook_common.py .codex/hooks/pre_tool_use_guard.py .codex/hooks/permission_request_guard.py .codex/hooks/post_tool_use_review.py .codex/hooks/stop_claim_check.py .codex/hooks/compact_plan_check.py`
-  - exit `0`
-- `rtk python3 -m json.tool .codex/hooks.json`
-  - `OK`
-- `rtk python3 .codex/hooks/compact_plan_check.py`
-  - exit `0`
-- `rtk python3 .codex/hooks/stop_claim_check.py`
-  - exit `0`
-- `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- rtk git push origin main`
-  - `prompt`
-- `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- timeout 18000 make -f OrlixOS/Makefile test PROFILE=release`
-  - `prompt`
-- `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- rtk rm -rf Build`
-  - `forbidden`
-- `rtk git diff --check -- .codex/hooks .codex/rules .agents/skills .codex/agents AGENTS.md docs/harness/README.md docs/plans/active/harness-quality-pass/PLAN.md`
-  - no errors
-- `rtk env PYTHONPYCACHEPREFIX=/private/tmp/orlix-harness-pycache python3 -m py_compile .codex/hooks/orlix_hook_common.py .codex/hooks/pre_tool_use_guard.py .codex/hooks/permission_request_guard.py .codex/hooks/post_tool_use_review.py .codex/hooks/stop_claim_check.py .codex/hooks/compact_plan_check.py`
-  - exit `0`
-
 ## Deviations Summary
 
 | Deviation | Reason | Plan updated? |
