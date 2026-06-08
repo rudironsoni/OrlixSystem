@@ -133,6 +133,7 @@ public enum OrlixOSDistribution {
 public struct OrlixRootImageDescriptor: Equatable, Sendable {
     public let role: String
     public let identifier: String
+    public let kernelCommandLine: String?
     public let initrdBundleName: String?
     public let initrdBundleExtension: String?
     public let initrdResource: String?
@@ -170,6 +171,8 @@ enum OrlixOSPayload {
     private static let rootImagesKey = "OrlixOSRootImages"
     private static let rootImageRoleKey = "OrlixRootImageRole"
     private static let rootImageIdentifierKey = "OrlixRootImageIdentifier"
+    private static let rootImageKernelCommandLineKey =
+        "OrlixRootImageKernelCommandLine"
     private static let rootImageInitrdBundleNameKey =
         "OrlixRootImageInitrdBundleName"
     private static let rootImageInitrdResourceKey =
@@ -270,6 +273,10 @@ enum OrlixOSPayload {
             return OrlixRootImageDescriptor(
                 role: role,
                 identifier: identifier,
+                kernelCommandLine: metadataString(
+                    rootImageKernelCommandLineKey,
+                    in: entry
+                ),
                 initrdBundleName: initrdBundleName,
                 initrdBundleExtension: initrdBundleExtension,
                 initrdResource: metadataString(

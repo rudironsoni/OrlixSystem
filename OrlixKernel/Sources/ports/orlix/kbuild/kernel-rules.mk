@@ -2025,6 +2025,7 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		"ORLIX_KERNEL_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)" \
 		"ORLIX_KERNEL_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)" \
 		"ORLIX_KERNEL_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY=$(ORLIX_KERNEL_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY)" \
+		"ORLIX_KERNEL_LINUX_PAGE_SIZE=$(ORLIX_KERNEL_LINUX_PAGE_SIZE)" \
 		"ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE=$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)" \
 		"ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE=$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)" \
 		"ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE=$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)" \
@@ -2057,6 +2058,7 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 	validate_payload_resource "$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)"; \
 	validate_payload_resource "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)"; \
 	validate_payload_resource "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)"; \
+	validate_unsigned_int "$(ORLIX_KERNEL_LINUX_PAGE_SIZE)"; \
 	validate_unsigned_int "$(ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE)"; \
 	validate_unsigned_int "$(ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE)"; \
 	validate_unsigned_int "$(ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES)"; \
@@ -2135,6 +2137,7 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		[ "$$(sed -n 's/^payload_bundle_name=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME)" ] && \
 		[ "$$(sed -n 's/^payload_bundle_extension=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)" ] && \
 		[ "$$(sed -n 's/^payload_bundle_identifier=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER)" ] && \
+		[ "$$(sed -n 's/^linux_page_size=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_LINUX_PAGE_SIZE)" ] && \
 		[ "$$(sed -n 's/^root_initramfs_resource=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)" ] && \
 		[ "$$(sed -n 's/^base_root_image_resource=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)" ] && \
 		[ "$$(sed -n 's/^state_root_image_resource=//p' "$$payload_stamp")" = "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)" ] && \
@@ -2216,6 +2219,8 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		printf '%s\n' '    <string>$(ORLIX_PORT_ARCH)</string>'; \
 		printf '%s\n' '    <key>OrlixLinuxVersion</key>'; \
 		printf '%s\n' '    <string>$(LINUX_VERSION)</string>'; \
+		printf '%s\n' '    <key>OrlixLinuxPageSize</key>'; \
+		printf '%s\n' '    <integer>$(ORLIX_KERNEL_LINUX_PAGE_SIZE)</integer>'; \
 		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_SELECTED_PROFILE_INFO_KEY)"; \
 		printf '    <string>%s</string>\n' "$$payload_boot_profile"; \
 		printf '    <key>%s</key>\n' "$(ORLIX_KERNEL_PAYLOAD_KERNEL_COMMAND_LINE_INFO_KEY)"; \
@@ -2244,7 +2249,7 @@ __kernel-payload: $(ORLIX_KERNEL_PAYLOAD_PREREQS)
 		printf '%s\n' '</plist>'; \
 	} > "$$output/Info.plist"; \
 	plutil -lint "$$output/Info.plist" >/dev/null; \
-	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\nstate_root_tree_input=%s\nstate_root_tree_sha256=%s\npayload_boot_profile=%s\nkernel_command_line=%s\npayload_bundle_name=%s\npayload_bundle_extension=%s\npayload_bundle_identifier=%s\nroot_initramfs_resource=%s\nbase_root_image_resource=%s\nstate_root_image_resource=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\nbase_root_host_block_device=%s\nstate_root_host_block_device=%s\nbase_root_image_size=%s\nstate_root_image_size=%s\nstate_root_minimum_bytes=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" "$$state_root_tree_input" "$$state_root_tree_sha256" "$$payload_boot_profile" "$$payload_kernel_command_line" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME)" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER)" "$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)" "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)" "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)" "$(ORLIX_KERNEL_ROOT_MODES)" "$$selected_root_mode" "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" "$(ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE)" "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_SIZE)" "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_SIZE)" "$(ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES)" > "$$payload_stamp"; \
+	printf 'profile=%s\nlinux_version=%s\nrootfs_input=%s\nrootfs_sha256=%s\nbase_root_tree_input=%s\nbase_root_tree_sha256=%s\nstate_root_tree_input=%s\nstate_root_tree_sha256=%s\npayload_boot_profile=%s\nkernel_command_line=%s\npayload_bundle_name=%s\npayload_bundle_extension=%s\npayload_bundle_identifier=%s\nlinux_page_size=%s\nroot_initramfs_resource=%s\nbase_root_image_resource=%s\nstate_root_image_resource=%s\nroot_modes=%s\nselected_root_mode=%s\nbase_root_device=%s\nstate_root_device=%s\nbase_root_host_block_device=%s\nstate_root_host_block_device=%s\nbase_root_image_size=%s\nstate_root_image_size=%s\nstate_root_minimum_bytes=%s\n' "$(PROFILE)" "$(LINUX_VERSION)" "$$rootfs_input" "$$rootfs_sha256" "$$base_root_tree_input" "$$base_root_tree_sha256" "$$state_root_tree_input" "$$state_root_tree_sha256" "$$payload_boot_profile" "$$payload_kernel_command_line" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_NAME)" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_EXTENSION)" "$(ORLIX_KERNEL_PAYLOAD_BUNDLE_IDENTIFIER)" "$(ORLIX_KERNEL_LINUX_PAGE_SIZE)" "$(ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE)" "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE)" "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE)" "$(ORLIX_KERNEL_ROOT_MODES)" "$$selected_root_mode" "$(ORLIX_KERNEL_BASE_ROOT_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_DEVICE)" "$(ORLIX_KERNEL_BASE_ROOT_HOST_BLOCK_DEVICE)" "$(ORLIX_KERNEL_STATE_ROOT_HOST_BLOCK_DEVICE)" "$(ORLIX_KERNEL_BASE_ROOT_IMAGE_SIZE)" "$(ORLIX_KERNEL_STATE_ROOT_IMAGE_SIZE)" "$(ORLIX_KERNEL_STATE_ROOT_MINIMUM_BYTES)" > "$$payload_stamp"; \
 	echo "packaged OrlixKernel payload: $$output (profile $(PROFILE))"
 
 __ios-simulator-framework: xcodeproj

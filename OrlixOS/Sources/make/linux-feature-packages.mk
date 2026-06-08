@@ -132,7 +132,7 @@ $(ORLIXOS_LIBCAP_PROOF): $(ORLIXOS_LIBCAP_SOURCE_STAMP) $(ORLIXOS_MLIBC_SYSROOT)
 		printf '%s\n' 'exec grep -E "$$pattern" "$$@"'; \
 	} > "$(ORLIXOS_LIBCAP_BUILD_DIR)/.orlix-host-tools/egrep"; \
 	chmod +x "$(ORLIXOS_LIBCAP_BUILD_DIR)/.orlix-host-tools/egrep"; \
-	$(MAKE) -C "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap" -j1 CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fPIC" BUILD_CC=cc BUILD_SED=/opt/homebrew/bin/gsed BUILD_EGREP="$(ORLIXOS_LIBCAP_BUILD_DIR)/.orlix-host-tools/egrep" AR="$(ORLIXOS_AR)" RANLIB="$(ORLIXOS_RANLIB)" CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS) -Wno-error" USE_GPERF=no libcap.a; \
+	$(MAKE) -C "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap" -j1 CC="$(ORLIXOS_CC) --target=aarch64-linux-gnu --sysroot=$$sysroot -isystem $$headers -D_GNU_SOURCE -fhosted -fno-builtin -ffixed-x18 -fPIC" BUILD_CC="$(ORLIXOS_BUILD_CC)" BUILD_SED=/opt/homebrew/bin/gsed BUILD_EGREP="$(ORLIXOS_LIBCAP_BUILD_DIR)/.orlix-host-tools/egrep" AR="$(ORLIXOS_AR)" RANLIB="$(ORLIXOS_RANLIB)" CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS) -Wno-error" USE_GPERF=no libcap.a; \
 	grep -F -q 'cap_net_bind_service' "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/cap_names.h" || { echo "libcap capability-name table missing cap_net_bind_service" >&2; exit 1; }; \
 	install -m 0644 "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/include/sys/capability.h" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include/sys/capability.h"; \
 	install -m 0644 "$(ORLIXOS_LIBCAP_BUILD_DIR)/libcap/include/uapi/linux/capability.h" "$(ORLIXOS_PACKAGE_INSTALL_DIR)/usr/include/linux/capability.h"; \
@@ -181,7 +181,7 @@ $(ORLIXOS_E2FSPROGS_PROOF): $(ORLIXOS_E2FSPROGS_SOURCE_STAMP) $(ORLIXOS_MLIBC_SY
 	chmod +x "$(ORLIXOS_E2FSPROGS_BUILD_DIR)/.orlix-toolchain/aarch64-linux-gnu-gcc"; \
 	cd "$(ORLIXOS_E2FSPROGS_BUILD_DIR)"; \
 	export CC="$(ORLIXOS_E2FSPROGS_BUILD_DIR)/.orlix-toolchain/aarch64-linux-gnu-gcc"; \
-	export BUILD_CC="cc"; \
+	export BUILD_CC="$(ORLIXOS_BUILD_CC)"; \
 	export CFLAGS="$(ORLIXOS_PACKAGE_CFLAGS)"; \
 	export LDFLAGS=""; \
 	export LIBS=""; \

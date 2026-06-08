@@ -57,6 +57,7 @@ $(ORLIXOS_COREUTILS_PROOF): $(ORLIXOS_COREUTILS_SOURCE_STAMP) $(ORLIXOS_ACL_PROO
 	export LIBS="$(ORLIXOS_LIBSELINUX_A) $(ORLIXOS_LIBCAP_A) $(ORLIXOS_LIBACL_A) $(ORLIXOS_LIBATTR_A) $(ORLIXOS_LIBSEPOL_A) $(ORLIXOS_LIBPCRE2_8_A) $(ORLIXOS_LIBFTS_A) $$sysroot/usr/lib/libc.a $$sysroot/usr/lib/libm.a $$sysroot/usr/lib/libpthread.a $$sysroot/usr/lib/libssp_nonshared.a $$sysroot/usr/lib/libssp.a $$rtlib -Wl,--end-group $$sysroot/usr/lib/crtn.o"; \
 	export AR="$(ORLIXOS_AR)"; \
 	export RANLIB="$(ORLIXOS_RANLIB)"; \
+	export BUILD_CC="$(ORLIXOS_BUILD_CC)"; \
 	export PATH="$(ORLIXOS_COREUTILS_BOOTSTRAP_PATH)"; \
 	export gl_cv_header_working_fcntl_h=yes; \
 	export gl_cv_func_getopt_gnu=yes; \

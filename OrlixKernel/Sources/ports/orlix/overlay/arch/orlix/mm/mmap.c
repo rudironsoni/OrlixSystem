@@ -49,9 +49,10 @@ unsigned long arch_get_unmapped_area(struct file *file, unsigned long addr,
 	struct vm_unmapped_area_info info = {};
 	const unsigned long mmap_end = arch_get_mmap_end(addr, len, flags);
 
-	if (!orlix_hosted_mmap_align_mask(file, flags, vm_flags))
+	if (!orlix_hosted_mmap_align_mask(file, flags, vm_flags)) {
 		return generic_get_unmapped_area(file, addr, len, pgoff,
 						 flags, vm_flags);
+	}
 
 	if (len > mmap_end - mmap_min_addr)
 		return -ENOMEM;
@@ -88,10 +89,10 @@ unsigned long arch_get_unmapped_area_topdown(struct file *file,
 	const unsigned long mmap_end = arch_get_mmap_end(addr, len, flags);
 	unsigned long result;
 
-	if (!orlix_hosted_mmap_align_mask(file, flags, vm_flags))
-		return generic_get_unmapped_area_topdown(file, addr, len,
-							 pgoff, flags,
-							 vm_flags);
+	if (!orlix_hosted_mmap_align_mask(file, flags, vm_flags)) {
+		return generic_get_unmapped_area_topdown(file, addr, len, pgoff,
+							 flags, vm_flags);
+	}
 
 	if (len > mmap_end - mmap_min_addr)
 		return -ENOMEM;

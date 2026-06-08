@@ -30,6 +30,9 @@ final class OrlixTerminalSessionTests: XCTestCase {
         for descriptor in upstreamTestDescriptors {
             XCTAssertFalse(descriptor.role.isEmpty)
             XCTAssertFalse(descriptor.identifier.isEmpty)
+            let kernelCommandLine = try XCTUnwrap(descriptor.kernelCommandLine)
+            XCTAssertTrue(kernelCommandLine.contains("rdinit=/init"))
+            XCTAssertTrue(kernelCommandLine.contains("orlix.root=initramfs-only"))
             XCTAssertNotNil(descriptor.initrdBundleName)
             XCTAssertNotNil(descriptor.initrdBundleExtension)
             XCTAssertNotNil(descriptor.initrdResource)

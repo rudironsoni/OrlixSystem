@@ -443,6 +443,99 @@ known clean-slate mlibc target remains the unmodified upstream
 `posix/pthread_attr` failure, unless a broader suite exposes an earlier
 kernel-surface failure.
 
+### 2026-06-08 HostAdapter Memory-Fault Adaptation And pthread_attr Proof
+
+**What happened:**
+
+The OrlixOS terminal-session kselftest path stopped timing out and began
+emitting TAP output through the Linux session, but the focused kselftest then
+failed at `mprotect_stack_probe`. The failure matched the clean-slate mlibc
+`posix/pthread_attr` stack-mapping shape: an anonymous `PROT_NONE` reservation
+with a later writable stack page inside a larger Darwin host page.
+
+**Root causes found:**
+
+1. `orlix_sync_user_host_window()` leaked `mmap_read_lock()` after resolving a
+   present Linux PTE. That blocked later Linux mmap/mprotect progress and caused
+   the earlier no-output timeout.
+2. Darwin host pages are larger than Linux pages on the simulator. A valid Linux
+   writable page can share one Darwin host page with adjacent valid VMA holes.
+   Treating the whole host page as one Linux mapping is wrong; the host adapter
+   must refresh the host page from the Linux-owned page segments that actually
+   exist.
+3. Darwin `SIGBUS`/`SIGSEGV` signal numbers were leaking across the
+   HostAdapter boundary. The kernel compared the delivered trap number against
+   Linux signal constants, so a Darwin memory fault could be misclassified as a
+   fatal Linux signal instead of a Linux user memory fault.
+
+**Changes made:**
+
+- `OrlixHostAdapter` now refreshes a host user window from explicit Linux page
+  segments, preserving valid holes and unioning the host mapping protections
+  needed for the existing Linux pages.
+- Host page-size discovery is now exposed by the private HostAdapter memory
+  API (`orlix_host_memory_page_size()`); the boot handoff consumes that API
+  instead of reading Darwin `vm_page_size` directly.
+- `OrlixHostAdapter` translates Darwin memory-fault signals into the private
+  `ORLIX_HOST_USER_TRAP_MEMORY_FAULT` trap before entering Linux-owned trap
+  handling.
+- `OrlixKernel` treats that private trap as the hosted Linux user-memory-fault
+  event, handles it through the Linux VM fault path, and derives the fatal
+  Linux signal only if fault handling fails.
+- `orlix_sync_user_host_window()` now releases `mmap_read_lock()` after the PTE
+  window lookup and delegates host-page refresh to the HostAdapter instead of
+  duplicating Darwin page adaptation in kernel code.
+- Added focused HostAdapter tests for Linux pages inside larger host pages,
+  multiple Linux segments in one host page, and a writable Linux page after
+  adjacent VMA holes.
+- Added an Orlix-owned `pthread_attr_probe` kselftest that mirrors all nine
+  unmodified upstream `posix/pthread_attr` stages with observable PTY markers,
+  without modifying upstream mlibc tests.
+
+No mlibc, Coreutils, package source, generated upstream tree, or upstream test
+source was patched.
+
+**Evidence:**
+
+- `rtk rg --files OrlixOS/Sources/patches OrlixMLibC/Sources/patches`
+  - no files found; both durable patch stacks remain empty.
+- `rtk rg -n "dprintf|hosted syscall|hosted user trap delivered|hosted bus fault|hosted fault window|sys_mmap entry|arch_get_unmapped_area entry|arch_get_unmapped_area_topdown entry" OrlixHostAdapter/Sources OrlixKernel/Sources/ports/orlix/overlay`
+  - no temporary tracing remained after cleanup; the only matches were the two
+    existing `panic("Orlix: failed to synchronize hosted syscall gate ...")`
+    diagnostics in `arch/orlix/mm/init.c`.
+- `rtk timeout 1800 make -f OrlixKernel/Makefile __ios-simulator-framework PROFILE=release`
+  - passed after rerunning with sandbox escalation for XcodeBuildMCP's log
+    directory; verified the OrlixKernel framework symbols.
+- `rtk timeout 300 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixHostAdapterTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixHostAdapterTests/OrlixHostAdapterTests/testUserMappingAdaptsLinuxPageInsideHostPage -only-testing:OrlixHostAdapterTests/OrlixHostAdapterTests/testUserWindowRefreshCopiesMultipleLinuxPagesInsideHostPage -only-testing:OrlixHostAdapterTests/OrlixHostAdapterTests/testUserWindowRefreshMapsWritableLinuxPageAfterHoles test`
+  - passed after rerunning with sandbox escalation for CoreSimulator/SwiftPM
+    cache access.
+  - Xcode reported the target dependency graph contained exactly one target,
+    `OrlixHostAdapterTests`, with no dependencies, so this proof no longer
+    builds `OrlixTerminal` or packages `OrlixOS`.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixOSTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testRootImageDescriptorsComeFromOrlixOSTargetMetadata test`
+  - passed.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testKselftestRootfsCompletesThroughOrlixOSTerminalSession test`
+  - passed; the test runner observed the OrlixOS terminal-session output path
+    and completed without upstream failure markers.
+- `rtk timeout 600 make -f OrlixKernel/Makefile run PROFILE=release type=kselftest libc=orlixmlibc`
+  - passed after rerunning with sandbox escalation for XcodeBuildMCP's log
+    directory; runtime log contained `ORLIX-KSELFTEST-END`.
+  - `pthread_attr_probe` reported all nine upstream-shaped stages as `ok`,
+    including detachstate, stacksize create/join, guardsize, scope,
+    inheritsched, schedparam, schedpolicy, explicit stack create/join, and
+    stack round trip.
+- `rtk timeout 900 make -f OrlixMLibC/Makefile test PROFILE=release MLIBC_TEST_CASES=posix/pthread_attr MLIBC_TEST_RUN_WAIT_TICKS=300`
+  - passed after rerunning with sandbox escalation for the simulator framework
+    step; reported no OrlixMLibC upstream mlibc patches present and verified
+    upstream tests in `Build/OrlixKernel/run/release/OrlixTerminal-runtime.log`.
+
+**Next:**
+
+Continue upstream conformance expansion from the zero-patch state. The next
+failure must be investigated from first principles and fixed in the owning
+Orlix layer; do not reintroduce mlibc, Coreutils, package-source, or upstream
+test patches.
+
 ---
 
 ## Deviations Summary

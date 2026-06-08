@@ -279,17 +279,19 @@ targets:
     platform: iOS
     sources:
       - path: OrlixHostAdapter/Tests/XCTest/OrlixHostAdapterTests
-    dependencies:
-      - target: OrlixTerminal
-      - target: OrlixKernel
+      - path: OrlixHostAdapter/Sources/OrlixHostAdapter/memory
+        includes:
+          - kernel_mapping.c
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: org.orlix.OrlixHostAdapterTests
         HEADER_SEARCH_PATHS:
           - $(SRCROOT)/OrlixHostAdapter/Sources
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OrlixTerminal.app/OrlixTerminal
-        BUNDLE_LOADER: $(TEST_HOST)
+          - $(SRCROOT)/OrlixKernel/Sources/ports/orlix/overlay/arch/orlix/include
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          - ORLIX_HOST_ADAPTER_TEST_LINUX_PAGE_SIZE=$(ORLIX_OS_LINUX_PAGE_SIZE)
   OrlixTerminalProofDriverTests:
     type: bundle.unit-test
     platform: iOS
@@ -417,7 +419,6 @@ schemes:
   OrlixHostAdapterTests:
     build:
       targets:
-        OrlixTerminal: all
         OrlixHostAdapterTests: test
     test:
       config: Debug

@@ -69,7 +69,15 @@ static void orlix_hosted_start_user_timer_once(void)
 
 static bool orlix_hosted_user_trap_is_memory_fault(int signal_number)
 {
-	return signal_number == SIGBUS || signal_number == SIGSEGV;
+	return signal_number == ORLIX_HOST_USER_TRAP_MEMORY_FAULT ||
+		signal_number == SIGBUS || signal_number == SIGSEGV;
+}
+
+static int orlix_hosted_user_fault_exit_signal(unsigned long fault_flags)
+{
+	if (fault_flags & ORLIX_HOST_USER_FAULT_BUS)
+		return SIGBUS;
+	return SIGSEGV;
 }
 
 static void orlix_hosted_restore_task_user_tls(struct task_struct *task)
@@ -301,11 +309,20 @@ static void __noreturn orlix_hosted_user_trap_entry(
 		orlix_hosted_resume_current_user(task_pt_regs(current), false, 0);
 	}
 
-	if (orlix_hosted_user_trap_is_memory_fault(signal_number) &&
-	    !orlix_handle_host_user_fault(regs, frame->fault_address,
-					  frame->fault_flags)) {
-		orlix_exit_to_user_mode_work(regs);
-		orlix_hosted_resume_current_user(task_pt_regs(current), false, 0);
+	if (orlix_hosted_user_trap_is_memory_fault(signal_number)) {
+		int fault_ret = orlix_handle_host_user_fault(regs,
+							     frame->fault_address,
+							     frame->fault_flags);
+		if (!fault_ret) {
+			orlix_exit_to_user_mode_work(regs);
+			orlix_hosted_resume_current_user(task_pt_regs(current),
+							 false, 0);
+		}
+		pr_info("Orlix: hosted user fault handling failed signal=%d task=%s pid=%d pc=%#lx fault=%#lx flags=%#lx ret=%d\n",
+			signal_number, current->comm, task_pid_nr(current),
+			regs->pc, frame->fault_address, frame->fault_flags,
+			fault_ret);
+		exit_code = orlix_hosted_user_fault_exit_signal(frame->fault_flags);
 	}
 
 	if (!exit_code)

@@ -549,6 +549,8 @@ static void OrlixHostUserTrapHandler(int signal_number,
                OrlixHostUserTrapIsLinuxTlsWriteTrap(machine_context,
                                                     &tls_write_value)) {
         trap_number = ORLIX_HOST_USER_TRAP_TLS_WRITE;
+    } else if (OrlixHostUserTrapIsMemoryFaultSignal(signal_number)) {
+        trap_number = ORLIX_HOST_USER_TRAP_MEMORY_FAULT;
     }
 
     fault_flags = OrlixHostUserFaultFlags(signal_number, machine_context);

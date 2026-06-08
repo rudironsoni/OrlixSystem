@@ -1,8 +1,8 @@
 #include "boot/handoff.h"
 #include "boot/payload.h"
+#include "OrlixHostAdapter/memory/kernel_mapping.h"
 #include "OrlixHostAdapter/boot/resources.h"
 #include <asm/boot.h>
-#include <mach/mach.h>
 
 static int OrlixLinuxBootStringIsPresent(const char *value)
 {
@@ -90,7 +90,7 @@ __attribute__((visibility("hidden"))) int OrlixBootHandoff(
     params.initrd_size = initrd.size;
     params.root_device = input->root_device;
     params.console_device = input->console_device;
-    params.host_page_size = (unsigned long)vm_page_size;
+    params.host_page_size = orlix_host_memory_page_size();
 
     status = OrlixEnterLinux(&params);
     OrlixHostFreeResource(&initrd);

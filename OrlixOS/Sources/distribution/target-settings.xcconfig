@@ -31,7 +31,7 @@ ORLIX_OS_PAYLOAD_STATE_ROOT_DEVICE_INFO_KEY = OrlixStateRootDevice
 ORLIX_OS_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY = OrlixBaseRootHostBlockDevice
 ORLIX_OS_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY = OrlixStateRootHostBlockDevice
 ORLIX_OS_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY = OrlixStateRootMinimumBytes
-ORLIX_OS_LINUX_PAGE_SIZE = 16384
+ORLIX_OS_LINUX_PAGE_SIZE = 4096
 ORLIX_OS_ROOT_INITRAMFS_RESOURCE = rootfs/initramfs.cpio.gz
 ORLIX_OS_BASE_ROOT_IMAGE_RESOURCE = rootfs/base.ext4
 ORLIX_OS_STATE_ROOT_IMAGE_RESOURCE = rootfs/state.ext4
@@ -42,6 +42,7 @@ ORLIX_OS_RELEASE_KERNEL_COMMAND_LINE = console=ttyS0 console=hvc0 root=/dev/vda 
 ORLIX_OS_DEVELOPMENT_KERNEL_COMMAND_LINE = console=ttyS0 console=hvc0 rdinit=/init orlix.root=overlay debug ignore_loglevel orlix.profile=development
 ORLIX_OS_RELEASE_TEST_INITRAMFS_KERNEL_COMMAND_LINE = console=ttyS0 console=hvc0 rdinit=/init orlix.root=initramfs-only orlix.profile=release
 ORLIX_OS_DEVELOPMENT_TEST_INITRAMFS_KERNEL_COMMAND_LINE = console=ttyS0 console=hvc0 rdinit=/init orlix.root=initramfs-only debug ignore_loglevel orlix.profile=development
+ORLIX_OS_TEST_INITRAMFS_KERNEL_COMMAND_LINE = $(ORLIX_OS_RELEASE_TEST_INITRAMFS_KERNEL_COMMAND_LINE)
 ORLIX_OS_BASE_ROOT_DEVICE = /dev/vda
 ORLIX_OS_STATE_ROOT_DEVICE = /dev/vdb
 ORLIX_OS_BASE_ROOT_HOST_BLOCK_DEVICE = 0

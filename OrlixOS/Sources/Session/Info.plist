@@ -59,6 +59,8 @@
             <string>$(ORLIX_OS_KSELFTEST_ROOT_IMAGE_ROLE)</string>
             <key>OrlixRootImageIdentifier</key>
             <string>$(ORLIX_OS_KSELFTEST_ROOT_IMAGE_IDENTIFIER)</string>
+            <key>OrlixRootImageKernelCommandLine</key>
+            <string>$(ORLIX_OS_TEST_INITRAMFS_KERNEL_COMMAND_LINE)</string>
             <key>OrlixRootImageInitrdBundleName</key>
             <string>$(ORLIX_OS_KSELFTEST_INITRAMFS_BUNDLE_NAME)</string>
             <key>OrlixRootImageInitrdResource</key>
@@ -69,6 +71,8 @@
             <string>$(ORLIX_OS_MLIBC_ROOT_IMAGE_ROLE)</string>
             <key>OrlixRootImageIdentifier</key>
             <string>$(ORLIX_OS_MLIBC_ROOT_IMAGE_IDENTIFIER)</string>
+            <key>OrlixRootImageKernelCommandLine</key>
+            <string>$(ORLIX_OS_TEST_INITRAMFS_KERNEL_COMMAND_LINE)</string>
             <key>OrlixRootImageInitrdBundleName</key>
             <string>$(ORLIX_OS_MLIBC_INITRAMFS_BUNDLE_NAME)</string>
             <key>OrlixRootImageInitrdResource</key>
@@ -79,6 +83,8 @@
             <string>$(ORLIX_OS_COREUTILS_ROOT_IMAGE_ROLE)</string>
             <key>OrlixRootImageIdentifier</key>
             <string>$(ORLIX_OS_COREUTILS_ROOT_IMAGE_IDENTIFIER)</string>
+            <key>OrlixRootImageKernelCommandLine</key>
+            <string>$(ORLIX_OS_TEST_INITRAMFS_KERNEL_COMMAND_LINE)</string>
             <key>OrlixRootImageInitrdBundleName</key>
             <string>$(ORLIX_OS_COREUTILS_INITRAMFS_BUNDLE_NAME)</string>
             <key>OrlixRootImageInitrdResource</key>

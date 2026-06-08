@@ -7,6 +7,15 @@ int orlix_host_kernel_map_page(unsigned long target_address,
 			       unsigned long length);
 void orlix_host_kernel_unmap_pages(unsigned long target_address,
 				   unsigned long length);
+unsigned long orlix_host_memory_page_size(void);
+struct orlix_host_user_page_segment {
+	unsigned long target_address;
+	const void *source_page;
+	unsigned long length;
+	int writable;
+	int executable;
+};
+
 int orlix_host_user_map_page(unsigned long target_address,
 			     const void *source_page,
 			     unsigned long length,
@@ -20,6 +29,11 @@ int orlix_host_user_refresh_page(unsigned long target_address,
 				 unsigned long length,
 				 int writable,
 				 int executable);
+int orlix_host_user_refresh_window(
+	unsigned long target_address,
+	unsigned long length,
+	const struct orlix_host_user_page_segment *segments,
+	unsigned long segment_count);
 void orlix_host_user_unmap_pages(unsigned long target_address,
 				 unsigned long length);
 void orlix_host_user_sync_writable_mappings(void);

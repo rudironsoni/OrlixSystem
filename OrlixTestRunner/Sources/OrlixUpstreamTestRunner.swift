@@ -13,14 +13,17 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
     let expectedCoreutilsTotal: Int?
     let timeout: TimeInterval
 
-    func bootConfig(rootImageIdentifier: String) throws -> OrlixBootConfig {
+    func bootConfig(rootImage: OrlixRootImageDescriptor) throws
+        -> OrlixBootConfig
+    {
         guard let profile = OrlixOSDistribution.bundledBootProfile else {
             throw OrlixUpstreamTestRunError.missingBundledBootProfile
         }
 
         return OrlixBootConfig(
             profile: profile,
-            rootImageIdentifier: rootImageIdentifier,
+            kernelCommandLine: rootImage.kernelCommandLine,
+            rootImageIdentifier: rootImage.identifier,
             terminalIdentifier: "orlix.test.\(suite.rawValue).terminal"
         )
     }
@@ -330,7 +333,7 @@ final class OrlixUpstreamTestSessionRunner: @unchecked Sendable {
         } else {
             session = OrlixLinuxSession(
                 bootConfig: try spec.bootConfig(
-                    rootImageIdentifier: rootImage.identifier
+                    rootImage: rootImage
                 )
             )
         }
