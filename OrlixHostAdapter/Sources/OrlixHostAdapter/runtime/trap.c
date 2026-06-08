@@ -14,6 +14,7 @@
 #include <mach/mach.h>
 #include <mach/thread_act.h>
 #include <pthread.h>
+#include <sched.h>
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
@@ -95,18 +96,24 @@ static bool OrlixHostUserTrapInstructionAt(unsigned long pc,
     return *instruction == expected;
 }
 
+static bool OrlixHostUserTrapIsLinuxSyscallInstruction(unsigned long pc)
+{
+    return OrlixHostUserTrapInstructionAt(pc,
+                                          ORLIX_HOST_AARCH64_SVC0_INSN) ||
+           OrlixHostUserTrapInstructionAt(pc,
+                                          ORLIX_HOST_AARCH64_SYSCALL_BRK_INSN);
+}
+
 static bool OrlixHostUserTrapIsLinuxSyscallTrap(mcontext_t machine_context)
 {
     unsigned long pc = (unsigned long)machine_context->__ss.__pc;
 
-    if (OrlixHostUserTrapInstructionAt(pc,
-                                       ORLIX_HOST_AARCH64_SYSCALL_BRK_INSN)) {
+    if (OrlixHostUserTrapIsLinuxSyscallInstruction(pc)) {
         return true;
     }
 
     if (pc >= OrlixHostUserTrap.user_base + sizeof(uint32_t) &&
-        OrlixHostUserTrapInstructionAt(pc - sizeof(uint32_t),
-                                       ORLIX_HOST_AARCH64_SYSCALL_BRK_INSN)) {
+        OrlixHostUserTrapIsLinuxSyscallInstruction(pc - sizeof(uint32_t))) {
         machine_context->__ss.__pc = (uint64_t)(pc - sizeof(uint32_t));
         return true;
     }
@@ -162,6 +169,16 @@ static unsigned long OrlixHostUserTrapTlsResumeTrampoline(void)
     }
 
     return OrlixHostUserTrap.syscall_gate + ORLIX_HOST_USER_TRAP_TLS_RESUME_OFFSET;
+}
+
+static bool OrlixHostUserTrapFrameUsesTlsResumeTrampoline(
+    const struct orlix_host_user_trap_frame *frame)
+{
+    return frame &&
+           (frame->frame_flags & ORLIX_HOST_USER_FRAME_SYSCALL_RETURN) &&
+           (frame->frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS) &&
+           OrlixHostUserTrapValidUserTls(frame->user_tls) &&
+           OrlixHostUserTrapTlsResumeTrampoline();
 }
 
 static unsigned long OrlixHostUserTrapActiveTls(void)
@@ -398,7 +415,7 @@ static unsigned long OrlixHostUserFaultFlags(int signal_number,
 static void OrlixHostUserTrapReraise(int signal_number)
 {
     signal(signal_number, SIG_DFL);
-    raise(signal_number);
+    pthread_kill(pthread_self(), signal_number);
 }
 
 static void OrlixHostUserTrapSaveNeon(const arm_neon_state64_t *neon)
@@ -444,16 +461,12 @@ static void OrlixHostUserTrapLoadMachFrame(
     state->__cpsr = (uint32_t)frame->pstate;
     state->__pad = 0;
 
-    if ((frame->frame_flags & ORLIX_HOST_USER_FRAME_SYSCALL_RETURN) &&
-        (frame->frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS) &&
-        OrlixHostUserTrapValidUserTls(frame->user_tls)) {
+    if (OrlixHostUserTrapFrameUsesTlsResumeTrampoline(frame)) {
         unsigned long trampoline = OrlixHostUserTrapTlsResumeTrampoline();
 
-        if (trampoline) {
-            state->__x[16] = (uint64_t)frame->user_tls;
-            state->__x[17] = (uint64_t)frame->pc;
-            state->__pc = (uint64_t)trampoline;
-        }
+        state->__x[16] = (uint64_t)frame->user_tls;
+        state->__x[17] = (uint64_t)frame->pc;
+        state->__pc = (uint64_t)trampoline;
     }
 }
 
@@ -495,17 +508,15 @@ static unsigned long OrlixHostUserTrapFaultAddress(unsigned long user_pc,
                                                    siginfo_t *info,
                                                    mcontext_t machine_context)
 {
-    unsigned long fault_address;
-
     if (fault_flags & ORLIX_HOST_USER_FAULT_EXEC) {
         return user_pc;
     }
 
-    fault_address = (unsigned long)machine_context->__es.__far;
-    if (!fault_address && info) {
-        fault_address = (unsigned long)info->si_addr;
+    if (info && info->si_addr) {
+        return (unsigned long)info->si_addr;
     }
-    return fault_address;
+
+    return (unsigned long)machine_context->__es.__far;
 }
 
 static void OrlixHostUserTrapHandler(int signal_number,
@@ -771,7 +782,11 @@ __attribute__((visibility("hidden"), noreturn)) void orlix_host_user_trap_resume
     }
 
     OrlixHostUserResumeFrame = *frame;
-    if (frame->frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS) {
+    bool trampoline_resume =
+        OrlixHostUserTrapFrameUsesTlsResumeTrampoline(frame);
+
+    if ((frame->frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS) &&
+        !trampoline_resume) {
         OrlixHostWriteTls(frame->user_tls);
     }
     atomic_store_explicit(&OrlixHostUserResumePending, true,
@@ -780,7 +795,12 @@ __attribute__((visibility("hidden"), noreturn)) void orlix_host_user_trap_resume
 
     while (atomic_load_explicit(&OrlixHostUserResumePending,
                                 memory_order_acquire)) {
-        __asm__ volatile("yield");
+        OrlixHostUserTimerWake();
+        if (trampoline_resume) {
+            (void)sched_yield();
+        } else {
+            __asm__ volatile("yield");
+        }
     }
 
     (void)OrlixHostEnterHostTls();

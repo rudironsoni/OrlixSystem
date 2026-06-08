@@ -10,9 +10,9 @@ test coreutils-test: $(ORLIXOS_COREUTILS_TEST_INITRAMFS)
 		sleep 1; \
 	done; \
 	if [ -n "$(ORLIXOS_COREUTILS_TESTS)" ]; then \
-		tr -d '\r' < "$$runtime_log" | grep -E -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=[1-9][0-9]*$$' || { echo "Coreutils upstream test subset did not complete successfully: $$runtime_log" >&2; exit 1; }; \
+		LC_ALL=C tr -d '\r' < "$$runtime_log" | grep -E -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=[1-9][0-9]*$$' || { echo "Coreutils upstream test subset did not complete successfully: $$runtime_log" >&2; exit 1; }; \
 	else \
-		tr -d '\r' < "$$runtime_log" | grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=733' || { echo "Coreutils full upstream test suite did not complete successfully with failures=0 skips=0 total=733: $$runtime_log" >&2; exit 1; }; \
+		LC_ALL=C tr -d '\r' < "$$runtime_log" | grep -F -q 'ORLIX-COREUTILS-TEST-END failures=0 skips=0 total=733' || { echo "Coreutils full upstream test suite did not complete successfully with failures=0 skips=0 total=733: $$runtime_log" >&2; exit 1; }; \
 	fi; \
 	echo "verified upstream Coreutils tests in simulator log: $$runtime_log"
 $(ORLIXOS_COREUTILS_TEST_INIT_BINARY): $(ORLIXOS_COREUTILS_TEST_INIT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT)/.orlixmlibc-sysroot-ready $(ORLIXOS_MLIBC_RTLIB)

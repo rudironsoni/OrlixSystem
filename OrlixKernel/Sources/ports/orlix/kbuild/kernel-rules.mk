@@ -1205,7 +1205,7 @@ run: __ios-simulator-framework xcodeproj
 	trap cleanup EXIT INT TERM; \
 	app_has_started() { grep -E -q 'OrlixTerminal\[|Starting Orlix bootloader|ORLIX-COREUTILS-TEST-INIT' "$$runtime_log" || kill -0 "$$launch_pid" >/dev/null 2>&1; }; \
 	validate_runtime_log() { \
-		tr -d '\r' < "$$runtime_log" | awk 'BEGIN { bad = 0 } /(^|[^[:alnum:]_])not ok[[:space:]]+[0-9]+([[:space:]-]|$$)/ { print "upstream failure marker: " $$0 > "/dev/stderr"; bad = 1 } /Kernel panic|kernel panic|panic:|Oops|BUG:|Out of memory|Killed process|Attempted to kill init/ { print "fatal runtime marker: " $$0 > "/dev/stderr"; bad = 1 } END { exit bad ? 1 : 0 }'; \
+		LC_ALL=C tr -d '\r' < "$$runtime_log" | awk 'BEGIN { bad = 0 } /(^|[^[:alnum:]_])not ok[[:space:]]+[0-9]+([[:space:]-]|$$)/ { print "upstream failure marker: " $$0 > "/dev/stderr"; bad = 1 } /Kernel panic|kernel panic|panic:|Oops|BUG:|Out of memory|Killed process|Attempted to kill init/ { print "fatal runtime marker: " $$0 > "/dev/stderr"; bad = 1 } END { exit bad ? 1 : 0 }'; \
 	}; \
 	printf '{"runtimeLogPath":"%s","osLogPath":"%s","bundleId":"%s"}\n' "$$runtime_log" "$$os_log" "$(ORLIX_TERMINAL_BUNDLE_ID)"; \
 	if [ -n "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" ]; then \
@@ -1220,10 +1220,6 @@ run: __ios-simulator-framework xcodeproj
 		fi; \
 		for _ in $$(seq 1 "$(ORLIX_KERNEL_RUN_TIMEOUT_SECONDS)"); do \
 			grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" && break; \
-			if ! kill -0 "$$launch_pid" >/dev/null 2>&1; then \
-				echo "OrlixTerminal exited before marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; \
-				exit 1; \
-			fi; \
 			sleep 1; \
 		done; \
 		grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" || { echo "timed out waiting for marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; exit 1; }; \

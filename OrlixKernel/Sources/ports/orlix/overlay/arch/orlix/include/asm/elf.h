@@ -24,6 +24,8 @@
 #define ELF_HWCAP	(0)
 #define ELF_PLATFORM	(NULL)
 
+#define ELF_PLAT_INIT(_r, load_addr)	((_r)->regs[0] = 0)
+
 #define SET_PERSONALITY(ex)						\
 ({									\
 	current->personality &= ~READ_IMPLIES_EXEC;			\
