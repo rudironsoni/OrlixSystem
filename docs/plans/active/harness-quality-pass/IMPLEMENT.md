@@ -105,6 +105,23 @@ Keep the final milestone marked open until a human-reviewed closure is recorded,
 
 ---
 
+### 2026-06-08 (Codex harness follow-up)
+
+**What happened:**
+
+Re-ran the focused reviewer request for this lane with a Codex-harness scope.
+
+**Decision:**
+
+The lane is still not complete because the final milestone still requires explicit reviewer closure, and none was returned. No new harness-scope blockers were introduced in `PLAN.md`/`.codex` after the last verification pass.
+
+**Evidence:**
+
+- `rtk python3 .codex/hooks/compact_plan_check.py` -> no issues.
+- `rtk python3 .codex/hooks/stop_claim_check.py` -> no issues.
+- Harness-audit follow-up response: "Codex-harness state is **not yet ready to be marked complete**; finalize after reviewer-audit confirmation and fresh verification record."
+- `docs/plans/active/harness-quality-pass/PLAN.md` and `.codex` scope stayed unchanged by this follow-up.
+
 ## Deviations Summary
 
 | Deviation | Reason | Plan updated? |
