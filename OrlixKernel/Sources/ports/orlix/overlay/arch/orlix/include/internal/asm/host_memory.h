@@ -12,8 +12,14 @@ int orlix_host_user_map_page(unsigned long target_address,
 			     unsigned long length,
 			     int writable,
 			     int executable);
+int orlix_host_user_refresh_page(unsigned long target_address,
+				 const void *source_page,
+				 unsigned long length,
+				 int writable,
+				 int executable);
 void orlix_host_user_unmap_pages(unsigned long target_address,
 				 unsigned long length);
+void orlix_host_user_sync_writable_mappings(void);
 void *orlix_host_ioremap(unsigned long physical_address,
 			 unsigned long length);
 void orlix_host_iounmap(void *mapped_address);

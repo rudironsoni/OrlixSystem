@@ -11,6 +11,7 @@ struct boot_params {
 	unsigned long dtb_size;
 	const char *root_device;
 	const char *console_device;
+	unsigned long host_page_size;
 	unsigned long flags;
 };
 
@@ -23,6 +24,7 @@ enum orlix_arch_boot_status {
 int arch_boot_entry(const struct boot_params *params);
 int arch_boot_prepare_entry(const struct boot_params *params);
 const struct boot_params *arch_boot_params(void);
+unsigned long arch_boot_host_page_size(void);
 
 #if defined(CONFIG_ORLIX_BOOT_KUNIT_TEST) || defined(ORLIX_APP_HOSTED_BOOT)
 void arch_boot_test_record_handoff(const struct boot_params *params);

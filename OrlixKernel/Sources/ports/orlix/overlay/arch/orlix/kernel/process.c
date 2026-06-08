@@ -11,6 +11,7 @@
 #include <asm/hosted_exec.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
+#include <asm/tlbflush.h>
 
 struct task_struct *orlix_current_task = &init_task;
 #ifndef CONFIG_THREAD_INFO_IN_TASK
@@ -78,6 +79,7 @@ void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long sp)
 	regs->pstate = PSR_MODE_EL0t;
 	regs->syscallno = NO_SYSCALL;
 #if defined(ORLIX_APP_HOSTED_BOOT)
+	flush_tlb_mm(current->mm);
 	current->thread.user_tls = 0;
 	memset(current->thread.user_simd, 0, sizeof(current->thread.user_simd));
 	current->thread.user_fpsr = 0;

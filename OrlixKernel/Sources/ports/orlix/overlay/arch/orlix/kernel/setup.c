@@ -1,6 +1,7 @@
 #include <linux/init.h>
 #include <linux/initrd.h>
 #include <linux/memblock.h>
+#include <linux/mm.h>
 #include <linux/of_fdt.h>
 #include <linux/printk.h>
 #include <linux/string.h>
@@ -57,11 +58,21 @@ static bool __init orlix_setup_devtree(const struct boot_params *params)
 static void __init orlix_setup_initrd(const struct boot_params *params)
 {
 #if defined(CONFIG_BLK_DEV_INITRD)
+	unsigned long initrd_size;
+	void *initrd;
+
 	if (!params || !params->initrd_base || !params->initrd_size)
 		return;
 
-	initrd_start = (unsigned long)params->initrd_base;
+	initrd_size = PAGE_ALIGN(params->initrd_size);
+	initrd = memblock_alloc(initrd_size, PAGE_SIZE);
+	if (!initrd)
+		panic("Orlix: failed to allocate initrd memory\n");
+
+	memcpy(initrd, (const void *)params->initrd_base, params->initrd_size);
+	initrd_start = (unsigned long)initrd;
 	initrd_end = initrd_start + params->initrd_size;
+	initrd_below_start_ok = 1;
 #else
 	(void)params;
 #endif
@@ -70,9 +81,8 @@ static void __init orlix_setup_initrd(const struct boot_params *params)
 #if defined(ORLIX_APP_HOSTED_BOOT) && defined(CONFIG_BLK_DEV_INITRD)
 void __init free_initrd_mem(unsigned long start, unsigned long end)
 {
-	/* Hosted initrd bytes are app resources, not Linux memblock pages. */
-	(void)start;
-	(void)end;
+	free_reserved_area((void *)start, (void *)PAGE_ALIGN(end),
+			   POISON_FREE_INITMEM, "initrd");
 }
 #endif
 

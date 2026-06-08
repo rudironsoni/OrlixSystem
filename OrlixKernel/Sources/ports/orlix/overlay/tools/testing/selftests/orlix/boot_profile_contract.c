@@ -33,6 +33,9 @@ int main(void)
 	bool has_root_modes;
 	bool has_base_storage_role;
 	bool has_state_storage_role;
+	bool direct_root_cmdline;
+	bool overlay_root_cmdline;
+	bool initramfs_only_cmdline;
 	bool release_profile;
 	bool development_profile;
 	const char *profile = NULL;
@@ -64,6 +67,18 @@ int main(void)
 		state_storage_role, sizeof(state_storage_role),
 		&state_storage_role_size) == 0;
 
+	direct_root_cmdline = has_cmdline &&
+		orlix_contains(cmdline, cmdline_size, "root=/dev/vda") &&
+		orlix_contains(cmdline, cmdline_size, "rootfstype=ext4") &&
+		orlix_contains(cmdline, cmdline_size, " ro ");
+	overlay_root_cmdline = has_cmdline &&
+		orlix_contains(cmdline, cmdline_size, "rdinit=/init") &&
+		orlix_contains(cmdline, cmdline_size, "orlix.root=overlay");
+	initramfs_only_cmdline = has_cmdline &&
+		orlix_contains(cmdline, cmdline_size, "rdinit=/init") &&
+		orlix_contains(cmdline, cmdline_size, "orlix.root=initramfs-only") &&
+		!orlix_contains(cmdline, cmdline_size, "root=/dev/vda");
+
 	release_profile = has_cmdline &&
 		orlix_contains(cmdline, cmdline_size, "orlix.profile=release");
 	development_profile = has_cmdline &&
@@ -85,23 +100,16 @@ int main(void)
 	orlix_test_result(has_cmdline &&
 			  !orlix_contains(cmdline, cmdline_size, "root=/dev/ram0"),
 			  "cmdline does not select an absent ram block root");
-	orlix_test_result(has_cmdline &&
-			  ((release_profile &&
-			    orlix_contains(cmdline, cmdline_size, "root=/dev/vda")) ||
-			   (development_profile &&
-			    !orlix_contains(cmdline, cmdline_size, "root=/dev/vda"))),
-			  "release uses direct virtio root while development uses initramfs root assembly");
-	orlix_test_result(has_cmdline &&
-			  ((release_profile &&
-			    orlix_contains(cmdline, cmdline_size, "rootfstype=ext4")) ||
-			   (development_profile &&
-			    orlix_contains(cmdline, cmdline_size, "rdinit=/init"))),
-			  "cmdline selects the profile root handoff mechanism");
-	orlix_test_result(has_cmdline &&
-			  ((release_profile &&
-			    orlix_contains(cmdline, cmdline_size, " ro ")) ||
-			   (development_profile &&
-			    orlix_contains(cmdline, cmdline_size, "orlix.root=overlay"))),
+	orlix_test_result((direct_root_cmdline + overlay_root_cmdline +
+			   initramfs_only_cmdline) == 1,
+			  "cmdline selects exactly one supported Linux root handoff");
+	orlix_test_result((release_profile &&
+			   (direct_root_cmdline || initramfs_only_cmdline)) ||
+			  (development_profile &&
+			   (overlay_root_cmdline || initramfs_only_cmdline)),
+			  "cmdline root handoff is allowed for the selected profile");
+	orlix_test_result(direct_root_cmdline || overlay_root_cmdline ||
+			  initramfs_only_cmdline,
 			  "cmdline carries the selected root mode policy");
 	orlix_test_result(profile && has_bootargs &&
 			  orlix_contains(bootargs, bootargs_size, profile),
@@ -120,7 +128,7 @@ int main(void)
 			    orlix_contains(root_mode, root_mode_size, "direct")) ||
 			   (development_profile &&
 			    orlix_contains(root_mode, root_mode_size, "overlay"))),
-			  "live device tree selects the profile root mode explicitly");
+			  "live device tree selects the profile default root mode explicitly");
 	orlix_test_result(has_root_modes &&
 			  orlix_contains(root_modes, root_modes_size, "direct") &&
 			  orlix_contains(root_modes, root_modes_size, "overlay"),

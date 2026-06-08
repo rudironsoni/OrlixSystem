@@ -4,6 +4,7 @@
 #include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
+#include <asm/hosted_exec.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 
@@ -59,6 +60,19 @@ static int orlix_uaccess_fault_in(struct mm_struct *mm, unsigned long address,
 	}
 	mmap_read_unlock(mm);
 	return 0;
+}
+
+static int orlix_uaccess_sync_to_user(unsigned long address, const void *kaddr)
+{
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	const unsigned char *source_page =
+		(const unsigned char *)kaddr - offset_in_page(address);
+
+	return orlix_refresh_current_user_mapping_page_from_kernel(address,
+								  source_page);
+#else
+	return 0;
+#endif
 }
 
 static unsigned long orlix_uaccess_copy_from_user(void *to,
@@ -126,6 +140,8 @@ static unsigned long orlix_uaccess_copy_to_user(unsigned long to,
 		}
 		memcpy(dst, src, chunk);
 		mmap_read_unlock(mm);
+		if (orlix_uaccess_sync_to_user(to, dst))
+			return remaining;
 
 		src += chunk;
 		to += chunk;

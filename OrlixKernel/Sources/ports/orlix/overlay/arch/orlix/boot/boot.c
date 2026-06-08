@@ -20,6 +20,11 @@ static struct boot_params app_hosted_boot_params;
 static const struct boot_params *last_boot_params;
 static int boot_handoff_count;
 
+static int arch_boot_power_of_two(unsigned long value)
+{
+	return value && !(value & (value - 1));
+}
+
 #if defined(ORLIX_APP_HOSTED_BOOT)
 extern unsigned long init_stack[THREAD_SIZE / sizeof(unsigned long)];
 
@@ -54,6 +59,9 @@ arch_boot_materialize_handoff(const struct boot_params *params)
 		app_hosted_boot_params.memory_base = __pa(app_hosted_boot_memory);
 		app_hosted_boot_params.memory_size = sizeof(app_hosted_boot_memory);
 	}
+	if (!arch_boot_power_of_two(app_hosted_boot_params.host_page_size) ||
+	    app_hosted_boot_params.host_page_size < PAGE_SIZE)
+		app_hosted_boot_params.host_page_size = PAGE_SIZE;
 	return &app_hosted_boot_params;
 #else
 	return params;
@@ -98,6 +106,16 @@ int __orlix_boot_init arch_boot_entry(const struct boot_params *params)
 const struct boot_params *arch_boot_params(void)
 {
 	return last_boot_params;
+}
+
+unsigned long arch_boot_host_page_size(void)
+{
+	const struct boot_params *params = arch_boot_params();
+
+	if (!params || !arch_boot_power_of_two(params->host_page_size) ||
+	    params->host_page_size < PAGE_SIZE)
+		return PAGE_SIZE;
+	return params->host_page_size;
 }
 
 #if defined(CONFIG_ORLIX_BOOT_KUNIT_TEST) || defined(ORLIX_APP_HOSTED_BOOT)

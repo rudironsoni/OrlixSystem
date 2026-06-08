@@ -25,7 +25,7 @@ static inline void orlix_flush_host_user_range(unsigned long start,
 		end = ORLIX_HOSTED_STACK_TOP;
 
 	start &= PAGE_MASK;
-	end = PAGE_ALIGN(end);
+	end = (end + PAGE_SIZE - 1) & PAGE_MASK;
 	if (end > start)
 		orlix_host_user_unmap_pages(start, end - start);
 #endif

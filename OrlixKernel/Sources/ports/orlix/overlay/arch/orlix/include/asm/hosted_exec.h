@@ -19,6 +19,9 @@ int orlix_hosted_sync_syscall_gate(void);
 void orlix_sync_current_user_mappings(struct pt_regs *regs);
 void orlix_sync_current_user_minimal_mappings(struct pt_regs *regs);
 int orlix_sync_current_user_mapping_page(unsigned long address);
+int orlix_refresh_current_user_mapping_page(unsigned long address);
+int orlix_refresh_current_user_mapping_page_from_kernel(unsigned long address,
+							const void *source_page);
 int orlix_sync_current_user_fault_window(unsigned long address,
 					 unsigned long fault_flags);
 int orlix_handle_host_user_fault(struct pt_regs *regs, unsigned long address,

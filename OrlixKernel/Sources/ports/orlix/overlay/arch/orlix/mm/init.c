@@ -13,6 +13,7 @@
 #include <linux/sched/signal.h>
 #include <linux/sched/task_stack.h>
 #include <linux/atomic.h>
+#include <asm/boot.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include <asm/hosted_exec.h>
@@ -77,7 +78,33 @@ void __init mem_init(void)
 }
 
 #if defined(ORLIX_APP_HOSTED_BOOT)
-static int orlix_sync_kernel_page(unsigned long address)
+struct orlix_host_pte_window {
+	unsigned long target;
+	unsigned long length;
+	unsigned long pfn;
+	bool writable;
+	bool executable;
+};
+
+static unsigned long orlix_host_mapping_granule(void)
+{
+	return arch_boot_host_page_size();
+}
+
+static unsigned long orlix_host_window_start(unsigned long address)
+{
+	unsigned long granule = orlix_host_mapping_granule();
+
+	return address & ~(granule - 1);
+}
+
+static unsigned long orlix_host_window_end(unsigned long start)
+{
+	return start + orlix_host_mapping_granule();
+}
+
+static int orlix_kernel_pte_page(unsigned long address,
+				 struct orlix_host_pte_window *window)
 {
 	pgd_t *pgd = pgd_offset_k(address);
 	p4d_t *p4d;
@@ -85,33 +112,160 @@ static int orlix_sync_kernel_page(unsigned long address)
 	pmd_t *pmd;
 	pte_t *pte;
 	pte_t entry;
-	void *source;
 
-	if (pgd_none(*pgd) || pgd_bad(*pgd))
-		goto unmap;
+	if (pgd_none(*pgd))
+		return -ENOENT;
+	if (pgd_bad(*pgd))
+		return -EFAULT;
 
 	p4d = p4d_offset(pgd, address);
-	if (p4d_none(*p4d) || p4d_bad(*p4d))
-		goto unmap;
+	if (p4d_none(*p4d))
+		return -ENOENT;
+	if (p4d_bad(*p4d))
+		return -EFAULT;
 
 	pud = pud_offset(p4d, address);
-	if (pud_none(*pud) || pud_bad(*pud))
-		goto unmap;
+	if (pud_none(*pud))
+		return -ENOENT;
+	if (pud_bad(*pud))
+		return -EFAULT;
 
 	pmd = pmd_offset(pud, address);
-	if (pmd_none(*pmd) || pmd_bad(*pmd))
-		goto unmap;
+	if (pmd_none(*pmd))
+		return -ENOENT;
+	if (pmd_bad(*pmd))
+		return -EFAULT;
 
 	pte = pte_offset_kernel(pmd, address);
 	entry = READ_ONCE(*pte);
 	if (!pte_present(entry))
-		goto unmap;
+		return -ENOENT;
 
-	source = __va(PFN_PHYS(pte_pfn(entry)));
-	return orlix_host_kernel_map_page(address, source, PAGE_SIZE);
+	window->target = address & PAGE_MASK;
+	window->length = PAGE_SIZE;
+	window->pfn = pte_pfn(entry);
+	window->writable = !!pte_write(entry);
+	window->executable = !!(pte_val(entry) & _PAGE_EXEC);
+	return 0;
+}
+
+static int orlix_sync_kernel_page(unsigned long address)
+{
+	struct orlix_host_pte_window window;
+	void *source;
+	int ret;
+
+	ret = orlix_kernel_pte_page(address, &window);
+	if (ret == -ENOENT)
+		goto unmap;
+	if (ret)
+		return ret;
+
+	source = __va(PFN_PHYS(window.pfn));
+	return orlix_host_kernel_map_page(window.target, source, window.length);
 
 unmap:
-	orlix_host_kernel_unmap_pages(address, PAGE_SIZE);
+	orlix_host_kernel_unmap_pages(orlix_host_window_start(address),
+				      orlix_host_mapping_granule());
+	return 0;
+}
+
+static int orlix_fault_in_user_page_locked(struct mm_struct *mm,
+					   unsigned long fault_address);
+
+static int orlix_user_pte_window(struct mm_struct *mm,
+				 unsigned long page,
+				 struct orlix_host_pte_window *window)
+{
+	int ret;
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
+	pte_t entry;
+
+	if (page >= TASK_SIZE)
+		return -EFAULT;
+
+	ret = orlix_fault_in_user_page_locked(mm, page);
+	if (ret)
+		return ret;
+
+	pgd = pgd_offset(mm, page);
+	if (pgd_none(*pgd) || pgd_bad(*pgd))
+		goto unlock_fault;
+
+	p4d = p4d_offset(pgd, page);
+	if (p4d_none(*p4d) || p4d_bad(*p4d))
+		goto unlock_fault;
+
+	pud = pud_offset(p4d, page);
+	if (pud_none(*pud) || pud_bad(*pud))
+		goto unlock_fault;
+
+	pmd = pmd_offset(pud, page);
+	if (pmd_none(*pmd) || pmd_bad(*pmd))
+		goto unlock_fault;
+
+	pte = pte_offset_kernel(pmd, page);
+	entry = READ_ONCE(*pte);
+	if (!pte_present(entry))
+		goto unlock_fault;
+
+	window->target = page;
+	window->length = PAGE_SIZE;
+	window->pfn = pte_pfn(entry);
+	window->writable = !!pte_write(entry);
+	window->executable = !!(pte_val(entry) & _PAGE_EXEC);
+	mmap_read_unlock(mm);
+	return 0;
+
+unlock_fault:
+	mmap_read_unlock(mm);
+	return -EFAULT;
+}
+
+static int orlix_user_present_pte_window(struct mm_struct *mm,
+					 unsigned long page,
+					 struct orlix_host_pte_window *window)
+{
+	pgd_t *pgd;
+	p4d_t *p4d;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
+	pte_t entry;
+
+	if (page >= TASK_SIZE)
+		return -EFAULT;
+
+	pgd = pgd_offset(mm, page);
+	if (pgd_none(*pgd) || pgd_bad(*pgd))
+		return -EFAULT;
+
+	p4d = p4d_offset(pgd, page);
+	if (p4d_none(*p4d) || p4d_bad(*p4d))
+		return -EFAULT;
+
+	pud = pud_offset(p4d, page);
+	if (pud_none(*pud) || pud_bad(*pud))
+		return -EFAULT;
+
+	pmd = pmd_offset(pud, page);
+	if (pmd_none(*pmd) || pmd_bad(*pmd))
+		return -EFAULT;
+
+	pte = pte_offset_kernel(pmd, page);
+	entry = READ_ONCE(*pte);
+	if (!pte_present(entry))
+		return -EFAULT;
+
+	window->target = page;
+	window->length = PAGE_SIZE;
+	window->pfn = pte_pfn(entry);
+	window->writable = !!pte_write(entry);
+	window->executable = !!(pte_val(entry) & _PAGE_EXEC);
 	return 0;
 }
 
@@ -181,56 +335,91 @@ retry:
 	}
 }
 
-static int orlix_sync_user_page(struct mm_struct *mm,
-				unsigned long fault_address,
-				unsigned long page)
+static int orlix_sync_user_pte_page(struct mm_struct *mm, unsigned long page)
 {
-	pgd_t *pgd;
-	p4d_t *p4d;
-	pud_t *pud;
-	pmd_t *pmd;
-	pte_t *pte;
-	pte_t entry;
+	struct orlix_host_pte_window window;
 	int ret;
 	void *source;
 
-	ret = orlix_fault_in_user_page_locked(mm, fault_address);
+	ret = orlix_user_pte_window(mm, page, &window);
 	if (ret)
-		goto unmap;
+		return ret;
 
-	pgd = pgd_offset(mm, page);
-	if (pgd_none(*pgd) || pgd_bad(*pgd))
-		goto unmap;
-
-	p4d = p4d_offset(pgd, page);
-	if (p4d_none(*p4d) || p4d_bad(*p4d))
-		goto unmap;
-
-	pud = pud_offset(p4d, page);
-	if (pud_none(*pud) || pud_bad(*pud))
-		goto unmap;
-
-	pmd = pmd_offset(pud, page);
-	if (pmd_none(*pmd) || pmd_bad(*pmd))
-		goto unmap;
-
-	pte = pte_offset_kernel(pmd, page);
-	entry = READ_ONCE(*pte);
-	if (!pte_present(entry))
-		goto unmap;
-
-	source = __va(PFN_PHYS(pte_pfn(entry)));
-	ret = orlix_host_user_map_page(page, source, PAGE_SIZE,
-				       !!pte_write(entry),
-				       !!(pte_val(entry) & _PAGE_EXEC));
-	mmap_read_unlock(mm);
+	source = __va(PFN_PHYS(window.pfn));
+	ret = orlix_host_user_map_page(window.target, source, window.length,
+				       window.writable, window.executable);
 	return ret;
+}
 
-unmap:
-	if (!ret)
-		mmap_read_unlock(mm);
-	orlix_host_user_unmap_pages(page, PAGE_SIZE);
-	return ret ? ret : -EFAULT;
+static int orlix_refresh_user_pte_page(struct mm_struct *mm, unsigned long page)
+{
+	struct orlix_host_pte_window window;
+	int ret;
+	void *source;
+
+	ret = orlix_user_pte_window(mm, page, &window);
+	if (ret)
+		return ret;
+
+	source = __va(PFN_PHYS(window.pfn));
+	ret = orlix_host_user_refresh_page(window.target, source, window.length,
+					   window.writable, window.executable);
+	return ret;
+}
+
+static int orlix_refresh_user_pte_page_from_kernel(struct mm_struct *mm,
+						   unsigned long page,
+						   const void *source)
+{
+	struct orlix_host_pte_window window;
+	int ret;
+
+	ret = orlix_user_present_pte_window(mm, page, &window);
+	if (ret)
+		return ret;
+
+	ret = orlix_host_user_refresh_page(window.target, source, window.length,
+					   window.writable, window.executable);
+	return ret;
+}
+
+static int orlix_sync_user_host_window(struct mm_struct *mm,
+				       unsigned long page)
+{
+	unsigned long window_start = orlix_host_window_start(page);
+	unsigned long window_end = orlix_host_window_end(window_start);
+	unsigned long cursor;
+	int page_ret = -EFAULT;
+	int first_ret = 0;
+
+	if (window_end > TASK_SIZE || window_end < window_start)
+		window_end = TASK_SIZE;
+
+	for (cursor = window_start; cursor < window_end; cursor += PAGE_SIZE) {
+		int ret = orlix_sync_user_pte_page(mm, cursor);
+
+		if (ret && !first_ret)
+			first_ret = ret;
+		if (cursor == page)
+			page_ret = ret;
+	}
+
+	if (first_ret) {
+		orlix_host_user_unmap_pages(window_start, window_end - window_start);
+		return page_ret ? page_ret : first_ret;
+	}
+
+	return page_ret;
+}
+
+static int orlix_sync_user_page(struct mm_struct *mm, unsigned long page)
+{
+	return orlix_sync_user_host_window(mm, page);
+}
+
+static int orlix_sync_user_stack_page(struct mm_struct *mm, unsigned long page)
+{
+	return orlix_sync_user_pte_page(mm, page);
 }
 
 static int orlix_sync_current_user_stack_window(unsigned long start,
@@ -280,11 +469,11 @@ void orlix_sync_current_user_mappings(struct pt_regs *regs)
 		panic("Orlix: failed to synchronize hosted user stack window %#lx\n",
 		      stack_access_page);
 	if (stack_access_page &&
-	    orlix_sync_current_user_mapping_page(stack_access_page))
+	    orlix_sync_user_stack_page(mm, stack_access_page))
 		panic("Orlix: failed to synchronize hosted user stack access page %#lx\n",
 		      stack_access_page);
 	if (sp_page != stack_access_page &&
-	    orlix_sync_current_user_mapping_page(sp_page))
+	    orlix_sync_user_stack_page(mm, sp_page))
 		panic("Orlix: failed to synchronize hosted user sp page %#lx\n",
 		      sp_page);
 
@@ -308,11 +497,11 @@ void orlix_sync_current_user_minimal_mappings(struct pt_regs *regs)
 		panic("Orlix: failed to synchronize hosted user pc %#llx\n",
 		      regs->pc);
 	if (stack_access_page &&
-	    orlix_sync_current_user_mapping_page(stack_access_page))
+	    orlix_sync_user_stack_page(current->mm, stack_access_page))
 		panic("Orlix: failed to synchronize hosted user stack access page %#lx\n",
 		      stack_access_page);
 	if (sp_page != stack_access_page &&
-	    orlix_sync_current_user_mapping_page(sp_page))
+	    orlix_sync_user_stack_page(current->mm, sp_page))
 		panic("Orlix: failed to synchronize hosted user sp page %#lx\n",
 		      sp_page);
 
@@ -332,7 +521,36 @@ int orlix_sync_current_user_mapping_page(unsigned long address)
 	if (!page || page >= TASK_SIZE)
 		return 0;
 
-	return orlix_sync_user_page(mm, address, page);
+	return orlix_sync_user_page(mm, page);
+}
+
+int orlix_refresh_current_user_mapping_page(unsigned long address)
+{
+	struct mm_struct *mm = current->mm;
+	unsigned long page = address & PAGE_MASK;
+
+	if (!mm)
+		return -EINVAL;
+
+	if (!page || page >= TASK_SIZE)
+		return 0;
+
+	return orlix_refresh_user_pte_page(mm, page);
+}
+
+int orlix_refresh_current_user_mapping_page_from_kernel(unsigned long address,
+							const void *source_page)
+{
+	struct mm_struct *mm = current->mm;
+	unsigned long page = address & PAGE_MASK;
+
+	if (!mm)
+		return -EINVAL;
+
+	if (!page || page >= TASK_SIZE)
+		return 0;
+
+	return orlix_refresh_user_pte_page_from_kernel(mm, page, source_page);
 }
 
 static int orlix_sync_current_user_stack_window(unsigned long start,
@@ -347,7 +565,7 @@ static int orlix_sync_current_user_stack_window(unsigned long start,
 		end = TASK_SIZE;
 
 	for (page = start; page < end; page += PAGE_SIZE) {
-		ret = orlix_sync_current_user_mapping_page(page);
+		ret = orlix_sync_user_stack_page(current->mm, page);
 		if (ret)
 			continue;
 	}
@@ -355,7 +573,10 @@ static int orlix_sync_current_user_stack_window(unsigned long start,
 	return 0;
 }
 
-#define ORLIX_HOSTED_FAULT_WINDOW_PAGES	16
+static unsigned long orlix_hosted_fault_window_pages(void)
+{
+	return max_t(unsigned long, 1, arch_boot_host_page_size() / PAGE_SIZE);
+}
 
 int orlix_sync_current_user_fault_window(unsigned long address,
 					 unsigned long fault_flags)
@@ -368,6 +589,7 @@ int orlix_sync_current_user_fault_window(unsigned long address,
 	unsigned long window_start;
 	unsigned long window_end;
 	unsigned long loop_page;
+	unsigned long window_pages;
 	int ret;
 
 	if (!address || address >= TASK_SIZE)
@@ -387,30 +609,30 @@ int orlix_sync_current_user_fault_window(unsigned long address,
 	}
 	start = vma->vm_start;
 	end = vma->vm_end;
-	if ((fault_flags & ORLIX_HOST_USER_FAULT_WRITE) &&
-	    !(vma->vm_flags & VM_GROWSDOWN)) {
-		mmap_read_unlock(mm);
-		return orlix_sync_current_user_mapping_page(address);
-	}
 	mmap_read_unlock(mm);
 
 	if (!start || start >= end)
 		return orlix_sync_current_user_mapping_page(address);
 
+	window_pages = orlix_hosted_fault_window_pages();
 	window_start = page;
-	if (window_start > start + (ORLIX_HOSTED_FAULT_WINDOW_PAGES / 2) * PAGE_SIZE)
-		window_start -= (ORLIX_HOSTED_FAULT_WINDOW_PAGES / 2) * PAGE_SIZE;
+	if (window_start > start + (window_pages / 2) * PAGE_SIZE)
+		window_start -= (window_pages / 2) * PAGE_SIZE;
 	else
 		window_start = start;
 
-	window_end = window_start + ORLIX_HOSTED_FAULT_WINDOW_PAGES * PAGE_SIZE;
+	window_end = window_start + window_pages * PAGE_SIZE;
 	if (window_end > end || window_end < window_start)
 		window_end = end;
 
+	ret = orlix_sync_user_host_window(mm, page);
+	if (ret)
+		return ret;
+
 	for (loop_page = window_start; loop_page < window_end; loop_page += PAGE_SIZE) {
-		ret = orlix_sync_current_user_mapping_page(loop_page);
-		if (ret && loop_page == page)
-			return ret;
+		if (orlix_host_window_start(loop_page) == orlix_host_window_start(page))
+			continue;
+		(void)orlix_sync_user_host_window(mm, loop_page);
 	}
 
 	return 0;

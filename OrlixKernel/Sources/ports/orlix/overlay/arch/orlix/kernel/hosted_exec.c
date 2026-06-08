@@ -424,8 +424,7 @@ unsigned long orlix_hosted_prepare_user_entry(unsigned long entry_user_tls)
 void orlix_hosted_note_user_entry_tls(unsigned long user_tls)
 {
 	WRITE_ONCE(orlix_hosted_active_user_tls, user_tls);
-	WRITE_ONCE(orlix_hosted_user_active,
-		   orlix_hosted_valid_user_tls(user_tls) ? 1UL : 0UL);
+	WRITE_ONCE(orlix_hosted_user_active, 1UL);
 }
 
 static void orlix_hosted_save_callee_registers(struct pt_regs *regs)
@@ -477,6 +476,7 @@ long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 
 	orlix_hosted_preserve_captured_user_tls(user_tls);
 	orlix_hosted_start_user_timer_once();
+	orlix_host_user_sync_writable_mappings();
 	orlix_hosted_save_callee_registers(regs);
 	entry_pc = READ_ONCE(orlix_hosted_entry_user_pc);
 	regs->orig_x0 = arg0;

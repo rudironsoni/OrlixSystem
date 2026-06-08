@@ -125,6 +125,7 @@ ORLIX_KERNEL_LINUX_SOURCES := \
 	arch/$(ORLIX_PORT_ARCH)/mm/fault.c \
 	arch/$(ORLIX_PORT_ARCH)/mm/iomem.c \
 	arch/$(ORLIX_PORT_ARCH)/mm/init.c \
+	arch/$(ORLIX_PORT_ARCH)/mm/mmap.c \
 	arch/$(ORLIX_PORT_ARCH)/mm/uaccess.c \
 	init/version.c \
 	init/main.c \
@@ -1013,6 +1014,7 @@ ORLIX_KERNEL_PAYLOAD_STATE_ROOT_DEVICE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_STATE_ROOT
 ORLIX_KERNEL_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_BASE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)
 ORLIX_KERNEL_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_STATE_ROOT_HOST_BLOCK_DEVICE_INFO_KEY)
 ORLIX_KERNEL_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY ?= $(ORLIX_OS_PAYLOAD_STATE_ROOT_MINIMUM_BYTES_INFO_KEY)
+ORLIX_KERNEL_LINUX_PAGE_SIZE ?= $(ORLIX_OS_LINUX_PAGE_SIZE)
 ORLIX_KERNEL_ROOT_INITRAMFS_RESOURCE ?= $(ORLIX_OS_ROOT_INITRAMFS_RESOURCE)
 ORLIX_KERNEL_BASE_ROOT_IMAGE_RESOURCE ?= $(ORLIX_OS_BASE_ROOT_IMAGE_RESOURCE)
 ORLIX_KERNEL_STATE_ROOT_IMAGE_RESOURCE ?= $(ORLIX_OS_STATE_ROOT_IMAGE_RESOURCE)
@@ -1202,6 +1204,9 @@ run: __ios-simulator-framework xcodeproj
 	cleanup() { kill "$$log_pid" "$$launch_pid" >/dev/null 2>&1 || true; }; \
 	trap cleanup EXIT INT TERM; \
 	app_has_started() { grep -E -q 'OrlixTerminal\[|Starting Orlix bootloader|ORLIX-COREUTILS-TEST-INIT' "$$runtime_log" || kill -0 "$$launch_pid" >/dev/null 2>&1; }; \
+	validate_runtime_log() { \
+		tr -d '\r' < "$$runtime_log" | awk 'BEGIN { bad = 0 } /(^|[^[:alnum:]_])not ok[[:space:]]+[0-9]+([[:space:]-]|$$)/ { print "upstream failure marker: " $$0 > "/dev/stderr"; bad = 1 } /Kernel panic|kernel panic|panic:|Oops|BUG:|Out of memory|Killed process|Attempted to kill init/ { print "fatal runtime marker: " $$0 > "/dev/stderr"; bad = 1 } END { exit bad ? 1 : 0 }'; \
+	}; \
 	printf '{"runtimeLogPath":"%s","osLogPath":"%s","bundleId":"%s"}\n' "$$runtime_log" "$$os_log" "$(ORLIX_TERMINAL_BUNDLE_ID)"; \
 	if [ -n "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" ]; then \
 		for _ in $$(seq 1 "$(ORLIX_KERNEL_RUN_STARTUP_TIMEOUT_SECONDS)"); do \
@@ -1224,7 +1229,8 @@ run: __ios-simulator-framework xcodeproj
 		grep -F -q "$(ORLIX_KERNEL_RUN_UNTIL_MARKER)" "$$runtime_log" || { echo "timed out waiting for marker $(ORLIX_KERNEL_RUN_UNTIL_MARKER): $$runtime_log" >&2; exit 1; }; \
 	else \
 		sleep "$(ORLIX_KERNEL_RUN_TIMEOUT_SECONDS)"; \
-	fi
+	fi; \
+	validate_runtime_log
 
 clean:
 	@set -euo pipefail; \
@@ -1298,6 +1304,11 @@ __validate-profile: __validate-linux-abi
 		*" $$profile "*) ;; \
 		*) echo "unsupported PROFILE=$$profile (expected one of: $(ORLIX_PROFILES))" >&2; exit 1 ;; \
 	esac; \
+	case "$(ORLIX_KERNEL_LINUX_PAGE_SIZE)" in \
+		4096|16384) ;; \
+		"") echo "missing OrlixOS target Linux page size: ORLIX_OS_LINUX_PAGE_SIZE" >&2; exit 1 ;; \
+		*) echo "unsupported OrlixOS target Linux page size: $(ORLIX_KERNEL_LINUX_PAGE_SIZE)" >&2; exit 1 ;; \
+	esac; \
 	config="$(ORLIX_PROFILE_CONFIG)"; \
 	[ -f "$$config" ] || { echo "missing profile defconfig: $$config" >&2; exit 1; }
 
@@ -1310,6 +1321,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 	overlay_dir="$(ORLIX_LINUX_OVERLAY)"; \
 	patch_dir="$(ORLIX_LINUX_PATCH_DIR)"; \
 	profile_config="$(ORLIX_PROFILE_CONFIG)"; \
+	linux_page_size="$(ORLIX_KERNEL_LINUX_PAGE_SIZE)"; \
 	exception_dir="$$patch_dir/exceptions"; \
 	port_filelist="$(ORLIX_KERNEL_BUILD_ROOT)/linux-$(LINUX_VERSION)-port-source-files.$$$$.txt"; \
 	port_stamp="$$port_dir/.orlix-port-profile"; \
@@ -1333,6 +1345,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 		if find "$$overlay_dir" -type f -newer "$$port_stamp" -print -quit | grep -q .; then port_inputs_changed=1; fi; \
 		if [ -d "$$patch_dir" ] && find "$$patch_dir" -type f -newer "$$port_stamp" -print -quit | grep -q .; then port_inputs_changed=1; fi; \
 		if [ "$$profile_config" -nt "$$port_stamp" ]; then port_inputs_changed=1; fi; \
+		if [ -f "$(ORLIX_OS_TARGET_SETTINGS)" ] && [ "$(ORLIX_OS_TARGET_SETTINGS)" -nt "$$port_stamp" ]; then port_inputs_changed=1; fi; \
 		if [ "OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk" -nt "$$port_stamp" ]; then port_inputs_changed=1; fi; \
 	fi; \
 	if [ -s "$$port_stamp" ] && \
@@ -1340,6 +1353,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 		grep -Fxq "linux_version=$(LINUX_VERSION)" "$$port_stamp" && \
 		grep -Fxq "profile=$(PROFILE)" "$$port_stamp" && \
 		grep -Fxq "linux_uapi_arch=$(LINUX_UAPI_ARCH)" "$$port_stamp" && \
+		grep -Fxq "linux_page_size=$$linux_page_size" "$$port_stamp" && \
 		[ -s "$$port_dir/Makefile" ] && \
 		[ -s "$$port_dir/arch/$(ORLIX_PORT_ARCH)/configs/defconfig" ] && \
 		[ -s "$$port_dir/include/linux/init.h" ] && \
@@ -1377,7 +1391,12 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 	if [ ! -s "$$uapi_target/types.h" ]; then cp "$$port_tmp_dir/include/uapi/asm-generic/types.h" "$$uapi_target/types.h"; fi; \
 	echo "using upstream Linux $$uapi_arch UAPI headers for arch/$(ORLIX_PORT_ARCH)"; \
 	mkdir -p "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs"; \
-	cp "$$profile_config" "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs/defconfig"; \
+	awk '!/^CONFIG_PAGE_SIZE_[0-9]+KB=y$$/' "$$profile_config" > "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs/defconfig"; \
+	case "$$linux_page_size" in \
+		4096) printf '%s\n' 'CONFIG_PAGE_SIZE_4KB=y' >> "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs/defconfig" ;; \
+		16384) printf '%s\n' 'CONFIG_PAGE_SIZE_16KB=y' >> "$$port_tmp_dir/arch/$(ORLIX_PORT_ARCH)/configs/defconfig" ;; \
+		*) echo "unsupported OrlixOS target Linux page size: $$linux_page_size" >&2; exit 1 ;; \
+	esac; \
 	if [ -d "$$patch_dir" ]; then \
 		for patch in "$$patch_dir"/*.patch "$$patch_dir"/*.diff; do \
 			[ -e "$$patch" ] || continue; \
@@ -1407,7 +1426,7 @@ __prepare-port: __validate-profile __bootstrap-linux-upstream
 		"$$port_tmp_dir/tools/testing/selftests/lib.mk"; do \
 		[ -s "$$required_port_file" ] || { echo "missing materialized Orlix Linux port input: $$required_port_file" >&2; exit 1; }; \
 	done; \
-	{ printf 'linux_version=%s\n' "$(LINUX_VERSION)"; printf 'profile=%s\n' "$(PROFILE)"; printf 'linux_uapi_arch=%s\n' "$(LINUX_UAPI_ARCH)"; } > "$$port_tmp_dir/.orlix-port-profile"; \
+	{ printf 'linux_version=%s\n' "$(LINUX_VERSION)"; printf 'profile=%s\n' "$(PROFILE)"; printf 'linux_uapi_arch=%s\n' "$(LINUX_UAPI_ARCH)"; printf 'linux_page_size=%s\n' "$$linux_page_size"; } > "$$port_tmp_dir/.orlix-port-profile"; \
 	mv "$$port_tmp_dir" "$$port_dir"; \
 	echo "prepared Orlix kernel port tree: $$port_dir (profile $(PROFILE))"
 
@@ -1629,7 +1648,7 @@ __kunit: __prepare-kbuild
 	"$$linux_make" -C "$(ORLIX_KERNEL_PORT_ABS)" O="$(ORLIX_KUNIT_BUILD_DIR)" ARCH="$(ORLIX_PORT_ARCH)" LLVM=1 CLANG_TARGET_FLAGS=aarch64-linux-gnu HOSTCFLAGS="$(ORLIX_KERNEL_HOSTCFLAGS)" olddefconfig arch/$(ORLIX_PORT_ARCH)/boot/boot_test.o; \
 	echo "built Orlix KUnit objects: $(ORLIX_KUNIT_BUILD_DIR)"
 
-__kernel-archive:
+__kernel-archive: __prepare-kbuild
 	@set -euo pipefail; \
 	$(call orlix_kernel_acquire_profile_lock); \
 	cc="$(ORLIX_KERNEL_CC)"; \

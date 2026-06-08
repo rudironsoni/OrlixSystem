@@ -22,6 +22,8 @@ LLVM_PROJECT_UPSTREAM_DIR := $(REPO_ROOT)/Build/OrlixMLibC/upstream/llvm-project
 MLIBC_BUILD_DIR := $(REPO_ROOT)/Build/OrlixMLibC/build/$(PROFILE)
 MLIBC_SYSROOT := $(REPO_ROOT)/Build/OrlixMLibC/sysroot/$(PROFILE)
 MLIBC_CROSS_FILE := $(REPO_ROOT)/Build/OrlixMLibC/cross/$(PROFILE)-orlix-aarch64-linux.cross
+MLIBC_TARGET_INCLUDE_DIR := $(REPO_ROOT)/Build/OrlixMLibC/target-include/$(PROFILE)
+MLIBC_TARGET_ARCH_DEFS := $(MLIBC_TARGET_INCLUDE_DIR)/mlibc/arch-defs.hpp
 MLIBC_PATCH_DIR := $(PROJECT_DIR)/Sources/patches
 MLIBC_KERNEL_HEADERS := $(REPO_ROOT)/Build/OrlixMLibC/kernel-headers/$(PROFILE)/include
 MLIBC_BUILD_KERNEL_HEADERS := $(MLIBC_BUILD_DIR)/kernel-headers/include
@@ -44,7 +46,8 @@ ORLIX_HOSTED_USER_BASE_ADDRESS ?= 0x0000600000000000
 # Apple arm64 reserves x18 for the host platform; Orlix-built Linux ELF keeps it unavailable to user code.
 MLIBC_HOSTED_EXEC_FIXED_REGISTER_FLAGS := -ffixed-x18
 MLIBC_HOSTED_EXEC_CODEGEN_FLAGS := $(MLIBC_HOSTED_EXEC_FIXED_REGISTER_FLAGS)
-MLIBC_HOSTED_EXEC_MESON_ARGS := '-ffixed-x18', '-ffunction-sections', '-fdata-sections'
+MLIBC_HOSTED_EXEC_MESON_C_ARGS := '-ffixed-x18', '-ffunction-sections', '-fdata-sections'
+MLIBC_HOSTED_EXEC_MESON_CPP_ARGS := '-include', '$(MLIBC_TARGET_ARCH_DEFS)', '-ffixed-x18', '-ffunction-sections', '-fdata-sections'
 MLIBC_LLVM_PREFIX ?= $(firstword $(wildcard /opt/homebrew/opt/llvm/bin) $(wildcard /usr/local/opt/llvm/bin))
 MLIBC_CC ?= clang
 MLIBC_CXX ?= clang++
@@ -298,6 +301,11 @@ __build: __write-cross-file
 	[ -s "$$kernel_config" ] || { echo "missing generated OrlixKernel config: $$kernel_config" >&2; exit 1; }; \
 	kernel_page_shift="$$(sed -n 's/^CONFIG_PAGE_SHIFT=//p' "$$kernel_config" | tail -n 1)"; \
 	[ -n "$$kernel_page_shift" ] || { echo "missing CONFIG_PAGE_SHIFT in $$kernel_config" >&2; exit 1; }; \
+	kernel_page_size="$$((1 << kernel_page_shift))"; \
+	if [ "$$kernel_page_size" != "$(ORLIX_OS_LINUX_PAGE_SIZE)" ]; then \
+		echo "OrlixMLibC target page size $(ORLIX_OS_LINUX_PAGE_SIZE) does not match OrlixKernel CONFIG_PAGE_SHIFT=$$kernel_page_shift ($$kernel_page_size)" >&2; \
+		exit 1; \
+	fi; \
 	rm -rf "$(MLIBC_BUILD_DIR)" "$(MLIBC_SYSROOT)"; \
 	mkdir -p "$(MLIBC_BUILD_DIR)" "$(MLIBC_SYSROOT)"; \
 	mkdir -p "$(dir $(MLIBC_BUILD_KERNEL_HEADERS))"; \
@@ -607,7 +615,27 @@ __build-compiler-rt: __bootstrap-compiler-rt
 
 __write-cross-file: __apply-mlibc-patches
 	@set -euo pipefail; \
+	case "$(ORLIX_OS_LINUX_PAGE_SIZE)" in \
+		4096|16384) ;; \
+		"") echo "missing OrlixOS target Linux page size: ORLIX_OS_LINUX_PAGE_SIZE" >&2; exit 1 ;; \
+		*) echo "unsupported OrlixOS target Linux page size: $(ORLIX_OS_LINUX_PAGE_SIZE)" >&2; exit 1 ;; \
+	esac; \
 	mkdir -p "$(dir $(MLIBC_CROSS_FILE))"; \
+	mkdir -p "$(dir $(MLIBC_TARGET_ARCH_DEFS))"; \
+	{ \
+		printf '%s\n' '#ifndef MLIBC_ARCH_DEFS_HPP'; \
+		printf '%s\n' '#define MLIBC_ARCH_DEFS_HPP'; \
+		printf '%s\n' ''; \
+		printf '%s\n' '#include <stddef.h>'; \
+		printf '%s\n' ''; \
+		printf '%s\n' 'namespace mlibc {'; \
+		printf '%s\n' ''; \
+		printf '%s\n' 'inline constexpr size_t page_size = $(ORLIX_OS_LINUX_PAGE_SIZE);'; \
+		printf '%s\n' ''; \
+		printf '%s\n' '} // namespace mlibc'; \
+		printf '%s\n' ''; \
+		printf '%s\n' '#endif // MLIBC_ARCH_DEFS_HPP'; \
+	} > "$(MLIBC_TARGET_ARCH_DEFS)"; \
 	{ \
 		printf '%s\n' '[binaries]'; \
 		printf "c = ['%s', '--target=aarch64-linux-gnu']\n" "$(MLIBC_CC)"; \
@@ -625,8 +653,8 @@ __write-cross-file: __apply-mlibc-patches
 		printf '%s\n' 'needs_exe_wrapper = true'; \
 		printf '%s\n' ''; \
 		printf '%s\n' '[built-in options]'; \
-		printf "%s\n" "c_args = [$(MLIBC_HOSTED_EXEC_MESON_ARGS)]"; \
-		printf "%s\n" "cpp_args = [$(MLIBC_HOSTED_EXEC_MESON_ARGS)]"; \
+		printf "%s\n" "c_args = [$(MLIBC_HOSTED_EXEC_MESON_C_ARGS)]"; \
+		printf "%s\n" "cpp_args = [$(MLIBC_HOSTED_EXEC_MESON_CPP_ARGS)]"; \
 		printf "%s\n" "c_link_args = ['-fuse-ld=lld']"; \
 		printf "%s\n" "cpp_link_args = ['-fuse-ld=lld']"; \
 	} > "$(MLIBC_CROSS_FILE)"; \

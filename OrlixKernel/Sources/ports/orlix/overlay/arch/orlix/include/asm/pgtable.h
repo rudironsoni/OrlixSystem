@@ -390,6 +390,11 @@ static inline pte_t pte_swp_clear_exclusive(pte_t pte)
 extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
 extern void paging_init(void);
 
+#if defined(ORLIX_APP_HOSTED_BOOT)
+#define HAVE_ARCH_UNMAPPED_AREA
+#define HAVE_ARCH_UNMAPPED_AREA_TOPDOWN
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 #endif /* _ASM_ORLIX_PGTABLE_H */

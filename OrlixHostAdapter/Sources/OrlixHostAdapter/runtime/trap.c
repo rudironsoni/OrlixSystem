@@ -1,6 +1,7 @@
 #define _XOPEN_SOURCE 700
 
 #include "OrlixHostAdapter/runtime/trap.h"
+#include "OrlixHostAdapter/memory/kernel_mapping.h"
 #include "OrlixHostAdapter/runtime/host_tls.h"
 #include "OrlixHostAdapter/runtime/trap_decode.h"
 #include "internal/asm/host_trap.h"
@@ -518,6 +519,7 @@ static void OrlixHostUserTrapHandler(int signal_number,
     user_tls = OrlixHostUserTrapCurrentTls();
     OrlixHostWriteTls(OrlixHostUserTrap.host_tls);
     __atomic_store_n(OrlixHostUserTrap.user_active, 0, __ATOMIC_RELEASE);
+    orlix_host_user_sync_writable_mappings();
 
     kernel_sp = *OrlixHostUserTrap.kernel_sp;
     if (!kernel_sp) {
@@ -594,13 +596,7 @@ static bool OrlixHostUserResumeRedirect(void)
     }
 
     if (status == KERN_SUCCESS) {
-        unsigned long resumed_tls = 0;
-
-        if (OrlixHostUserResumeFrame.frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS) {
-            resumed_tls = OrlixHostUserResumeFrame.user_tls;
-        }
-        __atomic_store_n(OrlixHostUserTrap.user_active,
-                         OrlixHostUserTrapValidUserTls(resumed_tls) ? 1UL : 0UL,
+        __atomic_store_n(OrlixHostUserTrap.user_active, 1UL,
                          __ATOMIC_RELEASE);
     }
     atomic_store_explicit(&OrlixHostUserResumePending, false,
