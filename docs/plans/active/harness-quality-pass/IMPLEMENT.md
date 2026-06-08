@@ -122,6 +122,34 @@ The lane is still not complete because the final milestone still requires explic
 - Harness-audit follow-up response: "Codex-harness state is **not yet ready to be marked complete**; finalize after reviewer-audit confirmation and fresh verification record."
 - `docs/plans/active/harness-quality-pass/PLAN.md` and `.codex` scope stayed unchanged by this follow-up.
 
+### 2026-06-08 (Codex harness hardening pass)
+
+**What happened:**
+
+Ran a fresh Codex-harness-only verification sweep to refresh evidence after previous rounds.
+
+**Decision:**
+
+Keep final claim open until explicit reviewer closure is returned, but this checkpoint is valid for continued implementation work and merge readiness review.
+
+**Evidence:**
+
+- `rtk env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .codex/hooks/tests` -> `OK`, 11 tests.
+- `rtk env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .codex/rules/tests` -> `OK`, 5 tests.
+- `rtk env PYTHONPYCACHEPREFIX=/private/tmp/orlix-harness-pycache python3 -m py_compile .codex/hooks/orlix_hook_common.py .codex/hooks/pre_tool_use_guard.py .codex/hooks/permission_request_guard.py .codex/hooks/post_tool_use_review.py .codex/hooks/stop_claim_check.py .codex/hooks/compact_plan_check.py .codex/hooks/tests/test_generated_tree_guards.py .codex/hooks/tests/test_lifecycle_guards.py .codex/rules/tests/test_execpolicy_rules.py` -> `0` exit.
+- `rtk python3 -m json.tool .codex/hooks.json` -> valid JSON.
+- `rtk python3 .codex/hooks/compact_plan_check.py` -> `0` exit.
+- `rtk python3 .codex/hooks/stop_claim_check.py` -> `0` exit.
+- `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- rtk git push origin main` -> `prompt`.
+- `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- timeout 18000 make -f OrlixOS/Makefile test PROFILE=release` -> `prompt`.
+- `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- rtk rm -rf Build` -> `forbidden`.
+- `rtk git diff --check -- .codex/hooks .codex/rules .agents/skills .codex/agents AGENTS.md docs/harness/README.md docs/plans/active/harness-quality-pass/PLAN.md` -> `0` exit.
+
+**Status update:**
+
+- `docs/plans/active/harness-quality-pass/PLAN.md` final milestone remains `[ ]` pending reviewer closure.
+- Codex-harness checks are passing and consistent with the current instruction set; this lane is still verification-clean but not yet claim-complete.
+
 ## Deviations Summary
 
 | Deviation | Reason | Plan updated? |
