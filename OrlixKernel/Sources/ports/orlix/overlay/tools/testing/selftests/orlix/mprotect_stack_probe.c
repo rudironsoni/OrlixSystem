@@ -9,6 +9,10 @@
 #define KIB 1024UL
 #define MIB (1024UL * KIB)
 
+#ifndef ORLIX_HOSTED_USER_BASE_ADDRESS
+#error "ORLIX_HOSTED_USER_BASE_ADDRESS must be provided by the Orlix kselftest target metadata"
+#endif
+
 static void report_failure(const char *operation, int error)
 {
 	char line[96];
@@ -52,6 +56,23 @@ static bool anonymous_prot_none_can_be_mprotected_rw(size_t guard_size,
 	return ok;
 }
 
+static bool anonymous_prot_none_stays_inside_hosted_user_window(void)
+{
+	void *mapping;
+	bool ok;
+
+	mapping = mmap(NULL, 2 * getpagesize(), PROT_NONE,
+		       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (mapping == MAP_FAILED) {
+		report_failure("mmap", errno);
+		return false;
+	}
+
+	ok = (uintptr_t)mapping >= ORLIX_HOSTED_USER_BASE_ADDRESS;
+	(void)munmap(mapping, 2 * getpagesize());
+	return ok;
+}
+
 int main(void)
 {
 	long page_size = sysconf(_SC_PAGESIZE);
@@ -59,12 +80,14 @@ int main(void)
 	if (page_size <= 0)
 		page_size = getpagesize();
 
-	orlix_test_plan(3);
+	orlix_test_plan(4);
 	orlix_test_result(anonymous_prot_none_can_be_mprotected_rw(0, 2 * page_size),
 			  "small PROT_NONE anonymous mmap can become writable with mprotect");
 	orlix_test_result(anonymous_prot_none_can_be_mprotected_rw(page_size, 2 * MIB),
 			  "mlibc default pthread stack mmap can become writable with mprotect");
 	orlix_test_result(anonymous_prot_none_can_be_mprotected_rw(page_size, 4 * MIB),
 			  "mlibc pthread_attr stack mmap can become writable with mprotect");
+	orlix_test_result(anonymous_prot_none_stays_inside_hosted_user_window(),
+			  "PROT_NONE anonymous mmap stays inside hosted user window");
 	orlix_test_exit();
 }

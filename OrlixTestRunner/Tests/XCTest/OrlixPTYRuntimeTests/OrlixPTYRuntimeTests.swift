@@ -35,9 +35,12 @@ private final class OrlixPTYRuntimeProofRunner: @unchecked Sendable {
         else {
             throw OrlixPTYRuntimeProofError.missingProductRootImageMetadata
         }
+        guard let profile = OrlixOSDistribution.bundledBootProfile else {
+            throw OrlixPTYRuntimeProofError.missingBundledBootProfile
+        }
         let session = OrlixLinuxSession(
             bootConfig: OrlixBootConfig(
-                profile: .release,
+                profile: profile,
                 rootImageIdentifier: rootImageIdentifier,
                 terminalIdentifier: "orlix.test.pty.runtime"
             )
@@ -255,6 +258,7 @@ private final class OrlixPTYRuntimeProofRunner: @unchecked Sendable {
 private enum OrlixPTYRuntimeProofError: Error, CustomStringConvertible {
     case missingProductPayloadBundle
     case missingProductRootImageMetadata
+    case missingBundledBootProfile
     case nonProductPayload(String)
     case bootFailed(OrlixBootStatus)
     case noTerminalOutput(TimeInterval, URL)
@@ -272,6 +276,8 @@ private enum OrlixPTYRuntimeProofError: Error, CustomStringConvertible {
             return "missing OrlixOS payload bundle resolved from target metadata"
         case .missingProductRootImageMetadata:
             return "missing OrlixOS product root image identifier in target metadata"
+        case .missingBundledBootProfile:
+            return "missing OrlixOS payload boot profile metadata"
         case let .nonProductPayload(stamp):
             return "OrlixOS payload bundle is not packaged from the product rootfs: \(stamp)"
         case let .bootFailed(status):

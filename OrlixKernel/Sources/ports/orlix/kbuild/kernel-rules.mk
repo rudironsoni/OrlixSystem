@@ -1928,7 +1928,7 @@ __kselftest-install: __prepare-kbuild $(KSELFTEST_PREREQS) __validate-profile
 		ARCH="$(ORLIX_KSELFTEST_ARCH)" \
 		LLVM=1 \
 		FORCE_TARGETS=1 \
-		USERCFLAGS="--sysroot=$$sysroot $$header_flags -fno-pie" \
+		USERCFLAGS="--sysroot=$$sysroot $$header_flags -fno-pie -DORLIX_HOSTED_USER_BASE_ADDRESS=$$hosted_user_base" \
 		USERLDFLAGS="--sysroot=$$sysroot -static -fuse-ld=lld -nostdlib -Wl,--gc-sections -Wl,--image-base=$$hosted_user_base $$orlix_crt_flags" \
 		LDLIBS="$$orlix_ldlibs" \
 		install; \

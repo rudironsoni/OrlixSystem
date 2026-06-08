@@ -107,7 +107,7 @@ unsigned long arch_get_unmapped_area_topdown(struct file *file,
 
 	info.flags = VM_UNMAPPED_AREA_TOPDOWN;
 	info.length = len;
-	info.low_limit = PAGE_SIZE;
+	info.low_limit = TASK_UNMAPPED_BASE;
 	info.high_limit = arch_get_mmap_base(addr, mm->mmap_base);
 	info.align_mask = orlix_hosted_mmap_align_mask(file, flags,
 						       vm_flags);

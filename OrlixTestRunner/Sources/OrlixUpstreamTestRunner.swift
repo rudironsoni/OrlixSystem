@@ -13,9 +13,13 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
     let expectedCoreutilsTotal: Int?
     let timeout: TimeInterval
 
-    func bootConfig(rootImageIdentifier: String) -> OrlixBootConfig {
-        OrlixBootConfig(
-            profile: .development,
+    func bootConfig(rootImageIdentifier: String) throws -> OrlixBootConfig {
+        guard let profile = OrlixOSDistribution.bundledBootProfile else {
+            throw OrlixUpstreamTestRunError.missingBundledBootProfile
+        }
+
+        return OrlixBootConfig(
+            profile: profile,
             rootImageIdentifier: rootImageIdentifier,
             terminalIdentifier: "orlix.test.\(suite.rawValue).terminal"
         )
@@ -58,6 +62,7 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
 enum OrlixUpstreamTestRunError: Error, Equatable, CustomStringConvertible {
     case missingRootImageDescriptor(String)
     case missingRootfsBundle(String)
+    case missingBundledBootProfile
     case bootFailed(OrlixBootStatus)
     case timeout(TimeInterval)
     case crashReport(String)
@@ -75,6 +80,8 @@ enum OrlixUpstreamTestRunError: Error, Equatable, CustomStringConvertible {
             return "missing OrlixOS root image metadata for role: \(role)"
         case let .missingRootfsBundle(bundle):
             return "missing upstream test rootfs bundle: \(bundle)"
+        case .missingBundledBootProfile:
+            return "missing OrlixOS payload boot profile metadata"
         case let .bootFailed(status):
             return "Orlix boot failed: \(status.message)"
         case let .timeout(timeout):
@@ -317,11 +324,16 @@ final class OrlixUpstreamTestSessionRunner: @unchecked Sendable {
             )
         }
 
-        let session = injectedSession ?? OrlixLinuxSession(
-            bootConfig: spec.bootConfig(
-                rootImageIdentifier: rootImage.identifier
+        let session: OrlixLinuxSession
+        if let injectedSession {
+            session = injectedSession
+        } else {
+            session = OrlixLinuxSession(
+                bootConfig: try spec.bootConfig(
+                    rootImageIdentifier: rootImage.identifier
+                )
             )
-        )
+        }
         let recorder = TerminalOutputRecorder()
         let completion = DispatchSemaphore(value: 0)
         let bootStatus = BootStatusRecorder()

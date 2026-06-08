@@ -82,20 +82,6 @@ targets:
           payload_extension="${ORLIX_OS_PAYLOAD_BUNDLE_EXTENSION:?}"
           source_payload_name="${ORLIX_OS_PAYLOAD_SOURCE_BUNDLE_NAME:?}"
           payload="$ORLIX_OS_PAYLOAD_SOURCE_ROOT/$source_payload_name.$payload_extension"
-          if [ ! -d "$payload" ]; then
-              echo "missing OrlixOS payload bundle: $payload" >&2
-              echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
-              exit 1
-          fi
-          stamp="$payload/.orlix-payload-ready"
-          if [ ! -s "$stamp" ]; then
-              echo "missing OrlixOS payload stamp: $stamp" >&2
-              echo "run: make -f OrlixOS/Makefile kernel-payload PROFILE=$profile" >&2
-              exit 1
-          fi
-          rootfs_input="$(sed -n 's/^rootfs_input=//p' "$stamp")"
-          base_root_tree_input="$(sed -n 's/^base_root_tree_input=//p' "$stamp")"
-          state_root_tree_input="$(sed -n 's/^state_root_tree_input=//p' "$stamp")"
           if [ "${ORLIX_OS_EXPECTED_ROOTFS_INPUT+x}" = x ]; then
               expected_rootfs_input="$ORLIX_OS_EXPECTED_ROOTFS_INPUT"
           else
@@ -111,6 +97,34 @@ targets:
           else
               expected_state_root_tree_input="$ORLIX_OS_STATE_ROOT_TREE_INPUT"
           fi
+          stamp="$payload/.orlix-payload-ready"
+          payload_needs_rebuild=0
+          if [ ! -d "$payload" ] || [ ! -s "$stamp" ]; then
+              payload_needs_rebuild=1
+          else
+              rootfs_input="$(sed -n 's/^rootfs_input=//p' "$stamp")"
+              base_root_tree_input="$(sed -n 's/^base_root_tree_input=//p' "$stamp")"
+              state_root_tree_input="$(sed -n 's/^state_root_tree_input=//p' "$stamp")"
+              if [ "$rootfs_input" != "$expected_rootfs_input" ] ||
+                 { [ -n "$expected_base_root_tree_input" ] && [ "$base_root_tree_input" != "$expected_base_root_tree_input" ]; } ||
+                 { [ -n "$expected_state_root_tree_input" ] && [ "$state_root_tree_input" != "$expected_state_root_tree_input" ]; }; then
+                  payload_needs_rebuild=1
+              fi
+          fi
+          if [ "$payload_needs_rebuild" = 1 ]; then
+              "${MAKE:-make}" -f "$SRCROOT/OrlixOS/Makefile" kernel-payload PROFILE="$profile"
+          fi
+          if [ ! -d "$payload" ]; then
+              echo "missing OrlixOS payload bundle after packaging: $payload" >&2
+              exit 1
+          fi
+          if [ ! -s "$stamp" ]; then
+              echo "missing OrlixOS payload stamp after packaging: $stamp" >&2
+              exit 1
+          fi
+          rootfs_input="$(sed -n 's/^rootfs_input=//p' "$stamp")"
+          base_root_tree_input="$(sed -n 's/^base_root_tree_input=//p' "$stamp")"
+          state_root_tree_input="$(sed -n 's/^state_root_tree_input=//p' "$stamp")"
           case "$rootfs_input" in
               "$expected_rootfs_input") ;;
               *)

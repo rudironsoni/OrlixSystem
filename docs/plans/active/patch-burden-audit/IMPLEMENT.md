@@ -366,6 +366,83 @@ This checkpoint proves the clean-slate mlibc/package patch removal plus the Linu
 
 Continue from zero patches and expand upstream conformance coverage. Any new failure must be attributed to its owning layer before implementation; do not reintroduce mlibc or package source patches as a shortcut.
 
+### 2026-06-08 OrlixOS Payload Metadata And Hosted PTY mmap Fix
+
+**What happened:**
+
+The OrlixOS product payload could become stale after focused upstream-test
+packaging because the Xcode embed phase validated only bundle existence and did
+not rebuild when the stamp pointed at a different rootfs input. Separately, the
+PTY runtime proof booted the OrlixOS product rootfs and reached `/sbin/init`,
+but Bash crashed after the PTY shell started:
+
+- `Orlix: user fault pc=0x6000000cf790 ... addr=0x1018`
+- `orlix-init: PTY shell session ended`
+
+**Root causes found:**
+
+1. The embed phase needed to compare the payload stamp against target-provided
+   OrlixOS rootfs/base/state metadata before copying it into the framework.
+2. `OrlixTestRunner` and the PTY runtime proof were still selecting boot
+   profiles with hardcoded enum values instead of consuming the bundled
+   OrlixOS payload metadata.
+3. Bash's fault PC disassembled to a vectorized allocator `memset` path. The
+   destination address `0x1018` showed that anonymous allocation had received a
+   low userspace mapping.
+4. The owning Linux-surface bug was in `arch/orlix/mm/mmap.c`: the Orlix
+   top-down unmapped-area path for hosted `PROT_NONE` anonymous reservations
+   kept upstream Linux's `PAGE_SIZE` low limit. That is valid for normal Linux
+   low user ranges, but Orlix app-hosted userspace is valid only inside the
+   hosted window beginning at `TASK_UNMAPPED_BASE`.
+
+**Changes made:**
+
+- OrlixOS payload embedding now rebuilds the kernel payload when the existing
+  stamp is missing or does not match the target metadata for rootfs/base/state
+  inputs.
+- Bash package build inputs now derive the bootstrap tool path from the local
+  Homebrew prefix and set `CC_FOR_BUILD` only for Bash's build-host generator
+  binaries; target binaries remain `aarch64-linux-gnu` Orlix Linux ELF files.
+- `OrlixTestRunner` and `OrlixPTYRuntimeTests` now derive the boot profile from
+  bundled OrlixOS payload metadata.
+- `arch/orlix/mm/mmap.c` now uses `TASK_UNMAPPED_BASE` as the low limit for the
+  hosted top-down `PROT_NONE` reservation search.
+- The Orlix-owned kselftest `mprotect_stack_probe` now receives
+  `ORLIX_HOSTED_USER_BASE_ADDRESS` from target metadata and verifies that
+  `PROT_NONE` anonymous mmap stays inside the hosted user window.
+
+No mlibc, Coreutils, Bash, generated upstream tree, or upstream test source was
+patched.
+
+**Evidence:**
+
+- `rtk git diff --check`
+  - passed.
+- `rtk rg --files OrlixOS/Sources/patches OrlixMLibC/Sources/patches`
+  - no files found; both durable patch stacks are empty.
+- `rtk timeout 300 make xcodeproj`
+  - passed.
+- `rtk timeout 1800 make -f OrlixOS/Makefile kernel-payload PROFILE=release`
+  - passed; rebuilt Bash, Coreutils, Findutils, init, the OrlixOS rootfs, and
+    `Build/OrlixKernel/payload/OrlixKernelPayload.bundle`.
+- `rtk file Build/OrlixOS/packages/release/usr/bin/bash Build/OrlixOS/packages/release/usr/bin/ls Build/OrlixOS/packages/release/usr/bin/find Build/OrlixOS/packages/release/sbin/init`
+  - all checked product binaries were `ELF 64-bit LSB executable, ARM aarch64`.
+- `rtk timeout 1800 make -f OrlixKernel/Makefile kselftest PROFILE=release`
+  - passed; rebuilt and installed the OrlixMLibC-built Orlix kselftests,
+    including the new hosted-window mmap regression.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testKselftestRootfsCompletesThroughOrlixOSTerminalSession test`
+  - passed through the OrlixOS terminal-session path.
+- `rtk xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixPTYRuntimeTests/OrlixPTYRuntimeTests/testLinuxPTYCarriesInteractiveShellInputAndOutput test`
+  - passed; the prior Bash user fault and `orlix-init: PTY shell session ended`
+    marker did not recur.
+
+**Next:**
+
+Continue upstream conformance expansion from the zero-patch state. The next
+known clean-slate mlibc target remains the unmodified upstream
+`posix/pthread_attr` failure, unless a broader suite exposes an earlier
+kernel-surface failure.
+
 ---
 
 ## Deviations Summary
