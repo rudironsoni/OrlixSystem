@@ -20,7 +20,7 @@ The audit found that `rtk`-wrapped commands can bypass some exec policy rules, c
 - [x] **M1: Exec policy parity** | verify: bare and `rtk` execpolicy checks agree
 - [x] **M2: Hook coverage and claim checks** | verify: hook unit tests cover generated trees, output warnings, compact-plan warnings, and completion claims
 - [x] **M3: Harness guidance tightened** | verify: inspect updated templates, agents, skills, and docs
-- [ ] **Final: all required evidence collected** | verify: hook tests, execpolicy tests, JSON/TOML syntax, stale-reference scan, reviewer audit
+- [ ] **Final: all required evidence collected** | verify: hook tests, execpolicy tests, JSON/TOML syntax, syntax checks, stale-reference sweep, reviewer audit
 
 ## Scope Boundaries
 

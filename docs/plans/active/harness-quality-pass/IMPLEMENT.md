@@ -75,11 +75,41 @@ Run final verification after this log update, then stage and commit only the coh
 
 ---
 
+### 2026-06-08
+
+**What happened:**
+
+Reran Codex-harness verification checks and updated the active checklist status.
+
+**Decision:**
+
+Keep the final milestone marked open until a human-reviewed closure is recorded, because the reviewer agent returned findings that require closure before final publication.
+
+**Evidence (this lane only):**
+
+- `rtk env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .codex/hooks/tests` -> `OK`, 11 tests.
+- `rtk env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s .codex/rules/tests` -> `OK`, 5 tests.
+- `rtk env PYTHONPYCACHEPREFIX=/private/tmp/orlix-harness-pycache python3 -m py_compile ...` on hooks/rules test files -> exit 0.
+- `rtk python3 -m json.tool .codex/hooks.json` -> valid.
+- `rtk env PYTHONPYCACHEPREFIX=/private/tmp/orlix-harness-pycache python3 -c 'import pathlib,tomllib; ...'` -> `toml ok`.
+- `rtk git diff --check -- .codex .agents docs/plans AGENTS.md README.md` -> no issues.
+- Spot-check execpolicy:
+  - `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- rtk git push origin main` -> `prompt`.
+  - `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- timeout 18000 make -f OrlixOS/Makefile test PROFILE=release` -> `prompt`.
+  - `rtk codex execpolicy check --pretty --rules .codex/rules/orlix.rules -- rtk rm -rf Build` -> `forbidden`.
+
+**Status update:**
+
+- `docs/plans/active/harness-quality-pass/PLAN.md` final milestone remains `[ ]` pending reviewer closure.
+- `docs/plans/active/harness-quality-pass/IMPLEMENT.md` retains the unresolved reviewer-return note and records that this lane is validated but not yet claim-complete.
+
+---
+
 ## Deviations Summary
 
 | Deviation | Reason | Plan updated? |
 |---|---|---|
-| Reviewer agent did not return | Tool delegation stalled after multiple waits; active plan remains open instead of moving to completed. | Yes |
+| Reviewer agent returned with unresolved findings | Reviewer's Codex findings flagged consistency and runtime-evidence gaps before closure; explicit closure evidence is still pending. | Yes |
 
 ## Open Questions
 
