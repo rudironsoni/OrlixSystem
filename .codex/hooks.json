@@ -7,8 +7,7 @@
           {
             "type": "command",
             "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/pre_tool_use_guard.py\"",
-            "timeout": 30,
-            "statusMessage": "Checking Orlix write boundaries"
+            "timeout": 30
           }
         ]
       }
@@ -20,8 +19,7 @@
           {
             "type": "command",
             "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/permission_request_guard.py\"",
-            "timeout": 30,
-            "statusMessage": "Checking Orlix permission request"
+            "timeout": 30
           }
         ]
       }
@@ -33,32 +31,7 @@
           {
             "type": "command",
             "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/post_tool_use_review.py\"",
-            "timeout": 30,
-            "statusMessage": "Reviewing Orlix tool evidence"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/compact_plan_check.py\"",
-            "timeout": 30,
-            "statusMessage": "Checking active Orlix plans before compaction"
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/compact_plan_check.py\"",
-            "timeout": 30,
-            "statusMessage": "Checking active Orlix plans after compaction"
+            "timeout": 30
           }
         ]
       }
@@ -69,8 +42,7 @@
           {
             "type": "command",
             "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/stop_claim_check.py\"",
-            "timeout": 30,
-            "statusMessage": "Checking Orlix completion claims"
+            "timeout": 30
           }
         ]
       }
