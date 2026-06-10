@@ -25,20 +25,6 @@
         "matcher": "Bash|apply_patch|Edit|Write"
       }
     ],
-    "PreCompact": [
-      {
-        "type": "command",
-        "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/compact_plan_check.py\"",
-        "timeout": 30
-      }
-    ],
-    "PostCompact": [
-      {
-        "type": "command",
-        "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/compact_plan_check.py\"",
-        "timeout": 30
-      }
-    ],
     "stop": [
       {
         "type": "command",
