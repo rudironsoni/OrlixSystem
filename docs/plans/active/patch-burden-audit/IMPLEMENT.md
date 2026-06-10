@@ -538,56 +538,6 @@ test patches.
 
 ---
 
-## 2026-06-10 - OrlixMLibC `ansi/sscanf` Locale Triage
-
-Added `MLIBC_ORLIX_TEST_CASES` to the OrlixMLibC test build so Orlix-owned
-diagnostic programs can run through the same initramfs, Linux boot, PTY output,
-and TAP failure path as the upstream mlibc tests. This does not add, remove,
-filter, or modify upstream mlibc test cases.
-
-Findings from focused `ansi/sscanf` triage:
-
-- The broad upstream mlibc run reached `ansi/sscanf` and timed out waiting for
-  `ORLIX-MLIBC-TEST-END`; no kernel panic or OOM marker was observed.
-- A focused upstream `ansi/sscanf` run reproduced the timeout.
-- An Orlix-owned probe verified that `/usr/lib/locale/de_DE.utf8/LC_CTYPE` and
-  `/usr/lib/locale/de_DE.utf8/LC_NUMERIC` can be `stat`, `open`, `fstat`,
-  `mmap`, page-touched, and closed from inside Orlix Linux. The simple
-  file-backed mapping path is therefore not sufficient as the root cause.
-- The same probe observed `setlocale(LC_CTYPE, "de_DE.utf8")` succeeding and
-  `setlocale(LC_NUMERIC, "de_DE.utf8")` returning null in one run. A later
-  expanded probe version hung before its first `printf`, so that expanded
-  probe is not accepted as locale root-cause evidence.
-- Upstream mlibc CI generates locale test data with `localedef --no-archive`
-  from glibc localedata. The current OrlixMLibC harness uses Debian
-  `locales-all`/`libc-bin` package extraction for the same locale names. This
-  is a suspect harness input mismatch, but it is not yet proven as the root
-  cause.
-
-No upstream mlibc source, generated upstream tree, upstream test source,
-OrlixMLibC patch stack, or OrlixOS patch stack was modified.
-
-Evidence commands:
-
-- `rtk timeout 2400 make -f /Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem/OrlixMLibC/Makefile test PROFILE=release`
-  - reached `ansi/sscanf`, then timed out waiting for `ORLIX-MLIBC-TEST-END`.
-- `rtk timeout 900 make -f /Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem/OrlixMLibC/Makefile test PROFILE=release MLIBC_TEST_CASES=ansi/sscanf MLIBC_TEST_RUN_WAIT_TICKS=120`
-  - reproduced the focused timeout at `ansi/sscanf`.
-- `rtk timeout 900 make -f /Users/rudironsoni/src/github/rudironsoni/orlix/OrlixSystem/OrlixMLibC/Makefile test PROFILE=release MLIBC_TEST_CASES= MLIBC_ORLIX_TEST_CASES=mlibc_sscanf_probe MLIBC_TEST_RUN_WAIT_TICKS=120`
-  - with the first probe, completed the PTY/TAP path and failed on the probe's
-    observed `LC_NUMERIC` null result.
-  - with the later expanded probe, timed out before completion; that expanded
-    probe was discarded as temporary diagnostic code.
-- `rtk rg --files OrlixOS/Sources/patches OrlixMLibC/Sources/patches`
-  - no files found; both durable patch stacks remain empty.
-
-Next investigation target: prove whether the locale-data input mismatch is real
-by comparing Orlix-packaged files to upstream mlibc `localedef --no-archive`
-outputs, or prove a lower Linux/HostAdapter fault with a smaller write-only
-probe. Do not patch mlibc or upstream tests.
-
----
-
 ## Deviations Summary
 
 | Deviation | Reason | Plan updated? |
