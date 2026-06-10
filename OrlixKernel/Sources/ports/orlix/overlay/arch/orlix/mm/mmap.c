@@ -2,10 +2,12 @@
 
 #include <linux/errno.h>
 #include <linux/fs.h>
+#include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/sched.h>
 #include <linux/security.h>
+#include <asm/processor.h>
 #include <asm/boot.h>
 
 static bool orlix_hosted_prot_none_reservation(struct file *file,
@@ -40,6 +42,24 @@ static unsigned long orlix_hosted_mmap_align_offset(struct file *file,
 	return (mask + 1 - PAGE_SIZE) & mask;
 }
 
+static unsigned long orlix_mmap_low_limit(struct mm_struct *mm)
+{
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	return max(mm->mmap_base, TASK_UNMAPPED_BASE);
+#else
+	return mm->mmap_base;
+#endif
+}
+
+static unsigned long orlix_mmap_floor(void)
+{
+#if defined(ORLIX_APP_HOSTED_BOOT)
+	return TASK_UNMAPPED_BASE;
+#else
+	return mmap_min_addr;
+#endif
+}
+
 unsigned long arch_get_unmapped_area(struct file *file, unsigned long addr,
 				     unsigned long len, unsigned long pgoff,
 				     unsigned long flags, vm_flags_t vm_flags)
@@ -48,26 +68,29 @@ unsigned long arch_get_unmapped_area(struct file *file, unsigned long addr,
 	struct vm_area_struct *vma, *prev;
 	struct vm_unmapped_area_info info = {};
 	const unsigned long mmap_end = arch_get_mmap_end(addr, len, flags);
+	const unsigned long mmap_floor = orlix_mmap_floor();
 
+#if !defined(ORLIX_APP_HOSTED_BOOT)
 	if (!orlix_hosted_mmap_align_mask(file, flags, vm_flags)) {
 		return generic_get_unmapped_area(file, addr, len, pgoff,
 						 flags, vm_flags);
 	}
+#endif
 
-	if (len > mmap_end - mmap_min_addr)
+	if (len > mmap_end - mmap_floor)
 		return -ENOMEM;
 
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
 		vma = find_vma_prev(mm, addr, &prev);
-		if (mmap_end - len >= addr && addr >= mmap_min_addr &&
+		if (mmap_end - len >= addr && addr >= mmap_floor &&
 		    (!vma || addr + len <= vm_start_gap(vma)) &&
 		    (!prev || addr >= vm_end_gap(prev)))
 			return addr;
 	}
 
 	info.length = len;
-	info.low_limit = mm->mmap_base;
+	info.low_limit = orlix_mmap_low_limit(mm);
 	info.high_limit = mmap_end;
 	info.align_mask = orlix_hosted_mmap_align_mask(file, flags,
 						       vm_flags);
@@ -88,19 +111,22 @@ unsigned long arch_get_unmapped_area_topdown(struct file *file,
 	struct vm_unmapped_area_info info = {};
 	const unsigned long mmap_end = arch_get_mmap_end(addr, len, flags);
 	unsigned long result;
+	const unsigned long mmap_floor = orlix_mmap_floor();
 
+#if !defined(ORLIX_APP_HOSTED_BOOT)
 	if (!orlix_hosted_mmap_align_mask(file, flags, vm_flags)) {
 		return generic_get_unmapped_area_topdown(file, addr, len, pgoff,
 							 flags, vm_flags);
 	}
+#endif
 
-	if (len > mmap_end - mmap_min_addr)
+	if (len > mmap_end - mmap_floor)
 		return -ENOMEM;
 
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
 		vma = find_vma_prev(mm, addr, &prev);
-		if (mmap_end - len >= addr && addr >= mmap_min_addr &&
+		if (mmap_end - len >= addr && addr >= mmap_floor &&
 		    (!vma || addr + len <= vm_start_gap(vma)) &&
 		    (!prev || addr >= vm_end_gap(prev)))
 			return addr;
