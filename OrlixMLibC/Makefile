@@ -222,6 +222,7 @@ MLIBC_TEST_LINUX_CASES := \
 	linux/utmpx \
 	linux/xattr
 MLIBC_TEST_CASES ?= $(MLIBC_TEST_ANSI_CASES) $(MLIBC_TEST_POSIX_CASES) $(MLIBC_TEST_BSD_CASES) $(MLIBC_TEST_GLIBC_CASES) $(MLIBC_TEST_LINUX_CASES)
+MLIBC_ORLIX_TEST_CASES ?=
 # Runtime-log polling uses 0.1s ticks. Scale with the selected upstream mlibc
 # tests so a full suite is not cut off by the focused-case timeout.
 MLIBC_TEST_RUN_WAIT_TICKS ?= $(shell expr 600 + $(words $(MLIBC_TEST_CASES)) \* 50)
@@ -397,6 +398,14 @@ __test-build: build __build-compiler-rt
 		"$(MLIBC_CC)" $$cflags $$ldflags $$crt_flags "$$source" $$ldlibs -o "$$install_dir/mlibc-tests/$$binary_name"; \
 		"$(MLIBC_STRIP)" "$$install_dir/mlibc-tests/$$binary_name"; \
 		printf '%s:%s\n' "$$test_name" "/mlibc-tests/$$binary_name" >> "$$install_dir/mlibc-test-list.txt"; \
+	done; \
+	for test_name in $(MLIBC_ORLIX_TEST_CASES); do \
+		source="$(PROJECT_DIR)/Tests/$$test_name.c"; \
+		binary_name="orlix-$${test_name////-}"; \
+		[ -s "$$source" ] || { echo "missing OrlixMLibC diagnostic source: $$source" >&2; exit 1; }; \
+		"$(MLIBC_CC)" $$cflags $$ldflags $$crt_flags "$$source" $$ldlibs -o "$$install_dir/mlibc-tests/$$binary_name"; \
+		"$(MLIBC_STRIP)" "$$install_dir/mlibc-tests/$$binary_name"; \
+		printf 'orlix/%s:%s\n' "$$test_name" "/mlibc-tests/$$binary_name" >> "$$install_dir/mlibc-test-list.txt"; \
 	done; \
 	"$(MLIBC_CC)" $$cflags $$ldflags $$crt_flags "$(PROJECT_DIR)/Tests/mlibc_test_init.c" $$ldlibs -o "$$install_dir/init"; \
 	"$(MLIBC_STRIP)" "$$install_dir/init"; \
