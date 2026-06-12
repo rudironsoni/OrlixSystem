@@ -505,6 +505,8 @@ schemes:
       gatherCoverageData: false
       targets:
         - name: OrlixPTYRuntimeTests
+          selectedTests:
+            - OrlixPTYRuntimeTests/testLinuxPTYCarriesInteractiveShellInputAndOutput
   OrlixKernelUpstreamTests:
     build:
       targets:

@@ -8020,6 +8020,67 @@ Corrected remaining execution order:
 15. Add product `orlix run`.
 16. Add registry pull tooling.
 
+### 2026-06-12 OrlixPTYRuntimeTests default-suite selection fix
+
+Goal:
+
+- Stop the `OrlixPTYRuntimeTests` scheme from reporting a mostly skipped
+  runtime-proof suite as success.
+- Keep focused one-boot runtime proofs available through explicit
+  `-only-testing` invocations because `OrlixBoot` still supports one boot per
+  XCTest app process.
+
+Root cause:
+
+- The target contains many runtime proof methods that each boot Orlix.
+- A default scheme run discovers every method in one XCTest host process, but
+  only the first boot can run. Later methods return `.alreadyStarted` and were
+  converted into `XCTSkip`, producing misleading green runs with most tests
+  skipped.
+
+Change:
+
+- `project.yml`
+  - Added a selected-test list for the `OrlixPTYRuntimeTests` scheme so the
+    default scheme runs only
+    `OrlixPTYRuntimeTests/testLinuxPTYCarriesInteractiveShellInputAndOutput`.
+  - Focused environment-root runtime proofs remain in the target and can still
+    run as explicit `-only-testing` invocations.
+
+Evidence:
+
+- Schema/generation validation:
+  - `rtk xcodegen dump --type swift-dump | rtk rg -n "OrlixPTYRuntimeTests|selectedTests|testLinuxPTY"`
+  - `rtk xcodegen generate`
+- Before the fix:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim test`
+  - Result: exited 0, but executed 18 tests with 17 skips. This was not useful
+    default-suite signal.
+- After the fix:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixPTYRuntimeTests-2026.06.12_19-05-56-+0200.xcresult`.
+  - Output: selected tests executed 1 test, 0 failures, 0 skips,
+    `** TEST SUCCEEDED **`.
+- Focused proof still works after the scheme selection:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests/testTarDerivedMaterializedRootBootsAndExposesOSRelease test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixPTYRuntimeTests-2026.06.12_19-07-04-+0200.xcresult`.
+  - Output: selected tests executed 1 test, 0 failures, 0 skips,
+    `** TEST SUCCEEDED **`.
+
+Current conclusion:
+
+- The default `OrlixPTYRuntimeTests` scheme no longer hides one-boot process
+  limits behind skipped tests.
+- The focused runtime proof lane remains available for one-proof-per-process
+  evidence.
+- This does not prove cross-boot persistence, virtio-fs, networking, cgroups,
+  OCI Runtime lifecycle, feature reporting, product `orlix run`, or registry
+  pull.
+
 ### 2026-06-12 Cross-boot persistence proof-shape correction
 
 Goal:
