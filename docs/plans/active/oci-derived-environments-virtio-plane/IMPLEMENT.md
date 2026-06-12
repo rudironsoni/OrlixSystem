@@ -8020,6 +8020,57 @@ Corrected remaining execution order:
 15. Add product `orlix run`.
 16. Add registry pull tooling.
 
+### 2026-06-12 Cross-boot persistence proof-shape correction
+
+Goal:
+
+- Correct the next checkpoint before implementing more test harness code.
+- Keep Linux persistence semantics in upstream-shaped Linux proof lanes.
+- Keep OrlixOS XCTest focused on app-facing environment/session contracts only.
+
+Correction:
+
+- A two-stage XCTest-only cross-boot proof was started and then discarded before
+  commit after review. That shape would have made XCTest choreography carry too
+  much of the persistence claim.
+- The existing lower-layer proof is already the right first lane:
+  `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/environment_state_writeback_probe.c`.
+  It proves `/dev/vdb` mounts as ext4, writes, fsyncs, remounts, rereads, and
+  still flushes through the Linux block layer while `/dev/vda` rejects writes.
+- The remaining unproved cross-boot claim is narrower and belongs to the
+  OrlixOS/session boundary: a named environment ID must reuse the same
+  virtio-blk backed state image across a fresh Orlix boot boundary, and the
+  Linux-written marker must be visible after that boundary.
+
+Updated proof direction:
+
+- Prefer upstream Linux tests where they directly cover the behavior.
+- Use Orlix kselftest-style overlay probes for Orlix-specific Linux integration
+  gaps such as virtio-blk backed state image writeback.
+- Use the Linux oracle for Linux-visible behavior comparisons.
+- Use XCTest only as a launcher and observer for the iOS-hosted Orlix path, or
+  for OrlixOS-owned contracts such as registry selection and image binding.
+- Do not add a large two-test XCTest staging harness as the primary proof of
+  Linux persistence semantics.
+
+Evidence:
+
+- The uncommitted two-stage XCTest attempt was removed from
+  `OrlixTestRunner/Tests/XCTest/OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests.swift`.
+- Current worktree was clean before this documentation correction except for
+  this plan update.
+- No runtime behavior, OrlixKernel code, OrlixOS session code, HostAdapter code,
+  OCI Runtime lifecycle, feature report, `orlix run`, registry pull, virtio-fs,
+  virtio-net, or cgroup resource behavior was changed by this correction.
+
+Current conclusion:
+
+- Cross-boot persistence remains unproved.
+- The next implementation should first reuse the existing Linux
+  `environment_state_writeback_probe` evidence and add only the minimum
+  OrlixOS/session proof needed to show same-environment state-image reuse across
+  a fresh boot boundary.
+
 ### 2026-06-12 Minimal cgroup v2 mount-shape substrate proof
 
 Goal:

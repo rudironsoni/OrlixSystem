@@ -62,6 +62,26 @@ The stale historical gaps below that say no tar importer, OCI importer,
 whiteout tests, overlay tests, or oracle tooling exists are superseded by this
 reconciliation and by the current `IMPLEMENT.md` evidence.
 
+Cross-boot persistence proof shape:
+
+- Do not replace Linux-owned persistence semantics with XCTest-only
+  choreography.
+- The Linux substrate lane is already upstream-shaped: the Orlix kselftest
+  overlay probe `environment_state_writeback_probe` mounts `/dev/vdb` as ext4,
+  writes, fsyncs, remounts, rereads, verifies `/dev/vda` still rejects writes,
+  and verifies `/dev/vdb` still flushes writes through the Linux block layer.
+- The remaining cross-boot proof is OrlixOS/session ownership: prove that a
+  named environment ID reuses the same virtio-blk backed state image across a
+  fresh Orlix boot boundary, and that the Linux-written marker is observed
+  after that boundary.
+- Any harness used for that cross-boot proof must be minimal and must not
+  define VFS, block, overlay, or fsync semantics. Those semantics remain covered
+  by upstream Linux tests, Orlix kselftest-style probes, or Linux oracle
+  comparisons.
+- Avoid two-test XCTest staging as the primary proof unless it is only a thin
+  app-process launcher around a Linux-owned probe and records why a single
+  in-process reboot is impossible.
+
 ## 1. Repository State Assessment
 
 ### OrlixKernel Layout
