@@ -653,6 +653,19 @@ Execution-order rule:
   mount behavior, virtio-fs for external folders, virtio-net for networking,
   and virtual cgroup v2 for resource claims.
 
+Proof-lane rule:
+
+- Linux semantics must be proved by upstream Linux tests where available,
+  kselftest-style probes under the Orlix upstream Linux overlay, or Linux oracle
+  comparisons. XCTest may launch the iOS-hosted Orlix path and collect output,
+  but XCTest assertions must not replace the Linux-owned proof lane.
+- OrlixOS XCTest may prove OrlixOS-owned contracts such as environment registry
+  selection, import-to-enter wiring, descriptor translation, payload metadata,
+  and persisted image binding.
+- OCI Runtime tests may prove OCI config translation, deterministic rejection,
+  lifecycle state, and schema/feature-report compliance only after the relevant
+  Linux substrate already has upstream/kselftest/oracle evidence.
+
 Standards corpus:
 
 - `config.md`: `ociVersion`, `root`, `mounts`, `process`, hooks, annotations.
@@ -1855,7 +1868,7 @@ Plan rules:
    - Proof: OCI whiteouts, opaque directories, immutable image root, writable environment state, and OverlayFS copy-up/unlink semantics are covered by app-hosted tests and oracle cases where available.
 
 6. Expand Linux substrate proof for entered environments.
-   - Proof: fd inheritance, close-on-exec, `/dev/fd`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr`, signals, wait/reaping, PTY behavior, `/proc`, `/dev`, `/sys`, tmpfs, and mount namespace behavior have focused iOS-hosted proof.
+   - Proof: fd inheritance, close-on-exec, `/dev/fd`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr`, signals, wait/reaping, PTY behavior, `/proc`, `/dev`, `/sys`, tmpfs, and mount namespace behavior have upstream Linux test, kselftest-style Orlix overlay probe, or Linux oracle coverage, with XCTest only launching and inspecting the iOS-hosted Orlix path.
 
 7. Expand the Linux oracle for substrate behavior.
    - Proof: the same fixtures produce real-Linux and Orlix JSON results, and the comparator catches drift for paths, errno, fd behavior, signals, waits, stat metadata, procfs, and mount observations.
@@ -1867,10 +1880,10 @@ Plan rules:
     - Proof: host-backed folder appears through Linux-owned mount behavior and passes path/stat/open/rename/unlink tests.
 
 10. Expand networking through upstream Linux networking paths.
-    - Proof: virtio-net, `/proc/net`, rtnetlink, loopback, and staged network namespace behavior have focused tests.
+    - Proof: virtio-net, `/proc/net`, rtnetlink, loopback, and staged network namespace behavior have upstream Linux test, kselftest-style Orlix overlay probe, or Linux oracle coverage.
 
 11. Add virtual cgroup v2 and resource accounting behavior.
-    - Proof: synthetic cgroup v2 tree and resource behavior match declared feature support.
+    - Proof: cgroup v2 tree and resource behavior match declared feature support through upstream Linux test, kselftest-style Orlix overlay probe, or Linux oracle coverage.
 
 12. Add native performance benchmark suite for imported binaries.
     - Proof: ELF launch, syscall round trip, file IO, pipe, PTY, futex, and process lifecycle benchmarks have repeatable iOS Simulator baselines.

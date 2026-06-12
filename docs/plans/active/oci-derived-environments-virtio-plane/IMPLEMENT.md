@@ -204,9 +204,9 @@ multiple live environments inside one already-running OrlixKernel.
 17. Registry pull tooling.
     - Proof: registry pull produces the same verified OCI layout input as local layout import, with no OrlixKernel or iOS runtime dependency on Apple container.
 18. Networking and namespace expansion.
-    - Proof: virtio-net, `/proc/net`, rtnetlink, and staged network namespace behavior have focused tests.
+    - Proof: virtio-net, `/proc/net`, rtnetlink, and staged network namespace behavior have upstream Linux test, kselftest-style Orlix overlay probe, or Linux oracle coverage.
 19. Virtual cgroup v2 and resource accounting.
-    - Proof: synthetic cgroup v2 tree and resource behavior match declared feature support.
+    - Proof: cgroup v2 tree and resource behavior match declared feature support through upstream Linux test, kselftest-style Orlix overlay probe, or Linux oracle coverage.
 
 **Current conclusion:**
 
@@ -8019,6 +8019,45 @@ Corrected remaining execution order:
 14. Add OCI feature report.
 15. Add product `orlix run`.
 16. Add registry pull tooling.
+
+### 2026-06-12 Upstream-shaped proof lane correction
+
+Goal:
+
+- Correct the active plan so future implementation does not use XCTest-only
+  assertions as proof for Linux-owned behavior.
+- Keep OCI Runtime, `orlix run`, and feature-report work behind the Linux
+  substrate proof they depend on.
+
+Changes:
+
+- `docs/plans/active/oci-derived-environments-virtio-plane/PLAN.md`
+  - Added a proof-lane rule under OCI Runtime Spec alignment:
+    - Linux semantics require upstream Linux tests where available,
+      kselftest-style probes under the Orlix upstream Linux overlay, or Linux
+      oracle comparisons.
+    - XCTest may launch the iOS-hosted Orlix path and collect output, but must
+      not replace Linux-owned proof.
+    - OrlixOS XCTest remains appropriate for OrlixOS-owned contracts such as
+      environment registry selection, import-to-enter wiring, descriptor
+      translation, payload metadata, and persisted image binding.
+    - OCI Runtime tests may cover config translation, deterministic rejection,
+      lifecycle state, and schema/feature-report compliance only after the
+      relevant Linux substrate has upstream/kselftest/oracle evidence.
+  - Updated the final execution-order proof text for Linux substrate,
+    networking, and cgroup work to require upstream Linux test,
+    kselftest-style Orlix overlay probe, or Linux oracle coverage.
+
+Current conclusion:
+
+- The plan now directly answers the proof-shape correction: use upstream Linux
+  tests first when they cover the behavior, add Orlix overlay kselftest-style
+  probes for Orlix integration gaps, and use the Linux oracle for behavior
+  comparison.
+- XCTest remains a runner and OrlixOS contract proof tool, not a substitute for
+  Linux-owned behavior evidence.
+- No OCI Runtime lifecycle, OCI feature report, product `orlix run`, virtio-fs,
+  networking, or cgroup support is claimed by this documentation checkpoint.
 
 Current status:
 
