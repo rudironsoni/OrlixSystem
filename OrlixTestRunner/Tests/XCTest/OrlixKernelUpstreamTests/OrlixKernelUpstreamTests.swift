@@ -21,7 +21,7 @@ final class OrlixKernelUpstreamTests: XCTestCase {
         XCTAssertTrue(output.contains("environment_entry_probe"))
         XCTAssertTrue(output.contains("environment entry parent marker created"))
         XCTAssertTrue(output.contains("environment entry child started"))
-        XCTAssertTrue(output.contains("environment entry child pivot_root completed"))
+        XCTAssertTrue(output.contains("environment entry child root entered"))
         XCTAssertTrue(output.contains("environment entry child exited cleanly"))
         XCTAssertTrue(output.contains("environment entry root is hidden from parent"))
         XCTAssertTrue(output.contains("environment entry parent marker cleaned"))

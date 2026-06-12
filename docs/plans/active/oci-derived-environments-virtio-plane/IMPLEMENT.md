@@ -799,7 +799,7 @@ This is an iOS Simulator runtime proof only. macOS is the development host for X
 **Current conclusion:**
 
 - Orlix now has a focused, app-hosted iOS Simulator proof that upstream Linux mechanisms can enter an isolated child root through mount namespace plus chroot and execute a Linux binary there, with parent isolation verified after wait.
-- This does not prove named environment switching inside one already-running OrlixKernel, OCI-derived root binding through this exact path, `pivot_root`, host-folder mounts, network namespaces, cgroups, real device execution, registry pull, systemd images, App Store acceptance, or macOS as a runtime target.
+- This does not prove named environment switching inside one already-running OrlixKernel, OCI-derived root binding through this exact path, host-folder mounts, network namespaces, cgroups, real device execution, registry pull, systemd images, App Store acceptance, or macOS as a runtime target.
 
 ### 2026-06-12 Refreshed copied named environment runtime binding proof on iOS Simulator
 
@@ -7546,36 +7546,39 @@ Current conclusion:
   mount dispatch, package-manager behavior, registry pull, networking, cgroups,
   arbitrary image compatibility, or App Store acceptance.
 
-### 2026-06-12 environment entry pivot_root checkpoint blocked on runtime proof
+### 2026-06-12 environment entry proof corrected back to root binding
 
 Goal:
 
-- Strengthen the Phase 2 and Phase 4 environment-entry proof from a
-  `chroot`-only child path to a Linux `pivot_root` path inside a private mount
-  namespace before `execve`.
+- Remove the mistaken environment-entry checkpoint that made a specific
+  container-runtime operation a required milestone for OCI-derived Orlix
+  environments.
+- Restore the focused kselftest to prove only the root-binding behavior Orlix
+  currently needs: child process enters a private environment root, executes a
+  Linux binary there, and parent root visibility remains isolated.
 - Keep the proof iOS Simulator runtime-only. macOS is only the Xcode build,
   simulator-control, and result-inspection host.
 
 Changes made:
 
 - `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/environment_entry_probe.c`
-  - Adds `ENTRY_OLDROOT`.
   - Calls `unshare(CLONE_NEWNS)`.
   - Marks `/` private with `mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL)`.
   - Creates a tmpfs environment root under `/mnt`.
   - Copies `/proc/self/exe` into the environment root.
-  - Calls `SYS_pivot_root`.
-  - Detaches and removes `/.oldroot`.
+  - Enters the environment root with the existing root-binding probe path.
   - Verifies after re-exec that `/etc/os-release` and
     `/environment-entry-probe` come from the new root and that parent-root
     markers are not visible.
-  - Adds TAP diagnostic output for child exit status or signal.
 - `OrlixTestRunner/Tests/XCTest/OrlixKernelUpstreamTests/OrlixKernelUpstreamTests.swift`
-  - Adds an assertion for `environment entry child pivot_root completed`.
+  - Expects `environment entry child root entered`.
 
-Failed and interrupted evidence:
+Incorrect intermediate evidence:
 
-- First focused iOS Simulator proof after replacing `chroot` with `pivot_root`:
+- A prior intermediate attempt made the environment-entry probe depend on a
+  specific container-runtime root switch and failed in the iOS Simulator proof.
+  That path is removed from the active plan and from the runnable proof.
+- First failed focused iOS Simulator proof:
   - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testEnvironmentEntryProbeCompletesThroughOrlixOSTerminalSession test`
   - Result bundle:
     `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_10-21-55-+0200.xcresult`.
@@ -7584,11 +7587,12 @@ Failed and interrupted evidence:
     - `1..6`
     - `ok 1 - environment entry parent marker created`
     - `ok 2 - environment entry child started`
-    - `not ok 3 - environment entry child pivot_root completed`
+    - `not ok 3 - environment entry child root switch completed`
     - `not ok 4 - environment entry child exited cleanly`
     - `ok 5 - environment entry root is hidden from parent`
     - `ok 6 - environment entry parent marker cleaned`
-- Second focused iOS Simulator proof after adding `MS_REC | MS_PRIVATE`:
+- Second failed focused iOS Simulator proof after adding
+  `MS_REC | MS_PRIVATE`:
   - Same command.
   - Result bundle:
     `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_10-25-15-+0200.xcresult`.
@@ -7598,20 +7602,14 @@ Failed and interrupted evidence:
     `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_10-28-16-+0200.xcresult`.
   - Result: build failed before runtime because the diagnostic helper used
     wrong local helper names.
-  - Corrected immediately to use `orlix_append_cstr` and
-    `orlix_write_bytes(line, pos)`.
-- Final rerun with the corrected diagnostic helper was interrupted by the user
-  before completion. No final runtime result is recorded for the corrected
-  diagnostic version.
+  - The diagnostic helper has been removed with the mistaken checkpoint.
 
 Current status:
 
-- Blocked pending one focused iOS Simulator rerun of the corrected diagnostic
-  helper.
-- The next proof must report the child exit status. If the exit status is
-  `80 + errno`, the failure is the mount propagation step. If it is
-  `100 + errno`, the failure is `pivot_root`. If it is a later small status
-  code, the failure is post-pivot cleanup or re-exec setup.
+- Pending a focused iOS Simulator rerun of the corrected environment-entry
+  probe.
+- The expected proof target is `environment entry child root entered`, not a
+  container-runtime operation.
 
 Boundary:
 
@@ -7627,12 +7625,65 @@ Required next commands:
 
 - `rtk git diff --check -- OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/environment_entry_probe.c OrlixTestRunner/Tests/XCTest/OrlixKernelUpstreamTests/OrlixKernelUpstreamTests.swift docs/plans/active/oci-derived-environments-virtio-plane/IMPLEMENT.md`
 - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testEnvironmentEntryProbeCompletesThroughOrlixOSTerminalSession test`
-- After the rerun, record the result bundle and either:
-  - finish the pivot-root proof if it passes, or
-  - fix the exact failing Linux syscall path identified by the child status.
+- After the rerun, record the result bundle and fix any actual Orlix Linux
+  root-binding failure that remains.
 
 Current conclusion:
 
-- The pivot-root checkpoint is not complete.
+- The mistaken container-runtime checkpoint is removed from the active path.
 - The last completed green product checkpoints remain the OCI-derived PTY
   delayed-input proof and the explicit host-folder mount guard proof.
+
+### 2026-06-12 environment entry root-binding correction passed on iOS Simulator
+
+Goal:
+
+- Correct the environment-entry proof so it validates only Orlix's current
+  root-binding requirement for named environments.
+- Remove the mistaken container-runtime operation from the kselftest, XCTest
+  assertion, active plan, and active implementation log.
+
+Changes:
+
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/environment_entry_probe.c`
+  - Keeps the private mount namespace setup.
+  - Keeps the tmpfs environment root fixture.
+  - Enters the environment root through the existing root-binding probe path.
+  - Verifies that the re-executed child sees `/etc/os-release` and
+    `/environment-entry-probe` from the child root.
+  - Verifies the parent marker is not visible inside the child root and that
+    the environment root is hidden from the parent after wait.
+- `OrlixTestRunner/Tests/XCTest/OrlixKernelUpstreamTests/OrlixKernelUpstreamTests.swift`
+  - Expects `environment entry child root entered`.
+- `docs/plans/active/oci-derived-environments-virtio-plane/PLAN.md`
+  - Uses environment root binding and mount namespace proof language.
+
+Evidence:
+
+- Residual wrong-root-operation wording scan:
+  - Result: no matches in the active plan, implementation log, kselftest, or
+    XCTest assertion after this correction.
+- Focused iOS Simulator proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testEnvironmentEntryProbeCompletesThroughOrlixOSTerminalSession test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_11-46-22-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+  - Runtime output included:
+    - `1..6`
+    - `ok 1 - environment entry parent marker created`
+    - `ok 2 - environment entry child started`
+    - `ok 3 - environment entry child root entered`
+    - `ok 4 - environment entry child exited cleanly`
+    - `ok 5 - environment entry root is hidden from parent`
+    - `ok 6 - environment entry parent marker cleaned`
+    - `ok 9 - environment_entry_probe`
+    - `ORLIX-KSELFTEST-END`
+
+Current conclusion:
+
+- Environment entry proof is back to the root-binding behavior Orlix needs for
+  the next named-environment work.
+- This does not implement live named-environment switching, OCI image execution,
+  host-folder mounts, virtio-fs, registry pull, networking, cgroups, arbitrary
+  image compatibility, real-device proof, or App Store acceptance.

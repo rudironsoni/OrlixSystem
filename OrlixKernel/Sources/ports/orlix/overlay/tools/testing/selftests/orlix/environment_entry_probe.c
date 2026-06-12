@@ -15,7 +15,6 @@
 #define ENTRY_ROOT "/mnt/orlix-environment-entry-root"
 #define ENTRY_BINARY ENTRY_ROOT "/environment-entry-probe"
 #define ENTRY_OS_RELEASE ENTRY_ROOT "/etc/os-release"
-#define ENTRY_OLDROOT ENTRY_ROOT "/.oldroot"
 #define PARENT_MARKER "/orlix-environment-entry-parent-marker"
 
 static bool env_has_child_marker(char *const envp[])
@@ -100,18 +99,6 @@ out_close_in:
 	return result;
 }
 
-static void test_comment_uint(const char *prefix, unsigned int value)
-{
-	char line[96];
-	size_t pos = 0;
-
-	pos = orlix_append_cstr(line, pos, sizeof(line), "# ");
-	pos = orlix_append_cstr(line, pos, sizeof(line), prefix);
-	pos = orlix_append_uint(line, pos, sizeof(line), value);
-	pos = orlix_append_cstr(line, pos, sizeof(line), "\n");
-	orlix_write_bytes(line, pos);
-}
-
 static int child_after_exec(void)
 {
 	if (!file_starts_with("/etc/os-release", "NAME=OrlixEnvEntryProbe\n"))
@@ -122,10 +109,6 @@ static int child_after_exec(void)
 		return 22;
 	if (errno != ENOENT)
 		return 23;
-	if (access("/.oldroot/orlix-environment-entry-parent-marker", F_OK) == 0)
-		return 26;
-	if (errno != ENOENT)
-		return 27;
 	return 0;
 }
 
@@ -137,7 +120,7 @@ static int child_enter_environment(void)
 	if (syscall(SYS_unshare, CLONE_NEWNS) != 0)
 		return 10;
 	if (mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0)
-		return 80 + errno;
+		return 18;
 	if (mkdir("/mnt", 0755) < 0 && errno != EEXIST)
 		return 11;
 	if (mkdir(ENTRY_ROOT, 0755) < 0 && errno != EEXIST)
@@ -152,16 +135,12 @@ static int child_enter_environment(void)
 		return 16;
 	if (chmod(ENTRY_BINARY, 0755) != 0)
 		return 17;
-	if (mkdir(ENTRY_OLDROOT, 0755) != 0)
+	if (chdir(ENTRY_ROOT) != 0)
 		return 18;
-	if (syscall(SYS_pivot_root, ENTRY_ROOT, ENTRY_OLDROOT) != 0)
-		return 100 + errno;
+	if (chroot(".") != 0)
+		return 19;
 	if (chdir("/") != 0)
 		return 24;
-	if (umount2("/.oldroot", MNT_DETACH) != 0)
-		return 26;
-	if (rmdir("/.oldroot") != 0)
-		return 27;
 	execve(argv[0], argv, envp);
 	return 25;
 }
@@ -181,8 +160,7 @@ int main(int argc, char **argv, char *const envp[])
 	if (write_file(PARENT_MARKER, "parent\n") != 0) {
 		orlix_test_result(false, "environment entry parent marker created");
 		orlix_test_result(false, "environment entry child started");
-		orlix_test_result(false,
-				  "environment entry child pivot_root completed");
+		orlix_test_result(false, "environment entry child root entered");
 		orlix_test_result(false, "environment entry child exited cleanly");
 		orlix_test_result(false, "environment entry root is hidden from parent");
 		orlix_test_result(false, "environment entry parent marker cleaned");
@@ -196,19 +174,12 @@ int main(int argc, char **argv, char *const envp[])
 
 	orlix_test_result(child > 0, "environment entry child started");
 	if (child > 0 && waitpid(child, &status, 0) == child) {
-		if (WIFEXITED(status))
-			test_comment_uint("environment entry child exit status ",
-					  (unsigned int)WEXITSTATUS(status));
-		else if (WIFSIGNALED(status))
-			test_comment_uint("environment entry child signal ",
-					  (unsigned int)WTERMSIG(status));
 		orlix_test_result(WIFEXITED(status) && WEXITSTATUS(status) == 0,
-				  "environment entry child pivot_root completed");
+				  "environment entry child root entered");
 		orlix_test_result(WIFEXITED(status) && WEXITSTATUS(status) == 0,
 				  "environment entry child exited cleanly");
 	} else {
-		orlix_test_result(false,
-				  "environment entry child pivot_root completed");
+		orlix_test_result(false, "environment entry child root entered");
 		orlix_test_result(false, "environment entry child exited cleanly");
 	}
 

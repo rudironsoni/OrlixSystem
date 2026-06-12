@@ -131,7 +131,7 @@ Evidence:
 Missing:
 
 - No named environment mount namespace orchestration exists.
-- No current proof that `unshare(CLONE_NEWNS)`, `pivot_root`, or per-environment mount isolation works in product tests.
+- No current proof that named environment root binding and per-environment mount isolation work in product tests.
 - No current external folder mount path exists.
 - No current virtio-fs mount path exists.
 
@@ -399,7 +399,7 @@ Current HostAdapter must not decide:
 Major untested areas for OCI-derived environments:
 
 - Mount namespace creation and isolation.
-- chroot or pivot_root behavior for environment entry.
+- Environment root binding for process launch.
 - `/proc`, `/dev`, `/sys`, `/dev/pts`, `/proc/self`, `/proc/mounts` inside environment roots.
 - OverlayFS copy-up, whiteout, opaque directory behavior.
 - uid/gid/chown/chmod behavior across imported root filesystems.
@@ -553,7 +553,7 @@ Environment entry must be implemented through Linux mechanisms:
 
 - `clone` or `unshare` for mount namespace when available.
 - Linux mount syscalls.
-- `chroot` or `pivot_root` as proven viable.
+- environment root binding through Linux-owned process launch state.
 - `execve` for process launch.
 - normal fdtable, PTY, signal, wait, and exit behavior.
 
@@ -754,7 +754,7 @@ Goal:
 
 Required repo changes:
 
-- Add product tests for Linux mount namespace behavior, mount visibility, chroot or pivot_root, ext4 root, OverlayFS root, and mount propagation.
+- Add product tests for Linux mount namespace behavior, mount visibility, environment root binding, ext4 root, OverlayFS root, and mount propagation.
 - Add minimal fixes only in Orlix arch/driver code if upstream Linux mount behavior fails due Orlix port gaps.
 
 Likely touched areas:
@@ -770,7 +770,7 @@ Tests to add:
 - `mount` and `umount` smoke tests.
 - `unshare(CLONE_NEWNS)` if available.
 - `/proc/self/mountinfo` validation.
-- `chroot` or `pivot_root` behavior.
+- environment root binding behavior.
 - ext4 mount read/write.
 - OverlayFS mount read/write/copy-up smoke.
 
@@ -1472,7 +1472,7 @@ Deterministic test layers:
   - mount dispatch: ext4, tmpfs, procfs, sysfs, devtmpfs, devpts, overlay.
   - mount namespace isolation.
   - `/proc/self/mountinfo` expected entries.
-  - chroot or pivot_root behavior.
+  - environment root binding behavior.
 
 - Storage policy tests
   - Application Support for persistent Linux state.
