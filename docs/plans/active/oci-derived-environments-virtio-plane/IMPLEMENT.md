@@ -10,6 +10,77 @@ Implementation log. Append-only. Capture decisions, deviations from the plan, ev
 
 ## Log
 
+### 2026-06-12 Linux-owned environment state writeback prerequisite proof
+
+**What happened:**
+
+Replaced the earlier wrong-shaped XCTest-only persistence attempt with a
+Linux-owned kselftest-style probe. The durable behavior now lives in the
+upstream Linux overlay under `tools/testing/selftests/orlix`; XCTest only boots
+the iOS Simulator OrlixOS path and selects that probe.
+
+This checkpoint proves a prerequisite for environment persistence, not the full
+cross-boot product claim. The probe mounts `/dev/vdb` as ext4 through Linux,
+writes and fsyncs a marker, unmounts and remounts the filesystem, rereads the
+marker, verifies `/dev/vda` still rejects writes, and verifies `/dev/vdb` still
+flushes writes.
+
+**Changes:**
+
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/environment_state_writeback_probe.c`
+  adds the Linux-owned writeback probe.
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/Makefile`
+  installs the probe with the Orlix selftest set.
+- `OrlixTestRunner/Sources/OrlixUpstreamTestRunner.swift` adds the focused
+  `orlix.kselftest=environment_state_writeback_probe` run spec.
+- `OrlixTestRunner/Tests/XCTest/OrlixKernelUpstreamTests/OrlixKernelUpstreamTests.swift`
+  asserts the app-hosted probe output.
+- `docs/plans/active/oci-derived-environments-virtio-plane/PLAN.md` records
+  the narrower proved state.
+
+**Evidence:**
+
+- Initial RED proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testEnvironmentStateWritebackProbeCompletesThroughOrlixOSTerminalSession test`
+  - Result: failed at compile time because `OrlixUpstreamTestRunSpec` had no
+    `kernelEnvironmentStateWriteback` member.
+- Wrong first implementation shape:
+  - The first probe wrote under `/etc` while the focused kselftest root used
+    `orlix.root=initramfs-only`.
+  - Result: marker write, sync, and reread failed, while `/dev/vda` write
+    rejection and `/dev/vdb` flush still passed.
+- Corrected focused iOS Simulator proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testEnvironmentStateWritebackProbeCompletesThroughOrlixOSTerminalSession test`
+  - Result: `** TEST SUCCEEDED **`.
+  - Executed 1 test, 1 passed, 0 failed, 0 skipped.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_17-54-46-+0200.xcresult`.
+  - Probe output included:
+    - `ok 1 - writable state block mounts as ext4`
+    - `ok 2 - environment state marker write succeeds`
+    - `ok 3 - environment state marker sync succeeds`
+    - `ok 4 - writable state block remounts after sync`
+    - `ok 5 - environment state marker reread succeeds`
+    - `ok 6 - immutable base block still rejects writes`
+    - `ok 7 - writable state block still flushes writes`
+
+**Explicit non-claims:**
+
+- This does not prove cross-boot persistence of the same mutated environment
+  state image across a fresh host process.
+- This does not prove multiple live environments inside one already-running
+  OrlixKernel.
+- This does not prove product import-to-enter flow.
+- This does not prove OCI Runtime Spec config parsing, lifecycle compliance,
+  Linux runtime defaults, feature reporting, product `orlix run`, host-folder
+  mounts, virtio-fs, networking, cgroups, or native performance.
+
+**Current conclusion:**
+
+- The next persistence step should build on this Linux substrate proof rather
+  than encode Linux filesystem semantics in XCTest.
+- The full cross-boot persistence checkpoint remains open.
+
 ### 2026-06-12 Current status reconciliation after active plan drift
 
 **What happened:**

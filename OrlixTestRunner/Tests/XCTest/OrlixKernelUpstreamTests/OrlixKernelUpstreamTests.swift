@@ -335,6 +335,22 @@ final class OrlixKernelUpstreamTests: XCTestCase {
         XCTAssertFalse(output.contains("# exec /orlix/clone_thread_probe"))
     }
 
+    func testEnvironmentStateWritebackProbeCompletesThroughOrlixOSTerminalSession()
+        throws
+    {
+        let output = try OrlixUpstreamXCTest.run(.kernelEnvironmentStateWriteback)
+
+        XCTAssertTrue(output.contains("environment_state_writeback_probe"))
+        XCTAssertTrue(output.contains("writable state block mounts as ext4"))
+        XCTAssertTrue(output.contains("environment state marker write succeeds"))
+        XCTAssertTrue(output.contains("environment state marker sync succeeds"))
+        XCTAssertTrue(output.contains("writable state block remounts after sync"))
+        XCTAssertTrue(output.contains("environment state marker reread succeeds"))
+        XCTAssertTrue(output.contains("immutable base block still rejects writes"))
+        XCTAssertTrue(output.contains("writable state block still flushes writes"))
+        XCTAssertFalse(output.contains("# exec /orlix/clone_thread_probe"))
+    }
+
     func testKselftestRootfsCompletesThroughOrlixOSTerminalSession() throws {
         let output = try OrlixUpstreamXCTest.run(.kernel)
 

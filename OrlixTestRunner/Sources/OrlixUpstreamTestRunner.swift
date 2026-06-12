@@ -172,6 +172,14 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
         kernelCommandLineSuffix: "orlix.kselftest=virtio_blk_environment_probe"
     )
 
+    static let kernelEnvironmentStateWriteback = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=environment_state_writeback_probe"
+    )
+
     static let mlibc = OrlixUpstreamTestRunSpec(
         suite: .mlibc,
         completionMarker: "ORLIX-MLIBC-TEST-END",

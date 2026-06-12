@@ -18,6 +18,8 @@ Current proved state:
 - Materialized-root iOS Simulator proofs exist.
 - Descriptor argv/env/cwd/uid/gid execution defaults exist.
 - Immutable base plus writable state proof exists.
+- Linux-owned writable state block mount, write, fsync, remount, and reread
+  proof exists.
 - OverlayFS copy-up and unlink proof exists.
 - pseudoFS, tmpfs, PTY, and delayed input proofs exist.
 - Linux oracle scaffold exists.
