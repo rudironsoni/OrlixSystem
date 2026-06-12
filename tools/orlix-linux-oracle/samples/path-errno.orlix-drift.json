@@ -1,0 +1,21 @@
+{
+  "caseID": "path-errno",
+  "runner": "orlix",
+  "stdout": "{\"operation\":\"open\",\"path\":\"missing\",\"errno\":2,\"name\":\"No such file or directory\",\"expected\":2}\n",
+  "stderr": "",
+  "exitStatus": 1,
+  "signal": null,
+  "errnoEvents": [
+    {
+      "operation": "open",
+      "path": "missing",
+      "errno": 2,
+      "name": "ENOENT"
+    }
+  ],
+  "statEntries": [],
+  "mutations": [],
+  "observations": {
+    "filesystem": "tmpfs-or-scratch"
+  }
+}

@@ -36,6 +36,7 @@ struct OrlixHostUserTrapState {
     const unsigned long *kernel_sp;
     const unsigned long *active_user_tls;
     unsigned long *user_active;
+    orlix_host_kernel_fault_handler_t kernel_fault_handler;
     orlix_host_user_trap_entry_t entry;
     pthread_t target_pthread;
     thread_act_t target_thread;
@@ -175,7 +176,6 @@ static bool OrlixHostUserTrapFrameUsesTlsResumeTrampoline(
     const struct orlix_host_user_trap_frame *frame)
 {
     return frame &&
-           (frame->frame_flags & ORLIX_HOST_USER_FRAME_SYSCALL_RETURN) &&
            (frame->frame_flags & ORLIX_HOST_USER_FRAME_HAS_TLS) &&
            OrlixHostUserTrapValidUserTls(frame->user_tls) &&
            OrlixHostUserTrapTlsResumeTrampoline();
@@ -224,6 +224,13 @@ static unsigned long OrlixHostUserTrapCurrentTls(void)
     }
 
     if (OrlixHostUserTrap.host_tls && tls == OrlixHostUserTrap.host_tls) {
+        active_tls = OrlixHostUserTrapActiveTls();
+        if (active_tls) {
+            return active_tls;
+        }
+    }
+
+    if (OrlixHostUserTrapIsUserActive()) {
         active_tls = OrlixHostUserTrapActiveTls();
         if (active_tls) {
             return active_tls;
@@ -519,6 +526,22 @@ static unsigned long OrlixHostUserTrapFaultAddress(unsigned long user_pc,
     return (unsigned long)machine_context->__es.__far;
 }
 
+static bool OrlixHostUserTrapShouldDeliverUserFault(unsigned long user_pc,
+                                                    int signal_number,
+                                                    bool timer_signal)
+{
+    if (timer_signal || !OrlixHostUserTrapIsMemoryFaultSignal(signal_number)) {
+        return false;
+    }
+
+    if (OrlixHostUserTrapContains(user_pc)) {
+        return true;
+    }
+
+    return OrlixHostUserTrapIsUserActive() &&
+           !OrlixHostUserTrapInSyscallGate(user_pc);
+}
+
 static void OrlixHostUserTrapHandler(int signal_number,
                                      siginfo_t *info,
                                      void *context)
@@ -543,8 +566,22 @@ static void OrlixHostUserTrapHandler(int signal_number,
 
     machine_context = user_context->uc_mcontext;
     user_pc = (unsigned long)machine_context->__ss.__pc;
-    if (!OrlixHostUserTrapContains(user_pc) ||
-        OrlixHostUserTrapInSyscallGate(user_pc)) {
+    fault_flags = OrlixHostUserFaultFlags(signal_number, machine_context);
+    fault_address = OrlixHostUserTrapFaultAddress(user_pc, fault_flags, info,
+                                                  machine_context);
+    if (!OrlixHostUserTrapContains(user_pc) &&
+        OrlixHostUserTrapShouldDeliverUserFault(user_pc, signal_number,
+                                                timer_signal)) {
+        trap_number = ORLIX_HOST_USER_TRAP_MEMORY_FAULT;
+    } else if (!OrlixHostUserTrapContains(user_pc) ||
+               OrlixHostUserTrapInSyscallGate(user_pc)) {
+        if (OrlixHostUserTrapIsMemoryFaultSignal(signal_number) &&
+            OrlixHostUserTrap.kernel_fault_handler &&
+            OrlixHostUserTrap.kernel_fault_handler(user_pc,
+                                                   fault_address,
+                                                   fault_flags) == 0) {
+            return;
+        }
         if (timer_signal) {
             return;
         }
@@ -564,9 +601,6 @@ static void OrlixHostUserTrapHandler(int signal_number,
         trap_number = ORLIX_HOST_USER_TRAP_MEMORY_FAULT;
     }
 
-    fault_flags = OrlixHostUserFaultFlags(signal_number, machine_context);
-    fault_address = OrlixHostUserTrapFaultAddress(user_pc, fault_flags, info,
-                                                  machine_context);
     if (OrlixHostUserTrapIsMemoryFaultSignal(signal_number) &&
         OrlixHostUserTrapRepairUserTlsLoad(machine_context, fault_address)) {
         return;
@@ -693,6 +727,7 @@ __attribute__((visibility("hidden"))) int orlix_host_user_trap_install(
     const unsigned long *kernel_sp,
     const unsigned long *active_user_tls,
     unsigned long *user_active,
+    orlix_host_kernel_fault_handler_t kernel_fault_handler,
     orlix_host_user_trap_entry_t entry)
 {
     const int signals[] = { SIGTRAP, SIGILL, SIGBUS, SIGSEGV, SIGABRT,
@@ -713,6 +748,7 @@ __attribute__((visibility("hidden"))) int orlix_host_user_trap_install(
     OrlixHostUserTrap.kernel_sp = kernel_sp;
     OrlixHostUserTrap.active_user_tls = active_user_tls;
     OrlixHostUserTrap.user_active = user_active;
+    OrlixHostUserTrap.kernel_fault_handler = kernel_fault_handler;
     OrlixHostUserTrap.entry = entry;
     OrlixHostUserTrap.target_pthread = pthread_self();
     OrlixHostUserTrap.target_thread = pthread_mach_thread_np(pthread_self());

@@ -171,6 +171,61 @@ unmap:
 	return 0;
 }
 
+static int orlix_sync_present_kernel_page(unsigned long address)
+{
+	struct orlix_host_pte_window window;
+	void *source;
+	int ret;
+
+	ret = orlix_kernel_pte_page(address, &window);
+	if (ret == -ENOENT)
+		return 0;
+	if (ret)
+		return ret;
+
+	source = __va(PFN_PHYS(window.pfn));
+	return orlix_host_kernel_map_page(window.target, source, window.length);
+}
+
+static int orlix_sync_kernel_host_window(unsigned long address)
+{
+	unsigned long start = orlix_host_window_start(address);
+	unsigned long end = orlix_host_window_end(start);
+	unsigned long page;
+	int ret;
+
+	if (start < VMALLOC_START)
+		start = VMALLOC_START;
+	if (end > VMALLOC_END || end < start)
+		end = VMALLOC_END;
+
+	for (page = start; page < end; page += PAGE_SIZE) {
+		ret = orlix_sync_present_kernel_page(page);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+void orlix_sync_hosted_kernel_pte(unsigned long address)
+{
+	if (address < VMALLOC_START || address >= VMALLOC_END)
+		return;
+
+	if (orlix_sync_kernel_host_window(address))
+		panic("Orlix: failed to synchronize hosted kernel PTE %#lx\n",
+		      address);
+}
+
+int orlix_sync_hosted_kernel_fault(unsigned long address)
+{
+	if (address < VMALLOC_START || address >= VMALLOC_END)
+		return -EFAULT;
+
+	return orlix_sync_kernel_host_window(address);
+}
+
 static int orlix_fault_in_user_page_locked(struct mm_struct *mm,
 					   unsigned long fault_address);
 
@@ -179,6 +234,7 @@ static int orlix_user_pte_window(struct mm_struct *mm,
 				 struct orlix_host_pte_window *window)
 {
 	int ret;
+	struct vm_area_struct *vma;
 	pgd_t *pgd;
 	p4d_t *p4d;
 	pud_t *pud;
@@ -193,6 +249,7 @@ static int orlix_user_pte_window(struct mm_struct *mm,
 	if (ret)
 		return ret;
 
+	vma = vma_lookup(mm, page);
 	pgd = pgd_offset(mm, page);
 	if (pgd_none(*pgd) || pgd_bad(*pgd))
 		goto unlock_fault;
@@ -217,7 +274,8 @@ static int orlix_user_pte_window(struct mm_struct *mm,
 	window->target = page;
 	window->length = PAGE_SIZE;
 	window->pfn = pte_pfn(entry);
-	window->writable = !!pte_write(entry);
+	window->writable = !!pte_write(entry) ||
+		!!(vma && (vma->vm_flags & VM_WRITE));
 	window->executable = !!(pte_val(entry) & _PAGE_EXEC);
 	mmap_read_unlock(mm);
 	return 0;
@@ -414,6 +472,7 @@ static int orlix_sync_user_host_window(struct mm_struct *mm,
 
 	for (cursor = window_start; cursor < window_end; cursor += PAGE_SIZE) {
 		struct orlix_host_pte_window window;
+		struct vm_area_struct *vma;
 		const void *source;
 
 		ret = orlix_fault_in_user_page_locked(mm, cursor);
@@ -424,6 +483,9 @@ static int orlix_sync_user_host_window(struct mm_struct *mm,
 		}
 
 		ret = orlix_user_present_pte_window(mm, cursor, &window);
+		vma = ret ? NULL : vma_lookup(mm, cursor);
+		if (!ret && vma && (vma->vm_flags & VM_WRITE))
+			window.writable = true;
 		mmap_read_unlock(mm);
 		if (ret) {
 			if (cursor == page)
@@ -459,7 +521,20 @@ static int orlix_sync_user_host_window(struct mm_struct *mm,
 
 static int orlix_sync_user_stack_page(struct mm_struct *mm, unsigned long page)
 {
-	return orlix_sync_user_pte_page(mm, page);
+	return orlix_sync_user_host_window(mm, page);
+}
+
+static int orlix_sync_user_stack_page_if_present(struct mm_struct *mm,
+						 unsigned long page)
+{
+	(void)orlix_sync_user_stack_page(mm, page);
+	/*
+	 * User stack mirroring is a hosted pre-entry aid. A miss here must not
+	 * turn a legal Linux user stack state into a kernel panic; the later
+	 * host fault path will re-enter Linux page-fault handling if the task
+	 * actually touches the page.
+	 */
+	return 0;
 }
 
 static int orlix_sync_current_user_stack_window(unsigned long start,
@@ -509,11 +584,11 @@ void orlix_sync_current_user_mappings(struct pt_regs *regs)
 		panic("Orlix: failed to synchronize hosted user stack window %#lx\n",
 		      stack_access_page);
 	if (stack_access_page &&
-	    orlix_sync_user_stack_page(mm, stack_access_page))
+	    orlix_sync_user_stack_page_if_present(mm, stack_access_page))
 		panic("Orlix: failed to synchronize hosted user stack access page %#lx\n",
 		      stack_access_page);
 	if (sp_page != stack_access_page &&
-	    orlix_sync_user_stack_page(mm, sp_page))
+	    orlix_sync_user_stack_page_if_present(mm, sp_page))
 		panic("Orlix: failed to synchronize hosted user sp page %#lx\n",
 		      sp_page);
 
@@ -524,6 +599,7 @@ void orlix_sync_current_user_mappings(struct pt_regs *regs)
 
 void orlix_sync_current_user_minimal_mappings(struct pt_regs *regs)
 {
+	struct mm_struct *mm = current->mm;
 	unsigned long sp_page = regs->sp & PAGE_MASK;
 	unsigned long stack_access_page = regs->sp ?
 		((regs->sp - 1) & PAGE_MASK) : 0;
@@ -536,12 +612,13 @@ void orlix_sync_current_user_minimal_mappings(struct pt_regs *regs)
 	    orlix_sync_current_user_mapping_page(regs->pc))
 		panic("Orlix: failed to synchronize hosted user pc %#llx\n",
 		      regs->pc);
+
 	if (stack_access_page &&
-	    orlix_sync_user_stack_page(current->mm, stack_access_page))
+	    orlix_sync_user_stack_page_if_present(mm, stack_access_page))
 		panic("Orlix: failed to synchronize hosted user stack access page %#lx\n",
 		      stack_access_page);
 	if (sp_page != stack_access_page &&
-	    orlix_sync_user_stack_page(current->mm, sp_page))
+	    orlix_sync_user_stack_page_if_present(mm, sp_page))
 		panic("Orlix: failed to synchronize hosted user sp page %#lx\n",
 		      sp_page);
 

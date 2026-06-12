@@ -15,12 +15,14 @@
 #include <linux/stddef.h>
 #include <linux/string.h>
 #include <linux/time64.h>
+#include <linux/uaccess.h>
 #include <asm/hosted_exec.h>
 #include <asm/page.h>
 #include <asm/processor.h>
 #include <asm/ptrace.h>
 #include <asm/signal.h>
 #include <asm/time.h>
+#include <asm/unistd.h>
 #include <internal/asm/host_memory.h>
 #include <internal/asm/host_trap.h>
 
@@ -34,7 +36,115 @@ static unsigned char orlix_hosted_syscall_gate_page[PAGE_SIZE] __page_aligned_da
 static bool orlix_hosted_syscall_gate_ready;
 static bool orlix_hosted_user_timer_ready;
 
+#define ORLIX_HOSTED_EVENT_COUNT 16
+
+struct orlix_hosted_user_event {
+	unsigned int seq;
+	const char *kind;
+	char comm[TASK_COMM_LEN];
+	pid_t pid;
+	unsigned long pc;
+	unsigned long lr;
+	unsigned long sp;
+	unsigned long x0;
+	unsigned long x8;
+	unsigned long flags;
+	unsigned long stack0;
+	unsigned long stack8;
+	bool full_stack_window;
+};
+
+static struct orlix_hosted_user_event orlix_hosted_user_events[ORLIX_HOSTED_EVENT_COUNT];
+static unsigned int orlix_hosted_user_event_seq;
+static unsigned int orlix_hosted_user_event_next;
+
 void orlix_hosted_syscall_gate(void);
+
+static void orlix_hosted_sync_user_read_range(unsigned long start,
+					      unsigned long length)
+{
+	unsigned long page;
+	unsigned long end;
+
+	if (!start || start >= TASK_SIZE || !length)
+		return;
+	if (length > TASK_SIZE - start)
+		length = TASK_SIZE - start;
+
+	end = PAGE_ALIGN(start + length);
+	if (!end || end > TASK_SIZE)
+		end = TASK_SIZE;
+
+	for (page = start & PAGE_MASK; page < end; page += PAGE_SIZE)
+		(void)orlix_sync_current_user_mapping_page(page);
+}
+
+static void orlix_hosted_sync_syscall_user_ranges(struct pt_regs *regs)
+{
+	switch (regs->syscallno) {
+	case __NR_write:
+		orlix_hosted_sync_user_read_range(regs->regs[1],
+						  regs->regs[2]);
+		break;
+	default:
+		break;
+	}
+}
+
+static void orlix_hosted_record_user_event(const char *kind,
+					   const struct pt_regs *regs,
+					   unsigned long flags,
+					   bool full_stack_window)
+{
+	struct orlix_hosted_user_event *event;
+
+	event = &orlix_hosted_user_events[orlix_hosted_user_event_next %
+					 ORLIX_HOSTED_EVENT_COUNT];
+	orlix_hosted_user_event_next++;
+	event->seq = ++orlix_hosted_user_event_seq;
+	event->kind = kind;
+	memcpy(event->comm, current->comm, sizeof(event->comm));
+	event->comm[sizeof(event->comm) - 1] = '\0';
+	event->pid = task_pid_nr(current);
+	event->pc = regs->pc;
+	event->lr = regs->regs[30];
+	event->sp = regs->sp;
+	event->x0 = regs->regs[0];
+	event->x8 = regs->regs[8];
+	event->flags = flags;
+	event->stack0 = 0;
+	event->stack8 = 0;
+	if (current->mm && regs->sp && regs->sp < TASK_SIZE - sizeof(unsigned long)) {
+		unsigned long __user *user_sp =
+			(unsigned long __user *)regs->sp;
+
+		(void)copy_from_user(&event->stack0, user_sp,
+				     sizeof(event->stack0));
+		(void)copy_from_user(&event->stack8, user_sp + 1,
+				     sizeof(event->stack8));
+	}
+	event->full_stack_window = full_stack_window;
+}
+
+void orlix_hosted_dump_recent_user_events(void)
+{
+	unsigned int count = min(orlix_hosted_user_event_next,
+				 (unsigned int)ORLIX_HOSTED_EVENT_COUNT);
+	unsigned int start = orlix_hosted_user_event_next - count;
+	unsigned int offset;
+
+	for (offset = 0; offset < count; offset++) {
+		struct orlix_hosted_user_event *event =
+			&orlix_hosted_user_events[(start + offset) %
+						  ORLIX_HOSTED_EVENT_COUNT];
+
+		pr_info("Orlix: recent user event seq=%u kind=%s task=%s pid=%d pc=%#lx lr=%#lx sp=%#lx x0=%#lx x8=%#lx flags=%#lx stack0=%#lx stack8=%#lx full=%d\n",
+			event->seq, event->kind, event->comm, event->pid,
+			event->pc, event->lr, event->sp, event->x0, event->x8,
+			event->flags, event->stack0, event->stack8,
+			event->full_stack_window ? 1 : 0);
+	}
+}
 
 static void orlix_hosted_save_current_kernel_stack(void)
 {
@@ -244,6 +354,8 @@ static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
 		orlix_hosted_die_from_user_trap(SIGKILL);
 
 	orlix_hosted_handle_invalid_resume_pc(regs);
+	orlix_hosted_record_user_event("resume", regs, frame_flags,
+				       full_stack_window);
 	if (full_stack_window)
 		orlix_sync_current_user_mappings(regs);
 	else
@@ -257,14 +369,23 @@ static void __noreturn orlix_hosted_resume_current_user(struct pt_regs *regs,
 
 static void __noreturn orlix_hosted_handle_user_syscall(struct pt_regs *regs)
 {
+	struct pt_regs *resume_regs;
+
+	orlix_host_user_sync_writable_mappings();
 	regs->orig_x0 = regs->regs[0];
 	regs->syscallno = regs->regs[8];
 	regs->pc += sizeof(u32);
+	orlix_hosted_record_user_event("syscall-enter", regs,
+				       regs->syscallno, false);
+	orlix_hosted_sync_syscall_user_ranges(regs);
 
 	orlix_syscall_dispatch(regs);
-	orlix_sync_current_user_minimal_mappings(regs);
+	resume_regs = task_pt_regs(current);
+	orlix_sync_current_user_minimal_mappings(resume_regs);
+	orlix_hosted_record_user_event("syscall-return", resume_regs,
+				       resume_regs->syscallno, false);
 	orlix_hosted_resume_current_user(
-		regs, true, ORLIX_HOST_USER_FRAME_SYSCALL_RETURN);
+		resume_regs, true, ORLIX_HOST_USER_FRAME_SYSCALL_RETURN);
 }
 
 void __noreturn orlix_hosted_enter_user(struct pt_regs *regs)
@@ -333,6 +454,16 @@ static void __noreturn orlix_hosted_user_trap_entry(
 		regs->regs[30], regs->sp, frame->fault_address,
 		frame->fault_flags);
 	orlix_hosted_die_from_user_trap(exit_code);
+}
+
+static int orlix_hosted_handle_kernel_fault(unsigned long pc,
+					    unsigned long fault_address,
+					    unsigned long fault_flags)
+{
+	(void)pc;
+	(void)fault_flags;
+
+	return orlix_sync_hosted_kernel_fault(fault_address);
 }
 
 asm(
@@ -425,6 +556,7 @@ void orlix_hosted_capture_host_context(void)
 					 &orlix_hosted_kernel_sp,
 					 &orlix_hosted_active_user_tls,
 					 &orlix_hosted_user_active,
+					 orlix_hosted_handle_kernel_fault,
 					 orlix_hosted_user_trap_entry))
 		panic("Orlix: failed to install hosted user trap transport\n");
 }

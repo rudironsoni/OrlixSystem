@@ -1,10 +1,6 @@
-default_permissions = "rulesync"
 
 [features]
 hooks = true
 
 [agents]
 max_depth = 1
-
-[mcp_servers]
-[permissions.rulesync]

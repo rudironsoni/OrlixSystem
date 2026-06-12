@@ -42,6 +42,11 @@ static struct OrlixHostIOMapping *OrlixHostIOMappings;
 static struct OrlixHostKernelShadowMapping *OrlixHostKernelShadowMappings;
 static struct OrlixHostUserMapping *OrlixHostUserMappings;
 
+static void OrlixHostUserMemoryBarrier(void)
+{
+    __asm__ volatile("dmb ish" ::: "memory");
+}
+
 __attribute__((visibility("hidden"))) unsigned long orlix_host_memory_page_size(void)
 {
     return (unsigned long)vm_page_size;
@@ -356,6 +361,17 @@ static int OrlixHostMapShadowKernelPage(unsigned long target_address,
     return 0;
 }
 
+static bool OrlixHostKernelRequiresShadowMapping(unsigned long target_address,
+                                                 const void *source_page,
+                                                 unsigned long length)
+{
+    unsigned long page_size = orlix_host_memory_page_size();
+
+    return length != page_size ||
+           (target_address & (page_size - 1UL)) != 0 ||
+           ((unsigned long)source_page & (page_size - 1UL)) != 0;
+}
+
 static void OrlixHostTranslateLinuxSyscalls(void *target_page,
                                             unsigned long length)
 {
@@ -459,13 +475,16 @@ static int OrlixHostMapShadowUserPages(unsigned long target_address,
 static void OrlixHostUnmapPages(unsigned long target_address,
                                 unsigned long length)
 {
-    if (target_address == 0 || length == 0) {
+    unsigned long start = OrlixHostPageStart(target_address);
+    unsigned long end = OrlixHostPageEnd(target_address, length);
+
+    if (target_address == 0 || length == 0 || end == 0 || end <= start) {
         return;
     }
 
     (void)vm_deallocate(mach_task_self(),
-                        (vm_address_t)target_address,
-                        (vm_size_t)length);
+                        (vm_address_t)start,
+                        (vm_size_t)(end - start));
 }
 
 static bool OrlixHostUserMappingMatches(unsigned long target_address,
@@ -505,6 +524,7 @@ static void OrlixHostUserCopyBackMapping(struct OrlixHostUserMapping *mapping)
         return;
     }
 
+    OrlixHostUserMemoryBarrier();
     for (struct OrlixHostKernelShadowSegment *segment = mapping->segments;
          segment;
          segment = segment->next) {
@@ -516,6 +536,7 @@ static void OrlixHostUserCopyBackMapping(struct OrlixHostUserMapping *mapping)
                (const void *)segment->target_address,
                (size_t)segment->length);
     }
+    OrlixHostUserMemoryBarrier();
 }
 
 static void OrlixHostUserFreeSegments(struct OrlixHostUserMapping *mapping)
@@ -673,7 +694,8 @@ __attribute__((visibility("hidden"))) int orlix_host_kernel_map_page(
     unsigned long active_tls = OrlixHostEnterHostTls();
     int result;
 
-    if (OrlixHostKernelFindShadowMapping(target_address, length)) {
+    if (OrlixHostKernelRequiresShadowMapping(target_address, source_page, length) ||
+        OrlixHostKernelFindShadowMapping(target_address, length)) {
         result = OrlixHostMapShadowKernelPage(target_address,
                                              source_page,
                                              length);
@@ -872,7 +894,7 @@ __attribute__((visibility("hidden"))) int orlix_host_user_refresh_window(
     OrlixHostUserRemoveSegmentsInRange(mapping,
                                        target_address,
                                        length,
-                                       false);
+                                       true);
     for (unsigned long index = 0; index < segment_count; index++) {
         const struct orlix_host_user_page_segment *input = &segments[index];
         struct OrlixHostKernelShadowSegment *segment;

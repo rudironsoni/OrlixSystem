@@ -232,6 +232,35 @@ static inline pte_t pte_mkyoung(pte_t pte)
 
 #define PFN_PTE_SHIFT	PAGE_SHIFT
 
+#if defined(ORLIX_APP_HOSTED_BOOT)
+struct mm_struct;
+extern struct mm_struct init_mm;
+void orlix_sync_hosted_kernel_pte(unsigned long address);
+#endif
+
+#define set_ptes set_ptes
+static inline void set_ptes(struct mm_struct *mm, unsigned long addr,
+			    pte_t *ptep, pte_t pte, unsigned int nr)
+{
+#if !defined(ORLIX_APP_HOSTED_BOOT)
+	(void)mm;
+	(void)addr;
+#endif
+	for (;;) {
+		set_pte(ptep, pte);
+#if defined(ORLIX_APP_HOSTED_BOOT)
+		if (mm == &init_mm && addr >= VMALLOC_START &&
+		    addr < VMALLOC_END && pte_present(pte))
+			orlix_sync_hosted_kernel_pte(addr);
+#endif
+		if (--nr == 0)
+			break;
+		addr += PAGE_SIZE;
+		ptep++;
+		pte_val(pte) += 1UL << PFN_PTE_SHIFT;
+	}
+}
+
 static inline unsigned long pte_pfn(pte_t pte)
 {
 	return pte_val(pte) >> PFN_PTE_SHIFT;

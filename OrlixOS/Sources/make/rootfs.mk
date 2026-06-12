@@ -32,7 +32,7 @@ $(ORLIXOS_ROOT_INIT_BINARY): $(ORLIXOS_ROOT_INIT_SOURCE) $(ORLIXOS_MLIBC_SYSROOT
 	printf 'profile=%s\ndistribution=%s\nchannel=%s\nprogram=rootinit\nroot_mode=%s\n' "$(PROFILE)" "$(ORLIXOS_DISTRIBUTION_ID)" "$(ORLIXOS_DISTRIBUTION_CHANNEL)" "$(ORLIXOS_PROFILE_ROOT_MODE)" > "$(ORLIXOS_PACKAGE_INSTALL_DIR)/rootinit.proof"; \
 	echo "built OrlixOS root initramfs init: $(ORLIXOS_ROOT_INIT_BINARY)"
 
-$(ORLIXOS_INITRAMFS_CPIO): $(ORLIXOS_ROOT_INIT_BINARY) $(ORLIXOS_MANIFEST)
+$(ORLIXOS_INITRAMFS_CPIO): $(ORLIXOS_ROOT_INIT_BINARY) $(ORLIXOS_MANIFEST) $(PROJECT_DIR)/Sources/make/rootfs.mk
 	@set -euo pipefail; \
 	$(KERNEL_MAKE) prepare PROFILE="$(PROFILE)" >/dev/null; \
 	gen_init_cpio="$(REPO_ROOT)/Build/OrlixKernel/build/$(PROFILE)/usr/gen_init_cpio"; \
@@ -45,9 +45,7 @@ $(ORLIXOS_INITRAMFS_CPIO): $(ORLIXOS_ROOT_INIT_BINARY) $(ORLIXOS_MANIFEST)
 		printf 'dir /dev 0755 0 0\n'; \
 		printf 'nod /dev/console 0600 0 0 c 5 1\n'; \
 		printf 'dir /root 0700 0 0\n'; \
-		if [ "$(ORLIXOS_PROFILE_ROOT_MODE)" = overlay ]; then \
-			printf 'file /init %s 0755 0 0\n' "$(ORLIXOS_ROOT_INIT_BINARY)"; \
-		fi; \
+		printf 'file /init %s 0755 0 0\n' "$(ORLIXOS_ROOT_INIT_BINARY)"; \
 	} > "$$cpio_list"; \
 	"$$gen_init_cpio" "$$cpio_list" > "$$output.tmp"; \
 	gzip -n -c "$$output.tmp" > "$$output"; \

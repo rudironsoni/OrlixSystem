@@ -72,11 +72,16 @@ targets:
       - path: OrlixOS/Sources/Session
     dependencies:
       - target: OrlixKernel
+      - sdk: libz.tbd
     postBuildScripts:
       - name: Embed OrlixOS Payload
         basedOnDependencyAnalysis: false
         script: |
           set -eu
+          if [ "${ORLIX_OS_SKIP_PAYLOAD_EMBED:-NO}" = YES ]; then
+              echo "Skipping OrlixOS payload embed because ORLIX_OS_SKIP_PAYLOAD_EMBED=YES"
+              exit 0
+          fi
           profile="${ORLIX_PROFILE:-release}"
           payload_name="${ORLIX_OS_PAYLOAD_BUNDLE_NAME:?}"
           payload_extension="${ORLIX_OS_PAYLOAD_BUNDLE_EXTENSION:?}"
@@ -113,6 +118,24 @@ targets:
           fi
           if [ "$payload_needs_rebuild" = 1 ]; then
               "${MAKE:-make}" -f "$SRCROOT/OrlixOS/Makefile" kernel-payload PROFILE="$profile"
+          else
+              payload_inputs="
+          $SRCROOT/OrlixOS/Makefile
+          $SRCROOT/OrlixOS/Sources/distribution/manifest.mk
+          $SRCROOT/OrlixOS/Sources/init/init.c
+          $SRCROOT/OrlixOS/Sources/init/rootinit.c
+          $SRCROOT/OrlixOS/Sources/make/config.mk
+          $SRCROOT/OrlixOS/Sources/make/rootfs.mk
+              "
+              for payload_input in $payload_inputs; do
+                  if [ -e "$payload_input" ] && [ "$payload_input" -nt "$stamp" ]; then
+                      payload_needs_rebuild=1
+                      break
+                  fi
+              done
+              if [ "$payload_needs_rebuild" = 1 ]; then
+                  "${MAKE:-make}" -f "$SRCROOT/OrlixOS/Makefile" kernel-payload PROFILE="$profile"
+              fi
           fi
           if [ ! -d "$payload" ]; then
               echo "missing OrlixOS payload bundle after packaging: $payload" >&2
@@ -175,6 +198,7 @@ targets:
     dependencies:
       - target: OrlixTestRunner
       - target: OrlixOS
+      - sdk: libz.tbd
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -216,6 +240,21 @@ targets:
         script: |
           set -eu
           profile="${ORLIX_PROFILE:-release}"
+          rebuild_kselftest_if_stale() {
+              source_root="$SRCROOT/$ORLIX_OS_KSELFTEST_INITRAMFS_SOURCE_ROOT/$profile/$ORLIX_OS_KSELFTEST_INITRAMFS_BUNDLE_NAME.$extension"
+              archive="$source_root/rootfs/initramfs.cpio.gz"
+              needs_rebuild=0
+              if [ ! -s "$archive" ]; then
+                  needs_rebuild=1
+              elif find "$SRCROOT/OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix" -type f \( -name '*.c' -o -name '*.h' -o -name Makefile \) -newer "$archive" -print -quit | grep -q .; then
+                  needs_rebuild=1
+              elif [ "$SRCROOT/OrlixKernel/Sources/ports/orlix/kbuild/kernel-rules.mk" -nt "$archive" ]; then
+                  needs_rebuild=1
+              fi
+              if [ "$needs_rebuild" -eq 1 ]; then
+                  make -f "$SRCROOT/OrlixKernel/Makefile" kselftest PROFILE="$profile" libc=orlixmlibc
+              fi
+          }
           copy_if_present() {
               source="$SRCROOT/$1"
               name="$2"
@@ -226,6 +265,7 @@ targets:
               fi
           }
           extension="${ORLIX_OS_TEST_INITRAMFS_BUNDLE_EXTENSION:?}"
+          rebuild_kselftest_if_stale
           copy_if_present "$ORLIX_OS_KSELFTEST_INITRAMFS_SOURCE_ROOT/$profile/$ORLIX_OS_KSELFTEST_INITRAMFS_BUNDLE_NAME.$extension" "$ORLIX_OS_KSELFTEST_INITRAMFS_BUNDLE_NAME.$extension"
           copy_if_present "$ORLIX_OS_MLIBC_INITRAMFS_SOURCE_ROOT/$profile/$ORLIX_OS_MLIBC_INITRAMFS_BUNDLE_NAME.$extension" "$ORLIX_OS_MLIBC_INITRAMFS_BUNDLE_NAME.$extension"
           copy_if_present "$ORLIX_OS_COREUTILS_INITRAMFS_SOURCE_ROOT/$profile/$ORLIX_OS_COREUTILS_INITRAMFS_BUNDLE_NAME.$extension" "$ORLIX_OS_COREUTILS_INITRAMFS_BUNDLE_NAME.$extension"
@@ -279,6 +319,9 @@ targets:
     platform: iOS
     sources:
       - path: OrlixHostAdapter/Tests/XCTest/OrlixHostAdapterTests
+      - path: OrlixHostAdapter/Sources/OrlixHostAdapter/boot
+        includes:
+          - resources.c
       - path: OrlixHostAdapter/Sources/OrlixHostAdapter/memory
         includes:
           - kernel_mapping.c
@@ -368,6 +411,13 @@ targets:
     dependencies:
       - target: OrlixTestRunner
       - target: OrlixOS
+    postBuildScripts:
+      - name: Build Orlix Environment Runtime Proof Fixtures
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          profile="${ORLIX_PROFILE:-release}"
+          "${MAKE:-make}" -f "$SRCROOT/OrlixOS/Makefile" environment-runtime-proof-fixtures PROFILE="$profile"
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

@@ -14,6 +14,7 @@ enum OrlixBootStatus {
     ORLIX_BOOT_STATUS_OK = 0,
     ORLIX_BOOT_STATUS_INVALID_CONFIG = -1,
     ORLIX_BOOT_STATUS_UNAVAILABLE = -2,
+    ORLIX_BOOT_STATUS_ALREADY_STARTED = -3,
 };
 
 struct OrlixBootConfig {

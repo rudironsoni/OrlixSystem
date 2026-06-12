@@ -30,6 +30,7 @@ struct OrlixHostRootImage {
     char initrd_resource[PATH_MAX];
     char base_block_resource[PATH_MAX];
     char state_block_resource[PATH_MAX];
+    int block_images_are_files;
     unsigned int base_block_device;
     unsigned int state_block_device;
     unsigned long long state_block_minimum_bytes;
@@ -109,6 +110,39 @@ static int OrlixHostCopyRequiredResource(char *target,
     return OrlixHostCopyRequiredString(target, target_size, source);
 }
 
+static int OrlixHostAbsolutePathContainsParentReference(const char *path)
+{
+    const char *cursor;
+
+    if (!path || path[0] != '/') {
+        return 1;
+    }
+    cursor = path;
+    while ((cursor = strstr(cursor, "/..")) != 0) {
+        if (cursor[3] == '\0' || cursor[3] == '/') {
+            return 1;
+        }
+        cursor += 3;
+    }
+    return 0;
+}
+
+static int OrlixHostCopyRequiredBlockFilePath(char *target,
+                                              size_t target_size,
+                                              const char *source)
+{
+    struct stat state;
+
+    if (OrlixHostAbsolutePathContainsParentReference(source) ||
+        OrlixHostCopyRequiredString(target, target_size, source) != 0) {
+        return -1;
+    }
+    if (stat(target, &state) != 0 || !S_ISREG(state.st_mode)) {
+        return -1;
+    }
+    return 0;
+}
+
 static int OrlixHostCopyRootImageForIdentifier(
     const char *identifier,
     struct OrlixHostRootImage *root_image)
@@ -163,6 +197,51 @@ __attribute__((visibility("default"))) int orlix_host_resources_clear_root_image
     return 0;
 }
 
+static int OrlixHostRegisterRootImage(struct OrlixHostRootImage *root_image)
+{
+    unsigned int index;
+    unsigned int target_index;
+
+    if (!root_image ||
+        root_image->base_block_device >= ORLIX_HOST_MAX_BLOCK_DEVICES ||
+        root_image->state_block_device >= ORLIX_HOST_MAX_BLOCK_DEVICES ||
+        root_image->base_block_device == root_image->state_block_device ||
+        root_image->state_block_minimum_bytes == 0) {
+        return -1;
+    }
+    if ((root_image->initrd_bundle_name[0] == '\0') !=
+        (root_image->initrd_bundle_extension[0] == '\0')) {
+        return -1;
+    }
+    if (strchr(root_image->initrd_bundle_name, '/') ||
+        OrlixHostPathContainsParentReference(root_image->initrd_bundle_name) ||
+        strchr(root_image->initrd_bundle_extension, '/') ||
+        OrlixHostPathContainsParentReference(
+            root_image->initrd_bundle_extension)) {
+        return -1;
+    }
+
+    os_unfair_lock_lock(&OrlixHostRootImagesLock);
+    target_index = OrlixHostRootImageCount;
+    for (index = 0; index < OrlixHostRootImageCount; index++) {
+        if (strcmp(OrlixHostRootImages[index].identifier,
+                   root_image->identifier) == 0) {
+            target_index = index;
+            break;
+        }
+    }
+    if (target_index == OrlixHostRootImageCount) {
+        if (OrlixHostRootImageCount >= ORLIX_HOST_MAX_ROOT_IMAGES) {
+            os_unfair_lock_unlock(&OrlixHostRootImagesLock);
+            return -1;
+        }
+        OrlixHostRootImageCount++;
+    }
+    OrlixHostRootImages[target_index] = *root_image;
+    os_unfair_lock_unlock(&OrlixHostRootImagesLock);
+    return 0;
+}
+
 __attribute__((visibility("default"))) int orlix_host_resources_register_root_image(
     const char *identifier,
     const char *initrd_bundle_name,
@@ -175,8 +254,6 @@ __attribute__((visibility("default"))) int orlix_host_resources_register_root_im
     unsigned long long state_block_minimum_bytes)
 {
     struct OrlixHostRootImage root_image = { 0 };
-    unsigned int index;
-    unsigned int target_index;
 
     if (OrlixHostCopyRequiredString(root_image.identifier,
                                     sizeof(root_image.identifier),
@@ -198,46 +275,50 @@ __attribute__((visibility("default"))) int orlix_host_resources_register_root_im
                                       state_block_resource) != 0) {
         return -1;
     }
-    if (base_block_device >= ORLIX_HOST_MAX_BLOCK_DEVICES ||
-        state_block_device >= ORLIX_HOST_MAX_BLOCK_DEVICES ||
-        base_block_device == state_block_device ||
-        state_block_minimum_bytes == 0) {
-        return -1;
-    }
-    if ((root_image.initrd_bundle_name[0] == '\0') !=
-        (root_image.initrd_bundle_extension[0] == '\0')) {
-        return -1;
-    }
-    if (strchr(root_image.initrd_bundle_name, '/') ||
-        OrlixHostPathContainsParentReference(root_image.initrd_bundle_name) ||
-        strchr(root_image.initrd_bundle_extension, '/') ||
-        OrlixHostPathContainsParentReference(
-            root_image.initrd_bundle_extension)) {
-        return -1;
-    }
     root_image.base_block_device = base_block_device;
     root_image.state_block_device = state_block_device;
     root_image.state_block_minimum_bytes = state_block_minimum_bytes;
+    return OrlixHostRegisterRootImage(&root_image);
+}
 
-    os_unfair_lock_lock(&OrlixHostRootImagesLock);
-    target_index = OrlixHostRootImageCount;
-    for (index = 0; index < OrlixHostRootImageCount; index++) {
-        if (strcmp(OrlixHostRootImages[index].identifier,
-                   root_image.identifier) == 0) {
-            target_index = index;
-            break;
-        }
+__attribute__((visibility("default"))) int orlix_host_resources_register_root_image_files(
+    const char *identifier,
+    const char *initrd_bundle_name,
+    const char *initrd_bundle_extension,
+    const char *initrd_resource,
+    const char *base_block_path,
+    const char *state_block_path,
+    unsigned int base_block_device,
+    unsigned int state_block_device,
+    unsigned long long state_block_minimum_bytes)
+{
+    struct OrlixHostRootImage root_image = { 0 };
+
+    if (OrlixHostCopyRequiredString(root_image.identifier,
+                                    sizeof(root_image.identifier),
+                                    identifier) != 0 ||
+        OrlixHostCopyOptionalString(root_image.initrd_bundle_name,
+                                    sizeof(root_image.initrd_bundle_name),
+                                    initrd_bundle_name) != 0 ||
+        OrlixHostCopyOptionalString(root_image.initrd_bundle_extension,
+                                    sizeof(root_image.initrd_bundle_extension),
+                                    initrd_bundle_extension) != 0 ||
+        OrlixHostCopyRequiredResource(root_image.initrd_resource,
+                                      sizeof(root_image.initrd_resource),
+                                      initrd_resource) != 0 ||
+        OrlixHostCopyRequiredBlockFilePath(root_image.base_block_resource,
+                                           sizeof(root_image.base_block_resource),
+                                           base_block_path) != 0 ||
+        OrlixHostCopyRequiredBlockFilePath(root_image.state_block_resource,
+                                           sizeof(root_image.state_block_resource),
+                                           state_block_path) != 0) {
+        return -1;
     }
-    if (target_index == OrlixHostRootImageCount) {
-        if (OrlixHostRootImageCount >= ORLIX_HOST_MAX_ROOT_IMAGES) {
-            os_unfair_lock_unlock(&OrlixHostRootImagesLock);
-            return -1;
-        }
-        OrlixHostRootImageCount++;
-    }
-    OrlixHostRootImages[target_index] = root_image;
-    os_unfair_lock_unlock(&OrlixHostRootImagesLock);
-    return 0;
+    root_image.block_images_are_files = 1;
+    root_image.base_block_device = base_block_device;
+    root_image.state_block_device = state_block_device;
+    root_image.state_block_minimum_bytes = state_block_minimum_bytes;
+    return OrlixHostRegisterRootImage(&root_image);
 }
 
 static int OrlixHostCopyPayloadRootPath(char *path, size_t path_size)
@@ -629,6 +710,52 @@ static int OrlixHostEnsureStateBlockFile(const char *path,
     return target_size ? 0 : -1;
 }
 
+static int OrlixHostEnsureExistingStateBlockFile(const char *path,
+                                                 unsigned long long minimum_bytes,
+                                                 unsigned long long *size)
+{
+    unsigned long long target_size;
+    struct stat state;
+    int fd;
+
+    if (!path || minimum_bytes == 0 || !size) {
+        return -1;
+    }
+
+    fd = open(path, O_RDWR);
+    if (fd < 0) {
+        return -1;
+    }
+    if (fstat(fd, &state) != 0 ||
+        !S_ISREG(state.st_mode) ||
+        state.st_size < 0) {
+        close(fd);
+        return -1;
+    }
+
+    target_size = (unsigned long long)state.st_size;
+    if (target_size < minimum_bytes) {
+        target_size = minimum_bytes;
+    }
+    if (target_size % ORLIX_HOST_BLOCK_SECTOR_SIZE) {
+        target_size = ((target_size + ORLIX_HOST_BLOCK_SECTOR_SIZE - 1) /
+                       ORLIX_HOST_BLOCK_SECTOR_SIZE) *
+                      ORLIX_HOST_BLOCK_SECTOR_SIZE;
+    }
+    if (target_size > (unsigned long long)LLONG_MAX ||
+        (unsigned long long)state.st_size != target_size) {
+        if (target_size > (unsigned long long)LLONG_MAX ||
+            ftruncate(fd, (off_t)target_size) != 0) {
+            close(fd);
+            return -1;
+        }
+    }
+
+    close(fd);
+    *size = target_size;
+    return target_size ? 0 : -1;
+}
+
 static int OrlixHostReadResourceFile(const char *path,
                                      struct OrlixHostResource *resource)
 {
@@ -744,12 +871,29 @@ __attribute__((visibility("hidden"))) int OrlixHostSelectBootBlockImages(
     if (OrlixHostCopyRootImageForIdentifier(identifier, &root_image) != 0) {
         return -1;
     }
+    if (root_image.block_images_are_files) {
+        if (OrlixHostCopySelectedBlockPath(root_image.base_block_device,
+                                           root_image.base_block_resource) != 0 ||
+            OrlixHostCopySelectedBlockPath(root_image.state_block_device,
+                                           root_image.state_block_resource) != 0 ||
+            OrlixHostResourceFileSize(root_image.base_block_resource,
+                                      &base_size) != 0 ||
+            OrlixHostEnsureExistingStateBlockFile(
+                root_image.state_block_resource,
+                root_image.state_block_minimum_bytes,
+                &state_size) != 0) {
+            OrlixHostClearSelectedBlockImages();
+            return -1;
+        }
+        OrlixHostSelectedBlockBytes[root_image.base_block_device] = base_size;
+        OrlixHostSelectedBlockBytes[root_image.state_block_device] = state_size;
+        OrlixHostSelectedBlockWritable[root_image.state_block_device] = 1;
+        return 0;
+    }
     if (OrlixHostCopyPayloadResourcePath(root_image.base_block_resource,
                                          base_path,
-                                         sizeof(base_path)) != 0) {
-        return -1;
-    }
-    if (OrlixHostCopyPayloadResourcePath(root_image.state_block_resource,
+                                         sizeof(base_path)) != 0 ||
+        OrlixHostCopyPayloadResourcePath(root_image.state_block_resource,
                                          state_template_path,
                                          sizeof(state_template_path)) != 0) {
         return -1;
@@ -903,6 +1047,34 @@ __attribute__((visibility("hidden"))) int orlix_host_block_write(
     }
 
     result = fclose(file) == 0 ? 0 : -1;
+
+out:
+    OrlixHostLeaveHostTls(active_tls);
+    return result;
+}
+
+__attribute__((visibility("hidden"))) int orlix_host_block_flush(
+    unsigned int device)
+{
+    unsigned long active_tls;
+    int fd;
+    int result = -1;
+
+    if (!OrlixHostBlockDeviceIsSelected(device)) {
+        return -1;
+    }
+
+    active_tls = OrlixHostEnterHostTls();
+    fd = open(OrlixHostSelectedBlockPaths[device],
+              OrlixHostSelectedBlockWritable[device] ? O_RDWR : O_RDONLY);
+    if (fd < 0) {
+        goto out;
+    }
+
+    result = fsync(fd) == 0 ? 0 : -1;
+    if (close(fd) != 0) {
+        result = -1;
+    }
 
 out:
     OrlixHostLeaveHostTls(active_tls);

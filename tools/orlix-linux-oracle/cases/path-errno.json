@@ -1,0 +1,22 @@
+{
+  "id": "path-errno",
+  "description": "Compare Linux path-resolution errno behavior for missing paths, non-directory traversal, and symlink loops.",
+  "fixture": "fixtures/path_errno_probe.c",
+  "command": [
+    "/oracle/path_errno_probe"
+  ],
+  "environment": {
+    "LC_ALL": "C"
+  },
+  "workingDirectory": "/oracle/work",
+  "compare": {
+    "stdout": true,
+    "stderr": true,
+    "exitStatus": true,
+    "signal": true,
+    "errnoEvents": true,
+    "statEntries": true,
+    "mutations": true,
+    "observations": true
+  }
+}

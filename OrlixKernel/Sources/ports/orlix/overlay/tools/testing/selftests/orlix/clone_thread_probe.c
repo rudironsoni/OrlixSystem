@@ -173,12 +173,12 @@ void __attribute__((noinline)) clone_child_trampoline(void (*entry)(void *),
 }
 
 long orlix_clone_thread_syscall(unsigned long flags, void *stack,
-				int *parent_tid, unsigned long tls);
+				int *parent_tid, unsigned long tls,
+				int *child_tid);
 
 __asm__(
 ".p2align 2\n"
 "orlix_clone_thread_syscall:\n"
-"	mov	x4, xzr\n"
 "	mov	x8, #" ORLIX_STRINGIFY(SYS_clone) "\n"
 "	svc	#0\n"
 "	cbz	x0, 1f\n"
@@ -224,12 +224,13 @@ static bool clone_thread_with_mlibc_stack_runs(void)
 	struct clone_probe_state state = {};
 	unsigned long flags = CLONE_VM | CLONE_FS | CLONE_FILES |
 		CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM |
-		CLONE_SETTLS | CLONE_PARENT_SETTID;
+		CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
 	void *mapping = NULL;
 	size_t mapping_size = 0;
 	void *stack;
 	long page_size;
 	long ret;
+	int child_tid = -1;
 	int i;
 
 	page_size = sysconf(_SC_PAGESIZE);
@@ -245,7 +246,7 @@ static bool clone_thread_with_mlibc_stack_runs(void)
 		return false;
 
 	ret = orlix_clone_thread_syscall(flags, stack, &state.parent_tid,
-					orlix_read_tls_register());
+					orlix_read_tls_register(), &child_tid);
 	if (ret < 0) {
 		report_clone_state("clone syscall failed", ret, &state);
 		(void)munmap(mapping, mapping_size);
@@ -257,12 +258,19 @@ static bool clone_thread_with_mlibc_stack_runs(void)
 			break;
 		orlix_raw_syscall1(SYS_sched_yield, 0);
 	}
+	for (i = 0; i < 1000; i++) {
+		if (__atomic_load_n(&child_tid, __ATOMIC_ACQUIRE) == 0)
+			break;
+		(void)orlix_futex_wait(&child_tid, child_tid);
+	}
 
-	if (!(ret > 0 && state.parent_tid == ret && state.child_tid > 0))
+	if (!(ret > 0 && state.parent_tid == ret && state.child_tid > 0 &&
+	      child_tid == 0))
 		report_clone_state("clone thread did not complete", ret, &state);
 
 	(void)munmap(mapping, mapping_size);
-	return ret > 0 && state.parent_tid == ret && state.child_tid > 0;
+	return ret > 0 && state.parent_tid == ret && state.child_tid > 0 &&
+		child_tid == 0;
 }
 
 static bool clone_thread_with_mlibc_join_handshake_completes(void)
@@ -270,7 +278,7 @@ static bool clone_thread_with_mlibc_join_handshake_completes(void)
 	struct mlibc_join_probe_tcb *tcb;
 	unsigned long flags = CLONE_VM | CLONE_FS | CLONE_FILES |
 		CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM |
-		CLONE_SETTLS | CLONE_PARENT_SETTID;
+		CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
 	void *mapping = NULL;
 	size_t mapping_size = 0;
 	void *stack;
@@ -302,7 +310,7 @@ static bool clone_thread_with_mlibc_join_handshake_completes(void)
 	}
 
 	ret = orlix_clone_thread_syscall(flags, stack, &parent_tid,
-					(unsigned long)tcb);
+					(unsigned long)tcb, (int *)&tcb->tid);
 	if (ret < 0) {
 		struct clone_probe_state state = { .parent_tid = parent_tid };
 
@@ -317,15 +325,15 @@ static bool clone_thread_with_mlibc_join_handshake_completes(void)
 	(void)orlix_futex_wake(&tcb->tid);
 
 	for (i = 0; i < 1000; i++) {
-		if (__atomic_load_n(&tcb->did_exit, __ATOMIC_ACQUIRE))
+		if (__atomic_load_n(&tcb->tid, __ATOMIC_ACQUIRE) == 0)
 			break;
-		(void)orlix_futex_wait(&tcb->did_exit, 0);
+		(void)orlix_futex_wait(&tcb->tid, ret);
 	}
 
 	completed = ret > 0 && parent_tid == ret &&
 		__atomic_load_n(&tcb->child_entered, __ATOMIC_ACQUIRE) &&
 		__atomic_load_n(&tcb->child_returned, __ATOMIC_ACQUIRE) &&
-		__atomic_load_n(&tcb->did_exit, __ATOMIC_ACQUIRE);
+		__atomic_load_n(&tcb->tid, __ATOMIC_ACQUIRE) == 0;
 	if (!completed) {
 		struct clone_probe_state state = {
 			.child_started = tcb->child_entered,
@@ -347,7 +355,7 @@ static bool clone_thread_with_mlibc_stack_trample_completes(void)
 	struct mlibc_join_probe_tcb *tcb;
 	unsigned long flags = CLONE_VM | CLONE_FS | CLONE_FILES |
 		CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM |
-		CLONE_SETTLS | CLONE_PARENT_SETTID;
+		CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
 	void *mapping = NULL;
 	size_t mapping_size = 0;
 	void *stack;
@@ -380,7 +388,7 @@ static bool clone_thread_with_mlibc_stack_trample_completes(void)
 	}
 
 	ret = orlix_clone_thread_syscall(flags, stack, &parent_tid,
-					(unsigned long)tcb);
+					(unsigned long)tcb, (int *)&tcb->tid);
 	if (ret < 0) {
 		struct clone_probe_state state = { .parent_tid = parent_tid };
 
@@ -395,15 +403,15 @@ static bool clone_thread_with_mlibc_stack_trample_completes(void)
 	(void)orlix_futex_wake(&tcb->tid);
 
 	for (i = 0; i < 1000; i++) {
-		if (__atomic_load_n(&tcb->did_exit, __ATOMIC_ACQUIRE))
+		if (__atomic_load_n(&tcb->tid, __ATOMIC_ACQUIRE) == 0)
 			break;
-		(void)orlix_futex_wait(&tcb->did_exit, 0);
+		(void)orlix_futex_wait(&tcb->tid, ret);
 	}
 
 	completed = ret > 0 && parent_tid == ret &&
 		__atomic_load_n(&tcb->child_entered, __ATOMIC_ACQUIRE) &&
 		__atomic_load_n(&tcb->child_returned, __ATOMIC_ACQUIRE) &&
-		__atomic_load_n(&tcb->did_exit, __ATOMIC_ACQUIRE);
+		__atomic_load_n(&tcb->tid, __ATOMIC_ACQUIRE) == 0;
 	if (!completed) {
 		struct clone_probe_state state = {
 			.child_started = tcb->child_entered,

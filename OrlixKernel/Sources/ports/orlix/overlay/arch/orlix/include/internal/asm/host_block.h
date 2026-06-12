@@ -12,5 +12,6 @@ int orlix_host_block_write(unsigned int device,
 			   unsigned long long sector,
 			   const void *buffer,
 			   unsigned int length);
+int orlix_host_block_flush(unsigned int device);
 
 #endif /* _INTERNAL_ASM_ORLIX_HOST_BLOCK_H */

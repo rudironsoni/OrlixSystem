@@ -1,0 +1,25 @@
+ORLIX-KSELFTEST-INIT
+TAP version 13
+1..5
+ok 1 - procfs mounted for kselftest
+ok 2 - sysfs mounted for kselftest
+ok 3 - devtmpfs mounted for kselftest
+ok 4 - installed Orlix kselftest list is readable
+# exec /orlix/path_errno_probe
+# child exec /orlix/path_errno_probe
+TAP version 13
+1..6
+ok 1 - path errno fixture created through Linux VFS
+ORLIX-ORACLE-BEGIN path-errno
+{"operation":"open","path":"missing","errno":2,"name":"No such file or directory","expected":2}
+ok 2 - missing path returns ENOENT
+{"operation":"open","path":"regular/child","errno":20,"name":"Not a directory","expected":20}
+ok 3 - non-directory child returns ENOTDIR
+{"operation":"stat","path":"loop-a","errno":40,"name":"Too many levels of symbolic links","expected":40}
+ok 4 - symlink loop returns ELOOP
+{"operation":"stat","path":"regular/","errno":20,"name":"Not a directory","expected":20}
+ok 5 - trailing slash on regular file returns ENOTDIR
+ORLIX-ORACLE-END path-errno
+ok 6 - path errno fixture cleaned
+ok 5 - path_errno_probe
+ORLIX-KSELFTEST-END

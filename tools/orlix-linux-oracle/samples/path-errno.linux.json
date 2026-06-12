@@ -1,0 +1,50 @@
+{
+  "caseID": "path-errno",
+  "runner": "linux",
+  "stdout": "{\"operation\":\"open\",\"path\":\"missing\",\"errno\":2,\"name\":\"No such file or directory\",\"expected\":2}\n{\"operation\":\"open\",\"path\":\"regular/child\",\"errno\":20,\"name\":\"Not a directory\",\"expected\":20}\n{\"operation\":\"stat\",\"path\":\"loop-a\",\"errno\":40,\"name\":\"Too many levels of symbolic links\",\"expected\":40}\n{\"operation\":\"stat\",\"path\":\"regular/\",\"errno\":20,\"name\":\"Not a directory\",\"expected\":20}\n",
+  "stderr": "",
+  "exitStatus": 0,
+  "signal": null,
+  "errnoEvents": [
+    {
+      "operation": "open",
+      "path": "missing",
+      "errno": 2,
+      "name": "ENOENT"
+    },
+    {
+      "operation": "open",
+      "path": "regular/child",
+      "errno": 20,
+      "name": "ENOTDIR"
+    },
+    {
+      "operation": "stat",
+      "path": "loop-a",
+      "errno": 40,
+      "name": "ELOOP"
+    },
+    {
+      "operation": "stat",
+      "path": "regular/",
+      "errno": 20,
+      "name": "ENOTDIR"
+    }
+  ],
+  "statEntries": [],
+  "mutations": [
+    {
+      "path": "regular",
+      "operation": "create-unlink",
+      "result": "ok"
+    },
+    {
+      "path": "loop-a",
+      "operation": "symlink-unlink",
+      "result": "ok"
+    }
+  ],
+  "observations": {
+    "filesystem": "tmpfs-or-scratch"
+  }
+}

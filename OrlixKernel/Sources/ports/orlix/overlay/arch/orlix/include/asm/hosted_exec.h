@@ -24,8 +24,10 @@ int orlix_refresh_current_user_mapping_page_from_kernel(unsigned long address,
 							const void *source_page);
 int orlix_sync_current_user_fault_window(unsigned long address,
 					 unsigned long fault_flags);
+int orlix_sync_hosted_kernel_fault(unsigned long address);
 int orlix_handle_host_user_fault(struct pt_regs *regs, unsigned long address,
 				 unsigned long fault_flags);
+void orlix_hosted_dump_recent_user_events(void);
 long orlix_hosted_syscall_dispatch(unsigned long scno, unsigned long arg0,
 				   unsigned long arg1, unsigned long arg2,
 				   unsigned long arg3, unsigned long arg4,

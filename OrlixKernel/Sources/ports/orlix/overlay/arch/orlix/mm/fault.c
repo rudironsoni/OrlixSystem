@@ -85,9 +85,11 @@ retry:
 bad_area:
 	mmap_read_unlock(mm);
 bad_area_nosemaphore:
-		pr_info("Orlix: user fault pc=%#llx sp=%#llx addr=%#lx flags=%#lx si=%d task_tls=%#lx active_tls=%#lx\n",
-			regs->pc, regs->sp, address, fault_flags, si_code,
-			current->thread.user_tls, orlix_hosted_active_user_tls);
+	pr_info("Orlix: user fault task=%s pid=%d pc=%#llx lr=%#llx sp=%#llx addr=%#lx flags=%#lx si=%d task_tls=%#lx active_tls=%#lx\n",
+		current->comm, task_pid_nr(current), regs->pc,
+		regs->regs[30], regs->sp, address, fault_flags, si_code,
+		current->thread.user_tls, orlix_hosted_active_user_tls);
+	orlix_hosted_dump_recent_user_events();
 	orlix_force_user_fault_signal(address, fault_flags, si_code);
 	return 0;
 

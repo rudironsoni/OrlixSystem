@@ -33,6 +33,19 @@ private func orlix_host_resources_register_root_image(
     _ stateBlockMinimumBytes: UInt64
 ) -> CInt
 
+@_silgen_name("orlix_host_resources_register_root_image_files")
+private func orlix_host_resources_register_root_image_files(
+    _ identifier: UnsafePointer<CChar>,
+    _ initrdBundleName: UnsafePointer<CChar>?,
+    _ initrdBundleExtension: UnsafePointer<CChar>?,
+    _ initrdResource: UnsafePointer<CChar>,
+    _ baseBlockPath: UnsafePointer<CChar>,
+    _ stateBlockPath: UnsafePointer<CChar>,
+    _ baseBlockDevice: UInt32,
+    _ stateBlockDevice: UInt32,
+    _ stateBlockMinimumBytes: UInt64
+) -> CInt
+
 private struct COrlixBootConfig {
     var profile: CInt
     var kernelCommandLine: UnsafePointer<CChar>?
@@ -58,9 +71,10 @@ public enum OrlixBootStatus: Equatable, Sendable {
     case ok
     case invalidConfig
     case unavailable
+    case alreadyStarted
     case unknown(CInt)
 
-    fileprivate init(rawStatus: CInt) {
+    init(rawStatus: CInt) {
         switch rawStatus {
         case 0:
             self = .ok
@@ -68,6 +82,8 @@ public enum OrlixBootStatus: Equatable, Sendable {
             self = .invalidConfig
         case -2:
             self = .unavailable
+        case -3:
+            self = .alreadyStarted
         default:
             self = .unknown(rawStatus)
         }
@@ -81,6 +97,8 @@ public enum OrlixBootStatus: Equatable, Sendable {
             return "Orlix bootloader rejected the boot config."
         case .unavailable:
             return "Orlix boot handoff is not wired to iOS-hosted Linux execution yet."
+        case .alreadyStarted:
+            return "Orlix boot already started in this process."
         case .unknown:
             return "Orlix bootloader returned an unknown status."
         }
@@ -191,7 +209,7 @@ enum OrlixOSPayload {
         let stateRootMinimumBytesKey: String
     }
 
-    private struct ProductRootResources {
+    struct ProductRootResources {
         let initrdResource: String
         let baseBlockResource: String
         let stateBlockResource: String
@@ -319,6 +337,66 @@ enum OrlixOSPayload {
             }
         }
         return true
+    }
+
+    static func registerMaterializedRootImage(
+        _ rootImage: OrlixEnvironmentRootImage
+    ) -> Bool {
+        guard let payloadBundlePath = bundleURL?.path,
+              let productResources = productResources
+        else {
+            return false
+        }
+        return registerMaterializedRootImage(
+            rootImage,
+            payloadBundlePath: payloadBundlePath,
+            productResources: productResources
+        )
+    }
+
+    static func registerMaterializedRootImage(
+        _ rootImage: OrlixEnvironmentRootImage,
+        payloadBundlePath: String,
+        productResources: ProductRootResources
+    ) -> Bool {
+        guard payloadBundlePath.withCString({ path in
+            orlix_host_resources_set_payload_root_path(path) == 0
+        }) else {
+            return false
+        }
+        guard orlix_host_resources_clear_root_images() == 0 else {
+            return false
+        }
+
+        let initrdBundleName = ""
+        let initrdBundleExtension = ""
+        let registered = rootImage.rootImageIdentifier.withCString { identifier in
+            initrdBundleName.withCString { bundleName in
+                initrdBundleExtension.withCString { bundleExtension in
+                    productResources.initrdResource.withCString { initrd in
+                        rootImage.baseImageURL.path.withCString { base in
+                            rootImage.stateImageURL.path.withCString { state in
+                                orlix_host_resources_register_root_image_files(
+                                    identifier,
+                                    bundleName,
+                                    bundleExtension,
+                                    initrd,
+                                    base,
+                                    state,
+                                    productResources.baseBlockDevice,
+                                    productResources.stateBlockDevice,
+                                    productResources.stateBlockMinimumBytes
+                                ) == 0
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !registered {
+            _ = orlix_host_resources_clear_root_images()
+        }
+        return registered
     }
 
     private static var productResources: ProductRootResources? {
@@ -583,6 +661,7 @@ public final class OrlixTerminalSession: OrlixTerminalInput, @unchecked Sendable
 public final class OrlixLinuxSession: @unchecked Sendable {
     public let terminal: OrlixTerminalSession
     public let bootConfig: OrlixBootConfig
+    private let materializedRootImage: OrlixEnvironmentRootImage?
 
     public init(
         bootConfig: OrlixBootConfig,
@@ -590,10 +669,21 @@ public final class OrlixLinuxSession: @unchecked Sendable {
     ) {
         self.bootConfig = bootConfig
         self.terminal = terminal
+        self.materializedRootImage = nil
+    }
+
+    @_spi(OrlixPrivateTesting)
+    public init(
+        materializedRootImage: OrlixEnvironmentRootImage,
+        terminal: OrlixTerminalSession = OrlixTerminalSession()
+    ) {
+        self.bootConfig = materializedRootImage.bootConfig
+        self.terminal = terminal
+        self.materializedRootImage = materializedRootImage
     }
 
     public func boot() -> OrlixBootStatus {
-        guard OrlixOSPayload.registerWithHostAdapter() else {
+        guard registerRootImagesForBoot() else {
             return .invalidConfig
         }
 
@@ -618,6 +708,13 @@ public final class OrlixLinuxSession: @unchecked Sendable {
                 return kernelCommandLine.withCString { boot($0) }
             }
         }
+    }
+
+    private func registerRootImagesForBoot() -> Bool {
+        if let materializedRootImage {
+            return materializedRootImage.registerWithHostAdapter()
+        }
+        return OrlixOSPayload.registerWithHostAdapter()
     }
 }
 

@@ -118,6 +118,11 @@ private final class OrlixPTYRuntimeProofRunner: @unchecked Sendable {
         }
 
         if let status = bootStatus.value, status != .ok {
+            if status == .alreadyStarted {
+                throw XCTSkip(
+                    "OrlixBoot is one boot per XCTest app process; run this runtime proof as a focused test for Linux execution evidence."
+                )
+            }
             throw OrlixPTYRuntimeProofError.bootFailed(status)
         }
 

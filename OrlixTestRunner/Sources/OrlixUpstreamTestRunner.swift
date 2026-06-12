@@ -12,6 +12,7 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
     let completionMarker: String
     let expectedCoreutilsTotal: Int?
     let timeout: TimeInterval
+    let kernelCommandLineSuffix: String?
 
     func bootConfig(rootImage: OrlixRootImageDescriptor) throws
         -> OrlixBootConfig
@@ -20,9 +21,20 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
             throw OrlixUpstreamTestRunError.missingBundledBootProfile
         }
 
+        let commandLine: String?
+        if let kernelCommandLineSuffix {
+            let baseCommandLine = rootImage.kernelCommandLine ?? ""
+            commandLine = [
+                baseCommandLine,
+                kernelCommandLineSuffix
+            ].filter { !$0.isEmpty }.joined(separator: " ")
+        } else {
+            commandLine = rootImage.kernelCommandLine
+        }
+
         return OrlixBootConfig(
             profile: profile,
-            kernelCommandLine: rootImage.kernelCommandLine,
+            kernelCommandLine: commandLine,
             rootImageIdentifier: rootImage.identifier,
             terminalIdentifier: "orlix.test.\(suite.rawValue).terminal"
         )
@@ -44,21 +56,136 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
         suite: .kernel,
         completionMarker: "ORLIX-KSELFTEST-END",
         expectedCoreutilsTotal: nil,
-        timeout: 300
+        timeout: 300,
+        kernelCommandLineSuffix: nil
+    )
+
+    static let kernelMountNamespace = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=mount_namespace_probe"
+    )
+
+    static let kernelEnvironmentEntry = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=environment_entry_probe"
+    )
+
+    static let kernelInitExec = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=init_exec_probe"
+    )
+
+    static let kernelFDExec = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=fd_exec_probe"
+    )
+
+    static let kernelSignalWait = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=signal_wait_probe"
+    )
+
+    static let kernelPipePoll = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=pipe_poll_probe"
+    )
+
+    static let kernelPipeSelect = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=pipe_select_probe"
+    )
+
+    static let kernelPipeEpoll = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=pipe_epoll_probe"
+    )
+
+    static let kernelPseudoFS = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=pseudo_fs_probe"
+    )
+
+    static let kernelPathErrno = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=path_errno_probe"
+    )
+
+    static let kernelCloneThread = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=clone_thread_probe"
+    )
+
+    static let kernelBootProfile = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=boot_profile_contract"
+    )
+
+    static let kernelRandomDevice = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=random_device_probe"
+    )
+
+    static let kernelVirtioBlockEnvironment = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix: "orlix.kselftest=virtio_blk_environment_probe"
     )
 
     static let mlibc = OrlixUpstreamTestRunSpec(
         suite: .mlibc,
         completionMarker: "ORLIX-MLIBC-TEST-END",
         expectedCoreutilsTotal: nil,
-        timeout: 1_200
+        timeout: 1_200,
+        kernelCommandLineSuffix: nil
     )
 
     static let coreutils = OrlixUpstreamTestRunSpec(
         suite: .coreutils,
         completionMarker: "ORLIX-COREUTILS-TEST-END",
         expectedCoreutilsTotal: 733,
-        timeout: 14_400
+        timeout: 14_400,
+        kernelCommandLineSuffix: nil
     )
 }
 
@@ -67,6 +194,7 @@ enum OrlixUpstreamTestRunError: Error, Equatable, CustomStringConvertible {
     case missingRootfsBundle(String)
     case missingBundledBootProfile
     case bootFailed(OrlixBootStatus)
+    case bootAlreadyStarted
     case timeout(TimeInterval)
     case crashReport(String)
     case kernelPanic(String)
@@ -87,6 +215,8 @@ enum OrlixUpstreamTestRunError: Error, Equatable, CustomStringConvertible {
             return "missing OrlixOS payload boot profile metadata"
         case let .bootFailed(status):
             return "Orlix boot failed: \(status.message)"
+        case .bootAlreadyStarted:
+            return "Orlix boot already started in this process; run upstream runtime suites in process-isolated invocations."
         case let .timeout(timeout):
             return "timed out after \(Int(timeout)) seconds waiting for upstream test output"
         case let .crashReport(marker):
@@ -367,6 +497,9 @@ final class OrlixUpstreamTestSessionRunner: @unchecked Sendable {
         }
 
         if let status = bootStatus.value, status != .ok {
+            if status == .alreadyStarted {
+                throw OrlixUpstreamTestRunError.bootAlreadyStarted
+            }
             throw OrlixUpstreamTestRunError.bootFailed(status)
         }
 

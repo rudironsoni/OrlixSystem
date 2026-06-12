@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 #include <linux/mm.h>
-#include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <asm/hosted_exec.h>
@@ -65,12 +64,13 @@ static int orlix_uaccess_fault_in(struct mm_struct *mm, unsigned long address,
 static int orlix_uaccess_sync_to_user(unsigned long address, const void *kaddr)
 {
 #if defined(ORLIX_APP_HOSTED_BOOT)
-	const unsigned char *source_page =
-		(const unsigned char *)kaddr - offset_in_page(address);
+	const void *source_page = (const void *)((unsigned long)kaddr & PAGE_MASK);
 
 	return orlix_refresh_current_user_mapping_page_from_kernel(address,
 								  source_page);
 #else
+	(void)address;
+	(void)kaddr;
 	return 0;
 #endif
 }

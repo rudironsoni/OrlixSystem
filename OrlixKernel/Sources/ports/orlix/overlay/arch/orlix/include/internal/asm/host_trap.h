@@ -39,6 +39,9 @@ struct orlix_host_user_trap_frame {
 
 typedef void (*orlix_host_user_trap_entry_t)(int signal_number,
 					     const struct orlix_host_user_trap_frame *frame);
+typedef int (*orlix_host_kernel_fault_handler_t)(unsigned long pc,
+						 unsigned long fault_address,
+						 unsigned long fault_flags);
 
 int orlix_host_user_trap_install(unsigned long user_base,
 				 unsigned long user_limit,
@@ -47,6 +50,7 @@ int orlix_host_user_trap_install(unsigned long user_base,
 				 const unsigned long *kernel_sp,
 				 const unsigned long *active_user_tls,
 				 unsigned long *user_active,
+				 orlix_host_kernel_fault_handler_t kernel_fault_handler,
 				 orlix_host_user_trap_entry_t entry);
 int orlix_host_user_trap_start_timer(unsigned long long period_ns);
 void orlix_host_user_trap_resume(

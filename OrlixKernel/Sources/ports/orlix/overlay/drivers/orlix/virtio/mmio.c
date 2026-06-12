@@ -29,7 +29,8 @@
 #define ORLIX_VIRTIO_MMIO_BLOCK_SECTOR_SIZE 512ULL
 #define ORLIX_VIRTIO_MMIO_CONSOLE_INPUT_POLL_MS 10
 #define ORLIX_VIRTIO_BLK_BASE_FEATURES \
-	((1ULL << VIRTIO_F_VERSION_1) | (1ULL << VIRTIO_RING_F_INDIRECT_DESC))
+	((1ULL << VIRTIO_F_VERSION_1) | (1ULL << VIRTIO_RING_F_INDIRECT_DESC) | \
+	 (1ULL << VIRTIO_BLK_F_FLUSH))
 #define ORLIX_VIRTIO_CONSOLE_BASE_FEATURES (1ULL << VIRTIO_F_VERSION_1)
 #define ORLIX_VIRTIO_RNG_BASE_FEATURES (1ULL << VIRTIO_F_VERSION_1)
 
@@ -196,6 +197,11 @@ static u64 orlix_vring_read64(__virtio64 value)
 	return le64_to_cpu((__force __le64)value);
 }
 
+static u32 orlix_virtio_mmio_block_command(u32 type)
+{
+	return type & ~VIRTIO_BLK_T_BARRIER;
+}
+
 static void orlix_vring_write16(__virtio16 *target, u16 value)
 {
 	*target = (__force __virtio16)cpu_to_le16(value);
@@ -276,7 +282,7 @@ static u8 orlix_virtio_mmio_process_block_data(
 			return VIRTIO_BLK_S_IOERR;
 		if (orlix_host_block_write(slot->host_block_device, sector,
 					   buffer, length) != 0)
-			return VIRTIO_BLK_S_UNSUPP;
+			return VIRTIO_BLK_S_IOERR;
 		return VIRTIO_BLK_S_OK;
 	case VIRTIO_BLK_T_GET_ID:
 		if (!(flags & VRING_DESC_F_WRITE))
@@ -326,6 +332,7 @@ static u8 orlix_virtio_mmio_process_block_request(
 		return VIRTIO_BLK_S_IOERR;
 
 	type = orlix_vring_read32(header->type);
+	type = orlix_virtio_mmio_block_command(type);
 	sector = orlix_vring_read64(header->sector);
 	descriptor_index = orlix_vring_read16(desc[descriptor_index].next);
 	if (descriptor_index >= chain.count)
@@ -372,6 +379,9 @@ static u8 orlix_virtio_mmio_process_block_request(
 	if (type != VIRTIO_BLK_T_IN && type != VIRTIO_BLK_T_OUT &&
 	    type != VIRTIO_BLK_T_GET_ID && type != VIRTIO_BLK_T_FLUSH)
 		request_status = VIRTIO_BLK_S_UNSUPP;
+	if (type == VIRTIO_BLK_T_FLUSH &&
+	    orlix_host_block_flush(slot->host_block_device) != 0)
+		request_status = VIRTIO_BLK_S_IOERR;
 
 	*status = request_status;
 
