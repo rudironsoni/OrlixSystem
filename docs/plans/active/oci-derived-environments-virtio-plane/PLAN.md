@@ -29,6 +29,13 @@ Current proved state:
   Orlix path.
 - Product init and kselftest init install standard fd aliases against
   `/proc/self/fd`.
+- Product init and kselftest init mount real upstream `cgroup2` at
+  `/sys/fs/cgroup`.
+- Minimal cgroup v2 mount-shape proof exists through the Orlix kselftest
+  overlay on the iOS-hosted Orlix path: mountinfo exposes `cgroup2`,
+  `cgroup.controllers` and `cgroup.procs` are readable,
+  `/proc/self/cgroup` reports the unified root, and `cgroup.procs` accepts the
+  current task.
 - Linux oracle scaffold exists.
 - OrlixOS named environment session selection API exists.
 - End-to-end named environment runtime entry selects the copied root and
@@ -45,7 +52,8 @@ Current not-proved state:
 - OCI Runtime Spec lifecycle compliance.
 - Truthful OCI feature report.
 - virtio-net, `/proc/net`, rtnetlink.
-- Virtual cgroup v2.
+- Cgroup v2 controller behavior, delegation, resource accounting, and
+  enforcement.
 - Native performance benchmark ladder for imported binaries.
 - Linux substrate coverage sufficient for OCI Runtime lifecycle and feature
   claims.
@@ -1887,8 +1895,8 @@ Plan rules:
 10. Expand networking through upstream Linux networking paths.
     - Proof: virtio-net, `/proc/net`, rtnetlink, loopback, and staged network namespace behavior have upstream Linux test, kselftest-style Orlix overlay probe, or Linux oracle coverage.
 
-11. Add virtual cgroup v2 and resource accounting behavior.
-    - Proof: cgroup v2 tree and resource behavior match declared feature support through upstream Linux test, kselftest-style Orlix overlay probe, or Linux oracle coverage.
+11. Add cgroup v2 controller and resource accounting behavior.
+    - Proof: cgroup v2 controller files, delegation, accounting, enforcement, and unsupported-operation errno match declared feature support through upstream Linux test, kselftest-style Orlix overlay probe, or Linux oracle coverage.
 
 12. Add native performance benchmark suite for imported binaries.
     - Proof: ELF launch, syscall round trip, file IO, pipe, PTY, futex, and process lifecycle benchmarks have repeatable iOS Simulator baselines.

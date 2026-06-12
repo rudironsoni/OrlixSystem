@@ -152,6 +152,13 @@ static void mount_runtime_filesystems(void)
 	    mount_if_needed("sysfs", "/sys", "sysfs", 0, NULL) != 0)
 		write_literal(STDERR_FILENO, "orlix-init: mount /sys failed\n");
 
+	if (ensure_dir("/sys/fs", 0755) == 0 &&
+	    ensure_dir("/sys/fs/cgroup", 0755) == 0 &&
+	    mount_if_needed("cgroup2", "/sys/fs/cgroup", "cgroup2",
+			    MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL) != 0)
+		write_literal(STDERR_FILENO,
+			      "orlix-init: mount /sys/fs/cgroup failed\n");
+
 	mount_device_filesystem();
 
 	if (ensure_dir("/dev/pts", 0755) == 0 &&

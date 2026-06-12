@@ -37,6 +37,18 @@ static int mount_sysfs(void)
 	return 0;
 }
 
+static int mount_cgroup2(void)
+{
+	if (mkdir("/sys/fs", 0755) < 0 && errno != EEXIST)
+		return -1;
+	if (mkdir("/sys/fs/cgroup", 0755) < 0 && errno != EEXIST)
+		return -1;
+	if (mount("cgroup2", "/sys/fs/cgroup", "cgroup2", 0, NULL) < 0 &&
+	    errno != EBUSY)
+		return -1;
+	return 0;
+}
+
 static int mount_devtmpfs(void)
 {
 	if (mkdir("/dev", 0755) < 0 && errno != EEXIST)
@@ -241,9 +253,11 @@ int main(void)
 				    sizeof(test_list), &list_size) == 0;
 	test_count = have_list ? count_orlix_tests(test_list, list_size) : 0;
 
-	orlix_test_plan(test_count + 9);
+	orlix_test_plan(test_count + 10);
 	orlix_test_result(procfs_result == 0, "procfs mounted for kselftest");
 	orlix_test_result(mount_sysfs() == 0, "sysfs mounted for kselftest");
+	orlix_test_result(mount_cgroup2() == 0,
+			  "cgroup2 mounted for kselftest");
 	orlix_test_result(mount_devtmpfs() == 0, "devtmpfs mounted for kselftest");
 	orlix_test_result(mount_devpts() == 0, "devpts mounted for kselftest");
 	orlix_test_result(install_fd_aliases() == 0,

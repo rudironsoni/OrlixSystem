@@ -211,6 +211,23 @@ final class OrlixKernelUpstreamTests: XCTestCase {
         XCTAssertFalse(output.contains("# exec /orlix/mount_namespace_probe"))
     }
 
+    func testCgroupV2ProbeCompletesThroughOrlixOSTerminalSession() throws {
+        let output = try OrlixUpstreamXCTest.run(.kernelCgroupV2)
+
+        XCTAssertTrue(output.contains("cgroup_v2_probe"))
+        XCTAssertTrue(output.contains("ORLIX-CGROUP-V2-PROBE"))
+        XCTAssertTrue(
+            output.contains("mountinfo exposes cgroup2 at /sys/fs/cgroup")
+        )
+        XCTAssertTrue(
+            output.contains("cgroup v2 controllers file is readable")
+        )
+        XCTAssertTrue(output.contains("cgroup v2 procs file is readable"))
+        XCTAssertTrue(output.contains("proc self cgroup reports unified root"))
+        XCTAssertTrue(output.contains("cgroup v2 procs accepts current task"))
+        XCTAssertFalse(output.contains("# exec /orlix/mount_namespace_probe"))
+    }
+
     func testPathErrnoProbeCompletesThroughOrlixOSTerminalSession() throws {
         let output = try OrlixUpstreamXCTest.run(.kernelPathErrno)
 

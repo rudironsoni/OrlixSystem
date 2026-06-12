@@ -8020,6 +8020,95 @@ Corrected remaining execution order:
 15. Add product `orlix run`.
 16. Add registry pull tooling.
 
+### 2026-06-12 Minimal cgroup v2 mount-shape substrate proof
+
+Goal:
+
+- Add the next Linux-substrate proof before OCI Runtime resource, lifecycle, or
+  feature-report work.
+- Prove the iOS-hosted Orlix Linux path exposes a minimal real `cgroup2` mount
+  shape at `/sys/fs/cgroup`.
+- Keep resource accounting, controller enforcement, cgroup delegation, OCI
+  Runtime resources, and product `orlix run` explicitly unproved.
+
+Changes:
+
+- `OrlixOS/Sources/init/init.c`
+  - Mounts real upstream `cgroup2` at `/sys/fs/cgroup` during product init
+    setup.
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/kselftest_init.c`
+  - Mounts real upstream `cgroup2` at `/sys/fs/cgroup` in the kselftest init
+    path and records the setup as a TAP result.
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/cgroup_v2_probe.c`
+  - Added an Orlix kselftest-style probe for minimal cgroup v2 mount shape:
+    mountinfo, readable `cgroup.controllers`, readable `cgroup.procs`,
+    unified `/proc/self/cgroup`, and writing the current task to
+    `cgroup.procs`.
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/Makefile`
+  - Added `cgroup_v2_probe` to `TEST_GEN_PROGS`.
+- `OrlixTestRunner/Sources/OrlixUpstreamTestRunner.swift`
+  - Added a focused upstream test run spec for
+    `orlix.kselftest=cgroup_v2_probe`.
+- `OrlixTestRunner/Tests/XCTest/OrlixKernelUpstreamTests/OrlixKernelUpstreamTests.swift`
+  - Added the XCTest launcher assertion for the cgroup v2 probe.
+
+Evidence:
+
+- RED proof:
+  - Initial sandboxed focused run did not reach compilation because
+    CoreSimulator and SwiftPM cache access were blocked.
+  - Elevated focused run before the mount change reached the iOS-hosted Orlix
+    path and failed as expected:
+    `not ok 1 - mountinfo exposes cgroup2 at /sys/fs/cgroup`.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_18-38-52-+0200.xcresult`.
+- GREEN proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testCgroupV2ProbeCompletesThroughOrlixOSTerminalSession test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_18-42-19-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+  - Probe output included:
+    - `ok 3 - cgroup2 mounted for kselftest`
+    - `ok 1 - mountinfo exposes cgroup2 at /sys/fs/cgroup`
+    - `ok 2 - cgroup v2 controllers file is readable`
+    - `ok 3 - cgroup v2 procs file is readable`
+    - `ok 4 - proc self cgroup reports unified root`
+    - `ok 5 - cgroup v2 procs accepts current task`
+
+Current conclusion:
+
+- Minimal cgroup v2 mount shape is now proved on the iOS-hosted Orlix path.
+- This is Linux cgroupfs behavior, not a virtio device boundary.
+- Virtio remains the preferred device plane for real device-backed work in
+  this plan, including virtio-blk, future virtio-fs, virtio-net, and any future
+  private host pressure/accounting transport if resource accounting needs one.
+- This does not prove cgroup controller behavior, delegation, resource
+  accounting, resource enforcement, OCI Runtime resources, OCI Runtime
+  lifecycle compliance, truthful OCI feature reporting, product `orlix run`,
+  host-folder mounts, virtio-fs, networking, native performance, real-device
+  behavior, or App Store acceptance.
+
+Corrected remaining execution order:
+
+1. Prove cross-boot writable state persistence.
+2. Connect rootfs tar import and OCI layout import to named environment entry.
+3. Complete imported-root image fidelity before runtime claims.
+4. Expand Linux substrate proof for entered environments.
+5. Expand the Linux oracle for substrate behavior.
+6. Implement host-folder mount backend through Linux-owned mount behavior.
+7. Add virtio-fs for external folders.
+8. Expand networking through upstream Linux networking paths, using virtio-net
+   as the device direction.
+9. Add cgroup v2 controller and resource accounting behavior.
+10. Add native performance benchmark suite for imported binaries.
+11. Add OCI Runtime config parser and schema validation.
+12. Add OCI Runtime lifecycle model.
+13. Add OCI Linux runtime defaults.
+14. Add OCI feature report.
+15. Add product `orlix run`.
+16. Add registry pull tooling.
+
 ### 2026-06-12 Linux fd alias substrate proof
 
 Goal:
