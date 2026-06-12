@@ -1308,6 +1308,64 @@ final class OrlixTerminalSessionTests: XCTestCase {
         XCTAssertEqual(session.bootConfig.profile, OrlixBootProfile.development)
     }
 
+    func testNamedEnvironmentSessionReusesPersistedStateImageAfterMutation()
+        throws
+    {
+        let root = temporaryRegistryRoot()
+        let registry = OrlixEnvironmentRegistry(
+            linuxStateRoot: root.appendingPathComponent(
+                "Application Support/Orlix",
+                isDirectory: true
+            ),
+            cacheRoot: root.appendingPathComponent("Caches/Orlix", isDirectory: true),
+            scratchRoot: root.appendingPathComponent("tmp/Orlix", isDirectory: true)
+        )
+        let descriptor = OrlixEnvironmentDescriptor(
+            id: "alpine-persistent-session",
+            source: .rootfsTar,
+            platform: "linux/arm64",
+            rootImageIdentifier: "orlix.env.alpine-persistent-session",
+            defaultCommand: ["/bin/sh"],
+            defaultEnvironment: ["PATH": "/usr/bin:/bin"],
+            defaultWorkingDirectory: "/",
+            defaultUserID: 0,
+            defaultGroupID: 0
+        )
+        try registry.save(descriptor)
+        let layout = try registry.layout(forEnvironmentID: descriptor.id)
+        try Data("base".utf8).write(to: layout.baseImageURL)
+        try Data("state-before".utf8).write(to: layout.stateImageURL)
+
+        let firstSession = try OrlixLinuxSession(
+            environmentID: descriptor.id,
+            registry: registry,
+            kernelCommandLine: "console=hvc0"
+        )
+        let firstRootImage = try XCTUnwrap(
+            firstSession.materializedRootImageForTesting
+        )
+        try Data("state-after-mutation".utf8).write(to: layout.stateImageURL)
+
+        let secondSession = try OrlixLinuxSession(
+            environmentID: descriptor.id,
+            registry: registry,
+            kernelCommandLine: "console=hvc0"
+        )
+        let secondRootImage = try XCTUnwrap(
+            secondSession.materializedRootImageForTesting
+        )
+
+        XCTAssertEqual(firstRootImage.baseImageURL, layout.baseImageURL)
+        XCTAssertEqual(firstRootImage.stateImageURL, layout.stateImageURL)
+        XCTAssertEqual(secondRootImage.baseImageURL, layout.baseImageURL)
+        XCTAssertEqual(secondRootImage.stateImageURL, layout.stateImageURL)
+        XCTAssertEqual(try Data(contentsOf: layout.baseImageURL), Data("base".utf8))
+        XCTAssertEqual(
+            try Data(contentsOf: secondRootImage.stateImageURL),
+            Data("state-after-mutation".utf8)
+        )
+    }
+
     func testMaterializedEnvironmentRootImageRegistersWithHostAdapter() throws {
         let root = temporaryRegistryRoot()
         let registry = OrlixEnvironmentRegistry(

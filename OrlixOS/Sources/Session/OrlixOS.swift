@@ -694,6 +694,11 @@ public final class OrlixLinuxSession: @unchecked Sendable {
     }
 
     @_spi(OrlixPrivateTesting)
+    public var materializedRootImageForTesting: OrlixEnvironmentRootImage? {
+        materializedRootImage
+    }
+
+    @_spi(OrlixPrivateTesting)
     public convenience init(
         environmentID: String,
         registry: OrlixEnvironmentRegistry,

@@ -20,6 +20,8 @@ Current proved state:
 - Immutable base plus writable state proof exists.
 - Linux-owned writable state block mount, write, fsync, remount, and reread
   proof exists.
+- OrlixOS named session construction reuses the persisted state image path for
+  the same environment ID after state mutation.
 - OverlayFS copy-up and unlink proof exists.
 - pseudoFS, tmpfs, PTY, and delayed input proofs exist.
 - Linux oracle scaffold exists.

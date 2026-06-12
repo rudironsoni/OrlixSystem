@@ -10,6 +10,70 @@ Implementation log. Append-only. Capture decisions, deviations from the plan, ev
 
 ## Log
 
+### 2026-06-12 Named session state-image reuse prerequisite proof
+
+**What happened:**
+
+Added an OrlixOS session/storage proof that a fresh named environment session
+construction resolves the same persisted base and state image paths for the
+same environment ID after the state image has changed.
+
+This is a prerequisite for cross-boot environment persistence. It proves the
+OrlixOS session binding does not allocate or copy a different state image when
+the same named environment is selected again. It does not encode Linux
+filesystem behavior in XCTest; Linux mount/write/fsync/remount behavior remains
+covered by the Orlix-owned kselftest probe.
+
+**Changes:**
+
+- `OrlixOS/Sources/Session/OrlixOS.swift`
+  - Added SPI-only `materializedRootImageForTesting` on `OrlixLinuxSession` so
+    OrlixOS tests can inspect the selected materialized image binding without
+    exposing a public product API.
+- `OrlixOS/Tests/XCTest/OrlixOSTests/OrlixTerminalSessionTests.swift`
+  - Added
+    `testNamedEnvironmentSessionReusesPersistedStateImageAfterMutation`.
+- `docs/plans/active/oci-derived-environments-virtio-plane/PLAN.md`
+  - Recorded the narrower proved state.
+
+**Evidence:**
+
+- RED proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixOSTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testNamedEnvironmentSessionReusesPersistedStateImageAfterMutation test`
+  - Result: failed at compile time because `OrlixLinuxSession` had no
+    `materializedRootImageForTesting` member.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixOSTests-2026.06.12_17-59-53-+0200.xcresult`.
+- GREEN proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixOSTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testNamedEnvironmentSessionReusesPersistedStateImageAfterMutation test`
+  - Result: `** TEST SUCCEEDED **`.
+  - Executed 1 test, 1 passed, 0 failed, 0 skipped.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixOSTests-2026.06.12_18-03-43-+0200.xcresult`.
+- Focused regression proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixOSTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testLinuxSessionCanBindMaterializedEnvironmentRootImage -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testLinuxSessionCanSelectNamedEnvironmentRootFromRegistry -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testNamedEnvironmentSessionReusesPersistedStateImageAfterMutation test`
+  - Result: `** TEST SUCCEEDED **`.
+  - Executed 3 tests, 3 passed, 0 failed, 0 skipped.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixOSTests-2026.06.12_18-04-56-+0200.xcresult`.
+
+**Explicit non-claims:**
+
+- This does not prove a Linux process was restarted across a fresh host process.
+- This does not prove the full cross-boot persistence checkpoint.
+- This does not prove multiple live environments inside one already-running
+  OrlixKernel.
+- This does not prove product import-to-enter flow, OCI Runtime Spec lifecycle,
+  truthful feature reporting, product `orlix run`, host-folder mounts,
+  virtio-fs, networking, cgroups, native performance, real-device behavior, or
+  App Store acceptance.
+
+**Current conclusion:**
+
+- OrlixOS now has a focused proof that named session construction preserves the
+  state-image identity needed for a later full cross-boot Linux restart proof.
+- The full cross-boot persistence checkpoint remains open.
+
 ### 2026-06-12 Linux-owned environment state writeback prerequisite proof
 
 **What happened:**
