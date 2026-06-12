@@ -8020,6 +8020,99 @@ Corrected remaining execution order:
 15. Add product `orlix run`.
 16. Add registry pull tooling.
 
+## 2026-06-12: Cross-boot writable state probe pair
+
+Intent:
+
+- Fix the persistence proof shape so the Linux substrate owns the meaningful
+  behavior. The host-side XCTest only selects and runs Linux kselftest probes;
+  it does not define VFS, block, ext4, fsync, or remount semantics.
+- Keep OCI Runtime config, lifecycle, feature reporting, and product
+  `orlix run` behind the underlying Linux substrate proof.
+
+Changes:
+
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/environment_state_crossboot_write_probe.c`
+  - Added a Linux kselftest probe that mounts `/dev/vdb` as ext4, writes a
+    marker, calls `fsync(2)`, and rereads it before the boot boundary.
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/environment_state_crossboot_verify_probe.c`
+  - Added a paired Linux kselftest probe that mounts `/dev/vdb` in a later
+    boot, rereads the marker, and removes it after verification.
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/Makefile`
+  - Added both probes to the Orlix kselftest build list.
+- `OrlixTestRunner/Sources/OrlixUpstreamTestRunner.swift`
+  - Added focused kselftest run specs for the write and verify probes.
+- `OrlixTestRunner/Tests/XCTest/OrlixKernelUpstreamTests/OrlixKernelUpstreamTests.swift`
+  - Added two focused XCTest launchers that run the write and verify probes
+    through the OrlixOS terminal-session path in separate iOS Simulator test
+    invocations.
+
+Evidence:
+
+- `rtk make -f OrlixKernel/Makefile kselftest PROFILE=release libc=orlixmlibc`
+  - Result: exited 0.
+  - Notes: output included existing upstream build warnings, but the command
+    completed successfully.
+- Write boot:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testEnvironmentStateCrossbootWriteProbeCompletesThroughOrlixOSTerminalSession test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_19-13-37-+0200.xcresult`.
+  - Output included:
+    - `# exec /orlix/environment_state_crossboot_write_probe`
+    - `ok 1 - cross-boot writable state block mounts as ext4`
+    - `ok 2 - cross-boot state marker write succeeds`
+    - `ok 3 - cross-boot state marker sync succeeds`
+    - `ok 4 - cross-boot state marker remains readable before boot boundary`
+    - `** TEST SUCCEEDED **`
+- Verify boot:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testEnvironmentStateCrossbootVerifyProbeCompletesThroughOrlixOSTerminalSession test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_19-16-05-+0200.xcresult`.
+  - Output included:
+    - `# exec /orlix/environment_state_crossboot_verify_probe`
+    - `ok 1 - cross-boot writable state block remounts as ext4`
+    - `ok 2 - cross-boot state marker survives fresh boot boundary`
+    - `ok 3 - cross-boot state marker cleanup succeeds`
+    - `** TEST SUCCEEDED **`
+
+Current conclusion:
+
+- The kselftest root now has Linux-owned cross-boot writable state evidence
+  through a virtio-blk state device. The first fresh boot writes and fsyncs a
+  marker on ext4 at `/dev/vdb`; the second fresh boot remounts `/dev/vdb`,
+  reads the marker, and removes it.
+- This is the right substrate-first proof shape for persistence. It does not
+  replace upstream Linux kselftests; it adds Orlix port selftests for the
+  Orlix-specific virtio-backed state-device integration point.
+- This still does not prove imported tar or OCI layout named-environment
+  cross-boot persistence, multiple live environments inside one already-running
+  OrlixKernel, runtime host-folder mounts, virtio-fs, OCI Runtime lifecycle
+  compliance, truthful OCI feature reporting, product `orlix run`, networking,
+  cgroup v2 controller/accounting/enforcement, native performance, real-device
+  behavior, or App Store acceptance.
+
+Updated remaining execution order:
+
+1. Connect rootfs tar import and OCI layout import to named environment entry.
+2. Prove imported tar and OCI layout named-environment cross-boot state
+   persistence.
+3. Complete imported-root image fidelity before runtime claims.
+4. Expand Linux substrate proof for entered environments.
+5. Expand the Linux oracle for substrate behavior.
+6. Implement host-folder mount backend through Linux-owned mount behavior.
+7. Add virtio-fs for external folders.
+8. Expand networking through upstream Linux networking paths.
+9. Add virtual cgroup v2 and resource accounting behavior.
+10. Add native performance benchmark suite for imported binaries.
+11. Add OCI Runtime config parser and schema validation.
+12. Add OCI Runtime lifecycle model.
+13. Add OCI Linux runtime defaults.
+14. Add OCI feature report.
+15. Add product `orlix run`.
+16. Add registry pull tooling.
+
 ### 2026-06-12 OrlixPTYRuntimeTests default-suite selection fix
 
 Goal:
@@ -8526,3 +8619,15 @@ Corrected remaining execution order:
 14. Add OCI feature report.
 15. Add product `orlix run`.
 16. Add registry pull tooling.
+
+## 2026-06-12 latest active status after cross-boot state probe pair
+
+Current status:
+
+- The active plan remains in progress.
+- Kselftest-root cross-boot writable state evidence exists through paired
+  Linux probes over the virtio-blk state device.
+- The next persistence target is imported tar and OCI layout named-environment
+  state across fresh boot boundaries.
+- OCI Runtime lifecycle, feature reporting, and product `orlix run` remain
+  behind the Linux substrate work.

@@ -196,6 +196,24 @@ struct OrlixUpstreamTestRunSpec: Equatable, Sendable {
         kernelCommandLineSuffix: "orlix.kselftest=environment_state_writeback_probe"
     )
 
+    static let kernelEnvironmentStateCrossbootWrite = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix:
+            "orlix.kselftest=environment_state_crossboot_write_probe"
+    )
+
+    static let kernelEnvironmentStateCrossbootVerify = OrlixUpstreamTestRunSpec(
+        suite: .kernel,
+        completionMarker: "ORLIX-KSELFTEST-END",
+        expectedCoreutilsTotal: nil,
+        timeout: 300,
+        kernelCommandLineSuffix:
+            "orlix.kselftest=environment_state_crossboot_verify_probe"
+    )
+
     static let mlibc = OrlixUpstreamTestRunSpec(
         suite: .mlibc,
         completionMarker: "ORLIX-MLIBC-TEST-END",

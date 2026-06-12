@@ -383,6 +383,47 @@ final class OrlixKernelUpstreamTests: XCTestCase {
         XCTAssertFalse(output.contains("# exec /orlix/clone_thread_probe"))
     }
 
+    func testEnvironmentStateCrossbootWriteProbeCompletesThroughOrlixOSTerminalSession()
+        throws
+    {
+        let output = try OrlixUpstreamXCTest.run(
+            .kernelEnvironmentStateCrossbootWrite
+        )
+
+        XCTAssertTrue(output.contains("environment_state_crossboot_write_probe"))
+        XCTAssertTrue(
+            output.contains("cross-boot writable state block mounts as ext4")
+        )
+        XCTAssertTrue(output.contains("cross-boot state marker write succeeds"))
+        XCTAssertTrue(output.contains("cross-boot state marker sync succeeds"))
+        XCTAssertTrue(
+            output.contains(
+                "cross-boot state marker remains readable before boot boundary"
+            )
+        )
+        XCTAssertFalse(output.contains("# exec /orlix/clone_thread_probe"))
+    }
+
+    func testEnvironmentStateCrossbootVerifyProbeCompletesThroughOrlixOSTerminalSession()
+        throws
+    {
+        let output = try OrlixUpstreamXCTest.run(
+            .kernelEnvironmentStateCrossbootVerify
+        )
+
+        XCTAssertTrue(output.contains("environment_state_crossboot_verify_probe"))
+        XCTAssertTrue(
+            output.contains("cross-boot writable state block remounts as ext4")
+        )
+        XCTAssertTrue(
+            output.contains(
+                "cross-boot state marker survives fresh boot boundary"
+            )
+        )
+        XCTAssertTrue(output.contains("cross-boot state marker cleanup succeeds"))
+        XCTAssertFalse(output.contains("# exec /orlix/clone_thread_probe"))
+    }
+
     func testKselftestRootfsCompletesThroughOrlixOSTerminalSession() throws {
         let output = try OrlixUpstreamXCTest.run(.kernel)
 
