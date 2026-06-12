@@ -106,6 +106,60 @@ final class OrlixEnvironmentRootRuntimeTests: XCTestCase {
         XCTAssertTrue(output.contains("ORLIX_ENV_EXEC_DONE"))
     }
 
+    func testTarDerivedNamedEnvironmentCrossBootWrite() throws {
+        let runner = OrlixEnvironmentRootRuntimeProofRunner(
+            fixture: .tarDerived,
+            proof: .crossBootWrite
+        )
+        let output = try runner.runPersistentCopiedNamedEnvironmentCrossBootWrite()
+
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_WRITE_BEGIN"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_WRITE_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_SYNC_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_REREAD_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_WRITE_DONE"))
+    }
+
+    func testTarDerivedNamedEnvironmentCrossBootVerify() throws {
+        let runner = OrlixEnvironmentRootRuntimeProofRunner(
+            fixture: .tarDerived,
+            proof: .crossBootVerify
+        )
+        let output = try runner.runPersistentCopiedNamedEnvironmentCrossBootVerify()
+
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_VERIFY_BEGIN"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_SURVIVED_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_CLEANUP_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_VERIFY_DONE"))
+    }
+
+    func testOCIDerivedNamedEnvironmentCrossBootWrite() throws {
+        let runner = OrlixEnvironmentRootRuntimeProofRunner(
+            fixture: .ociDerived,
+            proof: .crossBootWrite
+        )
+        let output = try runner.runPersistentCopiedNamedEnvironmentCrossBootWrite()
+
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_WRITE_BEGIN"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_WRITE_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_SYNC_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_REREAD_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_WRITE_DONE"))
+    }
+
+    func testOCIDerivedNamedEnvironmentCrossBootVerify() throws {
+        let runner = OrlixEnvironmentRootRuntimeProofRunner(
+            fixture: .ociDerived,
+            proof: .crossBootVerify
+        )
+        let output = try runner.runPersistentCopiedNamedEnvironmentCrossBootVerify()
+
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_VERIFY_BEGIN"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_SURVIVED_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_CLEANUP_OK"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_CROSSBOOT_VERIFY_DONE"))
+    }
+
     func testOCIDerivedMaterializedRootBootsAndExposesOSRelease() throws {
         let runner = OrlixEnvironmentRootRuntimeProofRunner(
             fixture: .ociDerived
@@ -482,6 +536,51 @@ private final class OrlixEnvironmentRootRuntimeProofRunner: @unchecked Sendable 
         )
     }
 
+    func runPersistentCopiedNamedEnvironmentCrossBootWrite() throws -> String {
+        let fixtureRoot = try Self.preparePersistentCrossBootFixtureCopy(
+            source: Self.fixtureRoot(for: fixture),
+            fixture: fixture
+        )
+        let registry = OrlixEnvironmentRegistry(
+            linuxStateRoot: fixtureRoot.linuxStateRoot,
+            cacheRoot: fixtureRoot.cacheRoot,
+            scratchRoot: fixtureRoot.scratchRoot
+        )
+        let parentDescriptor = descriptor(
+            environmentID: fixture.environmentID,
+            source: fixture.source,
+            rootImageIdentifier: fixture.rootImageIdentifier
+        )
+        try registry.save(parentDescriptor)
+        let copiedDescriptor = try registry.copyEnvironment(
+            from: fixture.environmentID,
+            to: fixture.copiedEnvironmentID,
+            rootImageIdentifier: fixture.copiedRootImageIdentifier
+        )
+
+        return try run(
+            fixtureRoot: fixtureRoot,
+            descriptor: copiedDescriptor,
+            launchThroughSessionSelection: true
+        )
+    }
+
+    func runPersistentCopiedNamedEnvironmentCrossBootVerify() throws -> String {
+        let fixtureRoot = try Self.persistentCrossBootFixtureCopy(for: fixture)
+        let registry = OrlixEnvironmentRegistry(
+            linuxStateRoot: fixtureRoot.linuxStateRoot,
+            cacheRoot: fixtureRoot.cacheRoot,
+            scratchRoot: fixtureRoot.scratchRoot
+        )
+        let descriptor = try registry.load(environmentID: fixture.copiedEnvironmentID)
+
+        return try run(
+            fixtureRoot: fixtureRoot,
+            descriptor: descriptor,
+            launchThroughSessionSelection: true
+        )
+    }
+
     private func run(fixtureRoot: EnvironmentRootFixture) throws -> String {
         try run(
             fixtureRoot: fixtureRoot,
@@ -649,6 +748,47 @@ private final class OrlixEnvironmentRootRuntimeProofRunner: @unchecked Sendable 
             )
         try FileManager.default.copyItem(at: sourceRoot.root, to: root)
         return EnvironmentRootFixture(root: root)
+    }
+
+    private static func persistentCrossBootFixtureCopy(
+        for fixture: RuntimeFixture
+    ) throws -> EnvironmentRootFixture {
+        let root = try persistentCrossBootFixtureRoot(for: fixture)
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            throw XCTSkip(
+                "missing persistent \(fixture.description) cross-boot fixture: \(root.path)"
+            )
+        }
+        return EnvironmentRootFixture(root: root)
+    }
+
+    private static func preparePersistentCrossBootFixtureCopy(
+        source sourceRoot: EnvironmentRootFixture,
+        fixture: RuntimeFixture
+    ) throws -> EnvironmentRootFixture {
+        let root = try persistentCrossBootFixtureRoot(for: fixture)
+        if FileManager.default.fileExists(atPath: root.path) {
+            try FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(
+            at: root.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.copyItem(at: sourceRoot.root, to: root)
+        return EnvironmentRootFixture(root: root)
+    }
+
+    private static func persistentCrossBootFixtureRoot(
+        for fixture: RuntimeFixture
+    ) throws -> URL {
+        try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        .appendingPathComponent("OrlixEnvironmentCrossBoot", isDirectory: true)
+        .appendingPathComponent(fixture.directoryName, isDirectory: true)
     }
 
     private static func fixtureRoot(
@@ -856,6 +996,11 @@ private final class OrlixEnvironmentRootRuntimeProofRunner: @unchecked Sendable 
             "ORLIX_ENV_TMPFS_PROOF_FAILED_TMP_WRITE",
             "ORLIX_ENV_TMPFS_PROOF_FAILED_RUN_WRITE",
             "ORLIX_ENV_TMPFS_PROOF_FAILED_DEV_SHM_WRITE",
+            "ORLIX_ENV_CROSSBOOT_PROOF_FAILED_WRITE",
+            "ORLIX_ENV_CROSSBOOT_PROOF_FAILED_SYNC",
+            "ORLIX_ENV_CROSSBOOT_PROOF_FAILED_REREAD",
+            "ORLIX_ENV_CROSSBOOT_PROOF_FAILED_VERIFY",
+            "ORLIX_ENV_CROSSBOOT_PROOF_FAILED_CLEANUP",
         ].first { output.contains($0) }
     }
 
@@ -883,11 +1028,13 @@ private enum RuntimeProof: Sendable {
     case pseudoFilesystems
     case ptyStdio
     case runtimeTmpfs
+    case crossBootWrite
+    case crossBootVerify
 
     var defaultCommand: [String] {
         switch self {
         case .osRelease, .overlayMutation, .pseudoFilesystems, .ptyStdio,
-             .runtimeTmpfs:
+             .runtimeTmpfs, .crossBootWrite, .crossBootVerify:
             return ["/bin/sh"]
         case .descriptorExecution, .longDescriptorExecution:
             return [
@@ -951,7 +1098,7 @@ private enum RuntimeProof: Sendable {
     var defaultWorkingDirectory: String {
         switch self {
         case .osRelease, .overlayMutation, .pseudoFilesystems, .ptyStdio,
-             .runtimeTmpfs:
+             .runtimeTmpfs, .crossBootWrite, .crossBootVerify:
             return "/"
         case .descriptorExecution, .longDescriptorExecution:
             return "/tmp"
@@ -966,7 +1113,7 @@ private enum RuntimeProof: Sendable {
         case .osRelease, .overlayMutation, .linuxPathDescriptorExecution,
              .pathLookupDescriptorExecution,
              .pathLookupWithoutPATHDescriptorExecution, .pseudoFilesystems,
-             .ptyStdio, .runtimeTmpfs:
+             .ptyStdio, .runtimeTmpfs, .crossBootWrite, .crossBootVerify:
             return 0
         case .descriptorExecution, .longDescriptorExecution:
             return 1000
@@ -978,7 +1125,7 @@ private enum RuntimeProof: Sendable {
         case .osRelease, .overlayMutation, .linuxPathDescriptorExecution,
              .pathLookupDescriptorExecution,
              .pathLookupWithoutPATHDescriptorExecution, .pseudoFilesystems,
-             .ptyStdio, .runtimeTmpfs:
+             .ptyStdio, .runtimeTmpfs, .crossBootWrite, .crossBootVerify:
             return 0
         case .descriptorExecution, .longDescriptorExecution:
             return 100
@@ -988,7 +1135,7 @@ private enum RuntimeProof: Sendable {
     var sendsInteractiveCommands: Bool {
         switch self {
         case .osRelease, .overlayMutation, .pseudoFilesystems, .ptyStdio,
-             .runtimeTmpfs:
+             .runtimeTmpfs, .crossBootWrite, .crossBootVerify:
             return true
         case .descriptorExecution, .longDescriptorExecution,
              .linuxPathDescriptorExecution, .pathLookupDescriptorExecution,
@@ -1057,6 +1204,23 @@ private enum RuntimeProof: Sendable {
                 #"/bin/cat /proc/mounts"#,
                 #"printf '%s%s\n' ORLIX_ENV_ TMPFS_DONE"#,
             ].joined(separator: "\r") + "\r"
+        case .crossBootWrite:
+            return [
+                #"printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_WRITE_BEGIN"#,
+                #"if printf '%s\n' orlix-imported-crossboot-ok > /etc/orlix-crossboot-marker; then printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_WRITE_OK; else printf '%s%s\n' ORLIX_ENV_CROSSBOOT_ PROOF_FAILED_WRITE; fi"#,
+                #"if /bin/sync; then printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_SYNC_OK; else printf '%s%s\n' ORLIX_ENV_CROSSBOOT_ PROOF_FAILED_SYNC; fi"#,
+                #"marker=$(/bin/cat /etc/orlix-crossboot-marker 2>/dev/null)"#,
+                #"if [ "$marker" = "orlix-imported-crossboot-ok" ]; then printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_REREAD_OK; else printf '%s%s\n' ORLIX_ENV_CROSSBOOT_ PROOF_FAILED_REREAD; fi"#,
+                #"printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_WRITE_DONE"#,
+            ].joined(separator: "\r") + "\r"
+        case .crossBootVerify:
+            return [
+                #"printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_VERIFY_BEGIN"#,
+                #"marker=$(/bin/cat /etc/orlix-crossboot-marker 2>/dev/null)"#,
+                #"if [ "$marker" = "orlix-imported-crossboot-ok" ]; then printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_SURVIVED_OK; else printf '%s%s\n' ORLIX_ENV_CROSSBOOT_ PROOF_FAILED_VERIFY; fi"#,
+                #"if /bin/rm /etc/orlix-crossboot-marker && /bin/sync; then printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_CLEANUP_OK; else printf '%s%s\n' ORLIX_ENV_CROSSBOOT_ PROOF_FAILED_CLEANUP; fi"#,
+                #"printf '%s%s\n' ORLIX_ENV_ CROSSBOOT_VERIFY_DONE"#,
+            ].joined(separator: "\r") + "\r"
         case .descriptorExecution, .longDescriptorExecution,
              .linuxPathDescriptorExecution, .pathLookupDescriptorExecution,
              .pathLookupWithoutPATHDescriptorExecution:
@@ -1080,6 +1244,10 @@ private enum RuntimeProof: Sendable {
             return "ORLIX_ENV_PTY_DONE"
         case .runtimeTmpfs:
             return "ORLIX_ENV_TMPFS_DONE"
+        case .crossBootWrite:
+            return "ORLIX_ENV_CROSSBOOT_WRITE_DONE"
+        case .crossBootVerify:
+            return "ORLIX_ENV_CROSSBOOT_VERIFY_DONE"
         }
     }
 
@@ -1088,7 +1256,8 @@ private enum RuntimeProof: Sendable {
         case .ptyStdio:
             return "ORLIX_ENV_PTY_WAITING_FOR_INPUT"
         case .osRelease, .overlayMutation, .pseudoFilesystems,
-             .runtimeTmpfs, .descriptorExecution, .longDescriptorExecution,
+             .runtimeTmpfs, .crossBootWrite, .crossBootVerify,
+             .descriptorExecution, .longDescriptorExecution,
              .linuxPathDescriptorExecution, .pathLookupDescriptorExecution,
              .pathLookupWithoutPATHDescriptorExecution:
             return ""
@@ -1100,7 +1269,8 @@ private enum RuntimeProof: Sendable {
         case .ptyStdio:
             return "orlix-pty-delayed-input\r"
         case .osRelease, .overlayMutation, .pseudoFilesystems,
-             .runtimeTmpfs, .descriptorExecution, .longDescriptorExecution,
+             .runtimeTmpfs, .crossBootWrite, .crossBootVerify,
+             .descriptorExecution, .longDescriptorExecution,
              .linuxPathDescriptorExecution, .pathLookupDescriptorExecution,
              .pathLookupWithoutPATHDescriptorExecution:
             return nil
@@ -1112,7 +1282,8 @@ private enum RuntimeProof: Sendable {
         case .ptyStdio:
             return "ORLIX_ENV_PTY_DELAYED_INPUT_OK"
         case .osRelease, .overlayMutation, .pseudoFilesystems,
-             .runtimeTmpfs, .descriptorExecution, .longDescriptorExecution,
+             .runtimeTmpfs, .crossBootWrite, .crossBootVerify,
+             .descriptorExecution, .longDescriptorExecution,
              .linuxPathDescriptorExecution, .pathLookupDescriptorExecution,
              .pathLookupWithoutPATHDescriptorExecution:
             return ""
@@ -1124,7 +1295,8 @@ private enum RuntimeProof: Sendable {
         case .ptyStdio:
             return #"printf '%s%s\n' ORLIX_ENV_ PTY_DONE"# + "\r"
         case .osRelease, .overlayMutation, .pseudoFilesystems,
-             .runtimeTmpfs, .descriptorExecution, .longDescriptorExecution,
+             .runtimeTmpfs, .crossBootWrite, .crossBootVerify,
+             .descriptorExecution, .longDescriptorExecution,
              .linuxPathDescriptorExecution, .pathLookupDescriptorExecution,
              .pathLookupWithoutPATHDescriptorExecution:
             return nil
@@ -1224,6 +1396,21 @@ private enum RuntimeProof: Sendable {
                 "ORLIX_ENV_DEV_SHM_WRITE_OK",
                 "ORLIX_ENV_TMPFS_DONE"
             ]
+        case .crossBootWrite:
+            return [
+                "ORLIX_ENV_CROSSBOOT_WRITE_BEGIN",
+                "ORLIX_ENV_CROSSBOOT_WRITE_OK",
+                "ORLIX_ENV_CROSSBOOT_SYNC_OK",
+                "ORLIX_ENV_CROSSBOOT_REREAD_OK",
+                "ORLIX_ENV_CROSSBOOT_WRITE_DONE"
+            ]
+        case .crossBootVerify:
+            return [
+                "ORLIX_ENV_CROSSBOOT_VERIFY_BEGIN",
+                "ORLIX_ENV_CROSSBOOT_SURVIVED_OK",
+                "ORLIX_ENV_CROSSBOOT_CLEANUP_OK",
+                "ORLIX_ENV_CROSSBOOT_VERIFY_DONE"
+            ]
         }
     }
 
@@ -1234,7 +1421,7 @@ private enum RuntimeProof: Sendable {
              .pathLookupWithoutPATHDescriptorExecution:
             return Self.descriptorExecutionScript
         case .osRelease, .overlayMutation, .pseudoFilesystems, .ptyStdio,
-             .runtimeTmpfs:
+             .runtimeTmpfs, .crossBootWrite, .crossBootVerify:
             return ""
         }
     }
@@ -1248,7 +1435,7 @@ private enum RuntimeProof: Sendable {
         case .osRelease, .overlayMutation, .linuxPathDescriptorExecution,
              .pathLookupDescriptorExecution,
              .pathLookupWithoutPATHDescriptorExecution, .pseudoFilesystems,
-             .ptyStdio, .runtimeTmpfs:
+             .ptyStdio, .runtimeTmpfs, .crossBootWrite, .crossBootVerify:
             return ""
         }
     }

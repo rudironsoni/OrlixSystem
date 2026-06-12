@@ -8631,3 +8631,98 @@ Current status:
   state across fresh boot boundaries.
 - OCI Runtime lifecycle, feature reporting, and product `orlix run` remain
   behind the Linux substrate work.
+
+## 2026-06-12 imported named-environment cross-boot persistence proof
+
+Goal:
+
+- Prove that imported tar-derived and OCI-layout-derived named environments can
+  persist writable state across fresh iOS Simulator boot boundaries through the
+  OrlixOS named session path.
+- Keep the claim below OCI Runtime work. This checkpoint proves imported
+  environment state binding through the current Linux overlay and virtio-blk
+  state device path. It does not prove OCI Runtime config, lifecycle, feature
+  reporting, `orlix run`, host-folder mounts, virtio-fs, networking, cgroups,
+  arbitrary imported binary compatibility, native performance, real-device
+  behavior, or App Store acceptance.
+
+Changes:
+
+- `OrlixTestRunner/Tests/XCTest/OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests.swift`
+  - Added paired focused tests for tar-derived named environments:
+    `testTarDerivedNamedEnvironmentCrossBootWrite` and
+    `testTarDerivedNamedEnvironmentCrossBootVerify`.
+  - Added paired focused tests for OCI-derived named environments:
+    `testOCIDerivedNamedEnvironmentCrossBootWrite` and
+    `testOCIDerivedNamedEnvironmentCrossBootVerify`.
+  - Added persistent fixture staging under app Application Support so the write
+    half can create a copied named environment and the verify half can reopen
+    that same copied environment in a fresh XCTest app launch.
+  - Added Linux shell proof scripts that write, sync, reread, verify, remove,
+    and sync `/etc/orlix-crossboot-marker` from inside the entered environment.
+
+Evidence:
+
+- Static gates:
+  - `rtk swiftc -parse -I OrlixOS/Sources/Session OrlixTestRunner/Tests/XCTest/OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests.swift`
+  - `rtk git diff --check`
+  - `rtk python3 -m unittest discover .codex/hooks/tests`
+  - `rtk python3 .codex/hooks/compact_plan_check.py`
+  - Result: all exited 0.
+- Tar write proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests/testTarDerivedNamedEnvironmentCrossBootWrite test`
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixPTYRuntimeTests-2026.06.12_19-28-10-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+  - Runtime output included `ORLIX_ENV_CROSSBOOT_WRITE_BEGIN`,
+    `ORLIX_ENV_CROSSBOOT_WRITE_OK`, `ORLIX_ENV_CROSSBOOT_SYNC_OK`,
+    `ORLIX_ENV_CROSSBOOT_REREAD_OK`, and
+    `ORLIX_ENV_CROSSBOOT_WRITE_DONE`.
+- Tar verify proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests/testTarDerivedNamedEnvironmentCrossBootVerify test`
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixPTYRuntimeTests-2026.06.12_19-29-08-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+  - Runtime output included `ORLIX_ENV_CROSSBOOT_VERIFY_BEGIN`,
+    `ORLIX_ENV_CROSSBOOT_SURVIVED_OK`,
+    `ORLIX_ENV_CROSSBOOT_CLEANUP_OK`, and
+    `ORLIX_ENV_CROSSBOOT_VERIFY_DONE`.
+- OCI write proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests/testOCIDerivedNamedEnvironmentCrossBootWrite test`
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixPTYRuntimeTests-2026.06.12_19-30-05-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+  - Runtime output included `ORLIX_ENV_CROSSBOOT_WRITE_BEGIN`,
+    `ORLIX_ENV_CROSSBOOT_WRITE_OK`, `ORLIX_ENV_CROSSBOOT_SYNC_OK`,
+    `ORLIX_ENV_CROSSBOOT_REREAD_OK`, and
+    `ORLIX_ENV_CROSSBOOT_WRITE_DONE`.
+- OCI verify proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests/testOCIDerivedNamedEnvironmentCrossBootVerify test`
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixPTYRuntimeTests-2026.06.12_19-32-25-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+  - Runtime output included `ORLIX_ENV_CROSSBOOT_VERIFY_BEGIN`,
+    `ORLIX_ENV_CROSSBOOT_SURVIVED_OK`,
+    `ORLIX_ENV_CROSSBOOT_CLEANUP_OK`, and
+    `ORLIX_ENV_CROSSBOOT_VERIFY_DONE`.
+
+Current conclusion:
+
+- Imported tar-derived and OCI-derived copied named environments now have
+  paired iOS Simulator proof that a mutation made through Linux userspace in
+  one fresh run survives into a second fresh run, then is cleaned up.
+- This proof depends on paired focused invocations because the current
+  OrlixBoot test host supports one boot per XCTest app process.
+- The upstream Linux substrate remains the authority for Linux semantics. This
+  test is a product-path binding proof for imported named environments, not a
+  replacement for kselftest or Linux oracle coverage.
+
+Handoff:
+
+- Cross-boot writable state persistence is proved for imported tar and OCI
+  named environments on iOS Simulator.
+- The active remaining order now starts with imported-root image fidelity,
+  Linux substrate proof, Linux oracle expansion, host-folder mounts, virtio-fs,
+  networking, cgroups, native performance, and only then OCI Runtime config,
+  lifecycle, defaults, feature reporting, product `orlix run`, and registry
+  pull.
