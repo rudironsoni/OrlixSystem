@@ -1268,6 +1268,46 @@ final class OrlixTerminalSessionTests: XCTestCase {
         )
     }
 
+    func testLinuxSessionCanSelectNamedEnvironmentRootFromRegistry() throws {
+        let root = temporaryRegistryRoot()
+        let registry = OrlixEnvironmentRegistry(
+            linuxStateRoot: root.appendingPathComponent(
+                "Application Support/Orlix",
+                isDirectory: true
+            ),
+            cacheRoot: root.appendingPathComponent("Caches/Orlix", isDirectory: true),
+            scratchRoot: root.appendingPathComponent("tmp/Orlix", isDirectory: true)
+        )
+        let descriptor = OrlixEnvironmentDescriptor(
+            id: "alpine-named-session",
+            source: .rootfsTar,
+            platform: "linux/arm64",
+            rootImageIdentifier: "orlix.env.alpine-named-session",
+            defaultCommand: ["/bin/sh", "-l"],
+            defaultEnvironment: ["HOME": "/root", "PATH": "/usr/bin:/bin"],
+            defaultWorkingDirectory: "/root",
+            defaultUserID: 1000,
+            defaultGroupID: 100
+        )
+        try registry.save(descriptor)
+        let layout = try registry.layout(forEnvironmentID: descriptor.id)
+        try Data("base".utf8).write(to: layout.baseImageURL)
+        try Data("state".utf8).write(to: layout.stateImageURL)
+
+        let session = try OrlixLinuxSession(
+            environmentID: descriptor.id,
+            registry: registry,
+            kernelCommandLine: "console=hvc0"
+        )
+
+        XCTAssertEqual(
+            session.bootConfig.rootImageIdentifier,
+            descriptor.rootImageIdentifier
+        )
+        XCTAssertEqual(session.bootConfig.kernelCommandLine, "console=hvc0")
+        XCTAssertEqual(session.bootConfig.profile, OrlixBootProfile.development)
+    }
+
     func testMaterializedEnvironmentRootImageRegistersWithHostAdapter() throws {
         let root = temporaryRegistryRoot()
         let registry = OrlixEnvironmentRegistry(

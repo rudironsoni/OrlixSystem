@@ -672,6 +672,17 @@ public final class OrlixLinuxSession: @unchecked Sendable {
         self.materializedRootImage = nil
     }
 
+    public convenience init(
+        environmentID: String,
+        terminal: OrlixTerminalSession = OrlixTerminalSession()
+    ) throws {
+        try self.init(
+            environmentID: environmentID,
+            registry: OrlixEnvironmentRegistry(),
+            terminal: terminal
+        )
+    }
+
     @_spi(OrlixPrivateTesting)
     public init(
         materializedRootImage: OrlixEnvironmentRootImage,
@@ -680,6 +691,20 @@ public final class OrlixLinuxSession: @unchecked Sendable {
         self.bootConfig = materializedRootImage.bootConfig
         self.terminal = terminal
         self.materializedRootImage = materializedRootImage
+    }
+
+    @_spi(OrlixPrivateTesting)
+    public convenience init(
+        environmentID: String,
+        registry: OrlixEnvironmentRegistry,
+        kernelCommandLine: String? = OrlixOSDistribution.bundledKernelCommandLine,
+        terminal: OrlixTerminalSession = OrlixTerminalSession()
+    ) throws {
+        let rootImage = try registry.materializedRootImage(
+            forEnvironmentID: environmentID,
+            kernelCommandLine: kernelCommandLine
+        )
+        self.init(materializedRootImage: rootImage, terminal: terminal)
     }
 
     public func boot() -> OrlixBootStatus {

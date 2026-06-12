@@ -7823,23 +7823,22 @@ Completed proof checkpoints recorded in this plan:
 
 Remaining execution order:
 
-1. Implement OrlixOS named environment root binding end to end.
-2. Prove entering a named environment selects the correct root and descriptor.
-3. Connect rootfs tar import to named environment entry in one product-shaped
+1. Prove entering a named environment selects the correct root and descriptor.
+2. Connect rootfs tar import to named environment entry in one product-shaped
    path.
-4. Implement OCI layout import binding to named environments.
-5. Add OCI whiteout and opaque-directory import proof.
-6. Add immutable image root plus writable environment state proof.
-7. Add overlay/snapshot semantics only after the image-root binding proof is
+3. Implement OCI layout import binding to named environments.
+4. Add OCI whiteout and opaque-directory import proof.
+5. Add immutable image root plus writable environment state proof.
+6. Add overlay/snapshot semantics only after the image-root binding proof is
    stable.
-8. Implement host-folder mount backend through Linux-owned mount behavior.
-9. Add virtio-fs for Documents and security-scoped external folders.
-10. Add registry pull outside OrlixKernel and outside the iOS runtime substrate.
-11. Add `orlix run` lifecycle only after persistent named environments are
+7. Implement host-folder mount backend through Linux-owned mount behavior.
+8. Add virtio-fs for Documents and security-scoped external folders.
+9. Add registry pull outside OrlixKernel and outside the iOS runtime substrate.
+10. Add `orlix run` lifecycle only after persistent named environments are
     reliable.
-12. Expand networking through virtio-net, `/proc/net`, and synthetic rtnetlink.
-13. Add virtual cgroup v2 and resource-accounting behavior.
-14. Expand the Linux oracle and benchmark coverage for imported binaries and
+11. Expand networking through virtio-net, `/proc/net`, and synthetic rtnetlink.
+12. Add virtual cgroup v2 and resource-accounting behavior.
+13. Expand the Linux oracle and benchmark coverage for imported binaries and
     container-image-derived environments.
 
 Boundary:
@@ -7869,24 +7868,23 @@ What changed:
 
 Corrected remaining execution order:
 
-1. Implement OrlixOS named environment root binding end to end.
-2. Prove entering a named environment selects the correct root and descriptor.
-3. Prove cross-boot writable state persistence.
-4. Connect rootfs tar import and OCI layout import to named environment entry.
-5. Complete imported-root image fidelity before runtime claims.
-6. Expand Linux substrate proof for entered environments.
-7. Expand the Linux oracle for substrate behavior.
-8. Implement host-folder mount backend through Linux-owned mount behavior.
-9. Add virtio-fs for external folders.
-10. Expand networking through upstream Linux networking paths.
-11. Add virtual cgroup v2 and resource accounting behavior.
-12. Add native performance benchmark suite for imported binaries.
-13. Add OCI Runtime config parser and schema validation.
-14. Add OCI Runtime lifecycle model.
-15. Add OCI Linux runtime defaults.
-16. Add OCI feature report.
-17. Add product `orlix run`.
-18. Add registry pull tooling.
+1. Prove entering a named environment selects the correct root and descriptor.
+2. Prove cross-boot writable state persistence.
+3. Connect rootfs tar import and OCI layout import to named environment entry.
+4. Complete imported-root image fidelity before runtime claims.
+5. Expand Linux substrate proof for entered environments.
+6. Expand the Linux oracle for substrate behavior.
+7. Implement host-folder mount backend through Linux-owned mount behavior.
+8. Add virtio-fs for external folders.
+9. Expand networking through upstream Linux networking paths.
+10. Add virtual cgroup v2 and resource accounting behavior.
+11. Add native performance benchmark suite for imported binaries.
+12. Add OCI Runtime config parser and schema validation.
+13. Add OCI Runtime lifecycle model.
+14. Add OCI Linux runtime defaults.
+15. Add OCI feature report.
+16. Add product `orlix run`.
+17. Add registry pull tooling.
 
 Current status:
 
@@ -7895,3 +7893,63 @@ Current status:
   lifecycle evidence exist.
 - Agents must not implement or claim OCI Runtime lifecycle, `orlix run`, or
   feature-report support before the relevant Linux-owned behavior is proved.
+
+### 2026-06-12 OrlixOS named environment session selection
+
+Goal:
+
+- Add the product-shaped OrlixOS session entry point for selecting a named
+  environment root through the existing environment registry and materialized
+  root-image path.
+- Keep the change above OCI Runtime lifecycle work. This is OrlixOS session
+  translation into existing root-image boot state, not `runc`, Docker, registry
+  pull, OCI Runtime compliance, virtio-fs, networking, or cgroup support.
+
+Changes:
+
+- `OrlixOS/Sources/Session/OrlixOS.swift`
+  - Added `OrlixLinuxSession(environmentID:terminal:)`, which uses the default
+    `OrlixEnvironmentRegistry` and existing materialized-root binding.
+  - Added SPI testing initializer
+    `OrlixLinuxSession(environmentID:registry:kernelCommandLine:terminal:)`
+    so tests can inject an isolated registry root.
+- `OrlixOS/Tests/XCTest/OrlixOSTests/OrlixTerminalSessionTests.swift`
+  - Added
+    `testLinuxSessionCanSelectNamedEnvironmentRootFromRegistry`, proving a
+    saved descriptor and base/state images can be selected by environment ID
+    and translated into the session boot config.
+- `docs/plans/active/oci-derived-environments-virtio-plane/GOAL.md`
+  - Kept the active goal aligned with the Linux-substrate-first order and under
+    4000 characters.
+
+Evidence:
+
+- RED proof:
+  - Initial sandboxed run did not reach compilation because CoreSimulator and
+    SwiftPM cache access were blocked.
+  - Elevated focused run failed for the expected missing API:
+    `No exact matches in call to initializer`.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixOSTests-2026.06.12_17-17-11-+0200.xcresult`.
+- GREEN proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixOSTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testLinuxSessionCanSelectNamedEnvironmentRootFromRegistry test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixOSTests-2026.06.12_17-17-48-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+- Focused regression proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixOSTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testLinuxSessionCanBindMaterializedEnvironmentRootImage -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testLinuxSessionCanSelectNamedEnvironmentRootFromRegistry test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixOSTests-2026.06.12_17-18-55-+0200.xcresult`.
+  - Output: 2 XTests executed, 0 failures, `** TEST SUCCEEDED **`.
+
+Current conclusion:
+
+- OrlixOS now has a named environment session selection path that maps an
+  environment descriptor and stored base/state images into existing Orlix boot
+  configuration.
+- This does not prove cross-boot state persistence, import-to-enter product
+  flow, OCI Runtime lifecycle compliance, truthful feature reporting, product
+  `orlix run`, host-folder mounts, virtio-fs, networking, cgroups, native
+  performance, real-device behavior, or App Store acceptance.
