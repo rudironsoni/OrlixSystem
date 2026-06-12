@@ -830,7 +830,7 @@ public struct OrlixEnvironmentRegistry: Sendable {
 
     public func materializedRootImage(
         forEnvironmentID environmentID: String,
-        kernelCommandLine: String? = OrlixOSDistribution.bundledKernelCommandLine,
+        kernelCommandLine: String? = OrlixEnvironmentRootImage.defaultKernelCommandLine,
         fileManager: FileManager = .default
     ) throws -> OrlixEnvironmentRootImage {
         try OrlixEnvironmentRootImage.materialized(

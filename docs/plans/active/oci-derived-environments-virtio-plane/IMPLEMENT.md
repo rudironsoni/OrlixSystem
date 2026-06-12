@@ -7868,23 +7868,22 @@ What changed:
 
 Corrected remaining execution order:
 
-1. Prove entering a named environment selects the correct root and descriptor.
-2. Prove cross-boot writable state persistence.
-3. Connect rootfs tar import and OCI layout import to named environment entry.
-4. Complete imported-root image fidelity before runtime claims.
-5. Expand Linux substrate proof for entered environments.
-6. Expand the Linux oracle for substrate behavior.
-7. Implement host-folder mount backend through Linux-owned mount behavior.
-8. Add virtio-fs for external folders.
-9. Expand networking through upstream Linux networking paths.
-10. Add virtual cgroup v2 and resource accounting behavior.
-11. Add native performance benchmark suite for imported binaries.
-12. Add OCI Runtime config parser and schema validation.
-13. Add OCI Runtime lifecycle model.
-14. Add OCI Linux runtime defaults.
-15. Add OCI feature report.
-16. Add product `orlix run`.
-17. Add registry pull tooling.
+1. Prove cross-boot writable state persistence.
+2. Connect rootfs tar import and OCI layout import to named environment entry.
+3. Complete imported-root image fidelity before runtime claims.
+4. Expand Linux substrate proof for entered environments.
+5. Expand the Linux oracle for substrate behavior.
+6. Implement host-folder mount backend through Linux-owned mount behavior.
+7. Add virtio-fs for external folders.
+8. Expand networking through upstream Linux networking paths.
+9. Add virtual cgroup v2 and resource accounting behavior.
+10. Add native performance benchmark suite for imported binaries.
+11. Add OCI Runtime config parser and schema validation.
+12. Add OCI Runtime lifecycle model.
+13. Add OCI Linux runtime defaults.
+14. Add OCI feature report.
+15. Add product `orlix run`.
+16. Add registry pull tooling.
 
 Current status:
 
@@ -7953,3 +7952,110 @@ Current conclusion:
   flow, OCI Runtime lifecycle compliance, truthful feature reporting, product
   `orlix run`, host-folder mounts, virtio-fs, networking, cgroups, native
   performance, real-device behavior, or App Store acceptance.
+
+### 2026-06-12 Named environment session runtime entry proof
+
+Goal:
+
+- Prove the public OrlixOS named environment session path can boot a copied
+  environment root and apply that environment descriptor's argv, env, cwd, uid,
+  and gid defaults through the iOS-hosted Orlix runtime path.
+- Keep the checkpoint below OCI Runtime lifecycle work. This is named
+  environment session selection and descriptor translation into current Orlix
+  execution state, not Docker, `runc`, registry pull, OCI Runtime compliance,
+  virtio-fs, networking, cgroup support, or multiple live environments inside
+  one already-running OrlixKernel.
+
+Changes:
+
+- `OrlixTestRunner/Tests/XCTest/OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests.swift`
+  - Added
+    `testCopiedNamedEnvironmentSessionSelectionEntersRootAndDescriptor`.
+  - Added a runtime helper that copies a fixture environment, saves the copied
+    descriptor in an isolated `OrlixEnvironmentRegistry`, enters it through
+    `OrlixLinuxSession(environmentID:registry:terminal:)`, and verifies Linux
+    userspace output.
+  - Extended descriptor-execution proof output to include
+    `/bin/cat /etc/os-release` so the selected root is observed from inside
+    the entered environment.
+- `OrlixOS/Sources/Session/OrlixOS.swift`
+  - Changed the SPI named-environment session initializer default command line
+    to `OrlixEnvironmentRootImage.defaultKernelCommandLine` so descriptor
+    execution tokens are present unless a caller explicitly overrides them.
+- `OrlixOS/Sources/Session/OrlixEnvironment.swift`
+  - Changed registry materialized-root image creation to use
+    `OrlixEnvironmentRootImage.defaultKernelCommandLine` by default for the
+    same reason.
+
+Evidence:
+
+- RED proof:
+  - Initial sandboxed focused run did not reach compilation because
+    CoreSimulator and SwiftPM cache access were blocked.
+  - Elevated focused run failed for the expected missing runtime helper:
+    `Value of type 'OrlixEnvironmentRootRuntimeProofRunner' has no member 'runCopiedNamedEnvironmentThroughSessionSelection'`.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixPTYRuntimeTests-2026.06.12_17-26-36-+0200.xcresult`.
+- Diagnosis after adding the test helper:
+  - The focused runtime run booted the copied environment but dropped into the
+    default shell path instead of executing descriptor defaults.
+  - Runtime output showed the named-session path used the bundled command line:
+    `console=ttyS0 console=hvc0 root=/dev/vda rootfstype=ext4 ro orlix.profile=release`.
+  - The run was terminated with `rtk killall xcodebuild` after confirming the
+    missing descriptor-token path.
+- GREEN proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixPTYRuntimeTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests/testCopiedNamedEnvironmentSessionSelectionEntersRootAndDescriptor test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixPTYRuntimeTests-2026.06.12_17-32-12-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+  - Runtime output included:
+    - `ORLIX_ENV_EXEC_BEGIN`
+    - `argv0=orlix-descriptor-xxxxxxxxxxxxxxxx`
+    - `argv1=argument with spaces`
+    - `env=descriptor value with spaces`
+    - `pwd=/tmp`
+    - `ID=orlix-oci-runtime-proof`
+    - `Uid:\t1000`
+    - `Gid:\t100`
+    - `ORLIX_ENV_EXEC_DONE`
+
+Current conclusion:
+
+- The named environment session path now has end-to-end iOS Simulator proof
+  that a copied environment root is selected and descriptor execution defaults
+  reach Linux userspace through the OrlixOS session API.
+- The active plan state is reconciled so this checkpoint no longer appears as
+  remaining work.
+- This does not prove multiple live environments inside one already-running
+  OrlixKernel, cross-boot state persistence, import-to-enter product flow, OCI
+  Runtime lifecycle compliance, truthful feature reporting, product `orlix run`,
+  host-folder mounts, virtio-fs, networking, cgroups, native performance,
+  real-device behavior, or App Store acceptance.
+
+Current status:
+
+- The named environment session runtime entry checkpoint is complete on iOS
+  Simulator.
+- The active remaining order now starts with cross-boot writable state
+  persistence and keeps OCI Runtime lifecycle, `orlix run`, and feature
+  reporting behind the required Linux substrate proof.
+
+Corrected remaining execution order:
+
+1. Prove cross-boot writable state persistence.
+2. Connect rootfs tar import and OCI layout import to named environment entry.
+3. Complete imported-root image fidelity before runtime claims.
+4. Expand Linux substrate proof for entered environments.
+5. Expand the Linux oracle for substrate behavior.
+6. Implement host-folder mount backend through Linux-owned mount behavior.
+7. Add virtio-fs for external folders.
+8. Expand networking through upstream Linux networking paths.
+9. Add virtual cgroup v2 and resource accounting behavior.
+10. Add native performance benchmark suite for imported binaries.
+11. Add OCI Runtime config parser and schema validation.
+12. Add OCI Runtime lifecycle model.
+13. Add OCI Linux runtime defaults.
+14. Add OCI feature report.
+15. Add product `orlix run`.
+16. Add registry pull tooling.

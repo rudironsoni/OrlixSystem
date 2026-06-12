@@ -22,11 +22,11 @@ Current proved state:
 - pseudoFS, tmpfs, PTY, and delayed input proofs exist.
 - Linux oracle scaffold exists.
 - OrlixOS named environment session selection API exists.
+- End-to-end named environment runtime entry selects the copied root and
+  descriptor argv/env/cwd/uid/gid defaults on iOS Simulator.
 
 Current not-proved state:
 
-- End-to-end named environment runtime entry selecting the correct root and
-  descriptor.
 - Multiple live environments inside one already-running OrlixKernel.
 - Cross-boot persistence of the same mutated environment state image.
 - Runtime host-folder mount backend.
@@ -1841,53 +1841,50 @@ Plan rules:
 2. Refresh baseline iOS Simulator proofs.
    - Proof: focused OrlixOS and OrlixPTYRuntime tests for current materialized tar and OCI roots pass.
 
-3. Prove entering a named environment selects the correct root and descriptor.
-   - Proof: the iOS-hosted Orlix path enters the selected root through Linux root-binding behavior and observes the descriptor-selected argv/env/cwd/uid/gid defaults.
-
-4. Prove cross-boot writable state persistence.
+3. Prove cross-boot writable state persistence.
    - Proof: mutate environment state, shut down, restart the same environment, observe mutation persisted while the base image stayed unchanged.
 
-5. Connect rootfs tar import and OCI layout import to named environment entry.
+4. Connect rootfs tar import and OCI layout import to named environment entry.
    - Proof: both import paths create environments that can be entered without test-only wiring.
 
-6. Complete imported-root image fidelity before runtime claims.
+5. Complete imported-root image fidelity before runtime claims.
    - Proof: OCI whiteouts, opaque directories, immutable image root, writable environment state, and OverlayFS copy-up/unlink semantics are covered by app-hosted tests and oracle cases where available.
 
-7. Expand Linux substrate proof for entered environments.
+6. Expand Linux substrate proof for entered environments.
    - Proof: fd inheritance, close-on-exec, `/dev/fd`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr`, signals, wait/reaping, PTY behavior, `/proc`, `/dev`, `/sys`, tmpfs, and mount namespace behavior have focused iOS-hosted proof.
 
-8. Expand the Linux oracle for substrate behavior.
+7. Expand the Linux oracle for substrate behavior.
    - Proof: the same fixtures produce real-Linux and Orlix JSON results, and the comparator catches drift for paths, errno, fd behavior, signals, waits, stat metadata, procfs, and mount observations.
 
-9. Implement host-folder mount backend through Linux-owned mount behavior.
+8. Implement host-folder mount backend through Linux-owned mount behavior.
     - Proof: Documents and security-scoped folders enter only as Linux mounts, not raw host paths.
 
-10. Add virtio-fs for external folders.
+9. Add virtio-fs for external folders.
     - Proof: host-backed folder appears through Linux-owned mount behavior and passes path/stat/open/rename/unlink tests.
 
-11. Expand networking through upstream Linux networking paths.
+10. Expand networking through upstream Linux networking paths.
     - Proof: virtio-net, `/proc/net`, rtnetlink, loopback, and staged network namespace behavior have focused tests.
 
-12. Add virtual cgroup v2 and resource accounting behavior.
+11. Add virtual cgroup v2 and resource accounting behavior.
     - Proof: synthetic cgroup v2 tree and resource behavior match declared feature support.
 
-13. Add native performance benchmark suite for imported binaries.
+12. Add native performance benchmark suite for imported binaries.
     - Proof: ELF launch, syscall round trip, file IO, pipe, PTY, futex, and process lifecycle benchmarks have repeatable iOS Simulator baselines.
 
-14. Add OCI Runtime config parser and schema validation.
+13. Add OCI Runtime config parser and schema validation.
     - Proof: minimal Linux `config.json` validates against pinned schemas and converts to Orlix descriptors while unsupported Linux features are rejected deterministically.
 
-15. Add OCI Runtime lifecycle model.
+14. Add OCI Runtime lifecycle model.
     - Proof: `create` prepares resources without executing, `start` executes through Linux `execve`, `state` reports correct status, `kill` sends Linux signal, and `delete` removes created resources only.
 
-16. Add OCI Linux runtime defaults.
+15. Add OCI Linux runtime defaults.
     - Proof: fd policy and `/dev/fd`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr` match `runtime-linux.md`.
 
-17. Add OCI feature report.
+16. Add OCI feature report.
     - Proof: generated feature JSON validates and reports only recognized, implemented, or deterministically rejected features without overclaiming cgroups, seccomp, AppArmor, SELinux, netDevices, idmapped mounts, or user namespace mappings.
 
-18. Add product `orlix run`.
+17. Add product `orlix run`.
     - Proof: argv/env/cwd/user/stdio/lifecycle/exit status work through Linux exec, not HostAdapter command execution.
 
-19. Add registry pull tooling.
+18. Add registry pull tooling.
     - Proof: registry pull produces the same verified OCI layout input as local layout import, with no OrlixKernel or iOS runtime dependency on Apple container.

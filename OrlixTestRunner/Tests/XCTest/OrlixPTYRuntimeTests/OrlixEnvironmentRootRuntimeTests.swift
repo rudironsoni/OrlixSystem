@@ -86,6 +86,26 @@ final class OrlixEnvironmentRootRuntimeTests: XCTestCase {
         XCTAssertTrue(output.contains("ORLIX_ENV_OVERLAY_MUTATION_DONE"))
     }
 
+    func testCopiedNamedEnvironmentSessionSelectionEntersRootAndDescriptor()
+        throws
+    {
+        let runner = OrlixEnvironmentRootRuntimeProofRunner(
+            fixture: .ociDerived,
+            proof: .descriptorExecution
+        )
+        let output = try runner.runCopiedNamedEnvironmentThroughSessionSelection()
+
+        XCTAssertTrue(output.contains("ORLIX_ENV_EXEC_BEGIN"))
+        XCTAssertTrue(output.contains("argv0=orlix-descriptor-xxxx"))
+        XCTAssertTrue(output.contains("argv1=argument with spaces"))
+        XCTAssertTrue(output.contains("env=descriptor value with spaces"))
+        XCTAssertTrue(output.contains("pwd=/tmp"))
+        XCTAssertTrue(output.contains("Uid:\t1000"))
+        XCTAssertTrue(output.contains("Gid:\t100"))
+        XCTAssertTrue(output.contains("ID=orlix-oci-runtime-proof"))
+        XCTAssertTrue(output.contains("ORLIX_ENV_EXEC_DONE"))
+    }
+
     func testOCIDerivedMaterializedRootBootsAndExposesOSRelease() throws {
         let runner = OrlixEnvironmentRootRuntimeProofRunner(
             fixture: .ociDerived
@@ -431,6 +451,37 @@ private final class OrlixEnvironmentRootRuntimeProofRunner: @unchecked Sendable 
         return output
     }
 
+    func runCopiedNamedEnvironmentThroughSessionSelection() throws -> String {
+        let sourceRoot = try Self.fixtureRoot(for: fixture)
+        let copiedRoot = try Self.mutableFixtureCopy(of: sourceRoot, fixture: fixture)
+        defer {
+            try? FileManager.default.removeItem(at: copiedRoot.root)
+        }
+
+        let registry = OrlixEnvironmentRegistry(
+            linuxStateRoot: copiedRoot.linuxStateRoot,
+            cacheRoot: copiedRoot.cacheRoot,
+            scratchRoot: copiedRoot.scratchRoot
+        )
+        let parentDescriptor = descriptor(
+            environmentID: fixture.environmentID,
+            source: fixture.source,
+            rootImageIdentifier: fixture.rootImageIdentifier
+        )
+        try registry.save(parentDescriptor)
+        let copiedDescriptor = try registry.copyEnvironment(
+            from: fixture.environmentID,
+            to: fixture.copiedEnvironmentID,
+            rootImageIdentifier: fixture.copiedRootImageIdentifier
+        )
+
+        return try run(
+            fixtureRoot: copiedRoot,
+            descriptor: copiedDescriptor,
+            launchThroughSessionSelection: true
+        )
+    }
+
     private func run(fixtureRoot: EnvironmentRootFixture) throws -> String {
         try run(
             fixtureRoot: fixtureRoot,
@@ -444,27 +495,45 @@ private final class OrlixEnvironmentRootRuntimeProofRunner: @unchecked Sendable 
 
     private func run(
         fixtureRoot: EnvironmentRootFixture,
-        descriptor: OrlixEnvironmentDescriptor
+        descriptor: OrlixEnvironmentDescriptor,
+        launchThroughSessionSelection: Bool = false
     ) throws -> String {
+        let registry = OrlixEnvironmentRegistry(
+            linuxStateRoot: fixtureRoot.linuxStateRoot,
+            cacheRoot: fixtureRoot.cacheRoot,
+            scratchRoot: fixtureRoot.scratchRoot
+        )
         let layout = try OrlixEnvironmentStorageLayout.layout(
             forEnvironmentID: descriptor.id,
             linuxStateRoot: fixtureRoot.linuxStateRoot,
             cacheRoot: fixtureRoot.cacheRoot,
             scratchRoot: fixtureRoot.scratchRoot
         )
-        let rootImage = try OrlixEnvironmentRootImage.materialized(
-            descriptor: descriptor,
-            layout: layout
-        )
-        let session = OrlixLinuxSession(
-            materializedRootImage: rootImage,
-            terminal: OrlixTerminalSession()
-        )
+        let terminal = OrlixTerminalSession()
+        let session: OrlixLinuxSession
+        if launchThroughSessionSelection {
+            session = try OrlixLinuxSession(
+                environmentID: descriptor.id,
+                registry: registry,
+                terminal: terminal
+            )
+        } else {
+            let rootImage = try OrlixEnvironmentRootImage.materialized(
+                descriptor: descriptor,
+                layout: layout
+            )
+            session = OrlixLinuxSession(
+                materializedRootImage: rootImage,
+                terminal: terminal
+            )
+        }
         let terminalLog = EnvironmentRootTerminalLog()
         terminalLog.writeLine("fixture=\(fixtureRoot.root.path)")
         terminalLog.writeLine("base=\(layout.baseImageURL.path)")
         terminalLog.writeLine("state=\(layout.stateImageURL.path)")
-        terminalLog.writeLine("rootImageIdentifier=\(rootImage.rootImageIdentifier)")
+        terminalLog.writeLine(
+            "rootImageIdentifier=\(session.bootConfig.rootImageIdentifier)"
+        )
 
         let recorder = EnvironmentRootOutputRecorder(terminalLog: terminalLog)
         let bootStatus = EnvironmentRootBootStatusRecorder()
@@ -1195,6 +1264,7 @@ private enum RuntimeProof: Sendable {
         #"printf 'argv2=%s\n' "$2""#,
         #"printf 'env=%s\n' "$ORLIX_DESCRIPTOR_MESSAGE""#,
         #"printf pwd=; pwd"#,
+        #"/bin/cat /etc/os-release"#,
         #"/bin/cat /proc/self/status"#,
         #"printf '%s%s\n' ORLIX_ENV_ EXEC_DONE"#,
     ]

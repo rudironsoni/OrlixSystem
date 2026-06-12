@@ -697,7 +697,7 @@ public final class OrlixLinuxSession: @unchecked Sendable {
     public convenience init(
         environmentID: String,
         registry: OrlixEnvironmentRegistry,
-        kernelCommandLine: String? = OrlixOSDistribution.bundledKernelCommandLine,
+        kernelCommandLine: String? = OrlixEnvironmentRootImage.defaultKernelCommandLine,
         terminal: OrlixTerminalSession = OrlixTerminalSession()
     ) throws {
         let rootImage = try registry.materializedRootImage(
