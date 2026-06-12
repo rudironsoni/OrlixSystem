@@ -7851,3 +7851,47 @@ Boundary:
   iOS runtime dependency, Apple container runtime dependency, vminitd, vmnet,
   Rosetta, raw host-path rootfs, local Linux UAPI clone, or Darwin/libc/MLibC
   leakage into OrlixKernel is part of the plan.
+
+### 2026-06-12 Linux-substrate-first execution order correction
+
+What changed:
+
+- Corrected the active plan after review against Orlix architecture and ADR
+  0017. The prior recommended sequence let OCI Runtime config, lifecycle, and
+  feature-report work appear before the Linux substrate they depend on.
+- The corrected order keeps OCI image import as OrlixOS data-input work, but
+  moves OCI Runtime lifecycle, `orlix run`, compatibility language, and feature
+  reporting behind Linux-owned root binding, mount, fd, `/dev`, signal, wait,
+  PTY, host-folder mount, virtio-fs, networking, cgroup, oracle, and native
+  performance proof as applicable.
+- Constrained the older registry and `orlix run` phase notes so they do not
+  read as an alternate implementation sequence ahead of the Linux substrate.
+
+Corrected remaining execution order:
+
+1. Implement OrlixOS named environment root binding end to end.
+2. Prove entering a named environment selects the correct root and descriptor.
+3. Prove cross-boot writable state persistence.
+4. Connect rootfs tar import and OCI layout import to named environment entry.
+5. Complete imported-root image fidelity before runtime claims.
+6. Expand Linux substrate proof for entered environments.
+7. Expand the Linux oracle for substrate behavior.
+8. Implement host-folder mount backend through Linux-owned mount behavior.
+9. Add virtio-fs for external folders.
+10. Expand networking through upstream Linux networking paths.
+11. Add virtual cgroup v2 and resource accounting behavior.
+12. Add native performance benchmark suite for imported binaries.
+13. Add OCI Runtime config parser and schema validation.
+14. Add OCI Runtime lifecycle model.
+15. Add OCI Linux runtime defaults.
+16. Add OCI feature report.
+17. Add product `orlix run`.
+18. Add registry pull tooling.
+
+Current status:
+
+- OCI image import remains valid early input work.
+- OCI Runtime support remains unproved until the required Linux substrate and
+  lifecycle evidence exist.
+- Agents must not implement or claim OCI Runtime lifecycle, `orlix run`, or
+  feature-report support before the relevant Linux-owned behavior is proved.
