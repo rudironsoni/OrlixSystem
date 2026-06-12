@@ -19,6 +19,31 @@ Use `docs/plans/active/<task>/PLAN.md` and `docs/plans/active/<task>/IMPLEMENT.m
 
 `PLAN.md` owns intent, constraints, milestones, verification gates, and scope boundaries. `IMPLEMENT.md` is append-only and records what happened, why, deviations, commands, evidence, blockers, and next actions.
 
+## Plan Context Discipline
+
+Start Orlix sessions by reading `AGENTS.md`, the active `GOAL.md`, the active
+`PLAN.md`, and the latest active `IMPLEMENT.md` entry before implementing or
+making status claims. Reconcile old remaining-work lists against current source,
+tests, and commits before selecting a task. After each coherent checkpoint,
+append to `IMPLEMENT.md` with exact evidence and the remaining work that still
+matches the current repo.
+
+The hooks may block mutations before active plan context is loaded. After a
+mutation, commits and pushes may be blocked until the active implementation log
+is updated.
+
+## OCI Runtime Claims
+
+OCI image import is not OCI Runtime compliance. OCI Runtime support requires a
+pinned runtime-spec input, schema validation, config and Linux config handling,
+runtime lifecycle proof for `state`, `create`, `start`, `kill`, and `delete`,
+Linux runtime defaults such as fd and `/dev/fd` behavior, and truthful feature
+reporting.
+
+Feature reports must not overclaim support for cgroups, seccomp, AppArmor,
+SELinux, netDevices, idmapped mounts, or user namespace mappings until Orlix has
+focused proof for those features.
+
 ## Review Loop
 
 Use the planner/implementer/reviewer split for long-horizon or high-risk work:

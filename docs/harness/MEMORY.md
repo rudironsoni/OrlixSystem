@@ -18,6 +18,9 @@ This file is curated repo-local memory for coding agents. Keep entries short, st
 - For OCI and container-image work, keep OCI Image Spec input, OCI Runtime Spec metadata, OrlixOS orchestration, OrlixKernel execution, ELF execution, native performance proof, and App Store uncertainty separate. Do not call it Docker support unless the plan explicitly scopes Docker semantics.
 - Initial Orlix runtime proof is iOS Simulator unless a later verified target says otherwise. macOS is only the build, simulator-control, fixture, oracle, and result-inspection host.
 - Long sessions need handoff discipline: active plans hold task state, implementation logs hold evidence, durable memory holds stable lessons, and handoffs hold continuity context.
+- Do not trust stale remaining-task lists without reconciliation against source, tests, commits, and the latest `IMPLEMENT.md`.
+- OCI image import is not OCI runtime compliance.
+- OCI Runtime compliance requires config, Linux config, lifecycle, features, schema validation, and Linux runtime behavior proof.
 
 ## Recurring Failure Modes
 
@@ -29,6 +32,7 @@ This file is curated repo-local memory for coding agents. Keep entries short, st
 - Creating custom diagnostics, tracing, dashboards, or status files where Codex hooks, logs, and plan evidence are enough.
 - Splitting review into too many agents instead of using the single `orlix-reviewer` role.
 - Planning before reading the repo, docs, active plans, and implementation log.
+- Resuming old active-plan remaining-work lists after newer implementation entries already proved or disproved parts of them.
 - Collapsing OCI Image Spec, OCI Runtime Spec, Orlix environment orchestration, and ELF execution into one vague container claim.
 - Inventing named tools, mechanism-specific proof targets, or workflow roots instead of using existing Orlix surfaces.
 - Describing Orlix as aligned with macOS runtime or macOS users when the initial runtime proof target is iOS Simulator.

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import json
+import hashlib
 import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 GENERATED_PATTERNS = (
@@ -49,6 +52,9 @@ BASH_PERL_IN_PLACE_RE = re.compile(BASH_COMMAND_PREFIX + r"perl\b[^;&|]*\s-[^\s]
 BASH_GIT_MUTATION_RE = re.compile(
     BASH_COMMAND_PREFIX + r"git\b[^;&|]*\b"
     r"(apply|am|checkout|clean|restore|reset)\b"
+)
+BASH_GIT_COMMIT_PUSH_RE = re.compile(
+    BASH_COMMAND_PREFIX + r"git\b[^;&|]*\b(commit|push)\b"
 )
 BASH_REDIRECT_TO_GENERATED_RE = re.compile(
     r"(?<!<)(?:^|\s)(?:[12]?>|>>|&>)\s*['\"]?" + GENERATED_PATH_RE.pattern
@@ -103,6 +109,14 @@ NEGATED_GUARDRAIL_RE = re.compile(
     r"\b(?:no|not|do not|don't|must not|never|without|forbid|forbidden|non-goal|non-goals)\b",
     re.IGNORECASE,
 )
+OCI_RUNTIME_CLAIM_RE = re.compile(
+    r"\b(?:OCI Runtime support|OCI runtime support|OCI Runtime compliant|OCI runtime compliant|OCI compatible|OCI-compatible)\b",
+    re.IGNORECASE,
+)
+ORLIX_RUN_COMPLETE_RE = re.compile(r"\borlix run\b.*\b(?:complete|completed|done|works|green|passing|passes)\b", re.IGNORECASE)
+IMAGE_ONLY_OCI_RE = re.compile(r"\b(?:image import|OCI image import|OCI layout import|materialized root|rootfs import)\b", re.IGNORECASE)
+OCI_LIFECYCLE_EVIDENCE_RE = re.compile(r"\bcreate\b.*\bstart\b.*\bstate\b.*\bkill\b.*\bdelete\b", re.IGNORECASE | re.DOTALL)
+STALE_REMAINING_LIST_RE = re.compile(r"\b(?:stale|superseded)?\s*(?:remaining[- ]work|remaining[- ]task|remaining list|14-item remaining)\b", re.IGNORECASE)
 
 
 def read_stdin_text():
@@ -231,6 +245,148 @@ def active_plan_dirs(root):
     return [p for p in active.iterdir() if p.is_dir()]
 
 
+def required_plan_context_paths(root):
+    paths = [root / "AGENTS.md"]
+    for plan in active_plan_dirs(root):
+        for name in ("GOAL.md", "PLAN.md", "IMPLEMENT.md"):
+            path = plan / name
+            if path.exists():
+                paths.append(path)
+    return paths
+
+
+def _state_dir():
+    override = os.environ.get("ORLIX_PLAN_GUARD_STATE_DIR")
+    if override:
+        return Path(override)
+    return Path(tempfile.gettempdir()) / "orlix-plan-context-guard"
+
+
+def _repo_state_key(root):
+    resolved = str(root.resolve())
+    digest = hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:24]
+    return digest
+
+
+def plan_context_state_path(root):
+    return _state_dir() / f"{_repo_state_key(root)}.json"
+
+
+def load_plan_context_state(root):
+    path = plan_context_state_path(root)
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {"read_paths": [], "mutation_time": 0.0, "implement_update_time": 0.0}
+
+
+def save_plan_context_state(root, state):
+    path = plan_context_state_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, sort_keys=True))
+
+
+def plan_context_loaded(root, state=None):
+    if state is None:
+        state = load_plan_context_state(root)
+    read_paths = set(state.get("read_paths", []))
+    required = {str(path.resolve()) for path in required_plan_context_paths(root)}
+    return bool(required) and required.issubset(read_paths)
+
+
+def _payload_path_mentions(payload):
+    text = _normalise_escaped_newlines(flattened_text(payload))
+    mentions = set()
+    root = repo_root()
+    for path in required_plan_context_paths(root):
+        path_str = str(path)
+        rel = str(path.relative_to(root)) if path.is_relative_to(root) else path.name
+        if path_str in text or rel in text:
+            mentions.add(str(path.resolve()))
+    return mentions
+
+
+def plan_read_paths_from_payload(payload):
+    tool_name = hook_tool_name(payload)
+    if tool_name in WRITE_TOOL_NAMES:
+        return set()
+    if tool_name in BASH_TOOL_NAMES:
+        command = hook_command(payload)
+        if is_bash_mutating_command(command):
+            return set()
+    return _payload_path_mentions(payload)
+
+
+def is_bash_mutating_command(command):
+    command = _normalise_escaped_newlines(command)
+    if BASH_SED_IN_PLACE_RE.search(command):
+        return True
+    if BASH_PERL_IN_PLACE_RE.search(command):
+        return True
+    if BASH_GIT_MUTATION_RE.search(command):
+        return True
+    if BASH_MUTATING_COMMAND_RE.search(command):
+        return True
+    if BASH_SCRIPT_WRITE_RE.search(command):
+        return True
+    if re.search(r"(?<!<)(?:^|\s)(?:[12]?>|>>|&>)\s*", command):
+        return True
+    return False
+
+
+def tool_mutates_workspace(payload):
+    tool_name = hook_tool_name(payload)
+    if tool_name in WRITE_TOOL_NAMES:
+        return True
+    if tool_name in BASH_TOOL_NAMES:
+        return is_bash_mutating_command(hook_command(payload))
+    return False
+
+
+def tool_requires_plan_context(payload):
+    return tool_mutates_workspace(payload) or is_git_commit_or_push(payload)
+
+
+def is_git_commit_or_push(payload):
+    tool_name = hook_tool_name(payload)
+    if tool_name != "bash":
+        return False
+    return bool(BASH_GIT_COMMIT_PUSH_RE.search(_normalise_escaped_newlines(hook_command(payload))))
+
+
+def implementation_update_paths_from_payload(payload):
+    tool_name = hook_tool_name(payload)
+    if tool_name not in WRITE_TOOL_NAMES and tool_name not in BASH_TOOL_NAMES:
+        return set()
+    text = _normalise_escaped_newlines(flattened_text(payload))
+    root = repo_root()
+    updates = set()
+    for plan in active_plan_dirs(root):
+        impl = plan / "IMPLEMENT.md"
+        if not impl.exists():
+            continue
+        rel = str(impl.relative_to(root))
+        if str(impl) in text or rel in text:
+            updates.add(str(impl.resolve()))
+    return updates
+
+
+def plan_context_post_update(payload):
+    root = repo_root()
+    if not active_plan_dirs(root):
+        return
+    state = load_plan_context_state(root)
+    read_paths = set(state.get("read_paths", []))
+    read_paths.update(plan_read_paths_from_payload(payload))
+    state["read_paths"] = sorted(read_paths)
+    now = time.time()
+    if tool_mutates_workspace(payload):
+        state["mutation_time"] = now
+    if implementation_update_paths_from_payload(payload):
+        state["implement_update_time"] = now
+    save_plan_context_state(root, state)
+
+
 def has_implementation_evidence(path):
     impl = path / "IMPLEMENT.md"
     if not impl.exists():
@@ -284,6 +440,29 @@ def invented_mechanism_without_scope(text):
 def workflow_without_authorization(text):
     normalized = _normalise_escaped_newlines(text)
     return _has_non_negated_match(WORKFLOW_DELEGATION_RE, normalized) and not WORKFLOW_AUTH_RE.search(normalized)
+
+
+def oci_runtime_claim_without_lifecycle(text):
+    normalized = _normalise_escaped_newlines(text)
+    return OCI_RUNTIME_CLAIM_RE.search(normalized) and not OCI_LIFECYCLE_EVIDENCE_RE.search(normalized)
+
+
+def orlix_run_claim_without_lifecycle(text):
+    normalized = _normalise_escaped_newlines(text)
+    return ORLIX_RUN_COMPLETE_RE.search(normalized) and not OCI_LIFECYCLE_EVIDENCE_RE.search(normalized)
+
+
+def oci_compatible_from_image_only(text):
+    normalized = _normalise_escaped_newlines(text)
+    return (
+        re.search(r"\bOCI compatible\b|\bOCI-compatible\b", normalized, re.IGNORECASE)
+        and IMAGE_ONLY_OCI_RE.search(normalized)
+        and not OCI_LIFECYCLE_EVIDENCE_RE.search(normalized)
+    )
+
+
+def stale_remaining_task_list(text):
+    return bool(STALE_REMAINING_LIST_RE.search(_normalise_escaped_newlines(text)))
 
 
 def implementation_status_contradiction(path):

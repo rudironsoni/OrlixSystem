@@ -2,6 +2,45 @@
 
 Planning only. This plan was created from repository inspection for OrlixSystem.
 
+## Current Status Reconciliation
+
+The original repository assessment below is historical. It accurately described
+the repo when the plan was first written, but later implementation entries prove
+that several formerly missing pieces now exist. Agents must reconcile this plan
+against source, tests, and `IMPLEMENT.md` before selecting work.
+
+Current proved state:
+
+- OrlixOS environment descriptors exist.
+- Rootfs tar import exists.
+- OCI layout import exists.
+- OCI whiteout and opaque-directory handling exist.
+- Materialized-root iOS Simulator proofs exist.
+- Descriptor argv/env/cwd/uid/gid execution defaults exist.
+- Immutable base plus writable state proof exists.
+- OverlayFS copy-up and unlink proof exists.
+- pseudoFS, tmpfs, PTY, and delayed input proofs exist.
+- Linux oracle scaffold exists.
+
+Current not-proved state:
+
+- Product-shaped named environment entry API.
+- Multiple live environments inside one already-running OrlixKernel.
+- Cross-boot persistence of the same mutated environment state image.
+- Runtime host-folder mount backend.
+- virtio-fs.
+- Registry pull.
+- Product `orlix run`.
+- OCI Runtime Spec lifecycle compliance.
+- Truthful OCI feature report.
+- virtio-net, `/proc/net`, rtnetlink.
+- Virtual cgroup v2.
+- Native performance benchmark ladder for imported binaries.
+
+The stale historical gaps below that say no tar importer, OCI importer,
+whiteout tests, overlay tests, or oracle tooling exists are superseded by this
+reconciliation and by the current `IMPLEMENT.md` evidence.
+
 ## 1. Repository State Assessment
 
 ### OrlixKernel Layout
@@ -581,6 +620,69 @@ OCI layout import requirements:
 - Apply OCI whiteouts and opaque directories.
 - Bind result to an Orlix environment descriptor.
 - Do not call Apple container/containerization from OrlixKernel or iOS runtime.
+
+### OCI Runtime Spec Alignment
+
+Pin a specific `opencontainers/runtime-spec` tag or commit before implementing
+schema-backed runtime behavior. Do not track floating `main` in tests.
+
+Use the OCI Image Spec and OCI Runtime Spec as separate standards tracks. OCI
+image import produces rootfs content and image-derived defaults. OCI Runtime
+Spec config and lifecycle input describes how to create, start, inspect, signal,
+and delete a runtime bundle. OrlixOS translates the runtime bundle/config into
+Orlix execution state. Orlix does not become `runc`.
+
+Standards corpus:
+
+- `config.md`: `ociVersion`, `root`, `mounts`, `process`, hooks, annotations.
+- `config-linux.md`: default Linux filesystems, namespaces, user mappings,
+  devices, net devices, cgroups/resources, seccomp, masked paths, readonly
+  paths, rootfs propagation, personality, time offsets.
+- `runtime.md`: `state`, `create`, `start`, `kill`, `delete`.
+- `runtime-linux.md`: Linux fd policy and `/dev/fd`, `/dev/stdin`,
+  `/dev/stdout`, `/dev/stderr`.
+- `features.md` and `features-linux.md`: runtime feature report.
+- `schema/config-schema.json`, `schema/config-linux.json`, `schema/defs.json`,
+  `schema/defs-linux.json`, `schema/features-schema.json`,
+  `schema/features-linux.json`.
+
+Runtime config mapping:
+
+| OCI Runtime field | Orlix target | v1 behavior |
+|---|---|---|
+| `ociVersion` | OrlixOS parser | validate pinned supported range |
+| `root.path` | environment root input | resolve into imported/materialized root |
+| `root.readonly` | root policy | read-only lower or reject if impossible |
+| `mounts[]` | Linux mount namespace | accept supported mounts, reject unsupported |
+| `process.args` | Linux `execve` argv | required on start |
+| `process.env` | task environment | preserve order and values where possible |
+| `process.cwd` | Linux cwd | require absolute path |
+| `process.terminal` | PTY/TTY | allocate PTY when true |
+| `process.consoleSize` | TTY sizing | apply only when terminal is true |
+| `process.rlimits` | Linux rlimits | apply or deterministic unsupported error |
+| `process.user` | credentials | map uid/gid, staged supplementary groups |
+| `linux.namespaces` | namespaces | staged mount, UTS, PID, network, IPC, user, cgroup, time |
+| `linux.uidMappings/gidMappings` | user namespace | reject until real support exists |
+| `linux.devices` | devfs/device policy | default devices first, explicit devices deferred |
+| `linux.netDevices` | networking | reject until virtio-net namespace path exists |
+| `linux.resources` | cgroups | virtual cgroup v2 track |
+| `linux.cgroupsPath` | cgroup path | deterministic virtual path policy |
+| `linux.seccomp` | seccomp | parse and reject until implemented |
+| `linux.maskedPaths` | mount policy | deferred until mount namespace path supports it |
+| `linux.readonlyPaths` | mount policy | deferred until mount namespace path supports it |
+| `linux.rootfsPropagation` | mount propagation | implement or reject deterministically |
+| `annotations` | metadata | no Linux semantics |
+
+Feature reporting milestone:
+
+- Implement only when truthful.
+- Validate against `features-schema.json` and `features-linux.json`.
+- Report `ociVersionMin` and `ociVersionMax`.
+- Report recognized mount options only.
+- Report Linux features in three internal states: recognized, implemented, and
+  rejected with deterministic error.
+- Do not report support for cgroups, seccomp, AppArmor, SELinux, netDevices,
+  idmapped mounts, or user namespace mapping until proved.
 
 ### Linux Oracle Tooling
 
@@ -1708,32 +1810,59 @@ Plan rules:
 
 ## 13. Final Recommended Execution Order
 
-1. Add invariant checks for active IXLand/OrlixKit names, forbidden includes, local UAPI clones, and Apple container runtime dependencies.
-   - Proof: static tests fail on forbidden dependency or name patterns.
+1. Reconcile active plan status.
+   - Proof: `PLAN.md`, `IMPLEMENT.md`, and `GOAL.md` no longer send agents to already-proved work.
 
-2. Lock storage policy around existing behavior: Application Support for persistent Linux state, Caches for downloads/cache blobs, host temp for scratch, Linux tmpfs for `/tmp`.
-   - Proof: OrlixOS and HostAdapter tests verify host locations, product proof verifies `/tmp` is tmpfs.
+2. Refresh baseline iOS Simulator proofs.
+   - Proof: focused OrlixOS and OrlixPTYRuntime tests for current materialized tar and OCI roots pass.
 
-3. Prove upstream Linux mount namespace behavior before any OCI work.
-   - Proof: app-hosted test shows isolated mount namespace and expected `/proc/self/mountinfo`.
+3. Add mandatory plan-context harness gate.
+   - Proof: mutation before plan read is blocked, mutation after plan read is allowed.
 
-4. Prove procfs, devtmpfs/devpts, sysfs, tmpfs, ext4, and OverlayFS baseline.
-   - Proof: product tests enumerate expected Linux pseudo-filesystems and mount behavior.
+4. Add active-plan update gate.
+   - Proof: commit/push after mutation is blocked until active `IMPLEMENT.md` is updated.
 
-5. Add named Orlix environment descriptors and per-environment storage.
-   - Proof: create and enter a copied environment, mutate it, and prove default root is unchanged.
+5. Product-shaped named environment session API.
+   - Proof: OrlixOS can select a named environment root and descriptor through a public app-facing session path.
 
-6. Add rootfs tar import before OCI layout import.
-   - Proof: import BusyBox or Alpine tar root, show `/etc/os-release`, and run `/bin/sh` if current ELF support permits.
+6. Cross-boot writable state persistence.
+   - Proof: mutate environment state, shut down, restart same environment, observe mutation persisted while base image stayed unchanged.
 
-7. Stabilize current virtio-mmio, virtio-blk, virtio-console, and virtio-rng with deterministic tests.
-   - Proof: descriptor/ring tests pass, block persistence passes, console/PTT path works, getrandom works.
+7. Product import-to-enter flow.
+   - Proof: tar import and OCI layout import both create environments that can be entered without test-only wiring.
 
-8. Add OCI layout import without registry pull.
-   - Proof: linux/arm64 selection, digest verification, whiteouts, opaque directories, and environment binding pass.
+8. OCI Runtime config parser and schema validation.
+   - Proof: minimal Linux `config.json` validates against pinned schemas and converts to Orlix descriptors.
 
-9. Add overlay snapshot model for imported image roots.
-   - Proof: lower image is immutable, upper state persists, copy-up and unlink behavior match real Linux oracle.
+9. OCI Runtime lifecycle model.
+   - Proof: `create` prepares resources without executing, `start` executes, `state` reports correct status, `kill` sends Linux signal, `delete` removes created resources only.
 
-10. Add registry pull, `orlix run`, virtio-net, and cgroups only after the prior proofs are green.
-   - Proof: each feature has its own app-hosted Linux proof, oracle comparison where feasible, and no new forbidden runtime dependency.
+10. OCI Linux runtime defaults.
+    - Proof: fd policy and `/dev/fd`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr` match `runtime-linux.md`.
+
+11. OCI feature report.
+    - Proof: generated feature JSON validates and does not overclaim.
+
+12. Runtime host-folder mount backend.
+    - Proof: Documents and security-scoped folders enter only as Linux mounts, not raw host paths.
+
+13. virtio-fs.
+    - Proof: host-backed folder appears through Linux-owned mount behavior and passes path/stat/open/rename/unlink tests.
+
+14. Linux oracle expansion.
+    - Proof: same fixture produces real-Linux and Orlix JSON results, comparator catches drift.
+
+15. Native performance benchmark suite.
+    - Proof: ELF launch, syscall round trip, file IO, pipe, PTY, futex, and process lifecycle benchmarks have repeatable iOS Simulator baselines.
+
+16. Product `orlix run`.
+    - Proof: argv/env/cwd/user/stdio/lifecycle/exit status work through Linux exec, not HostAdapter command execution.
+
+17. Registry pull tooling.
+    - Proof: registry pull produces the same verified OCI layout input as local layout import, with no OrlixKernel or iOS runtime dependency on Apple container.
+
+18. Networking and namespace expansion.
+    - Proof: virtio-net, `/proc/net`, rtnetlink, and staged network namespace behavior have focused tests.
+
+19. Virtual cgroup v2 and resource accounting.
+    - Proof: synthetic cgroup v2 tree and resource behavior match declared feature support.

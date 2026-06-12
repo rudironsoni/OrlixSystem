@@ -10,6 +10,116 @@ Implementation log. Append-only. Capture decisions, deviations from the plan, ev
 
 ## Log
 
+### 2026-06-12 Current status reconciliation after active plan drift
+
+**What happened:**
+
+Reconciled the active plan against current source and test evidence. The stale
+14-item remaining-work shape is superseded by the corrected execution order
+below. Agents must not resume from older plan text that says no tar importer,
+OCI importer, whiteout handling, overlay proof, materialized-root proof, or
+oracle scaffold exists without checking the current repo.
+
+This is plan and harness state only. It does not add OCI Runtime Spec behavior,
+does not add product `orlix run`, does not add registry pull, and does not prove
+multiple live environments inside one already-running OrlixKernel.
+
+**Repo evidence paths:**
+
+- `OrlixOS/Sources/Session/OrlixEnvironment.swift`
+- `OrlixOS/Sources/Session/OrlixRootfsImport.swift`
+- `OrlixOS/Sources/Session/OrlixOCIImageLayout.swift`
+- `OrlixTestRunner/Tests/XCTest/OrlixPTYRuntimeTests/OrlixEnvironmentRootRuntimeTests.swift`
+- `tools/orlix-linux-oracle/README.md`
+
+**Corrected remaining execution order:**
+
+1. Reconcile active plan status.
+   - Proof: `PLAN.md`, `IMPLEMENT.md`, and `GOAL.md` no longer send agents to already-proved work.
+2. Refresh baseline iOS Simulator proofs.
+   - Proof: focused OrlixOS and OrlixPTYRuntime tests for current materialized tar and OCI roots pass.
+3. Add mandatory plan-context harness gate.
+   - Proof: mutation before plan read is blocked, mutation after plan read is allowed.
+4. Add active-plan update gate.
+   - Proof: commit/push after mutation is blocked until active `IMPLEMENT.md` is updated.
+5. Product-shaped named environment session API.
+   - Proof: OrlixOS can select a named environment root and descriptor through a public app-facing session path.
+6. Cross-boot writable state persistence.
+   - Proof: mutate environment state, shut down, restart same environment, observe mutation persisted while base image stayed unchanged.
+7. Product import-to-enter flow.
+   - Proof: tar import and OCI layout import both create environments that can be entered without test-only wiring.
+8. OCI Runtime config parser and schema validation.
+   - Proof: minimal Linux `config.json` validates against pinned schemas and converts to Orlix descriptors.
+9. OCI Runtime lifecycle model.
+   - Proof: `create` prepares resources without executing, `start` executes, `state` reports correct status, `kill` sends Linux signal, `delete` removes created resources only.
+10. OCI Linux runtime defaults.
+    - Proof: fd policy and `/dev/fd`, `/dev/stdin`, `/dev/stdout`, `/dev/stderr` match `runtime-linux.md`.
+11. OCI feature report.
+    - Proof: generated feature JSON validates and does not overclaim.
+12. Runtime host-folder mount backend.
+    - Proof: Documents and security-scoped folders enter only as Linux mounts, not raw host paths.
+13. virtio-fs.
+    - Proof: host-backed folder appears through Linux-owned mount behavior and passes path/stat/open/rename/unlink tests.
+14. Linux oracle expansion.
+    - Proof: same fixture produces real-Linux and Orlix JSON results, comparator catches drift.
+15. Native performance benchmark suite.
+    - Proof: ELF launch, syscall round trip, file IO, pipe, PTY, futex, and process lifecycle benchmarks have repeatable iOS Simulator baselines.
+16. Product `orlix run`.
+    - Proof: argv/env/cwd/user/stdio/lifecycle/exit status work through Linux exec, not HostAdapter command execution.
+17. Registry pull tooling.
+    - Proof: registry pull produces the same verified OCI layout input as local layout import, with no OrlixKernel or iOS runtime dependency on Apple container.
+18. Networking and namespace expansion.
+    - Proof: virtio-net, `/proc/net`, rtnetlink, and staged network namespace behavior have focused tests.
+19. Virtual cgroup v2 and resource accounting.
+    - Proof: synthetic cgroup v2 tree and resource behavior match declared feature support.
+
+**Current conclusion:**
+
+- The active plan now separates proved image/import work from unproved OCI
+  Runtime Spec config, feature, lifecycle, and Linux runtime behavior.
+- The next implementation checkpoint is harness enforcement, followed by
+  refreshed focused iOS Simulator proofs.
+
+**Harness enforcement evidence:**
+
+- Hook test command:
+  - `rtk python3 -m unittest discover .codex/hooks/tests`
+- Hook test result:
+  - Ran 31 tests.
+  - Result: OK.
+- Rules test command:
+  - `rtk python3 -m unittest discover .codex/rules/tests`
+- Rules test result:
+  - Ran 5 tests.
+  - Result: OK.
+- Compact plan check:
+  - `rtk python3 .codex/hooks/compact_plan_check.py`
+  - Result: exit code 0.
+- Whitespace check:
+  - `rtk git diff --check`
+  - Result: exit code 0.
+- Publish checkpoint:
+  - `rtk git fetch --prune`
+  - Result: fetched successfully after sandbox escalation for `.git/FETCH_HEAD`.
+  - `rtk git log --oneline --decorate --left-right --graph HEAD...@{u}`
+  - Result: no local/remote commit divergence before commit.
+- Publish-gate regression:
+  - Initial push after commit was blocked because the new guard treated the
+    successful commit itself as a fresh mutation requiring another
+    `IMPLEMENT.md` update before push.
+  - Fixed the guard so `git commit` and `git push` still require loaded active
+    plan context and still enforce the post-mutation `IMPLEMENT.md` gate, but
+    a successful commit does not create a new implementation-log debt before
+    push.
+  - `rtk python3 -m unittest discover .codex/hooks/tests`
+  - Result: ran 32 tests, OK.
+  - `rtk python3 -m unittest discover .codex/rules/tests`
+  - Result: ran 5 tests, OK.
+  - `rtk python3 .codex/hooks/compact_plan_check.py`
+  - Result: exit code 0.
+  - `rtk git diff --check`
+  - Result: exit code 0.
+
 ### 2026-06-12 File-backed rootfs tar import refuses overwrite before archive read
 
 **What happened:**
