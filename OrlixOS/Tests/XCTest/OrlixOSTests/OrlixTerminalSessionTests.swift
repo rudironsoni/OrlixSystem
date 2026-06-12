@@ -1680,9 +1680,11 @@ final class OrlixTerminalSessionTests: XCTestCase {
                 #"set_inode_field "/etc" uid 0"#,
                 #"set_inode_field "/etc" gid 0"#,
                 #"set_inode_field "/etc" mode 040755"#,
+                #"set_inode_field "/etc" mtime 0"#,
                 #"set_inode_field "/home/orlix/has \"quotes\"" uid 1000"#,
                 #"set_inode_field "/home/orlix/has \"quotes\"" gid 1000"#,
-                #"set_inode_field "/home/orlix/has \"quotes\"" mode 0100644"#
+                #"set_inode_field "/home/orlix/has \"quotes\"" mode 0100644"#,
+                #"set_inode_field "/home/orlix/has \"quotes\"" mtime 0"#
             ]
         )
     }
@@ -1828,7 +1830,12 @@ final class OrlixTerminalSessionTests: XCTestCase {
             TarFixtureEntry(path: "etc/", type: "5"),
             TarFixtureEntry(path: "etc/os-release", payload: Data("ID=alpine\n".utf8)),
             TarFixtureEntry(path: "bin/sh", type: "2", linkName: "/usr/bin/busybox"),
-            TarFixtureEntry(path: "sbin/init", type: "1", linkName: "bin/sh")
+            TarFixtureEntry(
+                path: "sbin/init",
+                type: "1",
+                linkName: "bin/sh",
+                modificationTime: 1_710_000_000
+            )
         ])
 
         let entries = try OrlixRootfsTarManifestReader().readManifest(from: data)
@@ -1870,7 +1877,8 @@ final class OrlixTerminalSessionTests: XCTestCase {
                     uid: 0,
                     gid: 0,
                     type: .hardLink,
-                    linkName: "bin/sh"
+                    linkName: "bin/sh",
+                    modificationTime: 1_710_000_000
                 )
             ]
         )
@@ -1944,6 +1952,7 @@ final class OrlixTerminalSessionTests: XCTestCase {
                     "uid": "1000",
                     "gid": "100",
                     "mode": "0640",
+                    "mtime": "1710001234.987654321",
                     "SCHILY.xattr.security.selinux": "system_u:object_r:usr_t:s0",
                     "SCHILY.xattr.user.comment": "hello world",
                     "LIBARCHIVE.xattr.user.libarchive%2Ecomment": "bGliYXJjaGl2ZSB2YWx1ZQ=="
@@ -1974,6 +1983,7 @@ final class OrlixTerminalSessionTests: XCTestCase {
                     gid: 100,
                     type: .regularFile,
                     linkName: nil,
+                    modificationTime: 1_710_001_234,
                     extendedAttributes: [
                         "user.libarchive.comment": "libarchive value",
                         "security.selinux": "system_u:object_r:usr_t:s0",
@@ -4974,6 +4984,7 @@ final class OrlixTerminalSessionTests: XCTestCase {
         var sizeEncoding: TarNumericEncoding = .octal
         var uid: UInt64 = 0
         var gid: UInt64 = 0
+        var modificationTime: UInt64 = 0
         var devMajor: UInt64 = 0
         var devMinor: UInt64 = 0
         var numericEncoding: TarNumericEncoding = .octal
@@ -5017,7 +5028,13 @@ final class OrlixTerminalSessionTests: XCTestCase {
                 at: 124,
                 length: 12
             )
-            writeOctal(0, into: &header, at: 136, length: 12)
+            writeNumeric(
+                entry.modificationTime,
+                encoding: entry.numericEncoding,
+                into: &header,
+                at: 136,
+                length: 12
+            )
             for index in 148..<156 {
                 header[index] = UInt8(ascii: " ")
             }

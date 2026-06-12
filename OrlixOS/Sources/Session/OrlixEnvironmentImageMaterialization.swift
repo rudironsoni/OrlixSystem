@@ -143,7 +143,8 @@ public struct OrlixEnvironmentImageMaterializationPlan: Equatable, Sendable {
             var commands = [
                 "set_inode_field \(path) uid \(entry.uid)",
                 "set_inode_field \(path) gid \(entry.gid)",
-                "set_inode_field \(path) mode \(debugfsMode(for: entry))"
+                "set_inode_field \(path) mode \(debugfsMode(for: entry))",
+                "set_inode_field \(path) mtime \(entry.modificationTime)"
             ]
             commands.append(
                 contentsOf: try extendedAttributeCommands(for: entry, path: path)
@@ -415,7 +416,8 @@ private func specialFileCommands(
             "cd /",
             "set_inode_field \(path) uid \(entry.uid)",
             "set_inode_field \(path) gid \(entry.gid)",
-            "set_inode_field \(path) mode \(debugfsMode(for: entry))"
+            "set_inode_field \(path) mode \(debugfsMode(for: entry))",
+            "set_inode_field \(path) mtime \(entry.modificationTime)"
         ]
         commands.append(
             contentsOf: try extendedAttributeCommands(for: entry, path: path)
@@ -434,7 +436,8 @@ private func specialFileCommands(
             "cd /",
             "set_inode_field \(path) uid \(entry.uid)",
             "set_inode_field \(path) gid \(entry.gid)",
-            "set_inode_field \(path) mode \(debugfsMode(for: entry))"
+            "set_inode_field \(path) mode \(debugfsMode(for: entry))",
+            "set_inode_field \(path) mtime \(entry.modificationTime)"
         ]
         commands.append(
             contentsOf: try extendedAttributeCommands(for: entry, path: path)
@@ -447,7 +450,8 @@ private func specialFileCommands(
             "cd /",
             "set_inode_field \(path) uid \(entry.uid)",
             "set_inode_field \(path) gid \(entry.gid)",
-            "set_inode_field \(path) mode \(debugfsMode(for: entry))"
+            "set_inode_field \(path) mode \(debugfsMode(for: entry))",
+            "set_inode_field \(path) mtime \(entry.modificationTime)"
         ]
         commands.append(
             contentsOf: try extendedAttributeCommands(for: entry, path: path)

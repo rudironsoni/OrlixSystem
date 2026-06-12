@@ -165,6 +165,7 @@ public struct OrlixRootfsTarManifestEntry: Equatable, Sendable {
     public let gid: UInt32
     public let type: OrlixRootfsTarEntryType
     public let linkName: String?
+    public let modificationTime: UInt64
     public let deviceMajor: UInt32?
     public let deviceMinor: UInt32?
     public let extendedAttributes: [String: String]
@@ -179,6 +180,7 @@ public struct OrlixRootfsTarManifestEntry: Equatable, Sendable {
         gid: UInt32,
         type: OrlixRootfsTarEntryType,
         linkName: String?,
+        modificationTime: UInt64 = 0,
         deviceMajor: UInt32? = nil,
         deviceMinor: UInt32? = nil,
         extendedAttributes: [String: String] = [:],
@@ -192,6 +194,7 @@ public struct OrlixRootfsTarManifestEntry: Equatable, Sendable {
         self.gid = gid
         self.type = type
         self.linkName = linkName
+        self.modificationTime = modificationTime
         self.deviceMajor = deviceMajor
         self.deviceMinor = deviceMinor
         self.extendedAttributes = extendedAttributes
@@ -367,6 +370,12 @@ public struct OrlixRootfsTarManifestReader: Sendable {
         } else {
             gid = UInt32(try parseNumeric(header, range: 116..<124))
         }
+        let modificationTime: UInt64
+        if let extendedModificationTime = extendedHeader.modificationTime {
+            modificationTime = extendedModificationTime
+        } else {
+            modificationTime = try parseNumeric(header, range: 136..<148)
+        }
 
         return OrlixRootfsTarManifestEntry(
             path: path,
@@ -380,6 +389,7 @@ public struct OrlixRootfsTarManifestReader: Sendable {
                 type: type,
                 extendedHeader: extendedHeader
             ),
+            modificationTime: modificationTime,
             deviceMajor: try deviceMajor(header, type: type),
             deviceMinor: try deviceMinor(header, type: type),
             extendedAttributes: extendedHeader.extendedAttributes,
@@ -595,6 +605,7 @@ private struct OrlixRootfsTarPAXExtendedHeader {
     var mode: UInt32?
     var uid: UInt32?
     var gid: UInt32?
+    var modificationTime: UInt64?
     var extendedAttributes: [String: String] = [:]
     var gnuSparseMap: String?
     var gnuSparseSize: UInt64?
@@ -621,6 +632,8 @@ private struct OrlixRootfsTarPAXExtendedHeader {
                 throw OrlixRootfsTarManifestError.invalidPAXExtendedHeader
             }
             gid = parsed
+        case "mtime":
+            modificationTime = try parsePAXTimestampSeconds(value)
         case "mode":
             guard let parsed = UInt32(value, radix: 8) else {
                 throw OrlixRootfsTarManifestError.invalidPAXExtendedHeader
@@ -746,6 +759,17 @@ private struct OrlixRootfsTarPAXExtendedHeader {
         let paddingLength = (4 - value.count % 4) % 4
         let padded = value + String(repeating: "=", count: paddingLength)
         return Data(base64Encoded: padded)
+    }
+
+    private func parsePAXTimestampSeconds(_ value: String) throws -> UInt64 {
+        let seconds = value.split(separator: ".", maxSplits: 1).first ?? ""
+        guard !seconds.isEmpty,
+              seconds.allSatisfy({ $0 >= "0" && $0 <= "9" }),
+              let parsed = UInt64(seconds)
+        else {
+            throw OrlixRootfsTarManifestError.invalidPAXExtendedHeader
+        }
+        return parsed
     }
 }
 

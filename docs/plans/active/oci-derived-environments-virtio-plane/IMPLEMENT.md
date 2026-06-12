@@ -8726,3 +8726,63 @@ Handoff:
   networking, cgroups, native performance, and only then OCI Runtime config,
   lifecycle, defaults, feature reporting, product `orlix run`, and registry
   pull.
+
+## 2026-06-12 imported root mtime metadata fidelity
+
+Goal:
+
+- Preserve archive modification times while importing rootfs tar and OCI image
+  layers into OrlixOS environment image materialization metadata.
+- Keep this as OrlixOS image-input fidelity only. Linux timestamp semantics,
+  VFS behavior, ext4 behavior, and runtime `stat` behavior remain owned by
+  OrlixKernel/upstream Linux and future oracle or kselftest coverage.
+
+Changes:
+
+- `OrlixOS/Sources/Session/OrlixRootfsImport.swift`
+  - Added `modificationTime` to `OrlixRootfsTarManifestEntry`.
+  - Parsed the ustar mtime header field.
+  - Parsed PAX `mtime`, accepting fractional PAX timestamps by preserving the
+    whole-second value used by the generated ext4 metadata command.
+- `OrlixOS/Sources/Session/OrlixEnvironmentImageMaterialization.swift`
+  - Added `set_inode_field <path> mtime <seconds>` to generated base-image
+    debugfs metadata commands for regular entries and Linux special files.
+- `OrlixOS/Tests/XCTest/OrlixOSTests/OrlixTerminalSessionTests.swift`
+  - Extended the tar fixture helper to encode mtime fields.
+  - Covered ustar mtime parsing, PAX mtime parsing, and generated metadata
+    command output.
+- `docs/plans/active/oci-derived-environments-virtio-plane/PLAN.md`
+  - Reconciled the current status section so imported cross-boot persistence is
+    no longer listed as unproved.
+
+Evidence:
+
+- Static gates:
+  - `rtk swiftc -parse -I OrlixOS/Sources/Session OrlixOS/Sources/Session/OrlixRootfsImport.swift OrlixOS/Sources/Session/OrlixEnvironmentImageMaterialization.swift`
+  - `rtk swiftc -parse -I OrlixOS/Sources/Session OrlixOS/Tests/XCTest/OrlixOSTests/OrlixTerminalSessionTests.swift`
+  - `rtk git diff --check`
+  - `rtk python3 -m unittest discover .codex/hooks/tests`
+  - `rtk python3 .codex/hooks/compact_plan_check.py`
+  - Result: all exited 0.
+- Focused OrlixOS simulator proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixOSTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testEnvironmentImageMaterializationGeneratesManifestMetadataCommands -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testRootfsTarManifestReaderParsesUstarEntries -only-testing:OrlixOSTests/OrlixTerminalSessionTests/testRootfsTarManifestReaderAppliesPAXExtendedHeaders test`
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixOSTests-2026.06.12_19-40-33-+0200.xcresult`.
+  - Output: 3 XTests executed, 0 failures, `** TEST SUCCEEDED **`.
+
+Current conclusion:
+
+- Imported root metadata fidelity now includes archive mtime in the generated
+  ext4 image metadata command stream for tar import and OCI layout layer import.
+- This does not prove runtime timestamp syscall behavior, OCI Runtime config or
+  lifecycle behavior, feature reporting, host-folder mounts, virtio-fs,
+  networking, cgroups, native performance, product `orlix run`, registry pull,
+  real-device behavior, or App Store acceptance.
+
+Handoff:
+
+- Continue imported-root fidelity and Linux substrate work before OCI Runtime
+  lifecycle or `orlix run`.
+- The next useful substrate steps remain Linux oracle expansion, host-folder
+  mounts through Linux mount behavior, virtio-fs, networking, cgroups, and
+  native performance baselines.

@@ -22,6 +22,9 @@ Current proved state:
   proof exists.
 - OrlixOS named session construction reuses the persisted state image path for
   the same environment ID after state mutation.
+- Imported tar-derived and OCI-derived copied named environments have paired
+  iOS Simulator proof that a Linux userspace mutation survives a fresh boot
+  boundary through the named environment session path.
 - OverlayFS copy-up and unlink proof exists.
 - pseudoFS, tmpfs, PTY, and delayed input proofs exist.
 - Linux-owned `/dev/fd`, `/dev/stdin`, `/dev/stdout`, and `/dev/stderr`
@@ -40,11 +43,12 @@ Current proved state:
 - OrlixOS named environment session selection API exists.
 - End-to-end named environment runtime entry selects the copied root and
   descriptor argv/env/cwd/uid/gid defaults on iOS Simulator.
+- Rootfs tar and OCI layout import carry archive mtime into materialization
+  metadata commands for the generated ext4 root image.
 
 Current not-proved state:
 
 - Multiple live environments inside one already-running OrlixKernel.
-- Cross-boot persistence of the same mutated environment state image.
 - Runtime host-folder mount backend.
 - virtio-fs.
 - Registry pull.
@@ -70,10 +74,10 @@ Cross-boot persistence proof shape:
   overlay probe `environment_state_writeback_probe` mounts `/dev/vdb` as ext4,
   writes, fsyncs, remounts, rereads, verifies `/dev/vda` still rejects writes,
   and verifies `/dev/vdb` still flushes writes through the Linux block layer.
-- The remaining cross-boot proof is OrlixOS/session ownership: prove that a
-  named environment ID reuses the same virtio-blk backed state image across a
-  fresh Orlix boot boundary, and that the Linux-written marker is observed
-  after that boundary.
+- The OrlixOS/session ownership proof now exists for imported tar-derived and
+  OCI-derived copied named environments: the named environment ID reuses the
+  same virtio-blk backed state image across a fresh Orlix boot boundary, and
+  the Linux-written marker is observed after that boundary.
 - Any harness used for that cross-boot proof must be minimal and must not
   define VFS, block, overlay, or fsync semantics. Those semantics remain covered
   by upstream Linux tests, Orlix kselftest-style probes, or Linux oracle
