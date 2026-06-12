@@ -7687,3 +7687,57 @@ Current conclusion:
 - This does not implement live named-environment switching, OCI image execution,
   host-folder mounts, virtio-fs, registry pull, networking, cgroups, arbitrary
   image compatibility, real-device proof, or App Store acceptance.
+
+### 2026-06-12 current plan status after root-binding correction
+
+Current status:
+
+- The active plan remains in progress.
+- The mistaken root-switch milestone is removed from the active path.
+- The corrected environment-entry proof is green on iOS Simulator.
+- The next implementation checkpoint is OrlixOS-level named environment root
+  binding, using the existing upstream-Linux OrlixKernel process launch and
+  root-entry behavior.
+
+Completed proof checkpoints recorded in this plan:
+
+- Storage policy and environment descriptor groundwork.
+- Rootfs tar import API and overwrite protection.
+- OCI image layout parsing and selected OCI config metadata validation.
+- OCI-derived materialized-root PTY proof with delayed interactive input.
+- Virtio-blk base/state device proof, including read-only base, writable state,
+  sysfs identity, sector write, and flush.
+- Explicit host-folder mount metadata guard that fails until a real Linux mount
+  backend exists.
+- Corrected environment-entry root-binding proof on iOS Simulator.
+
+Remaining execution order:
+
+1. Implement OrlixOS named environment root binding end to end.
+2. Prove entering a named environment selects the correct root and descriptor.
+3. Connect rootfs tar import to named environment entry in one product-shaped
+   path.
+4. Implement OCI layout import binding to named environments.
+5. Add OCI whiteout and opaque-directory import proof.
+6. Add immutable image root plus writable environment state proof.
+7. Add overlay/snapshot semantics only after the image-root binding proof is
+   stable.
+8. Implement host-folder mount backend through Linux-owned mount behavior.
+9. Add virtio-fs for Documents and security-scoped external folders.
+10. Add registry pull outside OrlixKernel and outside the iOS runtime substrate.
+11. Add `orlix run` lifecycle only after persistent named environments are
+    reliable.
+12. Expand networking through virtio-net, `/proc/net`, and synthetic rtnetlink.
+13. Add virtual cgroup v2 and resource-accounting behavior.
+14. Expand the Linux oracle and benchmark coverage for imported binaries and
+    container-image-derived environments.
+
+Boundary:
+
+- Initial proof target remains iOS Simulator.
+- macOS is only the Xcode build, simulator-control, fixture-generation, local
+  oracle, and result-inspection host.
+- No Docker daemon, runc dependency, Linux VM on iOS, Virtualization.framework
+  iOS runtime dependency, Apple container runtime dependency, vminitd, vmnet,
+  Rosetta, raw host-path rootfs, local Linux UAPI clone, or Darwin/libc/MLibC
+  leakage into OrlixKernel is part of the plan.
