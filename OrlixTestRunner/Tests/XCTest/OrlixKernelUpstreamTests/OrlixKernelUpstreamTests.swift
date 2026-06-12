@@ -70,6 +70,21 @@ final class OrlixKernelUpstreamTests: XCTestCase {
         XCTAssertFalse(output.contains("# exec /orlix/mount_namespace_probe"))
     }
 
+    func testFDAliasProbeCompletesThroughOrlixOSTerminalSession() throws {
+        let output = try OrlixUpstreamXCTest.run(.kernelFDAlias)
+
+        XCTAssertTrue(output.contains("fd_alias_probe"))
+        XCTAssertTrue(output.contains("ORLIX-FD-ALIAS-PROBE"))
+        XCTAssertTrue(output.contains("/dev/fd is a directory"))
+        XCTAssertTrue(
+            output.contains("/dev/fd opens the referenced descriptor path")
+        )
+        XCTAssertTrue(output.contains("/dev/stdin aliases fd 0"))
+        XCTAssertTrue(output.contains("/dev/stdout aliases fd 1"))
+        XCTAssertTrue(output.contains("/dev/stderr aliases fd 2"))
+        XCTAssertFalse(output.contains("# exec /orlix/mount_namespace_probe"))
+    }
+
     func testSignalWaitProbeCompletesThroughOrlixOSTerminalSession() throws {
         let output = try OrlixUpstreamXCTest.run(.kernelSignalWait)
 

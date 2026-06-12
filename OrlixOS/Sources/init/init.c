@@ -121,6 +121,27 @@ static void mount_device_filesystem(void)
 		write_literal(STDERR_FILENO, "orlix-init: mount /dev failed\n");
 }
 
+static int install_fd_alias(const char *target, const char *linkpath)
+{
+	(void)unlink(linkpath);
+	if (symlink(target, linkpath) == 0 || errno == EEXIST)
+		return 0;
+
+	return -1;
+}
+
+static void install_standard_fd_aliases(void)
+{
+	if (install_fd_alias("/proc/self/fd", "/dev/fd") != 0)
+		write_literal(STDERR_FILENO, "orlix-init: /dev/fd alias failed\n");
+	if (install_fd_alias("/proc/self/fd/0", "/dev/stdin") != 0)
+		write_literal(STDERR_FILENO, "orlix-init: /dev/stdin alias failed\n");
+	if (install_fd_alias("/proc/self/fd/1", "/dev/stdout") != 0)
+		write_literal(STDERR_FILENO, "orlix-init: /dev/stdout alias failed\n");
+	if (install_fd_alias("/proc/self/fd/2", "/dev/stderr") != 0)
+		write_literal(STDERR_FILENO, "orlix-init: /dev/stderr alias failed\n");
+}
+
 static void mount_runtime_filesystems(void)
 {
 	if (ensure_dir("/proc", 0555) == 0 &&
@@ -137,6 +158,8 @@ static void mount_runtime_filesystems(void)
 	    mount_if_needed("devpts", "/dev/pts", "devpts", 0,
 			    "gid=5,mode=620,ptmxmode=666") != 0)
 		write_literal(STDERR_FILENO, "orlix-init: mount /dev/pts failed\n");
+
+	install_standard_fd_aliases();
 
 	if (ensure_dir("/dev/shm", 01777) == 0 &&
 	    mount_if_needed("tmpfs", "/dev/shm", "tmpfs", MS_NOSUID | MS_NODEV,

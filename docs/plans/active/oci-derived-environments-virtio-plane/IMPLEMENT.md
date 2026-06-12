@@ -8020,6 +8020,98 @@ Corrected remaining execution order:
 15. Add product `orlix run`.
 16. Add registry pull tooling.
 
+### 2026-06-12 Linux fd alias substrate proof
+
+Goal:
+
+- Prove the Linux substrate needed for OCI Runtime Linux fd defaults before any
+  OCI Runtime compliance claim.
+- Keep the proof upstream-shaped: the Orlix kselftest overlay owns the Linux
+  behavior probe, while XCTest only launches and inspects the iOS-hosted Orlix
+  path.
+- Do not treat `/dev/fd` aliases as a virtio device problem. These aliases are
+  Linux procfs, devfs, and fd-table behavior. Future host-backed storage,
+  host-folder, console, entropy, and network device work should continue to
+  prefer upstream virtio classes where a device boundary exists.
+
+Changes:
+
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/fd_alias_probe.c`
+  - Added an Orlix kselftest-style userspace probe for `/dev/fd`,
+    `/dev/stdin`, `/dev/stdout`, and `/dev/stderr`.
+  - The probe verifies `/dev/fd` is a directory, `/dev/fd/N` opens the
+    referenced descriptor path, and stdio aliases resolve to fd 0, 1, and 2.
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/Makefile`
+  - Added `fd_alias_probe` to `TEST_GEN_PROGS`.
+- `OrlixKernel/Sources/ports/orlix/overlay/tools/testing/selftests/orlix/kselftest_init.c`
+  - Installs `/dev/fd -> /proc/self/fd`,
+    `/dev/stdin -> /proc/self/fd/0`,
+    `/dev/stdout -> /proc/self/fd/1`, and
+    `/dev/stderr -> /proc/self/fd/2`.
+  - Added a TAP setup check for standard fd alias installation.
+- `OrlixOS/Sources/init/init.c`
+  - Installs the same standard fd aliases during product init after procfs,
+    devtmpfs, and devpts setup.
+- `OrlixTestRunner/Sources/OrlixUpstreamTestRunner.swift`
+  - Added the focused `kernelFDAlias` upstream test run spec with
+    `orlix.kselftest=fd_alias_probe`.
+- `OrlixTestRunner/Tests/XCTest/OrlixKernelUpstreamTests/OrlixKernelUpstreamTests.swift`
+  - Added `testFDAliasProbeCompletesThroughOrlixOSTerminalSession`.
+- `docs/plans/active/oci-derived-environments-virtio-plane/PLAN.md`
+  - Reconciled current proved state for Linux fd aliases.
+
+Evidence:
+
+- RED compile proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testFDAliasProbeCompletesThroughOrlixOSTerminalSession test`
+  - Failed before adding the run spec with:
+    `Type 'OrlixUpstreamTestRunSpec' has no member 'kernelFDAlias'`.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_18-16-27-+0200.xcresult`.
+- RED substrate proof:
+  - The same focused run reached the iOS-hosted Orlix path and executed
+    `/orlix/fd_alias_probe`.
+  - It failed before alias installation with:
+    - `not ok 1 - /dev/fd is a directory`
+    - `not ok 2 - /dev/fd opens the same file description`
+    - `not ok 3 - /dev/stdin aliases fd 0`
+    - `not ok 4 - /dev/stdout aliases fd 1`
+    - `not ok 5 - /dev/stderr aliases fd 2`
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_18-18-16-+0200.xcresult`.
+- Probe correction:
+  - After installing the fd aliases, `/dev/fd`, stdin, stdout, and stderr
+    passed, but the probe still failed the over-strict file-offset check:
+    `not ok 2 - /dev/fd opens the same file description`.
+  - The assertion was corrected to verify that `/dev/fd/N` opens the referenced
+    descriptor path and reads the same file content and stat identity.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_18-21-26-+0200.xcresult`.
+- GREEN proof:
+  - `rtk timeout 900 xcodebuild -project OrlixSystem.xcodeproj -scheme OrlixKernelUpstreamTests -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath .deriveddata/OrlixSystem-sim -only-testing:OrlixKernelUpstreamTests/OrlixKernelUpstreamTests/testFDAliasProbeCompletesThroughOrlixOSTerminalSession test`
+  - Result: exited 0.
+  - Result bundle:
+    `.deriveddata/OrlixSystem-sim/Logs/Test/Test-OrlixKernelUpstreamTests-2026.06.12_18-28-05-+0200.xcresult`.
+  - Output: 1 XCTest executed, 0 failures, `** TEST SUCCEEDED **`.
+  - Runtime output included:
+    - `ORLIX-FD-ALIAS-PROBE`
+    - `ok 1 - /dev/fd is a directory`
+    - `ok 2 - /dev/fd opens the referenced descriptor path`
+    - `ok 3 - /dev/stdin aliases fd 0`
+    - `ok 4 - /dev/stdout aliases fd 1`
+    - `ok 5 - /dev/stderr aliases fd 2`
+    - `ok 10 - fd_alias_probe`
+
+Current conclusion:
+
+- Orlix now has focused iOS Simulator proof that the Linux-hosted Orlix path
+  installs and observes standard fd aliases needed by `runtime-linux.md`.
+- This is Linux substrate proof only. It does not prove OCI Runtime lifecycle
+  compliance, `orlix run`, feature reporting, virtio-fs, runtime host-folder
+  mounts, networking, cgroups, cross-boot state persistence, registry pull,
+  multiple live environments, native performance, real-device behavior, or App
+  Store acceptance.
+
 ### 2026-06-12 Upstream-shaped proof lane correction
 
 Goal:

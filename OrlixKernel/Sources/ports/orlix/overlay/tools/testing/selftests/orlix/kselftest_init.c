@@ -56,6 +56,27 @@ static int mount_devpts(void)
 	return 0;
 }
 
+static int install_fd_alias(const char *target, const char *linkpath)
+{
+	(void)unlink(linkpath);
+	if (symlink(target, linkpath) == 0 || errno == EEXIST)
+		return 0;
+	return -1;
+}
+
+static int install_fd_aliases(void)
+{
+	if (install_fd_alias("/proc/self/fd", "/dev/fd") != 0)
+		return -1;
+	if (install_fd_alias("/proc/self/fd/0", "/dev/stdin") != 0)
+		return -1;
+	if (install_fd_alias("/proc/self/fd/1", "/dev/stdout") != 0)
+		return -1;
+	if (install_fd_alias("/proc/self/fd/2", "/dev/stderr") != 0)
+		return -1;
+	return 0;
+}
+
 static int mount_tmpfs_at(const char *target, const char *data)
 {
 	if (mkdir(target, 01777) < 0 && errno != EEXIST)
@@ -220,11 +241,13 @@ int main(void)
 				    sizeof(test_list), &list_size) == 0;
 	test_count = have_list ? count_orlix_tests(test_list, list_size) : 0;
 
-	orlix_test_plan(test_count + 8);
+	orlix_test_plan(test_count + 9);
 	orlix_test_result(procfs_result == 0, "procfs mounted for kselftest");
 	orlix_test_result(mount_sysfs() == 0, "sysfs mounted for kselftest");
 	orlix_test_result(mount_devtmpfs() == 0, "devtmpfs mounted for kselftest");
 	orlix_test_result(mount_devpts() == 0, "devpts mounted for kselftest");
+	orlix_test_result(install_fd_aliases() == 0,
+			  "standard fd aliases installed for kselftest");
 	orlix_test_result(mount_tmpfs_at("/dev/shm", "mode=1777") == 0,
 			  "dev shm tmpfs mounted for kselftest");
 	orlix_test_result(mount_tmpfs_at("/run", "mode=0755") == 0,

@@ -24,6 +24,11 @@ Current proved state:
   the same environment ID after state mutation.
 - OverlayFS copy-up and unlink proof exists.
 - pseudoFS, tmpfs, PTY, and delayed input proofs exist.
+- Linux-owned `/dev/fd`, `/dev/stdin`, `/dev/stdout`, and `/dev/stderr`
+  alias proof exists through the Orlix kselftest overlay on the iOS-hosted
+  Orlix path.
+- Product init and kselftest init install standard fd aliases against
+  `/proc/self/fd`.
 - Linux oracle scaffold exists.
 - OrlixOS named environment session selection API exists.
 - End-to-end named environment runtime entry selects the copied root and
