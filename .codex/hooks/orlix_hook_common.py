@@ -82,6 +82,27 @@ BAD_OUTPUT_RE = re.compile(
     r"(Kernel panic|user fault|app crash|crash report|FAIL:|not ok|SKIP:|Operation not implemented|ORLIX-COREUTILS-TEST-END failures=[1-9]|skips=[1-9])",
     re.IGNORECASE,
 )
+MACOS_RUNTIME_RE = re.compile(
+    r"\b(?:aligned|alligned)\s+with\s+macOS\b|\bmacOS\s+(?:user|runtime|runtime target|target runtime|execution surface)\b",
+    re.IGNORECASE,
+)
+CONTAINER_SUPPORT_RE = re.compile(r"\b(?:Docker support|container support|containers support)\b", re.IGNORECASE)
+OCI_ORLIX_RE = re.compile(r"\bOCI-derived Orlix environments?\b|\bOCI-rooted Orlix environments?\b", re.IGNORECASE)
+INVENTED_MECHANISM_RE = re.compile(
+    r"\b(?:add|create|build|introduce|implement)\s+(?:Tools/)?(?:OrlixImageBuilder|OrlixLinuxOracle|pivot_root|\.workflow/|workflow root)\b",
+    re.IGNORECASE,
+)
+EXISTING_OPTIONAL_RE = re.compile(r"\b(?:existing|already exists|user-requested|requested by the user|optional|future-only)\b", re.IGNORECASE)
+WORKFLOW_DELEGATION_RE = re.compile(r"\b(?:subagent|subagents|swarm|parallel agents?|delegated agents?|dynamic workflow)\b", re.IGNORECASE)
+WORKFLOW_AUTH_RE = re.compile(r"\b(?:authorized|authorised|explicit user authorization|explicit user authorisation|user authorized|user authorised)\b", re.IGNORECASE)
+CURRENT_STATUS_RE = re.compile(r"^Current status:\s*$", re.MULTILINE)
+STALE_STATUS_RE = re.compile(r"\b(?:pending|blocked|interrupted)\b", re.IGNORECASE)
+GREEN_STATUS_RE = re.compile(r"\b(?:green|passed|passes|succeeded|success|complete|completed)\b", re.IGNORECASE)
+HANDOFF_RE = re.compile(r"\b(?:handoff|reactivation prompt|suggested skills)\b", re.IGNORECASE)
+NEGATED_GUARDRAIL_RE = re.compile(
+    r"\b(?:no|not|do not|don't|must not|never|without|forbid|forbidden|non-goal|non-goals)\b",
+    re.IGNORECASE,
+)
 
 
 def read_stdin_text():
@@ -236,6 +257,62 @@ def has_claim_relevant_evidence(path, terms):
     if "evidence:" not in text:
         return False
     return any(term.lower() in text for term in terms)
+
+
+def _has_non_negated_match(pattern, text):
+    normalized = _normalise_escaped_newlines(text)
+    for line in normalized.splitlines():
+        if pattern.search(line) and not NEGATED_GUARDRAIL_RE.search(line):
+            return True
+    return False
+
+
+def macos_runtime_wording(text):
+    return _has_non_negated_match(MACOS_RUNTIME_RE, text)
+
+
+def vague_container_support(text):
+    normalized = _normalise_escaped_newlines(text)
+    return _has_non_negated_match(CONTAINER_SUPPORT_RE, normalized) and not OCI_ORLIX_RE.search(normalized)
+
+
+def invented_mechanism_without_scope(text):
+    normalized = _normalise_escaped_newlines(text)
+    return _has_non_negated_match(INVENTED_MECHANISM_RE, normalized) and not EXISTING_OPTIONAL_RE.search(normalized)
+
+
+def workflow_without_authorization(text):
+    normalized = _normalise_escaped_newlines(text)
+    return _has_non_negated_match(WORKFLOW_DELEGATION_RE, normalized) and not WORKFLOW_AUTH_RE.search(normalized)
+
+
+def implementation_status_contradiction(path):
+    impl = path / "IMPLEMENT.md"
+    if not impl.exists():
+        return False
+    text = impl.read_text(errors="replace")
+    sections = [section for section in text.split("\n## ") if "Current status:" in section]
+    if len(sections) < 2:
+        return False
+    earlier = "\n".join(sections[:-1])
+    latest = sections[-1]
+    return bool(STALE_STATUS_RE.search(earlier) and GREEN_STATUS_RE.search(latest))
+
+
+def has_recent_handoff_or_status(path):
+    impl = path / "IMPLEMENT.md"
+    if impl.exists():
+        text = impl.read_text(errors="replace")
+        tail = text[-4000:]
+        if CURRENT_STATUS_RE.search(tail) or HANDOFF_RE.search(tail):
+            return True
+    handoff_root = path.parents[2] / "codex-handoffs"
+    if handoff_root.exists():
+        plan_name = path.name.lower()
+        for handoff in handoff_root.glob("*.md"):
+            if plan_name in handoff.name.lower():
+                return True
+    return False
 
 
 def warn(message):

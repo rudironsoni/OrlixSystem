@@ -15,6 +15,9 @@ This file is curated repo-local memory for coding agents. Keep entries short, st
 - Upstream package builds are package-conformance work. Do not disable upstream package features or force `configure`/libtool through ad hoc `LD` overrides to make cross builds pass; route toolchain discovery through reviewed OrlixOS package-toolchain inputs and prove the unmodified upstream suite.
 - Completion is evidence-based. Do not claim fixed, green, complete, runtime-ready, or package-ready without exact command output, logs, failure/skip accounting, and crash-report checks where applicable.
 - Keep Makefile interfaces Linux-shaped and small. Prefer variables over new milestone or proof-target names.
+- For OCI and container-image work, keep OCI Image Spec input, OCI Runtime Spec metadata, OrlixOS orchestration, OrlixKernel execution, ELF execution, native performance proof, and App Store uncertainty separate. Do not call it Docker support unless the plan explicitly scopes Docker semantics.
+- Initial Orlix runtime proof is iOS Simulator unless a later verified target says otherwise. macOS is only the build, simulator-control, fixture, oracle, and result-inspection host.
+- Long sessions need handoff discipline: active plans hold task state, implementation logs hold evidence, durable memory holds stable lessons, and handoffs hold continuity context.
 
 ## Recurring Failure Modes
 
@@ -25,5 +28,10 @@ This file is curated repo-local memory for coding agents. Keep entries short, st
 - Declaring success before checking app crashes or simulator crash reports.
 - Creating custom diagnostics, tracing, dashboards, or status files where Codex hooks, logs, and plan evidence are enough.
 - Splitting review into too many agents instead of using the single `orlix-reviewer` role.
+- Planning before reading the repo, docs, active plans, and implementation log.
+- Collapsing OCI Image Spec, OCI Runtime Spec, Orlix environment orchestration, and ELF execution into one vague container claim.
+- Inventing named tools, mechanism-specific proof targets, or workflow roots instead of using existing Orlix surfaces.
+- Describing Orlix as aligned with macOS runtime or macOS users when the initial runtime proof target is iOS Simulator.
+- Skipping native-performance and ELF execution evidence when the user asks how Linux binaries will run fast.
 - Recreating `OrlixKit` or hardcoding product bundle identifiers/resource names in runtime code instead of reading OrlixOS target metadata and registering private HostAdapter resource paths.
 - Disabling upstream package capabilities or inventing one-off linker/tool wrappers instead of fixing the OrlixOS package toolchain and proving the package with upstream tests.
